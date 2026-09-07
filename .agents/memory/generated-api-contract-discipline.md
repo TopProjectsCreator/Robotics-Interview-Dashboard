@@ -7,4 +7,4 @@ After changing the OpenAPI contract, regenerate the client and Zod packages befo
 
 **Why:** The generated response shapes are stricter than the route names and easy to misremember; catching a mismatch at the API boundary prevents a frontend that renders a different data model than the server actually returns.
 
-**How to apply:** Treat `lib/api-spec/openapi.yaml` as the source of truth, use generated schemas in handlers, and verify the live endpoint after codegen.
+**How to apply:** Treat `lib/api-spec/openapi.yaml` as the source of truth, use generated schemas in handlers, and verify the live endpoint after codegen. If codegen fails, it cleans the generated folders first; fix the contract and regenerate before running workspace type checks or relying on the dev preview.

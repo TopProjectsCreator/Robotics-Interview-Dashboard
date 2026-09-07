@@ -4,10 +4,18 @@ import { z } from "zod/v4";
 
 export const interviewQueueTable = pgTable("interview_queue", {
   id: integer("id").primaryKey().default(1),
+  interviewerLabels: text("interviewer_labels").notNull().default('["Interviewer 1","Interviewer 2"]'),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+});
+
+export const interviewChatMessagesTable = pgTable("interview_chat_messages", {
+  id: text("id").primaryKey(),
+  author: text("author").notNull(),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const importsTable = pgTable("application_imports", {
@@ -32,5 +40,10 @@ export const insertImportSchema = createInsertSchema(importsTable).omit({
 
 export type InterviewQueue = typeof interviewQueueTable.$inferSelect;
 export type InsertInterviewQueue = z.infer<typeof insertInterviewQueueSchema>;
+export const insertInterviewChatMessageSchema = createInsertSchema(interviewChatMessagesTable).omit({
+  createdAt: true,
+});
+export type InterviewChatMessage = typeof interviewChatMessagesTable.$inferSelect;
+export type InsertInterviewChatMessage = z.infer<typeof insertInterviewChatMessageSchema>;
 export type ApplicationImport = typeof importsTable.$inferSelect;
 export type InsertApplicationImport = z.infer<typeof insertImportSchema>;

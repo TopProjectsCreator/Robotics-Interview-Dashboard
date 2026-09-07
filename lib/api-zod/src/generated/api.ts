@@ -110,6 +110,7 @@ export const ListApplicantsResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
+  "interviewer": zod.string(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -141,6 +142,7 @@ export const GetApplicantResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
+  "interviewer": zod.string(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -160,6 +162,7 @@ export const UpdateApplicantBody = zod.object({
   "rank": zod.number().int().optional(),
   "notes": zod.string().optional(),
   "interviewStatus": zod.string().optional(),
+  "interviewer": zod.string().optional(),
   "queuePosition": zod.number().int().optional()
 })
 
@@ -178,6 +181,7 @@ export const UpdateApplicantResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
+  "interviewer": zod.string(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -275,25 +279,30 @@ export const RequestUploadUrlResponse = zod.object({
 
 
 /**
- * @summary Get the current interview queue and pair
+ * @summary Get the current interview queue and active applicants
  */
 export const GetQueueResponse = zod.object({
-  "currentPair": zod.array(zod.object({
+  "currentApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
-  "nextPair": zod.array(zod.object({
+  "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
+  "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
   "remainingCount": zod.number().int(),
   "updatedAt": zod.string()
@@ -301,32 +310,105 @@ export const GetQueueResponse = zod.object({
 
 
 /**
- * @summary Finish the current pair and advance the queue
+ * @summary Finish one applicant and advance that applicant only
  */
 export const AdvanceQueueBody = zod.object({
+  "applicantId": zod.string(),
   "note": zod.string().optional()
 })
 
 export const AdvanceQueueResponse = zod.object({
-  "currentPair": zod.array(zod.object({
+  "currentApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
-  "nextPair": zod.array(zod.object({
+  "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
+  "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
   "remainingCount": zod.number().int(),
   "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Update interviewer labels used by the queue and display
+ */
+
+
+
+export const UpdateQueueSettingsBody = zod.object({
+  "interviewerLabels": zod.array(zod.string()).min(1)
+})
+
+export const UpdateQueueSettingsResponse = zod.object({
+  "currentApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
+})),
+  "nextApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
+})),
+  "interviewerLabels": zod.array(zod.string()),
+  "completedCount": zod.number().int(),
+  "remainingCount": zod.number().int(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Get persisted interviewer chat
+ */
+export const GetInterviewChatResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "message": zod.string(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Send a message to the other interviewer
+ */
+export const SendInterviewChatBody = zod.object({
+  "author": zod.string(),
+  "message": zod.string()
+})
+
+export const SendInterviewChatResponse = zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "message": zod.string(),
+  "createdAt": zod.string()
 })
 
 
@@ -338,22 +420,27 @@ export const ReorderQueueBody = zod.object({
 })
 
 export const ReorderQueueResponse = zod.object({
-  "currentPair": zod.array(zod.object({
+  "currentApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
-  "nextPair": zod.array(zod.object({
+  "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
   "aiScore": zod.number().int(),
   "category": zod.string(),
-  "queuePosition": zod.number().int()
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string()
 })),
+  "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
   "remainingCount": zod.number().int(),
   "updatedAt": zod.string()
@@ -367,7 +454,7 @@ export const GetDisplayStateResponse = zod.object({
   "mode": zod.string(),
   "headline": zod.string(),
   "subheadline": zod.string(),
-  "currentPair": zod.array(zod.object({
+  "currentApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),

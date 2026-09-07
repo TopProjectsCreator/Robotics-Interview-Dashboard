@@ -7,5 +7,6 @@
  */
 
 export interface AdvanceQueueInput {
+  applicantId: string;
   note?: string;
 }

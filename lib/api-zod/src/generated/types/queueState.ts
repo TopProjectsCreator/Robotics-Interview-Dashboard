@@ -8,8 +8,9 @@
 import type { QueueApplicant } from './queueApplicant';
 
 export interface QueueState {
-  currentPair: QueueApplicant[];
-  nextPair: QueueApplicant[];
+  currentApplicants: QueueApplicant[];
+  nextApplicants: QueueApplicant[];
+  interviewerLabels: string[];
   completedCount: number;
   remainingCount: number;
   updatedAt: string;

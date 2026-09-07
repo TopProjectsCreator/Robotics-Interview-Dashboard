@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantMessagesTable, db, applicantsTable, importsTable } from "@workspace/db";
+import { assistantMessagesTable, db, applicantsTable, importsTable, interviewChatMessagesTable, interviewQueueTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
+  AdvanceQueueBody,
   CommitImportBody,
   CommitImportResponse,
   GetApplicantParams,
   GetApplicantResponse,
   GetDashboardSummaryResponse,
   GetDisplayStateResponse,
+  GetInterviewChatResponse,
   GetQueueResponse,
   GetAssistantHistoryResponse,
   ListApplicantsQueryParams,
@@ -17,6 +19,9 @@ import {
   ListImportHistoryResponse,
   PreviewImportResponse,
   ReorderQueueBody,
+  SendInterviewChatBody,
+  SendInterviewChatResponse,
+  UpdateQueueSettingsBody,
   ReorderQueueResponse,
   UpdateApplicantBody,
   UpdateApplicantParams,
@@ -24,13 +29,14 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/adminAuth";
 import {
   applicantResponse,
   csvToApplicant,
   ensureDemoData,
   getApplicants,
+  getInterviewSettings,
   getQueueState,
   importDiff,
   parseSemicolonCsv,
@@ -230,18 +236,73 @@ router.get("/queue", requireAdmin, async (_req, res): Promise<void> => {
 });
 
 router.post("/queue/advance", requireAdmin, async (req, res): Promise<void> => {
-  const current = await getApplicants({ sort: "queue" });
-  const pair = current.filter((applicant) => applicant.interviewStatus !== "completed").slice(0, 2);
-  const body = typeof req.body === "object" ? req.body : {};
-  const note = typeof body.note === "string" ? body.note.trim() : "";
-  for (const applicant of pair) {
-    await db.update(applicantsTable).set({
-      interviewStatus: "completed",
-      notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
-      updatedAt: new Date(),
-    }).where(eq(applicantsTable.id, applicant.id));
+  const parsed = AdvanceQueueBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
   }
+  const current = (await getApplicants({ sort: "queue" })).filter((applicant) => applicant.interviewStatus !== "completed").slice(0, 2);
+  const applicant = current.find((candidate) => candidate.id === parsed.data.applicantId);
+  if (!applicant) {
+    res.status(409).json({ error: "Only a currently interviewing applicant can advance." });
+    return;
+  }
+  const note = parsed.data.note?.trim() ?? "";
+  await db.update(applicantsTable).set({
+    interviewStatus: "completed",
+    notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
+    updatedAt: new Date(),
+  }).where(eq(applicantsTable.id, applicant.id));
   res.json(GetQueueResponse.parse(await getQueueState()));
+});
+
+router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = UpdateQueueSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const labels = [...new Set(parsed.data.interviewerLabels.map((label) => label.trim()).filter(Boolean))].slice(0, 8);
+  if (!labels.length) {
+    res.status(400).json({ error: "At least one interviewer label is required." });
+    return;
+  }
+  await db.insert(interviewQueueTable).values({ id: 1, interviewerLabels: JSON.stringify(labels) }).onConflictDoUpdate({
+    target: interviewQueueTable.id,
+    set: { interviewerLabels: JSON.stringify(labels), updatedAt: new Date() },
+  });
+  res.json(GetQueueResponse.parse(await getQueueState()));
+});
+
+router.get("/queue/chat", requireAdmin, async (_req, res): Promise<void> => {
+  const messages = await db.select().from(interviewChatMessagesTable).orderBy(asc(interviewChatMessagesTable.createdAt)).limit(100);
+  res.json(GetInterviewChatResponse.parse({
+    items: messages.map((message) => ({
+      id: message.id,
+      author: message.author,
+      message: message.message,
+      createdAt: message.createdAt.toISOString(),
+    })),
+  }));
+});
+
+router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = SendInterviewChatBody.safeParse(req.body);
+  if (!parsed.success || !parsed.data.message.trim()) {
+    res.status(400).json({ error: "A chat message is required." });
+    return;
+  }
+  const [message] = await db.insert(interviewChatMessagesTable).values({
+    id: randomUUID(),
+    author: parsed.data.author.trim().slice(0, 80) || "Interviewer",
+    message: parsed.data.message.trim().slice(0, 1000),
+  }).returning();
+  res.status(201).json(SendInterviewChatResponse.parse({
+    id: message.id,
+    author: message.author,
+    message: message.message,
+    createdAt: message.createdAt.toISOString(),
+  }));
 });
 
 router.post("/queue/reorder", requireAdmin, async (req, res): Promise<void> => {
@@ -258,17 +319,17 @@ router.post("/queue/reorder", requireAdmin, async (req, res): Promise<void> => {
 
 router.get("/display/state", async (_req, res): Promise<void> => {
   const queue = await getQueueState();
-  const currentPair = queue.currentPair.map((applicant) => ({
+  const currentApplicants = queue.currentApplicants.map((applicant, index) => ({
     id: applicant.id,
     name: applicant.name,
     grade: applicant.grade,
-    lane: applicant.category,
+    lane: applicant.interviewer || queue.interviewerLabels[index % queue.interviewerLabels.length] || "Your interviewer",
   }));
   res.json(GetDisplayStateResponse.parse({
-    mode: currentPair.length ? "calling" : "complete",
-    headline: currentPair.length ? "Please come to the build applications stand" : "Interview block complete",
-    subheadline: currentPair.length ? "Your interview team is ready for you" : "Thank you for showing up and building boldly",
-    currentPair,
+    mode: currentApplicants.length ? "calling" : "complete",
+    headline: currentApplicants.length ? "Please come to your corresponding interviewer" : "Interview block complete",
+    subheadline: currentApplicants.length ? "Your Wolverines interview team is ready for you" : "Thank you for showing up and building boldly",
+    currentApplicants,
     updatedAt: queue.updatedAt,
   }));
 });
@@ -276,9 +337,9 @@ router.get("/display/state", async (_req, res): Promise<void> => {
 let announcementCache: { key: string; audio: Buffer } | null = null;
 router.get("/display/announcement", async (req, res): Promise<void> => {
   const queue = await getQueueState();
-  const names = queue.currentPair.map((applicant) => applicant.name).join(" and ");
+  const names = queue.currentApplicants.map((applicant) => applicant.name).join(" and ");
   const text = names
-    ? `Please come to the build applications stand. ${names}, your interview team is ready for you.`
+    ? `Please come to your corresponding interviewer. ${names}, your Wolverines interview team is ready for you.`
     : "The interview block is complete. Thank you for coming to the robotics tryouts.";
   const key = `${queue.updatedAt}:${text}`;
   try {

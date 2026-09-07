@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { asc } from "drizzle-orm";
-import { db, applicantsTable, type Applicant } from "@workspace/db";
+import { db, applicantsTable, interviewQueueTable, type Applicant } from "@workspace/db";
 
 export const demoApplicants = [
   ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
@@ -92,6 +92,7 @@ export function applicantResponse(applicant: Applicant) {
     commit10Hours: applicant.commit10Hours,
     parentVolunteer: applicant.parentVolunteer,
     interviewStatus: applicant.interviewStatus,
+    interviewer: applicant.interviewer,
     category: applicant.category,
     rank: applicant.rank,
     notes: applicant.notes,
@@ -107,22 +108,43 @@ export function queueApplicantResponse(applicant: Applicant) {
     aiScore: applicant.aiScore,
     category: applicant.category,
     queuePosition: applicant.queuePosition,
+    interviewer: applicant.interviewer,
+    notes: applicant.notes,
   };
+}
+
+export async function getInterviewSettings(): Promise<string[]> {
+  let [settings] = await db.select().from(interviewQueueTable);
+  if (!settings) {
+    await db.insert(interviewQueueTable).values({ id: 1 }).onConflictDoNothing();
+    [settings] = await db.select().from(interviewQueueTable);
+  }
+  try {
+    const labels = JSON.parse(settings?.interviewerLabels ?? "[]");
+    if (Array.isArray(labels) && labels.every((label) => typeof label === "string") && labels.length > 0) {
+      return labels.map((label) => label.trim()).filter(Boolean);
+    }
+  } catch {
+    // Recover to the default labels if an old row contains malformed JSON.
+  }
+  return ["Interviewer 1", "Interviewer 2"];
 }
 
 export async function getQueueState() {
   const applicants = await getApplicants({ sort: "queue" });
   const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
-  const currentPair = remaining.slice(0, 2);
-  const nextPair = remaining.slice(2, 4);
+  const currentApplicants = remaining.slice(0, 2);
+  const nextApplicants = remaining.slice(2, 4);
   const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
+  const interviewerLabels = await getInterviewSettings();
   const latestUpdatedAt = applicants.reduce(
     (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
     0,
   );
   return {
-    currentPair: currentPair.map(queueApplicantResponse),
-    nextPair: nextPair.map(queueApplicantResponse),
+    currentApplicants: currentApplicants.map(queueApplicantResponse),
+    nextApplicants: nextApplicants.map(queueApplicantResponse),
+    interviewerLabels,
     completedCount,
     remainingCount: remaining.length,
     updatedAt: new Date(latestUpdatedAt || Date.now()).toISOString(),

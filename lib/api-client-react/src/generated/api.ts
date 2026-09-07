@@ -36,9 +36,13 @@ import type {
   ImportInput,
   ImportPreview,
   ImportResult,
+  InterviewChat,
+  InterviewChatInput,
+  InterviewChatMessage,
   ListApplicantsParams,
   LoginInput,
   MessageResponse,
+  QueueSettingsInput,
   QueueState,
   ReorderQueueInput,
   UploadInput,
@@ -978,7 +982,7 @@ export const getGetQueueUrl = () => {
 }
 
 /**
- * @summary Get the current interview queue and pair
+ * @summary Get the current interview queue and active applicants
  */
 export const getQueue = async ( options?: Parameters<typeof customFetch>[1]): Promise<QueueState> => {
 
@@ -1025,7 +1029,7 @@ export type GetQueueQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get the current interview queue and pair
+ * @summary Get the current interview queue and active applicants
  */
 
 export function useGetQueue<TData = Awaited<ReturnType<typeof getQueue>>, TError = ErrorType<unknown>>(
@@ -1055,7 +1059,7 @@ export const getAdvanceQueueUrl = () => {
 }
 
 /**
- * @summary Finish the current pair and advance the queue
+ * @summary Finish one applicant and advance that applicant only
  */
 export const advanceQueue = async (advanceQueueInput?: AdvanceQueueInput, options?: Parameters<typeof customFetch>[1]): Promise<QueueState> => {
 
@@ -1104,7 +1108,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AdvanceQueueMutationError = ErrorType<unknown>
 
     /**
- * @summary Finish the current pair and advance the queue
+ * @summary Finish one applicant and advance that applicant only
  */
 export const useAdvanceQueue = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof advanceQueue>>, TError,{data?: BodyType<AdvanceQueueInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1115,6 +1119,225 @@ export const useAdvanceQueue = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdvanceQueueMutationOptions(options));
+    }
+
+export const getUpdateQueueSettingsUrl = () => {
+
+
+
+
+  return `/api/queue/settings`
+}
+
+/**
+ * @summary Update interviewer labels used by the queue and display
+ */
+export const updateQueueSettings = async (queueSettingsInput: QueueSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<QueueState> => {
+
+  return customFetch<QueueState>(getUpdateQueueSettingsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(queueSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateQueueSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateQueueSettings>>, TError,{data: BodyType<QueueSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateQueueSettings>>, TError,{data: BodyType<QueueSettingsInput>}, TContext> => {
+
+const mutationKey = ['updateQueueSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateQueueSettings>>, {data: BodyType<QueueSettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateQueueSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateQueueSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateQueueSettings>>>
+    export type UpdateQueueSettingsMutationBody = BodyType<QueueSettingsInput>
+    export type UpdateQueueSettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update interviewer labels used by the queue and display
+ */
+export const useUpdateQueueSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateQueueSettings>>, TError,{data: BodyType<QueueSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateQueueSettings>>,
+        TError,
+        {data: BodyType<QueueSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateQueueSettingsMutationOptions(options));
+    }
+
+export const getGetInterviewChatUrl = () => {
+
+
+
+
+  return `/api/queue/chat`
+}
+
+/**
+ * @summary Get persisted interviewer chat
+ */
+export const getInterviewChat = async ( options?: Parameters<typeof customFetch>[1]): Promise<InterviewChat> => {
+
+  return customFetch<InterviewChat>(getGetInterviewChatUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInterviewChatQueryKey = () => {
+    return [
+    `/api/queue/chat`
+    ] as const;
+    }
+
+
+export const getGetInterviewChatQueryOptions = <TData = Awaited<ReturnType<typeof getInterviewChat>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInterviewChatQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInterviewChat>>> = ({ signal }) => getInterviewChat({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInterviewChatQueryResult = NonNullable<Awaited<ReturnType<typeof getInterviewChat>>>
+export type GetInterviewChatQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get persisted interviewer chat
+ */
+
+export function useGetInterviewChat<TData = Awaited<ReturnType<typeof getInterviewChat>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInterviewChatQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSendInterviewChatUrl = () => {
+
+
+
+
+  return `/api/queue/chat`
+}
+
+/**
+ * @summary Send a message to the other interviewer
+ */
+export const sendInterviewChat = async (interviewChatInput: InterviewChatInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewChatMessage> => {
+
+  return customFetch<InterviewChatMessage>(getSendInterviewChatUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewChatInput)
+  }
+);}
+
+
+
+
+
+export const getSendInterviewChatMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendInterviewChat>>, TError,{data: BodyType<InterviewChatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendInterviewChat>>, TError,{data: BodyType<InterviewChatInput>}, TContext> => {
+
+const mutationKey = ['sendInterviewChat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendInterviewChat>>, {data: BodyType<InterviewChatInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  sendInterviewChat(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendInterviewChatMutationResult = NonNullable<Awaited<ReturnType<typeof sendInterviewChat>>>
+    export type SendInterviewChatMutationBody = BodyType<InterviewChatInput>
+    export type SendInterviewChatMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a message to the other interviewer
+ */
+export const useSendInterviewChat = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendInterviewChat>>, TError,{data: BodyType<InterviewChatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendInterviewChat>>,
+        TError,
+        {data: BodyType<InterviewChatInput>},
+        TContext
+      > => {
+      return useMutation(getSendInterviewChatMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

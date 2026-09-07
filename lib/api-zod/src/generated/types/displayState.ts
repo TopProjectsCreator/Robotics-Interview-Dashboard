@@ -11,6 +11,6 @@ export interface DisplayState {
   mode: string;
   headline: string;
   subheadline: string;
-  currentPair: DisplayApplicant[];
+  currentApplicants: DisplayApplicant[];
   updatedAt: string;
 }

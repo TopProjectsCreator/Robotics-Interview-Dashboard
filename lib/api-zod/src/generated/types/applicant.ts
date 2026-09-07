@@ -23,6 +23,7 @@ export interface Applicant {
   commit10Hours: string;
   parentVolunteer: string;
   interviewStatus: string;
+  interviewer: string;
   category: string;
   rank: number;
   notes: string;

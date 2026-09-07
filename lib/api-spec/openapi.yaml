@@ -227,7 +227,7 @@ paths:
     get:
       operationId: getQueue
       tags: [queue]
-      summary: Get the current interview queue and pair
+      summary: Get the current interview queue and active applicants
       responses:
         "200":
           description: Queue state
@@ -239,7 +239,7 @@ paths:
     post:
       operationId: advanceQueue
       tags: [queue]
-      summary: Finish the current pair and advance the queue
+      summary: Finish one applicant and advance that applicant only
       requestBody:
         required: false
         content:
@@ -253,6 +253,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /queue/settings:
+    post:
+      operationId: updateQueueSettings
+      tags: [queue]
+      summary: Update interviewer labels used by the queue and display
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueueSettingsInput"
+      responses:
+        "200":
+          description: Updated queue state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
+  /queue/chat:
+    get:
+      operationId: getInterviewChat
+      tags: [queue]
+      summary: Get persisted interviewer chat
+      responses:
+        "200":
+          description: Interviewer chat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewChat"
+    post:
+      operationId: sendInterviewChat
+      tags: [queue]
+      summary: Send a message to the other interviewer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewChatInput"
+      responses:
+        "201":
+          description: Sent chat message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewChatMessage"
   /queue/reorder:
     post:
       operationId: reorderQueue
@@ -459,6 +506,7 @@ components:
         - commit10Hours
         - parentVolunteer
         - interviewStatus
+        - interviewer
         - category
         - rank
         - notes
@@ -492,6 +540,8 @@ components:
           type: string
         interviewStatus:
           type: string
+        interviewer:
+          type: string
         category:
           type: string
         rank:
@@ -520,6 +570,8 @@ components:
         notes:
           type: string
         interviewStatus:
+          type: string
+        interviewer:
           type: string
         queuePosition:
           type: integer
@@ -637,16 +689,20 @@ components:
               type: string
     QueueState:
       type: object
-      required: [currentPair, nextPair, completedCount, remainingCount, updatedAt]
+      required: [currentApplicants, nextApplicants, interviewerLabels, completedCount, remainingCount, updatedAt]
       properties:
-        currentPair:
+        currentApplicants:
           type: array
           items:
             $ref: "#/components/schemas/QueueApplicant"
-        nextPair:
+        nextApplicants:
           type: array
           items:
             $ref: "#/components/schemas/QueueApplicant"
+        interviewerLabels:
+          type: array
+          items:
+            type: string
         completedCount:
           type: integer
         remainingCount:
@@ -655,7 +711,7 @@ components:
           type: string
     QueueApplicant:
       type: object
-      required: [id, name, grade, aiScore, category, queuePosition]
+      required: [id, name, grade, aiScore, category, queuePosition, interviewer, notes]
       properties:
         id:
           type: string
@@ -669,11 +725,55 @@ components:
           type: string
         queuePosition:
           type: integer
+        interviewer:
+          type: string
+        notes:
+          type: string
     AdvanceQueueInput:
       type: object
+      required: [applicantId]
       properties:
+        applicantId:
+          type: string
         note:
           type: string
+    QueueSettingsInput:
+      type: object
+      required: [interviewerLabels]
+      properties:
+        interviewerLabels:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    InterviewChatInput:
+      type: object
+      required: [author, message]
+      properties:
+        author:
+          type: string
+        message:
+          type: string
+    InterviewChatMessage:
+      type: object
+      required: [id, author, message, createdAt]
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: string
+    InterviewChat:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterviewChatMessage"
     ReorderQueueInput:
       type: object
       required: [applicantIds]
@@ -684,7 +784,7 @@ components:
             type: string
     DisplayState:
       type: object
-      required: [mode, headline, subheadline, currentPair, updatedAt]
+      required: [mode, headline, subheadline, currentApplicants, updatedAt]
       properties:
         mode:
           type: string
@@ -692,7 +792,7 @@ components:
           type: string
         subheadline:
           type: string
-        currentPair:
+        currentApplicants:
           type: array
           items:
             $ref: "#/components/schemas/DisplayApplicant"

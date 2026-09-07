@@ -66,6 +66,7 @@ export interface Applicant {
   commit10Hours: string;
   parentVolunteer: string;
   interviewStatus: string;
+  interviewer: string;
   category: string;
   rank: number;
   notes: string;
@@ -82,6 +83,7 @@ export interface ApplicantUpdate {
   rank?: number;
   notes?: string;
   interviewStatus?: string;
+  interviewer?: string;
   queuePosition?: number;
 }
 
@@ -155,18 +157,43 @@ export interface QueueApplicant {
   aiScore: number;
   category: string;
   queuePosition: number;
+  interviewer: string;
+  notes: string;
 }
 
 export interface QueueState {
-  currentPair: QueueApplicant[];
-  nextPair: QueueApplicant[];
+  currentApplicants: QueueApplicant[];
+  nextApplicants: QueueApplicant[];
+  interviewerLabels: string[];
   completedCount: number;
   remainingCount: number;
   updatedAt: string;
 }
 
 export interface AdvanceQueueInput {
+  applicantId: string;
   note?: string;
+}
+
+export interface QueueSettingsInput {
+  /** @minItems 1 */
+  interviewerLabels: string[];
+}
+
+export interface InterviewChatInput {
+  author: string;
+  message: string;
+}
+
+export interface InterviewChatMessage {
+  id: string;
+  author: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface InterviewChat {
+  items: InterviewChatMessage[];
 }
 
 export interface ReorderQueueInput {
@@ -184,7 +211,7 @@ export interface DisplayState {
   mode: string;
   headline: string;
   subheadline: string;
-  currentPair: DisplayApplicant[];
+  currentApplicants: DisplayApplicant[];
   updatedAt: string;
 }
 

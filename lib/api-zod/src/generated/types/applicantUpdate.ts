@@ -11,5 +11,6 @@ export interface ApplicantUpdate {
   rank?: number;
   notes?: string;
   interviewStatus?: string;
+  interviewer?: string;
   queuePosition?: number;
 }

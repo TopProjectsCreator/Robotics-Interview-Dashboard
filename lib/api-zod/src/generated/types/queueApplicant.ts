@@ -13,4 +13,6 @@ export interface QueueApplicant {
   aiScore: number;
   category: string;
   queuePosition: number;
+  interviewer: string;
+  notes: string;
 }

@@ -18,6 +18,7 @@ export const applicantsTable = pgTable("applicants", {
   commit10Hours: text("commit_10_hours").notNull().default("Unclear"),
   parentVolunteer: text("parent_volunteer").notNull().default("Unclear"),
   interviewStatus: text("interview_status").notNull().default("queued"),
+  interviewer: text("interviewer").notNull().default(""),
   category: text("category").notNull().default("Unsorted"),
   rank: integer("rank").notNull().default(0),
   notes: text("notes").notNull().default(""),
