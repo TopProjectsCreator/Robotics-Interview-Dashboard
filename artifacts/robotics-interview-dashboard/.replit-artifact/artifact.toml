@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Robotics Interview Dashboard"
+description = "A private robotics tryout workspace for importing applicant results, ranking candidates, coordinating two-person interviews, and running a cinematic live big-screen display with spoken announcements and AI-assisted notes."
+version = "1.0.0"
+id = "artifacts/robotics-interview-dashboard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20798
+
+[services.development]
+run = "pnpm --filter @workspace/robotics-interview-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/robotics-interview-dashboard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/robotics-interview-dashboard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20798"
+BASE_PATH = "/"
