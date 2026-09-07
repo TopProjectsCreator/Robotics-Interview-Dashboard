@@ -275,7 +275,7 @@ router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => 
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const labels = [...new Set(parsed.data.interviewerLabels.map((label) => label.trim()).filter(Boolean))].slice(0, 8);
+  const labels = [...new Set(parsed.data.interviewerLabels.map((label) => label.trim()).filter(Boolean))].slice(0, 12);
   if (!labels.length) {
     res.status(400).json({ error: "At least one interviewer label is required." });
     return;
