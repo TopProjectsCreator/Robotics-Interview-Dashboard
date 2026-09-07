@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { db, applicantsTable, importsTable } from "@workspace/db";
+import { assistantMessagesTable, db, applicantsTable, importsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -11,8 +11,11 @@ import {
   GetDashboardSummaryResponse,
   GetDisplayStateResponse,
   GetQueueResponse,
+  GetAssistantHistoryResponse,
   ListApplicantsQueryParams,
   ListApplicantsResponse,
+  ListImportHistoryResponse,
+  PreviewImportResponse,
   ReorderQueueBody,
   ReorderQueueResponse,
   UpdateApplicantBody,
@@ -21,7 +24,7 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/adminAuth";
 import {
   applicantResponse,
@@ -29,6 +32,7 @@ import {
   ensureDemoData,
   getApplicants,
   getQueueState,
+  importDiff,
   parseSemicolonCsv,
   queueApplicantResponse,
 } from "../lib/roboticsData";
@@ -36,6 +40,18 @@ import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+async function readImport(objectPath: string) {
+  const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+  const download = await objectStorageService.downloadObject(objectFile);
+  const csv = await download.text();
+  const parsedCsv = parseSemicolonCsv(csv);
+  const current = await getApplicants({ sort: "queue" });
+  const imported = parsedCsv.rows.map((row, index) =>
+    csvToApplicant(row, parsedCsv.headers, current.length + index),
+  );
+  return { parsedCsv, current, imported, diff: importDiff(imported, current) };
+}
 
 router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> => {
   const applicants = await getApplicants();
@@ -118,6 +134,43 @@ router.patch("/applicants/:id", requireAdmin, async (req, res): Promise<void> =>
   res.json(UpdateApplicantResponse.parse(applicantResponse(updated)));
 });
 
+router.post("/imports/preview", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = CommitImportBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  try {
+    const { parsedCsv, diff } = await readImport(parsed.data.objectPath);
+    res.json(PreviewImportResponse.parse({
+      delimiter: parsedCsv.delimiter,
+      headers: parsedCsv.headers,
+      rowCount: parsedCsv.rows.length,
+      warnings: parsedCsv.warnings,
+      diff,
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to preview CSV import");
+    res.status(400).json({ error: "The CSV could not be read from private storage." });
+  }
+});
+
+router.get("/imports/history", requireAdmin, async (_req, res): Promise<void> => {
+  const history = await db.select().from(importsTable).orderBy(desc(importsTable.createdAt));
+  res.json(ListImportHistoryResponse.parse({
+    items: history.map((item) => ({
+      importId: item.id,
+      fileName: item.fileName,
+      rowCount: item.rowCount,
+      imported: item.importedCount,
+      skipped: item.skippedCount,
+      delimiter: item.delimiter,
+      createdAt: item.createdAt.toISOString(),
+      diff: JSON.parse(item.diffSummary || "{}"),
+    })),
+  }));
+});
+
 router.post("/imports", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CommitImportBody.safeParse(req.body);
   if (!parsed.success) {
@@ -125,13 +178,7 @@ router.post("/imports", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   try {
-    const objectFile = await objectStorageService.getObjectEntityFile(parsed.data.objectPath);
-    const download = await objectStorageService.downloadObject(objectFile);
-    const csv = await download.text();
-    const parsedCsv = parseSemicolonCsv(csv);
-    const current = await getApplicants({ sort: "queue" });
-    const startPosition = current.length;
-    const applicants = parsedCsv.rows.map((row, index) => csvToApplicant(row, parsedCsv.headers, startPosition + index));
+    const { parsedCsv, imported: applicants, diff } = await readImport(parsed.data.objectPath);
     for (const applicant of applicants) {
       await db.insert(applicantsTable).values(applicant).onConflictDoUpdate({
         target: applicantsTable.id,
@@ -160,13 +207,17 @@ router.post("/imports", requireAdmin, async (req, res): Promise<void> => {
       rowCount: parsed.data.rowCount,
       importedCount: applicants.length,
       skippedCount: parsedCsv.rows.length - applicants.length,
+      delimiter: parsedCsv.delimiter,
       warnings: JSON.stringify(parsedCsv.warnings),
+      diffSummary: JSON.stringify(diff),
     });
     res.status(201).json(CommitImportResponse.parse({
       importId,
       imported: applicants.length,
       skipped: parsedCsv.rows.length - applicants.length,
+      delimiter: parsedCsv.delimiter,
       warnings: parsedCsv.warnings,
+      diff,
     }));
   } catch (error) {
     req.log.error({ err: error }, "Failed to commit CSV import");
@@ -276,7 +327,25 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     ],
   });
   const answer = completion.choices[0]?.message.content ?? "I could not produce an answer for that question.";
+  await db.insert(assistantMessagesTable).values({
+    id: randomUUID(),
+    question: parsed.data.question,
+    answer,
+    applicantIds: JSON.stringify(parsed.data.applicantIds ?? []),
+  });
   res.json(AskAssistantResponse.parse({ answer }));
+});
+
+router.get("/assistant/history", requireAdmin, async (_req, res): Promise<void> => {
+  const messages = await db.select().from(assistantMessagesTable).orderBy(desc(assistantMessagesTable.createdAt)).limit(50);
+  res.json(GetAssistantHistoryResponse.parse({
+    items: messages.reverse().map((message) => ({
+      id: message.id,
+      question: message.question,
+      answer: message.answer,
+      createdAt: message.createdAt.toISOString(),
+    })),
+  }));
 });
 
 export default router;

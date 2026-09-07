@@ -5,10 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ImportDiff } from './importDiff';
 
 export interface ImportResult {
   importId: string;
   imported: number;
   skipped: number;
+  delimiter: string;
   warnings: string[];
+  diff: ImportDiff;
 }

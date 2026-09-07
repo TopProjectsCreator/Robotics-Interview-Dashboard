@@ -1,1 +1,2 @@
 - [Generated API contract discipline](generated-api-contract-discipline.md) — validate server response shapes against regenerated Zod schemas before wiring frontend hooks.
+- [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.

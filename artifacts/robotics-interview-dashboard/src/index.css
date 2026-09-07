@@ -33,3 +33,14 @@ button { cursor: pointer; }
 .scanline { background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent); animation: scan 3.5s ease-in-out infinite; }
 @keyframes scan { 0%,100% { transform: translateX(-100%); } 50% { transform: translateX(100%); } }
 .display-grid { background-image: linear-gradient(hsl(190 76% 37% / .07) 1px, transparent 1px), linear-gradient(90deg, hsl(190 76% 37% / .07) 1px, transparent 1px); background-size: 72px 72px; }
+.print-only { display: none; }
+@media print {
+  body * { visibility: hidden !important; }
+  .print-only, .print-only * { visibility: visible !important; }
+  .print-only { display: block; position: absolute; inset: 0; padding: 24px; color: #111; background: #fff; }
+  .print-only h1 { margin: 0 0 6px; font: 700 22px/1.2 Arial, sans-serif; }
+  .print-only p { margin: 0 0 18px; color: #555; font: 12px/1.4 Arial, sans-serif; }
+  .print-only table { width: 100%; border-collapse: collapse; font: 10px/1.35 Arial, sans-serif; }
+  .print-only th, .print-only td { border: 1px solid #bbb; padding: 6px; text-align: left; vertical-align: top; }
+  .print-only th { background: #eee; font-weight: 700; }
+}

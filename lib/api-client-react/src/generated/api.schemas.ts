@@ -91,11 +91,43 @@ export interface ImportInput {
   rowCount: number;
 }
 
+export interface ImportDiff {
+  added: number;
+  updated: number;
+  unchanged: number;
+  missingFromUpload: number;
+}
+
 export interface ImportResult {
   importId: string;
   imported: number;
   skipped: number;
+  delimiter: string;
   warnings: string[];
+  diff: ImportDiff;
+}
+
+export interface ImportPreview {
+  delimiter: string;
+  headers: string[];
+  rowCount: number;
+  warnings: string[];
+  diff: ImportDiff;
+}
+
+export type ImportHistoryItemsItem = {
+  importId: string;
+  fileName: string;
+  rowCount: number;
+  imported: number;
+  skipped: number;
+  delimiter: string;
+  createdAt: string;
+  diff: ImportDiff;
+};
+
+export interface ImportHistory {
+  items: ImportHistoryItemsItem[];
 }
 
 export interface UploadInput {
@@ -163,6 +195,17 @@ export interface AssistantInput {
 
 export interface AssistantResponse {
   answer: string;
+}
+
+export type AssistantHistoryItemsItem = {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+};
+
+export interface AssistantHistory {
+  items: AssistantHistoryItemsItem[];
 }
 
 export type SearchParameter = string;

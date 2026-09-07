@@ -198,7 +198,59 @@ export const CommitImportResponse = zod.object({
   "importId": zod.string(),
   "imported": zod.number().int(),
   "skipped": zod.number().int(),
-  "warnings": zod.array(zod.string())
+  "delimiter": zod.string(),
+  "warnings": zod.array(zod.string()),
+  "diff": zod.object({
+  "added": zod.number().int(),
+  "updated": zod.number().int(),
+  "unchanged": zod.number().int(),
+  "missingFromUpload": zod.number().int()
+})
+})
+
+
+/**
+ * @summary Preview a roster import and compare it with stored applicants
+ */
+export const PreviewImportBody = zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "rowCount": zod.number().int()
+})
+
+export const PreviewImportResponse = zod.object({
+  "delimiter": zod.string(),
+  "headers": zod.array(zod.string()),
+  "rowCount": zod.number().int(),
+  "warnings": zod.array(zod.string()),
+  "diff": zod.object({
+  "added": zod.number().int(),
+  "updated": zod.number().int(),
+  "unchanged": zod.number().int(),
+  "missingFromUpload": zod.number().int()
+})
+})
+
+
+/**
+ * @summary List previous roster imports and their diffs
+ */
+export const ListImportHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "importId": zod.string(),
+  "fileName": zod.string(),
+  "rowCount": zod.number().int(),
+  "imported": zod.number().int(),
+  "skipped": zod.number().int(),
+  "delimiter": zod.string(),
+  "createdAt": zod.string(),
+  "diff": zod.object({
+  "added": zod.number().int(),
+  "updated": zod.number().int(),
+  "unchanged": zod.number().int(),
+  "missingFromUpload": zod.number().int()
+})
+}))
 })
 
 
@@ -335,6 +387,19 @@ export const AskAssistantBody = zod.object({
 
 export const AskAssistantResponse = zod.object({
   "answer": zod.string()
+})
+
+
+/**
+ * @summary Get persisted assistant conversations
+ */
+export const GetAssistantHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "createdAt": zod.string()
+}))
 })
 
 

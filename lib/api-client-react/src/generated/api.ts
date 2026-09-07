@@ -24,6 +24,7 @@ import type {
   Applicant,
   ApplicantList,
   ApplicantUpdate,
+  AssistantHistory,
   AssistantInput,
   AssistantResponse,
   AuthSession,
@@ -31,7 +32,9 @@ import type {
   DisplayState,
   ErrorResponse,
   HealthStatus,
+  ImportHistory,
   ImportInput,
+  ImportPreview,
   ImportResult,
   ListApplicantsParams,
   LoginInput,
@@ -747,6 +750,154 @@ export const useCommitImport = <TError = ErrorType<unknown>,
       return useMutation(getCommitImportMutationOptions(options));
     }
 
+export const getPreviewImportUrl = () => {
+
+
+
+
+  return `/api/imports/preview`
+}
+
+/**
+ * @summary Preview a roster import and compare it with stored applicants
+ */
+export const previewImport = async (importInput: ImportInput, options?: Parameters<typeof customFetch>[1]): Promise<ImportPreview> => {
+
+  return customFetch<ImportPreview>(getPreviewImportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(importInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportInput>}, TContext> => {
+
+const mutationKey = ['previewImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewImport>>, {data: BodyType<ImportInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewImport>>>
+    export type PreviewImportMutationBody = BodyType<ImportInput>
+    export type PreviewImportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Preview a roster import and compare it with stored applicants
+ */
+export const usePreviewImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewImport>>, TError,{data: BodyType<ImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewImport>>,
+        TError,
+        {data: BodyType<ImportInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewImportMutationOptions(options));
+    }
+
+export const getListImportHistoryUrl = () => {
+
+
+
+
+  return `/api/imports/history`
+}
+
+/**
+ * @summary List previous roster imports and their diffs
+ */
+export const listImportHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<ImportHistory> => {
+
+  return customFetch<ImportHistory>(getListImportHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListImportHistoryQueryKey = () => {
+    return [
+    `/api/imports/history`
+    ] as const;
+    }
+
+
+export const getListImportHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listImportHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listImportHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListImportHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listImportHistory>>> = ({ signal }) => listImportHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listImportHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListImportHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listImportHistory>>>
+export type ListImportHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List previous roster imports and their diffs
+ */
+
+export function useListImportHistory<TData = Awaited<ReturnType<typeof listImportHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listImportHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListImportHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getRequestUploadUrlUrl = () => {
 
 
@@ -1184,4 +1335,81 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
     }
+
+export const getGetAssistantHistoryUrl = () => {
+
+
+
+
+  return `/api/assistant/history`
+}
+
+/**
+ * @summary Get persisted assistant conversations
+ */
+export const getAssistantHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantHistory> => {
+
+  return customFetch<AssistantHistory>(getGetAssistantHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantHistoryQueryKey = () => {
+    return [
+    `/api/assistant/history`
+    ] as const;
+    }
+
+
+export const getGetAssistantHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantHistory>>> = ({ signal }) => getAssistantHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantHistory>>>
+export type GetAssistantHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get persisted assistant conversations
+ */
+
+export function useGetAssistantHistory<TData = Awaited<ReturnType<typeof getAssistantHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

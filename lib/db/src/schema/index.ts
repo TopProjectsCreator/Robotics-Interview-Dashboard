@@ -19,3 +19,4 @@
 
 export * from "./applicants";
 export * from "./interview";
+export * from "./assistant";

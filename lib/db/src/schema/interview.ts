@@ -17,7 +17,9 @@ export const importsTable = pgTable("application_imports", {
   rowCount: integer("row_count").notNull(),
   importedCount: integer("imported_count").notNull().default(0),
   skippedCount: integer("skipped_count").notNull().default(0),
+  delimiter: text("delimiter").notNull().default(","),
   warnings: text("warnings").notNull().default("[]"),
+  diffSummary: text("diff_summary").notNull().default("{}"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

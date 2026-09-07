@@ -175,6 +175,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportResult"
+  /imports/preview:
+    post:
+      operationId: previewImport
+      tags: [imports]
+      summary: Preview a roster import and compare it with stored applicants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportInput"
+      responses:
+        "200":
+          description: Import preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPreview"
+  /imports/history:
+    get:
+      operationId: listImportHistory
+      tags: [imports]
+      summary: List previous roster imports and their diffs
+      responses:
+        "200":
+          description: Import history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportHistory"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -271,6 +301,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/history:
+    get:
+      operationId: getAssistantHistory
+      tags: [assistant]
+      summary: Get persisted assistant conversations
+      responses:
+        "200":
+          description: Assistant conversation history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantHistory"
 components:
   parameters:
     ApplicantId:
@@ -493,7 +535,7 @@ components:
           type: integer
     ImportResult:
       type: object
-      required: [importId, imported, skipped, warnings]
+      required: [importId, imported, skipped, delimiter, warnings, diff]
       properties:
         importId:
           type: string
@@ -501,10 +543,70 @@ components:
           type: integer
         skipped:
           type: integer
+        delimiter:
+          type: string
         warnings:
           type: array
           items:
             type: string
+        diff:
+          $ref: "#/components/schemas/ImportDiff"
+    ImportPreview:
+      type: object
+      required: [delimiter, headers, rowCount, warnings, diff]
+      properties:
+        delimiter:
+          type: string
+        headers:
+          type: array
+          items:
+            type: string
+        rowCount:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        diff:
+          $ref: "#/components/schemas/ImportDiff"
+    ImportDiff:
+      type: object
+      required: [added, updated, unchanged, missingFromUpload]
+      properties:
+        added:
+          type: integer
+        updated:
+          type: integer
+        unchanged:
+          type: integer
+        missingFromUpload:
+          type: integer
+    ImportHistory:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [importId, fileName, rowCount, imported, skipped, delimiter, createdAt, diff]
+            properties:
+              importId:
+                type: string
+              fileName:
+                type: string
+              rowCount:
+                type: integer
+              imported:
+                type: integer
+              skipped:
+                type: integer
+              delimiter:
+                type: string
+              createdAt:
+                type: string
+              diff:
+                $ref: "#/components/schemas/ImportDiff"
     UploadInput:
       type: object
       required: [name, size, contentType]
@@ -624,4 +726,22 @@ components:
       properties:
         answer:
           type: string
+    AssistantHistory:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, question, answer, createdAt]
+            properties:
+              id:
+                type: string
+              question:
+                type: string
+              answer:
+                type: string
+              createdAt:
+                type: string
 
