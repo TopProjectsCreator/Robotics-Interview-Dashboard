@@ -34,6 +34,7 @@ import { requireAdmin } from "../middlewares/adminAuth";
 import {
   applicantResponse,
   csvToApplicant,
+  displayApplicantName,
   ensureDemoData,
   getApplicants,
   getInterviewSettings,
@@ -334,7 +335,7 @@ router.get("/display/state", async (_req, res): Promise<void> => {
   const queue = await getQueueState();
   const currentApplicants = queue.currentApplicants.map((applicant, index) => ({
     id: applicant.id,
-    name: applicant.name,
+    name: displayApplicantName(applicant.name),
     grade: applicant.grade,
     lane: applicant.interviewer || queue.interviewerLabels[index % queue.interviewerLabels.length] || "Your interviewer",
   }));
@@ -350,7 +351,7 @@ router.get("/display/state", async (_req, res): Promise<void> => {
 let announcementCache: { key: string; audio: Buffer } | null = null;
 router.get("/display/announcement", async (req, res): Promise<void> => {
   const queue = await getQueueState();
-  const names = queue.currentApplicants.map((applicant) => applicant.name).join(" and ");
+  const names = queue.currentApplicants.map((applicant) => displayApplicantName(applicant.name)).join(" and ");
   const text = names
     ? `Please come to your corresponding interviewer. ${names}, your Wolverines interview team is ready for you.`
     : "The interview block is complete. Thank you for coming to the robotics tryouts.";

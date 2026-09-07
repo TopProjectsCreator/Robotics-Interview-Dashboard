@@ -120,6 +120,23 @@ export function queueApplicantResponse(applicant: Applicant) {
   };
 }
 
+function balancedCurrentApplicants(applicants: Applicant[], labels: string[]): Applicant[] {
+  if (!labels.length) return applicants;
+  const counts = new Map(labels.map((label) => [label, 0]));
+  return applicants.map((applicant) => {
+    const preferred = labels.includes(applicant.interviewer) && (counts.get(applicant.interviewer) ?? 0) === 0
+      ? applicant.interviewer
+      : [...counts.entries()].sort((a, b) => a[1] - b[1])[0][0];
+    counts.set(preferred, (counts.get(preferred) ?? 0) + 1);
+    return { ...applicant, interviewer: preferred };
+  });
+}
+
+export function displayApplicantName(name: string): string {
+  const trimmed = name.trim();
+  return !trimmed || trimmed.length > 48 || /https?:\/\//i.test(trimmed) || /@/.test(trimmed) ? "Applicant" : trimmed;
+}
+
 export async function getInterviewSettings(): Promise<string[]> {
   let [settings] = await db.select().from(interviewQueueTable);
   if (!settings) {
@@ -140,10 +157,10 @@ export async function getInterviewSettings(): Promise<string[]> {
 export async function getQueueState() {
   const applicants = await getApplicants({ sort: "queue" });
   const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
-  const currentApplicants = remaining.slice(0, 2);
   const nextApplicants = remaining.slice(2, 4);
   const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
   const interviewerLabels = await getInterviewSettings();
+  const currentApplicants = balancedCurrentApplicants(remaining.slice(0, 2), interviewerLabels);
   const latestUpdatedAt = applicants.reduce(
     (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
     0,
