@@ -110,7 +110,9 @@ export const ListApplicantsResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
-  "interviewer": zod.string(),
+  "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -142,7 +144,9 @@ export const GetApplicantResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
-  "interviewer": zod.string(),
+  "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -163,6 +167,8 @@ export const UpdateApplicantBody = zod.object({
   "notes": zod.string().optional(),
   "interviewStatus": zod.string().optional(),
   "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
   "queuePosition": zod.number().int().optional()
 })
 
@@ -181,7 +187,9 @@ export const UpdateApplicantResponse = zod.object({
   "commit10Hours": zod.string(),
   "parentVolunteer": zod.string(),
   "interviewStatus": zod.string(),
-  "interviewer": zod.string(),
+  "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -290,7 +298,9 @@ export const GetQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -300,7 +310,9 @@ export const GetQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -326,7 +338,9 @@ export const AdvanceQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -336,7 +350,9 @@ export const AdvanceQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -364,7 +380,9 @@ export const UpdateQueueSettingsResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -374,7 +392,9 @@ export const UpdateQueueSettingsResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -428,7 +448,9 @@ export const ReorderQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -438,7 +460,9 @@ export const ReorderQueueResponse = zod.object({
   "category": zod.string(),
   "queuePosition": zod.number().int(),
   "interviewer": zod.string(),
-  "notes": zod.string()
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
-  FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Menu, Monitor, Printer,
+  FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
   RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, UsersRound, Volume2, X,
 } from "lucide-react";
 import {
@@ -29,6 +29,13 @@ const officialDisplayImages = [
   "https://pinelakeroboticsteam.lovable.app/assets/team-photo-2025-DGc7DRd2.jpg",
   "https://pinelakeroboticsteam.lovable.app/assets/team-workspace-CNGT9Dwn.jpg",
   "https://pinelakeroboticsteam.lovable.app/assets/team-building-BVvSQr-U.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/maksim-BgBGtyX4.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/sim-mKNQ9QdF.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/janya-BMty1X_H.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/abhi-WpSQcuUd.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/ishaan-CBI5NMTe.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/arya-CgvuUuOT.jpg",
+  "https://pinelakeroboticsteam.lovable.app/assets/page-3-C4L_XZ_M.jpg",
 ];
 
 function Logo({ dark = false }: { dark?: boolean }) {
@@ -267,11 +274,12 @@ function Queue() {
   const updateApplicant = useUpdateApplicant();
   const updateSettings = useUpdateQueueSettings();
   const sendChat = useSendInterviewChat();
+  const ask = useAskAssistant();
   const qc = useQueryClient();
   const [order, setOrder] = useState<QueueApplicant[]>([]);
   const [drag, setDrag] = useState<string | null>(null);
   const [labels, setLabels] = useState<string[]>([]);
-  const [author, setAuthor] = useState("Interviewer");
+  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   useEffect(() => {
     if (!queue.data) return;
@@ -281,6 +289,9 @@ function Queue() {
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
   if (queue.isError || !queue.data) return <ErrorState onRetry={() => queue.refetch()} />;
   const q = queue.data;
+  const visibleApplicants = selectedInterviewer
+    ? q.currentApplicants.filter(applicant => !applicant.interviewer || applicant.interviewer === selectedInterviewer)
+    : q.currentApplicants;
   const saveNote = (id: string, note: string, original: string) => {
     if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
   };
@@ -306,28 +317,37 @@ function Queue() {
   const submitChat = (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim()) return;
-    sendChat.mutate({ data: { author: author.trim() || "Interviewer", message: message.trim() } }, { onSuccess: () => { setMessage(""); qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); } });
+    const submitted = message.trim();
+    setMessage("");
+    if (/@ai\b/i.test(submitted)) {
+      const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
+      ask.mutate({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id) } }, {
+        onSuccess: response => sendChat.mutate({ data: { author: "AI assistant", message: response.answer } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }) }),
+      });
+      return;
+    }
+    sendChat.mutate({ data: { author: selectedInterviewer || "Interviewer", message: submitted } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }) });
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Interview bay / live queue" title="Queue control" detail="Each applicant moves independently. Keep notes and message the other interviewer without leaving this screen." action={<div className="flex items-center gap-2 text-xs text-[#60757c]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</div>} />
+    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex items-center gap-2 text-xs text-[#60757c]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</div>} />
+    <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
+      <div><p className="text-sm font-semibold">I am working as</p><p className="mt-1 text-xs text-[#7c8c91]">This controls which assigned applicant files you see and labels your chat messages.</p></div>
+      <div className="flex flex-wrap gap-2">{q.interviewerLabels.map(label => <button key={label} onClick={() => { setSelectedInterviewer(label); window.localStorage.setItem("selected-interviewer", label); }} className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedInterviewer === label ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-select-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}</div>
+    </section>
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="relative overflow-hidden rounded-3xl bg-[#172a3a] p-7 text-white">
         <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full border border-[#f8c84a]/20" />
         <div className="relative">
           <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]">{q.currentApplicants.length} active / {q.remainingCount} remaining</span></div>
           <div className="mt-8 grid gap-4 lg:grid-cols-2">
-            {q.currentApplicants.length ? q.currentApplicants.map((applicant, index) => <article key={applicant.id} className="rounded-2xl border border-[#365968] bg-[#1d3545] p-5" data-testid={`current-applicant-${applicant.id}`}>
-              <div className="flex items-start justify-between gap-3"><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 text-2xl font-semibold tracking-[-.05em]">{applicant.name}</h2><p className="mt-1 text-sm text-[#acc2c7]">Grade {applicant.grade} · score {applicant.aiScore < 0 ? "invalid" : applicant.aiScore.toFixed(1)}</p></div><button onClick={() => finishApplicant(applicant.id)} disabled={advance.isPending} data-testid={`button-finish-applicant-${applicant.id}`} className="shrink-0 rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50">Finish</button></div>
-              <label className="mt-5 block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => assignInterviewer(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm text-white"><option value="">Unassigned</option>{q.interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-              <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private notes<textarea defaultValue={applicant.notes} onBlur={event => saveNote(applicant.id, event.currentTarget.value, applicant.notes)} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>
-            </article>) : <p className="py-10 text-[#acc2c7]">No active applicants. The room is clear.</p>}
+            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) })} />) : <p className="py-10 text-[#acc2c7]">{selectedInterviewer ? `No applicant is assigned to ${selectedInterviewer} right now.` : "No active applicants. The room is clear."}</p>}
           </div>
         </div>
       </section>
       <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-        <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">A shared private thread for the two coordinators.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+        <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
         <div className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chat.data?.items.length ? chat.data.items.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><p className="mt-1 text-sm leading-5 text-[#52666e]">{item.message}</p></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-        <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><input value={author} onChange={event => setAuthor(event.target.value)} aria-label="Chat author" className="h-10 w-32 rounded-lg border border-[#d5e0e0] px-3 text-xs outline-none focus:border-[#16869a]" placeholder="Your name" /><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer..." /><button disabled={!message.trim() || sendChat.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div></form>
+        <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button disabled={!message.trim() || sendChat.isPending || ask.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div></form>
       </section>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
@@ -347,12 +367,51 @@ function Queue() {
   </div>;
 }
 
+const interviewDecisions = ["Undecided", "Strong Yes", "Yes", "Maybe", "No", "Strong No"];
+
+function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign, onSaveNote, onFinish, onUpdate }: {
+  applicant: QueueApplicant;
+  index: number;
+  interviewerLabels: string[];
+  onAssign: (id: string, interviewer: string) => void;
+  onSaveNote: (id: string, note: string, original: string) => void;
+  onFinish: (id: string) => void;
+  onUpdate: (data: ApplicantUpdate) => void;
+}) {
+  const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: 5000 } });
+  const [notes, setNotes] = useState(applicant.notes);
+  useEffect(() => setNotes(detail.data?.notes ?? applicant.notes), [detail.data?.notes, applicant.notes]);
+  const a = detail.data;
+  return <article className="rounded-2xl border border-[#365968] bg-[#1d3545] p-5" data-testid={`current-applicant-${applicant.id}`}>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0"><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 truncate text-2xl font-semibold tracking-[-.05em]">{a?.name ?? applicant.name}</h2><p className="mt-1 flex items-center gap-2 text-sm text-[#acc2c7]"><span>Grade {a?.grade ?? applicant.grade}</span><span>·</span><span>{applicant.aiScore < 0 ? "invalid score" : `${applicant.aiScore.toFixed(1)} AI score`}</span></p></div>
+      <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-${applicant.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50">Finish</button></div>
+    </div>
+    {detail.isLoading ? <div className="mt-5 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-24" /></div> : a && <details open className="mt-5 rounded-xl border border-[#486b77] bg-[#162d3d] p-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-[.12em] text-[#d2e1e3]">Full applicant file</summary>
+      <div className="mt-4 grid gap-4 text-sm text-[#d2e1e3]">
+        <div className="grid gap-2 sm:grid-cols-2"><p className="flex items-start gap-2"><Mail size={14} className="mt-0.5 text-[#f8c84a]" />{a.email || "No email provided"}</p><p className="text-[#acc2c7]">Interview status: <strong className="text-white">{a.interviewStatus}</strong></p></div>
+        <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Application responses</p><div className="grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Robotics experience</p><p className="mt-1">{a.roboticsExperience || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">10-hour commitment</p><p className="mt-1">{a.commit10Hours || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Parent volunteer</p><p className="mt-1">{a.parentVolunteer || "Not provided"}</p></div></div></div>
+        <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Questions and submitted answers</p><p className="whitespace-pre-wrap leading-6 text-[#d2e1e3]">{a.transcript || "No transcript or additional responses were provided."}</p></div>
+        <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">AI readout</p><p className="leading-6">{a.aiSummary || "No AI summary available."}</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><p><strong className="text-[#51d2ad]">Strengths:</strong> {a.aiStrengths || "Not listed"}</p><p><strong className="text-[#ff9b8f]">Concerns:</strong> {a.aiConcerns || "Not listed"}</p></div></div>
+      </div>
+    </details>}
+    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm text-white"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<select value={applicant.interviewDecision} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm font-semibold text-white">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
+    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => setNotes(event.target.value)} onBlur={() => onSaveNote(applicant.id, notes, applicant.notes)} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>
+  </article>;
+}
+
+function DisplayGallery() {
+  return <div className="mx-auto mt-16 grid max-w-6xl grid-cols-2 gap-3 text-left md:grid-cols-6">
+    {officialDisplayImages.slice(1).map((src, index) => <img key={src} src={src} alt={`Official Wolverines team and portfolio image ${index + 1}`} className={`${index === 0 ? "col-span-2 row-span-2 aspect-[4/3] md:col-span-2 md:row-span-2" : "aspect-[4/3]"} w-full rounded-2xl border border-[#39616d] object-cover opacity-80 transition-opacity hover:opacity-100`} />)}
+  </div>;
+}
+
 function Display() {
   const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false);
   useEffect(() => { if (display.data && display.data.updatedAt !== lastUpdate.current) { if (lastUpdate.current && audioReady) { const audio = audioRef.current; if (audio) { audio.src = `${import.meta.env.BASE_URL}api/display/announcement`; audio.play().catch(() => undefined); } } lastUpdate.current = display.data.updatedAt; } }, [display.data, audioReady]);
   if (display.isLoading) return <div className="min-h-[100dvh] bg-[#0d1b28] p-12 text-white"><Skeleton className="h-10 w-48" /></div>; if (display.isError || !display.data) return <div className="flex min-h-[100dvh] items-center justify-center bg-[#0d1b28] text-white"><ErrorState compact onRetry={() => display.refetch()} /></div>;
   const d = display.data as DisplayState; const applicants = d.currentApplicants ?? [];
-  return <main className="display-grid noise relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white" data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex items-center justify-between p-7 md:p-12"><Logo dark /><div className="flex items-center gap-3"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => setAudioReady(!audioReady)} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative m-auto w-full max-w-[1380px] px-7 py-10 text-center md:px-16"><div className="pointer-events-none absolute right-8 top-1/2 hidden -translate-y-1/2 gap-3 opacity-40 xl:flex"><img src={officialDisplayImages[1]} alt="" className="h-36 w-24 rounded-2xl border border-[#39616d] object-cover" /><img src={officialDisplayImages[2]} alt="" className="mt-12 h-36 w-24 rounded-2xl border border-[#39616d] object-cover" /></div><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-7 text-[clamp(2.7rem,8vw,7.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-7 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className="mx-auto mt-20 grid max-w-4xl gap-5 sm:grid-cols-2">{applicants.map((applicant, i) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-9 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className="mt-5 text-3xl font-semibold tracking-[-.04em] md:text-5xl">{applicant.name}</p><p className="mt-3 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}</section><footer className="flex items-end justify-between p-7 md:p-12"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => setAudioReady(true)} preload="none" data-testid="display-announcement-audio" /></main>;
+  return <main className="display-grid noise relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white" data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex items-center justify-between p-7 md:p-12"><Logo dark /><div className="flex items-center gap-3"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => setAudioReady(!audioReady)} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative m-auto w-full max-w-[1380px] px-7 py-10 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-7 text-[clamp(2.7rem,8vw,7.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-7 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className="mx-auto mt-16 grid max-w-4xl gap-5 sm:grid-cols-2">{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-9 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className="mt-5 text-3xl font-semibold tracking-[-.04em] md:text-5xl">{applicant.name}</p><p className="mt-3 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}<DisplayGallery /></section><footer className="flex items-end justify-between p-7 md:p-12"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => setAudioReady(true)} preload="none" data-testid="display-announcement-audio" /></main>;
 }
 
 function Assistant() {

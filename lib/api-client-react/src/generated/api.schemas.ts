@@ -66,7 +66,9 @@ export interface Applicant {
   commit10Hours: string;
   parentVolunteer: string;
   interviewStatus: string;
-  interviewer: string;
+  interviewer?: string;
+  interviewDecision?: string;
+  callbackRequested?: boolean;
   category: string;
   rank: number;
   notes: string;
@@ -84,6 +86,8 @@ export interface ApplicantUpdate {
   notes?: string;
   interviewStatus?: string;
   interviewer?: string;
+  interviewDecision?: string;
+  callbackRequested?: boolean;
   queuePosition?: number;
 }
 
@@ -159,6 +163,8 @@ export interface QueueApplicant {
   queuePosition: number;
   interviewer: string;
   notes: string;
+  interviewDecision: string;
+  callbackRequested: boolean;
 }
 
 export interface QueueState {

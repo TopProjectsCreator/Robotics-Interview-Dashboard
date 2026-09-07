@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const applicantsTable = pgTable("applicants", {
@@ -19,6 +19,8 @@ export const applicantsTable = pgTable("applicants", {
   parentVolunteer: text("parent_volunteer").notNull().default("Unclear"),
   interviewStatus: text("interview_status").notNull().default("queued"),
   interviewer: text("interviewer").notNull().default(""),
+  interviewDecision: text("interview_decision").notNull().default("Undecided"),
+  callbackRequested: boolean("callback_requested").notNull().default(false),
   category: text("category").notNull().default("Unsorted"),
   rank: integer("rank").notNull().default(0),
   notes: text("notes").notNull().default(""),

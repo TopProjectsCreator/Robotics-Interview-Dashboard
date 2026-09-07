@@ -15,4 +15,6 @@ export interface QueueApplicant {
   queuePosition: number;
   interviewer: string;
   notes: string;
+  interviewDecision: string;
+  callbackRequested: boolean;
 }

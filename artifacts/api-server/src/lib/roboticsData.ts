@@ -37,6 +37,9 @@ export async function ensureDemoData(): Promise<void> {
         notes: "",
         queuePosition: index,
         interviewStatus: "queued",
+         interviewer: "",
+         interviewDecision: "Undecided",
+         callbackRequested: false,
         transcript: null,
         email: null,
         attachments: null,
@@ -93,6 +96,8 @@ export function applicantResponse(applicant: Applicant) {
     parentVolunteer: applicant.parentVolunteer,
     interviewStatus: applicant.interviewStatus,
     interviewer: applicant.interviewer,
+    interviewDecision: applicant.interviewDecision,
+    callbackRequested: applicant.callbackRequested,
     category: applicant.category,
     rank: applicant.rank,
     notes: applicant.notes,
@@ -110,6 +115,8 @@ export function queueApplicantResponse(applicant: Applicant) {
     queuePosition: applicant.queuePosition,
     interviewer: applicant.interviewer,
     notes: applicant.notes,
+    interviewDecision: applicant.interviewDecision,
+    callbackRequested: applicant.callbackRequested,
   };
 }
 
@@ -275,6 +282,9 @@ export function csvToApplicant(values: string[], headers: string[], queuePositio
     commit10Hours: record.commit_10_hours || "Unclear",
     parentVolunteer: record.parent_volunteer || "Unclear",
     interviewStatus: "queued",
+    interviewer: "",
+    interviewDecision: "Undecided",
+    callbackRequested: false,
     category: "unranked",
     rank: queuePosition + 1,
     notes: "",

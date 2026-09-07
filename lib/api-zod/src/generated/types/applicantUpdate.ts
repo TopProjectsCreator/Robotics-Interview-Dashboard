@@ -12,5 +12,7 @@ export interface ApplicantUpdate {
   notes?: string;
   interviewStatus?: string;
   interviewer?: string;
+  interviewDecision?: string;
+  callbackRequested?: boolean;
   queuePosition?: number;
 }
