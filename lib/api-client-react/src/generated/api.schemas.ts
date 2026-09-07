@@ -98,6 +98,24 @@ export interface ImportResult {
   warnings: string[];
 }
 
+export interface UploadInput {
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export type UploadResponseMetadata = {
+  name: string;
+  size: number;
+  contentType: string;
+};
+
+export interface UploadResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata: UploadResponseMetadata;
+}
+
 export interface QueueApplicant {
   id: string;
   name: string;

@@ -1,0 +1,1 @@
+- [Generated API contract discipline](generated-api-contract-discipline.md) — validate server response shapes against regenerated Zod schemas before wiring frontend hooks.

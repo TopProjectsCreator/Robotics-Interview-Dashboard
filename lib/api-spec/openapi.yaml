@@ -175,6 +175,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportResult"
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [imports]
+      summary: Request a private CSV upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
   /queue:
     get:
       operationId: getQueue
@@ -487,6 +505,34 @@ components:
           type: array
           items:
             type: string
+    UploadInput:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+    UploadResponse:
+      type: object
+      required: [uploadURL, objectPath, metadata]
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+        metadata:
+          type: object
+          required: [name, size, contentType]
+          properties:
+            name:
+              type: string
+            size:
+              type: integer
+            contentType:
+              type: string
     QueueState:
       type: object
       required: [currentPair, nextPair, completedCount, remainingCount, updatedAt]

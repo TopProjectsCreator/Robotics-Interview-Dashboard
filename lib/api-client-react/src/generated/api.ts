@@ -37,7 +37,9 @@ import type {
   LoginInput,
   MessageResponse,
   QueueState,
-  ReorderQueueInput
+  ReorderQueueInput,
+  UploadInput,
+  UploadResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -743,6 +745,77 @@ export const useCommitImport = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCommitImportMutationOptions(options));
+    }
+
+export const getRequestUploadUrlUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/request-url`
+}
+
+/**
+ * @summary Request a private CSV upload URL
+ */
+export const requestUploadUrl = async (uploadInput: UploadInput, options?: Parameters<typeof customFetch>[1]): Promise<UploadResponse> => {
+
+  return customFetch<UploadResponse>(getRequestUploadUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(uploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestUploadUrlMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<UploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<UploadInput>}, TContext> => {
+
+const mutationKey = ['requestUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestUploadUrl>>, {data: BodyType<UploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestUploadUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof requestUploadUrl>>>
+    export type RequestUploadUrlMutationBody = BodyType<UploadInput>
+    export type RequestUploadUrlMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a private CSV upload URL
+ */
+export const useRequestUploadUrl = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<UploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestUploadUrl>>,
+        TError,
+        {data: BodyType<UploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestUploadUrlMutationOptions(options));
     }
 
 export const getGetQueueUrl = () => {

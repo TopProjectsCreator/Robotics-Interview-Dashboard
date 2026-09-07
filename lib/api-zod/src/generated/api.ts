@@ -203,6 +203,26 @@ export const CommitImportResponse = zod.object({
 
 
 /**
+ * @summary Request a private CSV upload URL
+ */
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string(),
+  "size": zod.number().int(),
+  "contentType": zod.string()
+})
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string(),
+  "size": zod.number().int(),
+  "contentType": zod.string()
+})
+})
+
+
+/**
  * @summary Get the current interview queue and pair
  */
 export const GetQueueResponse = zod.object({

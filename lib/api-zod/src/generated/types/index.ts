@@ -35,3 +35,6 @@ export * from './recommendationParameter';
 export * from './reorderQueueInput';
 export * from './searchParameter';
 export * from './sortParameter';
+export * from './uploadInput';
+export * from './uploadResponse';
+export * from './uploadResponseMetadata';
