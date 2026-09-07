@@ -404,6 +404,41 @@ export const UpdateQueueSettingsResponse = zod.object({
 
 
 /**
+ * @summary Reset interview progress without deleting applicant data
+ */
+export const ResetQueueResponse = zod.object({
+  "currentApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
+})),
+  "nextApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
+})),
+  "interviewerLabels": zod.array(zod.string()),
+  "completedCount": zod.number().int(),
+  "remainingCount": zod.number().int(),
+  "updatedAt": zod.string()
+})
+
+
+/**
  * @summary Get persisted interviewer chat
  */
 export const GetInterviewChatResponse = zod.object({

@@ -256,6 +256,19 @@ router.post("/queue/advance", requireAdmin, async (req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
+router.post("/queue/reset", requireAdmin, async (_req, res): Promise<void> => {
+  const applicants = await getApplicants({ sort: "queue" });
+  const now = new Date();
+  for (const [index, applicant] of applicants.entries()) {
+    await db.update(applicantsTable).set({
+      interviewStatus: "queued",
+      queuePosition: index,
+      updatedAt: now,
+    }).where(eq(applicantsTable.id, applicant.id));
+  }
+  res.json(GetQueueResponse.parse(await getQueueState()));
+});
+
 router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => {
   const parsed = UpdateQueueSettingsBody.safeParse(req.body);
   if (!parsed.success) {

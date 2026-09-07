@@ -11,7 +11,7 @@ import {
   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useGetApplicant, useGetAssistantHistory, useGetDashboardSummary,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
-  useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useSendInterviewChat,
+  useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
   useUpdateApplicant,
 } from "@workspace/api-client-react";
@@ -273,6 +273,7 @@ function Queue() {
   const reorder = useReorderQueue();
   const updateApplicant = useUpdateApplicant();
   const updateSettings = useUpdateQueueSettings();
+  const resetQueue = useResetQueue();
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
   const qc = useQueryClient();
@@ -314,6 +315,10 @@ function Queue() {
     const clean = [...new Set(labels.map(label => label.trim()).filter(Boolean))];
     if (clean.length) updateSettings.mutate({ data: { interviewerLabels: clean } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
   };
+  const resetInterviewProgress = () => {
+    if (!window.confirm("Reset interview progress for all applicants? Applicant data, notes, and decisions will be preserved.")) return;
+    resetQueue.mutate(undefined, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+  };
   const submitChat = (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim()) return;
@@ -329,7 +334,7 @@ function Queue() {
     sendChat.mutate({ data: { author: selectedInterviewer || "Interviewer", message: submitted } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }) });
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex items-center gap-2 text-xs text-[#60757c]"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</div>} />
+    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
       <div><p className="text-sm font-semibold">I am working as</p><p className="mt-1 text-xs text-[#7c8c91]">This controls which assigned applicant files you see and labels your chat messages.</p></div>
       <div className="flex flex-wrap gap-2">{q.interviewerLabels.map(label => <button key={label} onClick={() => { setSelectedInterviewer(label); window.localStorage.setItem("selected-interviewer", label); }} className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedInterviewer === label ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-select-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}</div>

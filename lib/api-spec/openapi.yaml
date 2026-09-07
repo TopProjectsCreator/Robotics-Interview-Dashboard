@@ -271,6 +271,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /queue/reset:
+    post:
+      operationId: resetQueue
+      tags: [queue]
+      summary: Reset interview progress without deleting applicant data
+      responses:
+        "200":
+          description: Reset queue state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
   /queue/chat:
     get:
       operationId: getInterviewChat
