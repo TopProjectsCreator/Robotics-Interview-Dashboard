@@ -10,6 +10,20 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Shared admin session
+  - name: dashboard
+    description: Dashboard summaries
+  - name: applicants
+    description: Applicant review and ranking
+  - name: imports
+    description: CSV import workflow
+  - name: queue
+    description: Interview queue coordination
+  - name: display
+    description: Big-screen display state
+  - name: assistant
+    description: AI-assisted analysis
 paths:
   /healthz:
     get:
@@ -24,7 +38,264 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Start an admin session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Get the current admin session
+      responses:
+        "200":
+          description: Session state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: End the current admin session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard totals and grouped insights
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /applicants:
+    get:
+      operationId: listApplicants
+      tags: [applicants]
+      summary: List applicants with filters and sorting
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Grade"
+        - $ref: "#/components/parameters/Recommendation"
+        - $ref: "#/components/parameters/InterviewStatus"
+        - $ref: "#/components/parameters/Category"
+        - $ref: "#/components/parameters/InvalidOnly"
+        - $ref: "#/components/parameters/Sort"
+      responses:
+        "200":
+          description: Applicant list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicantList"
+  /applicants/{id}:
+    get:
+      operationId: getApplicant
+      tags: [applicants]
+      summary: Get an applicant with transcript and notes
+      parameters:
+        - $ref: "#/components/parameters/ApplicantId"
+      responses:
+        "200":
+          description: Applicant detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+        "404":
+          description: Applicant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateApplicant
+      tags: [applicants]
+      summary: Update ranking, category, status, or notes
+      parameters:
+        - $ref: "#/components/parameters/ApplicantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicantUpdate"
+      responses:
+        "200":
+          description: Updated applicant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+  /imports:
+    post:
+      operationId: commitImport
+      tags: [imports]
+      summary: Commit a validated CSV import
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportInput"
+      responses:
+        "201":
+          description: Import committed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+  /queue:
+    get:
+      operationId: getQueue
+      tags: [queue]
+      summary: Get the current interview queue and pair
+      responses:
+        "200":
+          description: Queue state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
+  /queue/advance:
+    post:
+      operationId: advanceQueue
+      tags: [queue]
+      summary: Finish the current pair and advance the queue
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdvanceQueueInput"
+      responses:
+        "200":
+          description: Advanced queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
+  /queue/reorder:
+    post:
+      operationId: reorderQueue
+      tags: [queue]
+      summary: Save the interview order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderQueueInput"
+      responses:
+        "200":
+          description: Updated queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
+  /display/state:
+    get:
+      operationId: getDisplayState
+      tags: [display]
+      summary: Get sanitized big-screen state
+      responses:
+        "200":
+          description: Big-screen display state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisplayState"
+  /assistant/ask:
+    post:
+      operationId: askAssistant
+      tags: [assistant]
+      summary: Ask the AI assistant about the current applicants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantInput"
+      responses:
+        "200":
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
 components:
+  parameters:
+    ApplicantId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+    Grade:
+      name: grade
+      in: query
+      schema:
+        type: string
+    Recommendation:
+      name: recommendation
+      in: query
+      schema:
+        type: string
+    InterviewStatus:
+      name: interviewStatus
+      in: query
+      schema:
+        type: string
+    Category:
+      name: category
+      in: query
+      schema:
+        type: string
+    InvalidOnly:
+      name: invalidOnly
+      in: query
+      schema:
+        type: boolean
+    Sort:
+      name: sort
+      in: query
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +304,278 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    LoginInput:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+    AuthSession:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+        label:
+          type: string
+    DashboardCount:
+      type: object
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: integer
+    DashboardSummary:
+      type: object
+      required:
+        - total
+        - reviewed
+        - invalid
+        - averageScore
+        - scoreBuckets
+        - recommendations
+        - grades
+        - commitments
+        - interviewProgress
+      properties:
+        total:
+          type: integer
+        reviewed:
+          type: integer
+        invalid:
+          type: integer
+        averageScore:
+          type: number
+        scoreBuckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardCount"
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardCount"
+        grades:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardCount"
+        commitments:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardCount"
+        interviewProgress:
+          type: object
+          required: [completed, remaining]
+          properties:
+            completed:
+              type: integer
+            remaining:
+              type: integer
+    Applicant:
+      type: object
+      required:
+        - id
+        - name
+        - grade
+        - aiScore
+        - aiRecommendation
+        - aiSummary
+        - aiStrengths
+        - aiConcerns
+        - roboticsExperience
+        - commit10Hours
+        - parentVolunteer
+        - interviewStatus
+        - category
+        - rank
+        - notes
+        - queuePosition
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        grade:
+          type: string
+        email:
+          type: ["string", "null"]
+        transcript:
+          type: ["string", "null"]
+        aiScore:
+          type: integer
+        aiRecommendation:
+          type: string
+        aiSummary:
+          type: string
+        aiStrengths:
+          type: string
+        aiConcerns:
+          type: string
+        roboticsExperience:
+          type: string
+        commit10Hours:
+          type: string
+        parentVolunteer:
+          type: string
+        interviewStatus:
+          type: string
+        category:
+          type: string
+        rank:
+          type: integer
+        notes:
+          type: string
+        queuePosition:
+          type: integer
+    ApplicantList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Applicant"
+        total:
+          type: integer
+    ApplicantUpdate:
+      type: object
+      properties:
+        category:
+          type: string
+        rank:
+          type: integer
+        notes:
+          type: string
+        interviewStatus:
+          type: string
+        queuePosition:
+          type: integer
+    ImportInput:
+      type: object
+      required: [objectPath, fileName, rowCount]
+      properties:
+        objectPath:
+          type: string
+        fileName:
+          type: string
+        rowCount:
+          type: integer
+    ImportResult:
+      type: object
+      required: [importId, imported, skipped, warnings]
+      properties:
+        importId:
+          type: string
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+    QueueState:
+      type: object
+      required: [currentPair, nextPair, completedCount, remainingCount, updatedAt]
+      properties:
+        currentPair:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueApplicant"
+        nextPair:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueApplicant"
+        completedCount:
+          type: integer
+        remainingCount:
+          type: integer
+        updatedAt:
+          type: string
+    QueueApplicant:
+      type: object
+      required: [id, name, grade, aiScore, category, queuePosition]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        grade:
+          type: string
+        aiScore:
+          type: integer
+        category:
+          type: string
+        queuePosition:
+          type: integer
+    AdvanceQueueInput:
+      type: object
+      properties:
+        note:
+          type: string
+    ReorderQueueInput:
+      type: object
+      required: [applicantIds]
+      properties:
+        applicantIds:
+          type: array
+          items:
+            type: string
+    DisplayState:
+      type: object
+      required: [mode, headline, subheadline, currentPair, updatedAt]
+      properties:
+        mode:
+          type: string
+        headline:
+          type: string
+        subheadline:
+          type: string
+        currentPair:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisplayApplicant"
+        updatedAt:
+          type: string
+    DisplayApplicant:
+      type: object
+      required: [id, name, grade, lane]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        grade:
+          type: string
+        lane:
+          type: string
+    AssistantInput:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        applicantIds:
+          type: array
+          items:
+            type: string
+    AssistantResponse:
+      type: object
+      required: [answer]
+      properties:
+        answer:
+          type: string
 
