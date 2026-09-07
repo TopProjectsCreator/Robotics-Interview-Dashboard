@@ -345,7 +345,7 @@ function Queue() {
         <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full border border-[#f8c84a]/20" />
         <div className="relative">
           <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]">{visibleApplicants.length} assigned to you / {q.currentApplicants.length} active</span></div>
-          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+          <div className={`mt-8 grid gap-4 ${visibleApplicants.length > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
             {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) })} />) : <div className="py-10 text-[#acc2c7]"><p>{selectedInterviewer ? `No applicant is assigned to ${selectedInterviewer} right now.` : "Select your interviewer identity to see your applicant."}</p>{selectedInterviewer && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, selectedInterviewer)} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
           </div>
         </div>
@@ -376,22 +376,30 @@ function Queue() {
 
 const interviewDecisions = ["Undecided", "Strong Yes", "Yes", "Maybe", "No", "Strong No"];
 
-function readableTranscript(raw: string | null | undefined): Array<{ question: string; answer: string }> {
+function readableTranscript(raw: string | null | undefined): Array<{ question: string; type: string; typeLabel: string; answer: string; options: string[]; selected: string[] }> {
   if (!raw?.trim()) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     const entries = Array.isArray(parsed) ? parsed : [parsed];
     return entries.map((entry, index) => {
-      if (!entry || typeof entry !== "object") return { question: `Response ${index + 1}`, answer: String(entry) };
+      if (!entry || typeof entry !== "object") return { question: `Response ${index + 1}`, type: "unknown", typeLabel: "Response", answer: String(entry), options: [], selected: [String(entry)] };
       const record = entry as Record<string, unknown>;
       const answer = record.answer ?? record.response ?? record.value ?? record.text ?? "";
+      const type = String(record.type ?? "text").toLowerCase();
+      const typeLabel = type === "multi" ? "Choose all that apply" : type === "choice" ? "Choose one" : type === "text" ? "Written response" : type;
+      const options = Array.isArray(record.options) ? record.options.map(String) : [];
+      const rawAnswer = record.raw ?? answer;
       return {
         question: String(record.question ?? record.prompt ?? record.label ?? `Response ${index + 1}`),
+        type,
+        typeLabel,
         answer: typeof answer === "string" ? answer : JSON.stringify(answer, null, 2),
+        options,
+        selected: Array.isArray(rawAnswer) ? rawAnswer.map(String) : [String(rawAnswer)],
       };
     });
   } catch {
-    return [{ question: "Submitted responses", answer: raw }];
+    return [{ question: "Submitted responses", type: "unknown", typeLabel: "Response", answer: raw, options: [], selected: [raw] }];
   }
 }
 
@@ -410,16 +418,17 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
   const a = detail.data;
   const transcript = readableTranscript(a?.transcript);
   const looksMalformed = Boolean(a && (/https?:\/\//i.test(a.name) || /@/.test(a.name) || a.name.length > 60));
+  const displayName = looksMalformed ? "Record needs review" : a?.name ?? applicant.name;
   return <article className="rounded-2xl border border-[#365968] bg-[#1d3545] p-5" data-testid={`current-applicant-${applicant.id}`}>
     <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0"><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 break-words text-2xl font-semibold tracking-[-.05em]">{a?.name ?? applicant.name}</h2><p className="mt-1 flex items-center gap-2 text-sm text-[#acc2c7]"><span>Grade {a?.grade ?? applicant.grade}</span><span>·</span><span>{applicant.aiScore < 0 ? "invalid score" : `${applicant.aiScore.toFixed(1)} AI score`}</span></p>{looksMalformed && <p className="mt-2 text-xs font-semibold text-[#f8c84a]">This applicant record looks malformed. Verify it before making a decision.</p>}</div>
+      <div className="min-w-0"><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 break-words text-2xl font-semibold tracking-[-.05em]">{displayName}</h2><p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#acc2c7]"><span>Grade {a?.grade ?? applicant.grade}</span><span>·</span><span>{applicant.aiScore < 0 ? "invalid score" : `${applicant.aiScore.toFixed(1)} AI score`}</span></p>{looksMalformed && <p className="mt-2 break-all text-xs text-[#d2e1e3]">Imported name: {a?.name}</p>}{looksMalformed && <p className="mt-2 text-xs font-semibold text-[#f8c84a]">This applicant record looks malformed. Verify it before making a decision.</p>}</div>
       <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-${applicant.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50">Finish</button></div>
     </div>
     {detail.isLoading ? <div className="mt-5 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-24" /></div> : a && <details open className="mt-5 rounded-xl border border-[#486b77] bg-[#162d3d] p-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-[.12em] text-[#d2e1e3]">Full applicant file</summary>
       <div className="mt-4 grid gap-4 text-sm text-[#d2e1e3]">
         <div className="grid gap-2 sm:grid-cols-2"><p className="flex min-w-0 items-start gap-2 break-all"><Mail size={14} className="mt-0.5 shrink-0 text-[#f8c84a]" />{a.email || "No email provided"}</p><p className="text-[#acc2c7]">Interview status: <strong className="text-white">{a.interviewStatus}</strong></p></div>
         <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Application responses</p><div className="grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Robotics experience</p><p className="mt-1">{a.roboticsExperience || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">10-hour commitment</p><p className="mt-1">{a.commit10Hours || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Parent volunteer</p><p className="mt-1">{a.parentVolunteer || "Not provided"}</p></div></div></div>
-        <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Questions and submitted answers</p>{transcript.length ? <div className="space-y-2">{transcript.map((item, responseIndex) => <div key={`${item.question}-${responseIndex}`} className="rounded-lg bg-[#1d3545] p-3"><p className="text-xs font-semibold text-[#f8c84a]">{item.question}</p><p className="mt-1 whitespace-pre-wrap break-words leading-6 text-[#d2e1e3]">{item.answer || "No answer provided."}</p></div>)}</div> : <p className="leading-6 text-[#d2e1e3]">No transcript or additional responses were provided.</p>}</div>
+        <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Questions, types, choices, and submitted answers</p>{transcript.length ? <div className="space-y-3">{transcript.map((item, responseIndex) => <div key={`${item.question}-${responseIndex}`} className="rounded-lg bg-[#1d3545] p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="min-w-0 flex-1 break-words text-sm font-semibold text-white">{item.question}</p><span className="shrink-0 rounded-full border border-[#5d8790] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.08em] text-[#a8c8cb]">{item.typeLabel}</span></div>{item.options.length > 0 && <div className="mt-3"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#7f9da6]">Choices</p><div className="mt-2 flex flex-wrap gap-2">{item.options.map(option => <span key={option} className={`rounded-md border px-2 py-1 text-xs ${item.selected.includes(option) ? "border-[#51d2ad] bg-[#204f50] text-[#d8fff0]" : "border-[#486b77] text-[#a9c0c4]"}`}>{item.selected.includes(option) ? "✓ " : ""}{option}</span>)}</div></div>}<p className="mt-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#7f9da6]">Submitted answer</p><p className="mt-1 whitespace-pre-wrap break-words leading-6 text-[#d2e1e3]">{item.answer || "No answer provided."}</p></div>)}</div> : <p className="leading-6 text-[#d2e1e3]">No transcript or additional responses were provided.</p>}</div>
         <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">AI readout</p><p className="leading-6">{a.aiSummary || "No AI summary available."}</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><p><strong className="text-[#51d2ad]">Strengths:</strong> {a.aiStrengths || "Not listed"}</p><p><strong className="text-[#ff9b8f]">Concerns:</strong> {a.aiConcerns || "Not listed"}</p></div></div>
       </div>
     </details>}
