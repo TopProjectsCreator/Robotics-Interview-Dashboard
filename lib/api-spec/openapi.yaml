@@ -379,10 +379,86 @@ paths:
       responses:
         "204":
           description: Assistant conversation cleared
+  /assistant/conversations:
+    get:
+      operationId: listAssistantConversations
+      tags: [assistant]
+      summary: List saved assistant conversations
+      responses:
+        "200":
+          description: Saved assistant conversations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversationList"
+    post:
+      operationId: createAssistantConversation
+      tags: [assistant]
+      summary: Create an assistant conversation
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantConversationInput"
+      responses:
+        "201":
+          description: Assistant conversation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversation"
+  /assistant/conversations/{conversationId}:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    patch:
+      operationId: renameAssistantConversation
+      tags: [assistant]
+      summary: Rename an assistant conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantConversationUpdate"
+      responses:
+        "200":
+          description: Renamed assistant conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversation"
+    delete:
+      operationId: deleteAssistantConversation
+      tags: [assistant]
+      summary: Delete an assistant conversation
+      responses:
+        "204":
+          description: Assistant conversation deleted
+  /assistant/conversations/{conversationId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    get:
+      operationId: getAssistantConversationMessages
+      tags: [assistant]
+      summary: Get messages in an assistant conversation
+      responses:
+        "200":
+          description: Assistant conversation messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantHistory"
 components:
   parameters:
     ApplicantId:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    AssistantConversationId:
+      name: conversationId
       in: path
       required: true
       schema:
@@ -852,6 +928,8 @@ components:
       properties:
         question:
           type: string
+        conversationId:
+          type: string
         applicantIds:
           type: array
           items:
@@ -861,6 +939,39 @@ components:
       required: [answer]
       properties:
         answer:
+          type: string
+    AssistantConversation:
+      type: object
+      required: [id, title, createdAt, updatedAt, messageCount]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        messageCount:
+          type: integer
+    AssistantConversationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantConversation"
+    AssistantConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+    AssistantConversationUpdate:
+      type: object
+      required: [title]
+      properties:
+        title:
           type: string
     AssistantHistory:
       type: object

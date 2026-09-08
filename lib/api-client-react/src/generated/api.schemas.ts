@@ -225,11 +225,32 @@ export interface DisplayState {
 
 export interface AssistantInput {
   question: string;
+  conversationId?: string;
   applicantIds?: string[];
 }
 
 export interface AssistantResponse {
   answer: string;
+}
+
+export interface AssistantConversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+export interface AssistantConversationList {
+  items: AssistantConversation[];
+}
+
+export interface AssistantConversationInput {
+  title?: string;
+}
+
+export interface AssistantConversationUpdate {
+  title: string;
 }
 
 export type AssistantHistoryItemsItem = {

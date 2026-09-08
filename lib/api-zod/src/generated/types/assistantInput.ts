@@ -8,5 +8,6 @@
 
 export interface AssistantInput {
   question: string;
+  conversationId?: string;
   applicantIds?: string[];
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantMessagesTable, db, applicantsTable, importsTable, interviewChatMessagesTable, interviewQueueTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, db, applicantsTable, importsTable, interviewChatMessagesTable, interviewQueueTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -14,6 +14,15 @@ import {
   GetInterviewChatResponse,
   GetQueueResponse,
   GetAssistantHistoryResponse,
+  GetAssistantConversationMessagesParams,
+  GetAssistantConversationMessagesResponse,
+  CreateAssistantConversationBody,
+  CreateAssistantConversationResponse,
+  ListAssistantConversationsResponse,
+  RenameAssistantConversationBody,
+  RenameAssistantConversationParams,
+  RenameAssistantConversationResponse,
+  DeleteAssistantConversationParams,
   ListApplicantsQueryParams,
   ListApplicantsResponse,
   ListImportHistoryResponse,
@@ -29,7 +38,7 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/adminAuth";
 import {
   applicantResponse,
@@ -47,6 +56,37 @@ import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+function assistantConversationResponse(conversation: typeof assistantConversationsTable.$inferSelect, messageCount: number) {
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    createdAt: conversation.createdAt.toISOString(),
+    updatedAt: conversation.updatedAt.toISOString(),
+    messageCount,
+  };
+}
+
+async function getOrCreateAssistantConversation(conversationId?: string) {
+  if (conversationId) {
+    const [conversation] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversationId));
+    return conversation;
+  }
+  const [latest] = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt)).limit(1);
+  if (latest) return latest;
+
+  const legacyMessages = await db.select().from(assistantMessagesTable).where(isNull(assistantMessagesTable.conversationId));
+  const [conversation] = await db.insert(assistantConversationsTable).values({
+    id: randomUUID(),
+    title: legacyMessages.length ? "Imported conversation" : "New conversation",
+  }).returning();
+  if (legacyMessages.length && conversation) {
+    await db.update(assistantMessagesTable)
+      .set({ conversationId: conversation.id })
+      .where(isNull(assistantMessagesTable.conversationId));
+  }
+  return conversation;
+}
 
 async function readImport(objectPath: string) {
   const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
@@ -373,6 +413,11 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const conversation = await getOrCreateAssistantConversation(parsed.data.conversationId);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
   const all = await getApplicants({ sort: "score" });
   const selected = parsed.data.applicantIds?.length
     ? all.filter((applicant) => parsed.data.applicantIds?.includes(applicant.id))
@@ -387,7 +432,9 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     category: applicant.category,
     notes: applicant.notes,
   }));
-  const previousMessages = await db.select().from(assistantMessagesTable).orderBy(asc(assistantMessagesTable.createdAt));
+  const previousMessages = await db.select().from(assistantMessagesTable)
+    .where(eq(assistantMessagesTable.conversationId, conversation.id))
+    .orderBy(asc(assistantMessagesTable.createdAt));
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0.2,
@@ -409,11 +456,112 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   const answer = completion.choices[0]?.message.content ?? "I could not produce an answer for that question.";
   await db.insert(assistantMessagesTable).values({
     id: randomUUID(),
+    conversationId: conversation.id,
     question: parsed.data.question,
     answer,
     applicantIds: JSON.stringify(parsed.data.applicantIds ?? []),
   });
+  const title = conversation.title === "New conversation"
+    ? parsed.data.question.trim().replace(/\s+/g, " ").slice(0, 64) || conversation.title
+    : conversation.title;
+  await db.update(assistantConversationsTable).set({
+    title,
+    updatedAt: new Date(),
+  }).where(eq(assistantConversationsTable.id, conversation.id));
   res.json(AskAssistantResponse.parse({ answer }));
+});
+
+router.get("/assistant/conversations", requireAdmin, async (_req, res): Promise<void> => {
+  await getOrCreateAssistantConversation();
+  const conversations = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt));
+  const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable);
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    if (message.conversationId) counts.set(message.conversationId, (counts.get(message.conversationId) ?? 0) + 1);
+  }
+  res.json(ListAssistantConversationsResponse.parse({
+    items: conversations.map(conversation => assistantConversationResponse(conversation, counts.get(conversation.id) ?? 0)),
+  }));
+});
+
+router.post("/assistant/conversations", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = CreateAssistantConversationBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const title = parsed.data.title?.trim() || "New conversation";
+  const [conversation] = await db.insert(assistantConversationsTable).values({
+    id: randomUUID(),
+    title: title.slice(0, 80),
+  }).returning();
+  res.status(201).json(CreateAssistantConversationResponse.parse(assistantConversationResponse(conversation, 0)));
+});
+
+router.patch("/assistant/conversations/:conversationId", requireAdmin, async (req, res): Promise<void> => {
+  const params = RenameAssistantConversationParams.safeParse(req.params);
+  const body = RenameAssistantConversationBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid assistant conversation rename" });
+    return;
+  }
+  const title = body.data.title.trim();
+  if (!title) {
+    res.status(400).json({ error: "Conversation title cannot be empty" });
+    return;
+  }
+  const [conversation] = await db.update(assistantConversationsTable).set({
+    title: title.slice(0, 80),
+    updatedAt: new Date(),
+  }).where(eq(assistantConversationsTable.id, params.data.conversationId)).returning();
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const messages = await db.select({ id: assistantMessagesTable.id }).from(assistantMessagesTable).where(eq(assistantMessagesTable.conversationId, conversation.id));
+  res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, messages.length)));
+});
+
+router.delete("/assistant/conversations/:conversationId", requireAdmin, async (req, res): Promise<void> => {
+  const params = DeleteAssistantConversationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [conversation] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, params.data.conversationId));
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  await db.delete(assistantMessagesTable).where(eq(assistantMessagesTable.conversationId, conversation.id));
+  await db.delete(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversation.id));
+  res.status(204).send();
+});
+
+router.get("/assistant/conversations/:conversationId/messages", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetAssistantConversationMessagesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(eq(assistantConversationsTable.id, params.data.conversationId));
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const messages = await db.select().from(assistantMessagesTable)
+    .where(eq(assistantMessagesTable.conversationId, conversation.id))
+    .orderBy(asc(assistantMessagesTable.createdAt));
+  res.json(GetAssistantConversationMessagesResponse.parse({
+    items: messages.map(message => ({
+      id: message.id,
+      question: message.question,
+      answer: message.answer,
+      createdAt: message.createdAt.toISOString(),
+    })),
+  }));
 });
 
 router.get("/assistant/history", requireAdmin, async (_req, res): Promise<void> => {
@@ -430,6 +578,7 @@ router.get("/assistant/history", requireAdmin, async (_req, res): Promise<void> 
 
 router.delete("/assistant/history", requireAdmin, async (_req, res): Promise<void> => {
   await db.delete(assistantMessagesTable);
+  await db.delete(assistantConversationsTable);
   res.status(204).send();
 });
 

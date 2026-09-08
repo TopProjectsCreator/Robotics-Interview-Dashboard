@@ -4,12 +4,14 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation } from "wouter
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-  RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2,
+  Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2,
 } from "lucide-react";
 import {
-  getGetApplicantQueryKey, getGetAssistantHistoryQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
+  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantHistoryQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
+  getListAssistantConversationsQueryKey,
   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey,
-  useAskAssistant, useAdvanceQueue, useClearAssistantHistory, useCommitImport, useGetApplicant, useGetAssistantHistory, useGetDashboardSummary,
+  useAskAssistant, useAdvanceQueue, useClearAssistantHistory, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConversationMessages, useGetAssistantHistory, useGetDashboardSummary,
+  useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
@@ -613,6 +615,126 @@ function Display() {
   return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => setAudioReady(!audioReady)} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className="mx-auto mt-8 grid max-h-[45vh] w-full max-w-4xl gap-5 overflow-hidden sm:grid-cols-2">{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className="mt-4 break-words text-3xl font-semibold tracking-[-.04em] md:text-5xl">{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => setAudioReady(true)} preload="none" data-testid="display-announcement-audio" /></main>;
 }
 
+function ConversationAssistant() {
+  const [question, setQuestion] = useState("");
+  const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState("");
+  const [renamingId, setRenamingId] = useState("");
+  const [renameValue, setRenameValue] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const ask = useAskAssistant();
+  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
+  const activeMessages = useGetAssistantConversationMessages(activeConversationId, {
+    query: {
+      queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId),
+      enabled: Boolean(activeConversationId),
+      refetchInterval: 3000,
+    },
+  });
+  const createConversation = useCreateAssistantConversation();
+  const renameConversation = useRenameAssistantConversation();
+  const deleteConversation = useDeleteAssistantConversation();
+  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
+  const prompts = ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
+
+  useEffect(() => {
+    const items = conversations.data?.items ?? [];
+    if (items.length && (!activeConversationId || !items.some(item => item.id === activeConversationId))) {
+      setActiveConversationId(items[0].id);
+    }
+  }, [conversations.data, activeConversationId]);
+
+  useEffect(() => {
+    setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer })) ?? []);
+  }, [activeConversationId, activeMessages.data]);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!question.trim() || !activeConversationId) return;
+    const q = question.trim();
+    setQuestion("");
+    ask.mutate({ data: { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined } }, {
+      onSuccess: response => {
+        setHistory(current => [...current, { q, a: response.answer }]);
+        queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
+        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      },
+    });
+  };
+
+  const newConversation = () => {
+    if (createConversation.isPending) return;
+    createConversation.mutate({ data: {} }, {
+      onSuccess: conversation => {
+        setActiveConversationId(conversation.id);
+        setHistory([]);
+        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      },
+    });
+  };
+
+  const saveRename = (event: React.FormEvent, id: string) => {
+    event.preventDefault();
+    const title = renameValue.trim();
+    if (!title || renameConversation.isPending) return;
+    renameConversation.mutate({ conversationId: id, data: { title } }, {
+      onSuccess: () => {
+        setRenamingId("");
+        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      },
+    });
+  };
+
+  const deleteConversationById = (id: string, title: string) => {
+    if (deleteConversation.isPending || !window.confirm(`Delete "${title}" and its messages?`)) return;
+    deleteConversation.mutate({ conversationId: id }, {
+      onSuccess: () => {
+        if (activeConversationId === id) {
+          const next = conversations.data?.items.find(item => item.id !== id);
+          setActiveConversationId(next?.id ?? "");
+          setHistory([]);
+        }
+        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      },
+    });
+  };
+
+  return <div className="fade-up">
+    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="Keep separate conversations for different decisions, just like a shared control-room notebook." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} />
+    <div className="grid gap-5 xl:grid-cols-[235px_minmax(0,1fr)_330px]">
+      <section className="rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)]">
+        <div className="mb-4 flex items-center justify-between">
+          <div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Workspace</p><h2 className="mt-1 font-semibold">Conversations</h2></div>
+          <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-assistant-conversation" aria-label="New conversation" title="New conversation" className="rounded-lg bg-[#e3f4f2] p-2 text-[#16869a] transition hover:bg-[#cfe9e5] disabled:opacity-50"><Plus size={17} /></button>
+        </div>
+        <div className="space-y-1">
+          {conversations.isLoading && [1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}
+          {conversations.data?.items.map(conversation => <div key={conversation.id} className={`rounded-xl border p-2 transition ${conversation.id === activeConversationId ? "border-[#a9d3ce] bg-[#eff8f6]" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9]"}`}>
+            {renamingId === conversation.id
+              ? <form onSubmit={event => saveRename(event, conversation.id)} className="flex items-center gap-1"><input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#b7d5d1] bg-white px-2 py-1.5 text-xs outline-none focus:border-[#16869a]" /><button type="submit" aria-label="Save conversation name" className="rounded-md p-1 text-[#16869a] hover:bg-[#dff2ee]"><Check size={14} /></button><button type="button" onClick={() => setRenamingId("")} aria-label="Cancel rename" className="rounded-md p-1 text-[#718189] hover:bg-[#edf1f1]"><X size={14} /></button></form>
+              : <div className="flex items-center gap-1"><button onClick={() => setActiveConversationId(conversation.id)} className="min-w-0 flex-1 text-left" data-testid={`button-assistant-conversation-${conversation.id}`}><p className="truncate text-xs font-semibold text-[#38555e]">{conversation.title}</p><p className="mt-1 text-[10px] text-[#819197]">{conversation.messageCount} {conversation.messageCount === 1 ? "exchange" : "exchanges"}</p></button><button onClick={() => { setRenamingId(conversation.id); setRenameValue(conversation.title); }} aria-label={`Rename ${conversation.title}`} title="Rename conversation" data-testid={`button-rename-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#7d9398] hover:bg-[#dff2ee] hover:text-[#16869a]"><Pencil size={13} /></button><button onClick={() => deleteConversationById(conversation.id, conversation.title)} aria-label={`Delete ${conversation.title}`} title="Delete conversation" data-testid={`button-delete-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#a34d46] hover:bg-[#fff1ef]"><Trash2 size={13} /></button></div>}
+          </div>)}
+          {!conversations.isLoading && !conversations.data?.items.length && <p className="px-2 py-5 text-xs leading-5 text-[#7c8c91]">Start a conversation to keep a decision thread together.</p>}
+        </div>
+      </section>
+
+      <section className="min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5">
+        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{conversations.data?.items.find(item => item.id === activeConversationId)?.title || "Control room assistant"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the coordinator team.</p></div><span className="ml-auto hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span></div>
+        <div className="space-y-5 py-6">
+          {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
+          {!activeMessages.isLoading && !history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in this conversation.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
+          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><MarkdownContent source={item.a} className="text-[#52666e]" /></div></div>)}
+          {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
+          {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}
+        </div>
+        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+      </section>
+
+      <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section>
+    </div>
+  </div>;
+}
+
 function Assistant() {
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
@@ -644,6 +766,6 @@ function Assistant() {
   return <div className="fade-up"><PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A filter-aware second set of eyes. Bring a question; keep the final call human." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} /><div className="grid gap-5 xl:grid-cols-[1fr_330px]"><section className="min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div><h2 className="font-semibold">Control room assistant</h2><p className="text-xs text-[#7c8c91]">Applicant data and assistant history stay inside this workspace.</p></div><button onClick={clearConversation} disabled={!history.length || ask.isPending || clearHistory.isPending} aria-label="Clear assistant conversation" title="Clear shared assistant conversation" data-testid="button-clear-assistant-conversation" className="ml-auto rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30">{clearHistory.isPending ? <RefreshCw size={17} className="animate-spin" /> : <Trash2 size={17} />}</button></div><div className="space-y-5 py-6">{!history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in the interview bay.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((p, i) => <button key={p} onClick={() => setQuestion(p)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{p}</button>)}</div></div>}{history.map((h, i) => <div key={`${h.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{h.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><MarkdownContent source={h.a} className="text-[#52666e]" /></div></div>)}{ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}{ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}</div><form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={e => setQuestion(e.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim()} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form></section><Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(a => <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(a.id)} onChange={e => setSelected(s => e.target.checked ? [...s,a.id] : s.filter(x => x !== a.id))} data-testid={`checkbox-assistant-${a.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{a.name}</span><span className="mono text-[10px] text-[#16869a]">{a.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section></div></div>;
 }
 
-function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><Assistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export default App;

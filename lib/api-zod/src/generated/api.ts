@@ -530,6 +530,7 @@ export const GetDisplayStateResponse = zod.object({
  */
 export const AskAssistantBody = zod.object({
   "question": zod.string(),
+  "conversationId": zod.string().optional(),
   "applicantIds": zod.array(zod.string()).optional()
 })
 
@@ -555,5 +556,82 @@ export const GetAssistantHistoryResponse = zod.object({
  * @summary Clear the persisted assistant conversation
  */
 export const ClearAssistantHistoryResponse = zod.void()
+
+
+/**
+ * @summary List saved assistant conversations
+ */
+export const ListAssistantConversationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "messageCount": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Create an assistant conversation
+ */
+export const CreateAssistantConversationBody = zod.object({
+  "title": zod.string().optional()
+})
+
+export const CreateAssistantConversationResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "messageCount": zod.number().int()
+})
+
+
+/**
+ * @summary Rename an assistant conversation
+ */
+export const RenameAssistantConversationParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const RenameAssistantConversationBody = zod.object({
+  "title": zod.string()
+})
+
+export const RenameAssistantConversationResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string(),
+  "messageCount": zod.number().int()
+})
+
+
+/**
+ * @summary Delete an assistant conversation
+ */
+export const DeleteAssistantConversationParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const DeleteAssistantConversationResponse = zod.void()
+
+
+/**
+ * @summary Get messages in an assistant conversation
+ */
+export const GetAssistantConversationMessagesParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const GetAssistantConversationMessagesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "question": zod.string(),
+  "answer": zod.string(),
+  "createdAt": zod.string()
+}))
+})
 
 
