@@ -4,7 +4,7 @@ import { Link, Route, Router as WouterRouter, Switch, useLocation } from "wouter
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-  RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, UsersRound, Volume2, X,
+  RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, UsersRound, Volume2, X, Maximize2, Minimize2,
 } from "lucide-react";
 import {
   getGetApplicantQueryKey, getGetAssistantHistoryQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
@@ -163,6 +163,44 @@ function MarkdownContent({ source, className = "" }: { source: string; className
   return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 ${className}`}>{blocks}</div>;
 }
 
+function useFullscreen() {
+  const [browserFullscreen, setBrowserFullscreen] = useState(false);
+  const [iframeFullscreen, setIframeFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setBrowserFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (iframeFullscreen) {
+      setIframeFullscreen(false);
+      return;
+    }
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      // Some host platforms omit allow="fullscreen" on their iframe. The
+      // fallback still expands the app to the full iframe viewport.
+      setIframeFullscreen(true);
+    }
+  };
+
+  return { isFullscreen: browserFullscreen || iframeFullscreen, toggleFullscreen };
+}
+
+function FullscreenButton({ active, onClick, dark = false }: { active: boolean; onClick: () => void; dark?: boolean }) {
+  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a]"}`}>
+    {active ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+    <span className="hidden sm:inline">{active ? "Exit fullscreen" : "Fullscreen"}</span>
+  </button>;
+}
+
 function Login() {
   const [password, setPassword] = useState("");
   const [location, setLocation] = useLocation();
@@ -190,12 +228,13 @@ function Login() {
 function Shell({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
+  const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const logout = useLogout();
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Login />;
   const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/assistant", label: "AI assistant", icon: Bot }];
-  return <div className="min-h-[100dvh] bg-[#f3f6f5] text-[#182232]"><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav><div className="mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div><button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-3"><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main></div></div>;
+  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav><div className="mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div><button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main></div></div>;
 }
 
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail?: string; action?: ReactNode }) {
@@ -429,19 +468,25 @@ function Queue() {
     if (!window.confirm("Reset interview progress for all applicants? Applicant data, notes, and decisions will be preserved.")) return;
     resetQueue.mutate(undefined, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
   };
-  const submitChat = (event: React.FormEvent) => {
+  const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim()) return;
     const submitted = message.trim();
     setMessage("");
-    if (/@ai\b/i.test(submitted)) {
-      const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-      ask.mutate({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id) } }, {
-        onSuccess: response => sendChat.mutate({ data: { author: "AI assistant", message: response.answer } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }) }),
-      });
-      return;
+    const author = selectedInterviewer || "Interviewer";
+    try {
+      // Persist the original @ai request first so every interviewer sees the
+      // same prompt in the shared chat history.
+      await sendChat.mutateAsync({ data: { author, message: submitted } });
+      if (/@ai\b/i.test(submitted)) {
+        const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
+        const response = await ask.mutateAsync({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id) } });
+        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer } });
+      }
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+    } catch {
+      // The persisted prompt remains visible if the AI request fails.
     }
-    sendChat.mutate({ data: { author: selectedInterviewer || "Interviewer", message: submitted } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }) });
   };
   return <div className="fade-up">
     <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
