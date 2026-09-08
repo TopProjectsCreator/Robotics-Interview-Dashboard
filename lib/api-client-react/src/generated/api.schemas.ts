@@ -25,6 +25,8 @@ export interface LoginInput {
 export interface AuthSession {
   authenticated: boolean;
   label?: string;
+  /** Session token for embedded clients that cannot use third-party cookies */
+  token?: string;
 }
 
 export interface DashboardCount {

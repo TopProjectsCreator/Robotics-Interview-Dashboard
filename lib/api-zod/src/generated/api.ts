@@ -29,7 +29,8 @@ export const LoginBody = zod.object({
 
 export const LoginResponse = zod.object({
   "authenticated": zod.boolean(),
-  "label": zod.string().optional()
+  "label": zod.string().optional(),
+  "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
 
@@ -38,7 +39,8 @@ export const LoginResponse = zod.object({
  */
 export const GetSessionResponse = zod.object({
   "authenticated": zod.boolean(),
-  "label": zod.string().optional()
+  "label": zod.string().optional(),
+  "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
 

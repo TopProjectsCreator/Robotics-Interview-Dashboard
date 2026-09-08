@@ -450,6 +450,9 @@ components:
           type: boolean
         label:
           type: string
+        token:
+          type: string
+          description: Session token for embedded clients that cannot use third-party cookies
     DashboardCount:
       type: object
       required: [label, value]

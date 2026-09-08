@@ -33,12 +33,24 @@ export function isValidAdminSession(value: unknown): boolean {
   );
 }
 
+function bearerSession(req: Request): string | undefined {
+  const authorization = req.get("authorization");
+  if (!authorization?.startsWith("Bearer ")) return undefined;
+  return authorization.slice("Bearer ".length).trim() || undefined;
+}
+
+export function requestAdminSession(req: Request): string | undefined {
+  const bearer = bearerSession(req);
+  if (bearer && isValidAdminSession(bearer)) return bearer;
+  return req.cookies?.[SESSION_COOKIE];
+}
+
 export function attachAdminSession(
   req: Request,
   _res: Response,
   next: NextFunction,
 ): void {
-  const session = req.cookies?.[SESSION_COOKIE];
+  const session = requestAdminSession(req);
   (req as Request & { isAuthenticated?: () => boolean }).isAuthenticated =
     () => isValidAdminSession(session);
   next();
@@ -49,7 +61,7 @@ export function requireAdmin(
   res: Response,
   next: NextFunction,
 ): void {
-  const session = req.cookies?.[SESSION_COOKIE];
+  const session = requestAdminSession(req);
   if (!isValidAdminSession(session)) {
     res.status(401).json({ error: "Authentication required" });
     return;

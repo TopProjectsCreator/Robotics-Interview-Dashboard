@@ -9,6 +9,7 @@ import {
   clearAdminCookie,
   createAdminSession,
   isValidAdminSession,
+  requestAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
 
@@ -25,12 +26,14 @@ router.post("/auth/login", (req, res): void => {
     res.status(401).json({ error: "Incorrect password" });
     return;
   }
-  setAdminCookie(res, createAdminSession());
-  res.json(LoginResponse.parse({ authenticated: true, label: "Coordinator" }));
+  const session = createAdminSession();
+  setAdminCookie(res, session);
+  res.json(LoginResponse.parse({ authenticated: true, label: "Coordinator", token: session }));
 });
 
 router.get("/auth/session", (req, res): void => {
-  const authenticated = isValidAdminSession(req.cookies?.robotics_admin_session);
+  const session = requestAdminSession(req);
+  const authenticated = isValidAdminSession(session);
   res.json(GetSessionResponse.parse({ authenticated, label: authenticated ? "Coordinator" : undefined }));
 });
 
