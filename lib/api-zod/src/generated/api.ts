@@ -551,3 +551,9 @@ export const GetAssistantHistoryResponse = zod.object({
 })
 
 
+/**
+ * @summary Clear the persisted assistant conversation
+ */
+export const ClearAssistantHistoryResponse = zod.void()
+
+

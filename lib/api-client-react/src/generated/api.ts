@@ -1707,3 +1707,74 @@ export function useGetAssistantHistory<TData = Awaited<ReturnType<typeof getAssi
 
 
 
+export const getClearAssistantHistoryUrl = () => {
+
+
+
+
+  return `/api/assistant/history`
+}
+
+/**
+ * @summary Clear the persisted assistant conversation
+ */
+export const clearAssistantHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getClearAssistantHistoryUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getClearAssistantHistoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearAssistantHistory>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearAssistantHistory>>, TError,void, TContext> => {
+
+const mutationKey = ['clearAssistantHistory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearAssistantHistory>>, void> = () => {
+
+
+          return  clearAssistantHistory(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearAssistantHistoryMutationResult = NonNullable<Awaited<ReturnType<typeof clearAssistantHistory>>>
+
+    export type ClearAssistantHistoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the persisted assistant conversation
+ */
+export const useClearAssistantHistory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearAssistantHistory>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearAssistantHistory>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearAssistantHistoryMutationOptions(options));
+    }
+
