@@ -62,6 +62,107 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;
 }
 
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const tokenPattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = tokenPattern.exec(text))) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    const token = match[0];
+    const tokenKey = `inline-${key++}`;
+    const link = token.match(/^\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^)]+)\)$/);
+    if (link) {
+      nodes.push(<a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
+    } else if (token.startsWith("**") || token.startsWith("__")) {
+      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2))}</strong>);
+    } else if (token.startsWith("`")) {
+      nodes.push(<code key={tokenKey} className="rounded bg-[#edf4f3] px-1 py-0.5 font-mono text-[.9em] text-[#315a61]">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith("*") || token.startsWith("_")) {
+      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1))}</em>);
+    }
+    cursor = match.index + token.length;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes.length ? nodes : [text];
+}
+
+function MarkdownContent({ source, className = "" }: { source: string; className?: string }) {
+  const blocks: ReactNode[] = [];
+  const paragraph: string[] = [];
+  const orderedItems: string[] = [];
+  const unorderedItems: string[] = [];
+  let key = 0;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "))}</p>);
+    paragraph.length = 0;
+  };
+  const flushLists = () => {
+    if (orderedItems.length) {
+      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item)}</li>)}</ol>);
+      orderedItems.length = 0;
+    }
+    if (unorderedItems.length) {
+      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item)}</li>)}</ul>);
+      unorderedItems.length = 0;
+    }
+  };
+  const flush = () => {
+    flushParagraph();
+    flushLists();
+  };
+
+  source.replace(/\r\n?/g, "\n").split("\n").forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flush();
+      return;
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flush();
+      const Heading = `h${Math.min(heading[1].length, 4)}` as "h1" | "h2" | "h3" | "h4";
+      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2])}</Heading>);
+      return;
+    }
+    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      if (unorderedItems.length) flushLists();
+      orderedItems.push(ordered[1]);
+      return;
+    }
+    const unordered = trimmed.match(/^[-*+]\s+(.+)$/);
+    if (unordered) {
+      flushParagraph();
+      if (orderedItems.length) flushLists();
+      unorderedItems.push(unordered[1]);
+      return;
+    }
+    const quote = trimmed.match(/^>\s?(.+)$/);
+    if (quote) {
+      flush();
+      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1])}</blockquote>);
+      return;
+    }
+    if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
+      flush();
+      blocks.push(<hr key={`rule-${key++}`} className="border-[#dce9e8]" />);
+      return;
+    }
+    if (orderedItems.length || unorderedItems.length) flushLists();
+    paragraph.push(trimmed);
+  });
+  flush();
+
+  return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 ${className}`}>{blocks}</div>;
+}
+
 function Login() {
   const [password, setPassword] = useState("");
   const [location, setLocation] = useLocation();
@@ -360,7 +461,7 @@ function Queue() {
       </section>
       <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
         <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
-        <div className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chat.data?.items.length ? chat.data.items.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><p className="mt-1 text-sm leading-5 text-[#52666e]">{item.message}</p></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+        <div className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chat.data?.items.length ? chat.data.items.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
         <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button disabled={!message.trim() || sendChat.isPending || ask.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div></form>
       </section>
     </div>
@@ -477,7 +578,7 @@ function Assistant() {
     ask.mutate({ data: { question: q, applicantIds: selected.length ? selected : undefined } }, { onSuccess: r => setHistory(h => [...h, { q, a: r.answer }]) });
   };
   const prompts = ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
-  return <div className="fade-up"><PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A filter-aware second set of eyes. Bring a question; keep the final call human." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} /><div className="grid gap-5 xl:grid-cols-[1fr_330px]"><section className="min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div><h2 className="font-semibold">Control room assistant</h2><p className="text-xs text-[#7c8c91]">Applicant data and assistant history stay inside this workspace.</p></div></div><div className="space-y-5 py-6">{!history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in the interview bay.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((p, i) => <button key={p} onClick={() => setQuestion(p)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{p}</button>)}</div></div>}{history.map((h, i) => <div key={`${h.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{h.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><span>{h.a}</span></div></div>)}{ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}{ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}</div><form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={e => setQuestion(e.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim()} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form></section><Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(a => <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(a.id)} onChange={e => setSelected(s => e.target.checked ? [...s,a.id] : s.filter(x => x !== a.id))} data-testid={`checkbox-assistant-${a.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{a.name}</span><span className="mono text-[10px] text-[#16869a]">{a.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A filter-aware second set of eyes. Bring a question; keep the final call human." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} /><div className="grid gap-5 xl:grid-cols-[1fr_330px]"><section className="min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div><h2 className="font-semibold">Control room assistant</h2><p className="text-xs text-[#7c8c91]">Applicant data and assistant history stay inside this workspace.</p></div></div><div className="space-y-5 py-6">{!history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in the interview bay.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((p, i) => <button key={p} onClick={() => setQuestion(p)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{p}</button>)}</div></div>}{history.map((h, i) => <div key={`${h.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{h.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><MarkdownContent source={h.a} className="text-[#52666e]" /></div></div>)}{ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}{ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}</div><form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={e => setQuestion(e.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim()} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form></section><Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(a => <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(a.id)} onChange={e => setSelected(s => e.target.checked ? [...s,a.id] : s.filter(x => x !== a.id))} data-testid={`checkbox-assistant-${a.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{a.name}</span><span className="mono text-[10px] text-[#16869a]">{a.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section></div></div>;
 }
 
 function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><Assistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
