@@ -372,6 +372,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantHistory"
+    delete:
+      operationId: clearAssistantHistory
+      tags: [assistant]
+      summary: Clear the persisted assistant conversation
+      responses:
+        "204":
+          description: Assistant conversation cleared
 components:
   parameters:
     ApplicantId:
