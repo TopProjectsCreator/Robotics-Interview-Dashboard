@@ -27,7 +27,10 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// The dashboard can be hosted inside a coordinator's iframe. Reflect the
+// embedding origin so browser requests are allowed to include the session
+// cookie, while keeping the API usable from the same-origin preview too.
+app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser());
 app.use(attachAdminSession);
 app.use(express.json());

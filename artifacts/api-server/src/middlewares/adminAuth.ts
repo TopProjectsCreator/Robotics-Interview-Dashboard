@@ -58,10 +58,20 @@ export function requireAdmin(
 }
 
 export function setAdminCookie(res: Response, session: string): void {
+  const request = res.req;
+  const forwardedProto = request.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const isSecureRequest =
+    request.secure ||
+    forwardedProto === "https" ||
+    process.env.NODE_ENV === "production";
+
   res.cookie(SESSION_COOKIE, session, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // SameSite=None is required when the dashboard is embedded by a
+    // different site. Keep local HTTP development compatible with browsers
+    // that reject SameSite=None cookies without Secure.
+    sameSite: isSecureRequest ? "none" : "lax",
+    secure: isSecureRequest,
     maxAge: SESSION_TTL_MS,
     path: "/",
   });
