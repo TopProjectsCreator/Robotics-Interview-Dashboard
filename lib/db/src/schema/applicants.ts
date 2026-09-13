@@ -7,6 +7,7 @@ export const applicantsTable = pgTable("applicants", {
   name: text("name").notNull(),
   grade: text("grade").notNull().default("Unknown"),
   email: text("email"),
+  photoUrl: text("photo_url"),
   transcript: text("transcript"),
   attachments: text("attachments"),
   aiScore: integer("ai_score").notNull().default(-1),

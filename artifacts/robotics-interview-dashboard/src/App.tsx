@@ -1,24 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-  History, Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2,
+   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download,
 } from "lucide-react";
 import {
-  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantHistoryQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
+  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
   getListAssistantConversationsQueryKey,
   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey,
-  useAskAssistant, useAdvanceQueue, useClearAssistantHistory, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConversationMessages, useGetAssistantHistory, useGetDashboardSummary,
+  useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
+  useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue,
+  useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
   useUpdateApplicant,
 } from "@workspace/api-client-react";
-import type { Applicant, ApplicantUpdate, DashboardCount, DisplayState, ImportPreview, QueueApplicant } from "@workspace/api-client-react";
-import { clearStoredAuthToken, storeAuthToken } from "./authSession";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, DashboardCount, DashboardSummary, DisplayState, ImportPreview, QueueApplicant } from "@workspace/api-client-react";
+import type { LucideIcon } from "lucide-react";
+import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -65,7 +70,7 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
 }
 
 function renderInlineMarkdown(text: string): ReactNode[] {
-  const tokenPattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
+  const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -75,6 +80,12 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
     const token = match[0];
     const tokenKey = `inline-${key++}`;
+    const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/)[^)]+)\)$/);
+    if (image) {
+      nodes.push(<img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
+      cursor = match.index + token.length;
+      continue;
+    }
     const link = token.match(/^\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^)]+)\)$/);
     if (link) {
       nodes.push(<a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
@@ -92,7 +103,26 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return nodes.length ? nodes : [text];
 }
 
+function sanitizeSvg(raw: string): string | null {
+  const svg = raw.trim();
+  if (!svg || svg.length > 20000) return null;
+  try {
+    const clean = DOMPurify.sanitize(svg, {
+      USE_PROFILES: { svg: true },
+      FORBID_TAGS: ["foreignObject", "script", "style", "iframe", "embed", "object", "link", "meta", "a"],
+      FORBID_ATTR: ["href", "xlink:href", "src", "action", "formaction", "poster", "data"],
+    });
+    if (!/<svg[\s>]/i.test(clean)) return null;
+    return clean;
+  } catch {
+    return null;
+  }
+}
+
+const MARKDOWN_MAX_CHARS = 50000;
+
 function MarkdownContent({ source, className = "" }: { source: string; className?: string }) {
+  const capped = source.length > MARKDOWN_MAX_CHARS ? `${source.slice(0, MARKDOWN_MAX_CHARS)}\n\n…(truncated)` : source;
   const blocks: ReactNode[] = [];
   const paragraph: string[] = [];
   const orderedItems: string[] = [];
@@ -119,11 +149,40 @@ function MarkdownContent({ source, className = "" }: { source: string; className
     flushLists();
   };
 
-  source.replace(/\r\n?/g, "\n").split("\n").forEach(line => {
+  const renderTextSegment = (segment: string) => {
+  segment.replace(/\r\n?/g, "\n").split("\n").forEach((line, lineIndex, allLines) => {
     const trimmed = line.trim();
     if (!trimmed) {
       flush();
       return;
+    }
+    if (trimmed.includes("|")) {
+      const nextLine = allLines[lineIndex + 1] ?? "";
+      const delimiterCells = nextLine.trim().replace(/^\||\|$/g, "").split("|");
+      const isTable = delimiterCells.length > 0 && delimiterCells.every(cell => /^:?-{1,}:?$/.test(cell.trim()));
+      if (isTable) {
+        flush();
+        const splitRow = (row: string) => row.trim().replace(/^\||\|$/g, "").split("|").map(cell => cell.trim());
+        const header = splitRow(trimmed);
+        const aligns = delimiterCells.map(cell => {
+          const marker = cell.trim();
+          if (/^:.+:$/.test(marker)) return "center" as const;
+          if (/:$/.test(marker)) return "right" as const;
+          return "left" as const;
+        });
+        const bodyRows: string[][] = [];
+        let consumed = 1;
+        for (let rowIndex = lineIndex + 2; rowIndex < allLines.length; rowIndex += 1) {
+          const rowLine = allLines[rowIndex].trim();
+          if (!rowLine || !rowLine.includes("|")) break;
+          consumed += 1;
+          const rowCells = splitRow(rowLine);
+          if (rowCells.length === header.length) bodyRows.push(rowCells);
+        }
+        blocks.push(<div key={`table-${key++}`} className="overflow-x-auto rounded-xl border border-[#dce9e8]"><table className="w-full border-collapse text-sm"><thead><tr className="bg-[#edf4f3]">{header.map((cell, cellIndex) => <th key={`th-${key++}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#dce9e8] px-3 py-2 font-semibold text-[#183a4b]">{renderInlineMarkdown(cell)}</th>)}</tr></thead><tbody>{bodyRows.map(row => <tr key={`tr-${key++}`} className="odd:bg-white even:bg-[#f7faf9]">{row.map((cell, cellIndex) => <td key={`td-${key++}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#eef3f2] px-3 py-2 align-top">{renderInlineMarkdown(cell)}</td>)}</tr>)}</tbody></table></div>);
+        for (let skip = 1; skip <= consumed; skip += 1) allLines[lineIndex + skip] = "";
+        return;
+      }
     }
     const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
@@ -159,10 +218,124 @@ function MarkdownContent({ source, className = "" }: { source: string; className
     }
     if (orderedItems.length || unorderedItems.length) flushLists();
     paragraph.push(trimmed);
-  });
+    });
+  };
+  const svgPattern = /<svg[\s>][\s\S]*?<\/svg\s*>/gi;
+  let svgCursor = 0;
+  let svgMatch: RegExpExecArray | null;
+  while ((svgMatch = svgPattern.exec(capped))) {
+    if (svgMatch.index > svgCursor) renderTextSegment(capped.slice(svgCursor, svgMatch.index));
+    flush();
+    const cleanSvg = sanitizeSvg(svgMatch[0]);
+    if (cleanSvg) {
+      blocks.push(<div key={`svg-${key++}`} className="overflow-x-auto rounded-xl border border-[#dce9e8] bg-white p-3 [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: cleanSvg }} />);
+    } else {
+      blocks.push(<p key={`svg-${key++}`} className="text-xs text-[#8a999d]">(Embedded image omitted.)</p>);
+    }
+    svgCursor = svgMatch.index + svgMatch[0].length;
+  }
+  if (svgCursor < capped.length) renderTextSegment(capped.slice(svgCursor));
   flush();
 
   return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 ${className}`}>{blocks}</div>;
+}
+
+type TranscriptTurn = {
+  question?: unknown;
+  answer?: unknown;
+  type?: unknown;
+  raw?: string | string[] | Record<string, string> | null;
+  options?: unknown;
+  items?: unknown;
+  categories?: unknown;
+  file?: { name?: string; size?: number; contentType?: string; path?: string } | null;
+  answered_at?: unknown;
+};
+
+const TRANSCRIPT_TYPE_LABELS: Record<string, string> = {
+  text: "Written",
+  choice: "Single choice",
+  multi: "Multiple choice",
+  categorize: "Categorize",
+  dragdrop: "Ranked order",
+  file: "File upload",
+};
+
+function formatUploadSize(size: number): string {
+  if (size >= 1048576) return `${(size / 1048576).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
+function TranscriptAnswer({ turn }: { turn: TranscriptTurn }) {
+  const type = typeof turn.type === "string" ? turn.type : "";
+  const answerText = typeof turn.answer === "string" && turn.answer.trim() ? turn.answer : "";
+  if (type === "multi" || type === "choice") {
+    const picked = type === "multi"
+      ? (Array.isArray(turn.raw) ? turn.raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [])
+      : [answerText, typeof turn.raw === "string" ? turn.raw : ""].filter(option => option.trim().length > 0);
+    const selected = [...new Set(picked)];
+    const options = Array.isArray(turn.options) ? turn.options.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+    const shown = [...new Set(options.length > 0 ? options : selected)];
+    if (!shown.length) return <p className="text-sm leading-6 text-[#52666e]">{answerText || "No answer given."}</p>;
+    return <div><div className="flex flex-wrap gap-1.5">{shown.map(option => <span key={option} className={`rounded-full px-3 py-1 text-xs font-semibold ${selected.includes(option) ? "bg-[#dff4f2] text-[#12737d]" : "bg-[#eef3f2] text-[#8a999d]"}`}>{option}</span>)}</div><p className="mt-1.5 text-[11px] text-[#8a999d]">{selected.length} of {shown.length} selected</p></div>;
+  }
+  if (type === "categorize") {
+    const buckets = turn.raw && typeof turn.raw === "object" && !Array.isArray(turn.raw) ? turn.raw as Record<string, string> : null;
+    if (!buckets) return <p className="text-sm leading-6 text-[#52666e]">{answerText || "No answer given."}</p>;
+    const groups = new Map<string, string[]>();
+    for (const item of Object.keys(buckets)) {
+      const bucket = buckets[item] || "Unsorted";
+      if (!groups.has(bucket)) groups.set(bucket, []);
+      groups.get(bucket)?.push(item);
+    }
+    return <div className="space-y-2">{[...groups.entries()].map(([bucket, items]) => <div key={bucket} className="rounded-lg bg-[#f4f8f7] px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{bucket}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{items.map(item => <span key={item} className="rounded-full bg-white px-2.5 py-1 text-xs text-[#44646d]">{item}</span>)}</div></div>)}</div>;
+  }
+  if (type === "dragdrop") {
+    const order = Array.isArray(turn.raw) ? turn.raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+    if (!order.length) return <p className="text-sm leading-6 text-[#52666e]">{answerText || "No answer given."}</p>;
+    return <ol className="space-y-1.5">{order.map((item, rank) => <li key={`${rank}-${item}`} className="flex items-center gap-2.5 rounded-lg bg-[#f4f8f7] px-3 py-2 text-sm text-[#38555e]"><span className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-[10px] font-bold text-white">{rank + 1}</span>{item}</li>)}</ol>;
+  }
+  if (type === "file") {
+    const name = turn.file?.name || (typeof turn.raw === "string" && turn.raw ? turn.raw.split("/").pop() : "") || answerText || "Uploaded file";
+    const size = typeof turn.file?.size === "number" ? ` · ${formatUploadSize(turn.file.size)}` : "";
+    return <div><span className="inline-flex items-center gap-2 rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#38555e]"><Paperclip size={14} className="text-[#16869a]" />{name}{size}</span><p className="mt-1.5 text-[11px] text-[#8a999d]">Stored on the team application site.</p></div>;
+  }
+  if (Array.isArray(turn.raw)) {
+    const chips = turn.raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    if (chips.length) return <div className="flex flex-wrap gap-1.5">{chips.map(chip => <span key={chip} className="rounded-full bg-[#dff4f2] px-3 py-1 text-xs font-semibold text-[#12737d]">{chip}</span>)}</div>;
+  }
+  return <p className="whitespace-pre-wrap text-sm leading-6 text-[#52666e]">{answerText || "No answer given."}</p>;
+}
+
+function TranscriptView({ transcript }: { transcript: string | null }) {
+  if (!transcript || !transcript.trim()) return <p className="text-sm leading-6 text-[#64777d]">No transcript attached.</p>;
+  let turns: TranscriptTurn[];
+  try {
+    const parsed: unknown = JSON.parse(transcript);
+    if (!Array.isArray(parsed)) throw new Error("not a turn list");
+    turns = parsed as TranscriptTurn[];
+  } catch {
+    return <p className="whitespace-pre-wrap text-sm leading-6 text-[#64777d]">{transcript}</p>;
+  }
+  if (!turns.length) return <p className="text-sm leading-6 text-[#64777d]">No transcript attached.</p>;
+  return <ol className="space-y-4">{turns.map((turn, index) => {
+    const type = typeof turn?.type === "string" ? turn.type : "";
+    const question = turn && typeof turn.question === "string" && turn.question.trim() ? turn.question : "Question";
+    const answeredAt = turn && typeof turn.answered_at === "string" ? new Date(turn.answered_at) : null;
+    const when = answeredAt && !Number.isNaN(answeredAt.getTime()) ? answeredAt.toLocaleString() : "";
+    return <li key={index} className="rounded-xl bg-[#f4f8f7] p-4"><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Q{index + 1} · {TRANSCRIPT_TYPE_LABELS[type] ?? "Answer"}{when ? ` · ${when}` : ""}</p><p className="mt-1.5 text-sm font-semibold leading-6 text-[#183a4b]">{question}</p><div className="mt-2"><TranscriptAnswer turn={turn ?? {}} /></div></li>;
+  })}</ol>;
+}
+
+function serverErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === "object" && "data" in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string") {
+      return (data as { error: string }).error;
+    }
+  }
+  return fallback;
 }
 
 function useFullscreen() {
@@ -230,13 +403,28 @@ function Login() {
 function Shell({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
+  const [displayPromoVisible, setDisplayPromoVisible] = useState(() => {
+    try {
+      return window.localStorage.getItem("robotics-hide-display-promo") !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismissDisplayPromo = () => {
+    setDisplayPromoVisible(false);
+    try {
+      window.localStorage.setItem("robotics-hide-display-promo", "1");
+    } catch {
+      // Private browsing etc.
+    }
+  };
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const logout = useLogout();
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Login />;
   const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/assistant", label: "AI assistant", icon: Bot }];
-  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav><div className="mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div><button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main></div></div>;
+  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main></div></div>;
 }
 
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail?: string; action?: ReactNode }) {
@@ -248,12 +436,116 @@ function StatCard({ label, value, suffix, tone = "teal", note }: { label: string
 }
 function Section({ title, kicker, children, className = "" }: { title: string; kicker?: string; children: ReactNode; className?: string }) { return <section className={`rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] ${className}`}><div className="mb-5 flex items-start justify-between"><div><h2 className="font-semibold">{title}</h2>{kicker && <p className="mt-1 text-xs text-[#7c8c91]">{kicker}</p>}</div></div>{children}</section>; }
 
+type CustomChartType = "bars" | "pie" | "line";
+type CustomChartSource = "score" | "recommendations" | "grades" | "commitments" | "categories" | "statuses" | "topscores";
+type CustomChartConfig = { id: string; source: CustomChartSource; chart: CustomChartType };
+
+const CUSTOM_CHART_SOURCES: { value: CustomChartSource; label: string }[] = [
+  { value: "score", label: "Score distribution" },
+  { value: "recommendations", label: "Recommendation signal" },
+  { value: "grades", label: "Grade mix" },
+  { value: "commitments", label: "Commitment signal" },
+  { value: "categories", label: "Decision lanes" },
+  { value: "statuses", label: "Interview status" },
+  { value: "topscores", label: "Top scores" },
+];
+const CUSTOM_CHART_TYPES: { value: CustomChartType; label: string }[] = [
+  { value: "bars", label: "Bars" },
+  { value: "pie", label: "Pie" },
+  { value: "line", label: "Line" },
+];
+const CHART_PALETTE = ["#16869a", "#edb52c", "#466896", "#3aa582", "#bd5047", "#7c6fae", "#e07b39", "#5b8c5a"];
+const CUSTOM_CHART_BAR_COLORS = ["teal", "yellow", "blue", "green"] as const;
+const CUSTOM_CHARTS_KEY = "robotics-custom-charts-v1";
+
+function loadCustomCharts(): CustomChartConfig[] {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_CHARTS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is CustomChartConfig =>
+      !!item && typeof item === "object" &&
+      typeof (item as CustomChartConfig).id === "string" &&
+      CUSTOM_CHART_SOURCES.some(entry => entry.value === (item as CustomChartConfig).source) &&
+      CUSTOM_CHART_TYPES.some(entry => entry.value === (item as CustomChartConfig).chart));
+  } catch {
+    return [];
+  }
+}
+
+function CustomChartView({ data, chart, colorIndex }: { data: DashboardCount[]; chart: CustomChartType; colorIndex: number }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  if (!data.length || total <= 0) return <p className="text-sm text-[#7c8c91]">No signal yet.</p>;
+  if (chart === "pie") return <div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="label" innerRadius={55} outerRadius={85} paddingAngle={2} strokeWidth={0}>{data.map((entry, index) => <Cell key={`${entry.label}-${index}`} fill={CHART_PALETTE[index % CHART_PALETTE.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div><div className="mt-3 space-y-1.5">{data.map((entry, index) => <div key={`${entry.label}-${index}`} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_PALETTE[index % CHART_PALETTE.length] }} /><span className="min-w-0 flex-1 truncate font-medium text-[#52666e]">{entry.label}</span><span className="mono text-[#7b8a8f]">{entry.value}</span></div>)}</div></div>;
+  if (chart === "line") return <div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 10, bottom: 28, left: -14 }}><CartesianGrid strokeDasharray="3 3" stroke="#e4eceb" /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7b8a8f" }} interval="preserveStart" angle={-25} dy={10} /><YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#7b8a8f" }} /><Tooltip /><Line type="monotone" dataKey="value" stroke="#16869a" strokeWidth={2} dot={{ r: 3, fill: "#16869a" }} /></LineChart></ResponsiveContainer></div>;
+  return <Bars data={data} max={Math.max(...data.map(item => item.value), 1)} color={CUSTOM_CHART_BAR_COLORS[colorIndex % CUSTOM_CHART_BAR_COLORS.length]} />;
+}
+
+function CustomCharts({ summary }: { summary: DashboardSummary }) {
+  const [source, setSource] = useState<CustomChartSource>("grades");
+  const [chart, setChart] = useState<CustomChartType>("pie");
+  const queryClient = useQueryClient();
+  const chartsQuery = useListDashboardCharts({ query: { queryKey: getListDashboardChartsQueryKey() } });
+  const createChart = useCreateDashboardChart();
+  const updateChart = useUpdateDashboardChart();
+  const deleteChart = useDeleteDashboardChart();
+  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
+  const importedRef = useRef(false);
+  useEffect(() => {
+    if (importedRef.current || chartsQuery.isLoading || !chartsQuery.data) return;
+    if (chartsQuery.data.items.length > 0) return;
+    const legacy = loadCustomCharts();
+    if (!legacy.length) return;
+    importedRef.current = true;
+    void (async () => {
+      for (const item of legacy) {
+        try {
+          await createChart.mutateAsync({ data: { source: item.source, chart: item.chart } });
+        } catch {
+          // Keep going; failures surface on the next load.
+        }
+      }
+      try {
+        window.localStorage.removeItem(CUSTOM_CHARTS_KEY);
+      } catch {
+        // Ignore storage errors.
+      }
+      queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
+    })();
+  }, [chartsQuery.data, chartsQuery.isLoading, createChart, queryClient]);
+  const applicants = list.data?.items ?? [];
+  const charts = chartsQuery.data?.items ?? [];
+  const dataFor = (key: string): DashboardCount[] => {
+    switch (key) {
+      case "score": return summary.scoreBuckets;
+      case "recommendations": return summary.recommendations;
+      case "grades": return summary.grades;
+      case "commitments": return summary.commitments;
+      case "categories": return categories.map(label => ({ label: label === "unranked" ? "Unranked" : label[0].toUpperCase() + label.slice(1), value: applicants.filter(a => (a.category || "unranked") === label).length }));
+      case "statuses": return statuses.map(status => ({ label: status === "in_progress" ? "In progress" : status[0].toUpperCase() + status.slice(1), value: applicants.filter(a => a.interviewStatus === status).length }));
+      case "topscores": return [...applicants].filter(a => a.aiScore >= 0).sort((x, y) => y.aiScore - x.aiScore).slice(0, 8).map(a => ({ label: a.name.length > 12 ? `${a.name.slice(0, 11)}…` : a.name, value: Math.round(a.aiScore * 10) / 10 }));
+      default: return [];
+    }
+  };
+  const sourceLabel = (key: string) => CUSTOM_CHART_SOURCES.find(entry => entry.value === key)?.label ?? key;
+  const chartTypeOf = (value: string): CustomChartType => value === "pie" || value === "line" ? value : "bars";
+  const addChart = () => {
+    if (createChart.isPending) return;
+    createChart.mutate({ data: { source, chart } }, {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() }),
+    });
+  };
+  const refresh = () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
+  return <Section title="Custom charts" kicker="Build your own views. Switch any chart between bars, pie, and line. Shared with your co-coordinator."><div className="flex flex-wrap items-center gap-2"><select value={source} onChange={event => setSource(event.target.value as CustomChartSource)} data-testid="select-chart-source" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">{CUSTOM_CHART_SOURCES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-center justify-between gap-2"><p className="min-w-0 flex-1 truncate text-sm font-semibold">{sourceLabel(config.source)}</p><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${sourceLabel(config.source)} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><CustomChartView data={dataFor(config.source)} chart={chartTypeOf(config.chart)} colorIndex={index} /></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Pick a metric and a style above, then add it here.</p>}</Section>;
+}
+
 function Dashboard() {
   const summary = useGetDashboardSummary({ query: { queryKey: getGetDashboardSummaryQueryKey() } });
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, coordinators." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5"><CustomCharts summary={d} /></div></div>;
 }
 function Bars({ data, max, color }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green" }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div>; }
 
@@ -263,6 +555,7 @@ function Applicants() {
   const [grade, setGrade] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort: "rank" }), [search, category, grade]);
   const list = useListApplicants(params, { query: { queryKey: getListApplicantsQueryKey(params) } });
@@ -273,9 +566,13 @@ function Applicants() {
     if (dragId) {
       update.mutate({ id: dragId, data: { category: cat } }, {
         onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getListApplicantsQueryKey(params) });
+          qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+          qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
           setDragId(null);
         },
+        onError: () => setDragId(null),
       });
     }
   };
@@ -283,8 +580,10 @@ function Applicants() {
     <PageHeading eyebrow="Applicant review / triage" title="The applicant field." detail="Rank with your co-coordinator. Drag a candidate into a decision lane when the signal is clear." action={<div className="flex flex-wrap gap-2">
       <button onClick={() => setPrintOpen(true)} data-testid="button-print-roster" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Printer size={16} /> Print roster</button>
       <button onClick={() => setImportOpen(!importOpen)} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><FileUp size={16} /> Import roster</button>
+      <button onClick={() => setExportOpen(!exportOpen)} data-testid="button-export" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Download size={16} /> Export roster</button>
     </div>} />
     {importOpen && <ImportPanel onClose={() => setImportOpen(false)} />}
+    {exportOpen && <ExportPanel applicants={list.data?.items ?? []} onClose={() => setExportOpen(false)} />}
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" placeholder="Search name, email, experience..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
@@ -304,8 +603,85 @@ function Applicants() {
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; return <div draggable onDragStart={onDragStart} data-testid={`row-applicant-${a.id}`} className="group flex cursor-grab items-center gap-3 px-5 py-4 transition hover:bg-[#f6f9f8]"><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" /><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div><button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button><div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
-function DropLane({ category, applicants, onDrop, onSelect }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here</p>{applicants.slice(0,4).map(a => <button key={a.id} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; return <div draggable onDragStart={onDragStart} data-testid={`row-applicant-${a.id}`} className="group flex cursor-grab items-center gap-3 px-5 py-4 transition hover:bg-[#f6f9f8]"><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button><div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function DropLane({ category, applicants, onDrop, onSelect }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
+type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
+
+const EXPORT_FORMATS: { value: ExportFormat; label: string; extension: string; mime: string }[] = [
+  { value: "csv", label: "CSV (comma)", extension: "csv", mime: "text/csv" },
+  { value: "semicolon", label: "CSV (semicolon)", extension: "csv", mime: "text/csv" },
+  { value: "tsv", label: "TSV (tab)", extension: "tsv", mime: "text/tab-separated-values" },
+  { value: "xlsx", label: "Excel (.xlsx)", extension: "xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+];
+
+const EXPORT_HEADERS = ["id", "name", "grade", "email", "ai_score", "ai_recommendation", "ai_summary", "ai_strengths", "ai_concerns", "robotics_experience", "commit_10_hours", "parent_volunteer", "category", "interview_status", "interviewer", "interview_decision", "notes"];
+
+function applicantToExportRow(a: Applicant): (string | number)[] {
+  return [a.id, a.name, a.grade, a.email ?? "", a.aiScore, a.aiRecommendation, a.aiSummary, a.aiStrengths, a.aiConcerns, a.roboticsExperience, a.commit10Hours, a.parentVolunteer, a.category, a.interviewStatus, a.interviewer, a.interviewDecision, a.notes];
+}
+
+function escapeDelimitedCell(value: string | number, delimiter: string): string {
+  const text = String(value ?? "");
+  if (text.includes('"') || text.includes("\n") || text.includes("\r") || text.includes(delimiter)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function buildDelimitedExport(applicants: Applicant[], delimiter: string): string {
+  const lines = [EXPORT_HEADERS.map(header => escapeDelimitedCell(header, delimiter)).join(delimiter)];
+  for (const applicant of applicants) {
+    lines.push(applicantToExportRow(applicant).map(cell => escapeDelimitedCell(cell, delimiter)).join(delimiter));
+  }
+  return lines.join("\n");
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function ExportPanel({ applicants, onClose }: { applicants: Applicant[]; onClose: () => void }) {
+  const [format, setFormat] = useState<ExportFormat>("csv");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const selected = EXPORT_FORMATS.find(entry => entry.value === format) ?? EXPORT_FORMATS[0];
+  const fileName = `roster-${new Date().toISOString().slice(0, 10)}.${selected.extension}`;
+  const download = async () => {
+    if (!applicants.length || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (format === "xlsx") {
+        const XLSX = await import("xlsx");
+        const sheet = XLSX.utils.json_to_sheet(applicants.map(a => Object.fromEntries(EXPORT_HEADERS.map((header, index) => [header, applicantToExportRow(a)[index]]))));
+        const book = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(book, sheet, "Roster");
+        const bytes = XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+        downloadBlob(new Blob([bytes], { type: selected.mime }), fileName);
+      } else {
+        const delimiter = format === "tsv" ? "\t" : format === "semicolon" ? ";" : ",";
+        downloadBlob(new Blob([buildDelimitedExport(applicants, delimiter)], { type: `${selected.mime};charset=utf-8` }), fileName);
+      }
+    } catch {
+      setError("The export could not be generated. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5" data-testid="export-panel">
+    <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Roster export</p><h2 className="mt-1 font-semibold">Download {applicants.length} applicant{applicants.length === 1 ? "" : "s"}</h2><p className="mt-1 text-xs text-[#587278]">Exports the current filtered view with headers the importer understands, so files round-trip.</p></div><IconButton label="Close export" testId="button-close-export" onClick={onClose}><X size={16} /></IconButton></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3"><select value={format} onChange={event => setFormat(event.target.value as ExportFormat)} data-testid="select-export-format" className="h-10 rounded-lg border border-[#c4dcda] bg-white px-3 text-sm outline-none focus:border-[#16869a]">{EXPORT_FORMATS.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><button disabled={!applicants.length || busy} onClick={download} data-testid="button-download-export" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Download size={15} /> {busy ? "Preparing..." : `Download ${fileName}`}</button></div>
+    {error && <p className="mt-3 text-xs text-[#ad4b43]" data-testid="export-error">{error}</p>}
+  </div>;
+}
+
 function ImportPanel({ onClose }: { onClose: () => void }) {
   const upload = useRequestUploadUrl();
   const commit = useCommitImport();
@@ -320,11 +696,13 @@ function ImportPanel({ onClose }: { onClose: () => void }) {
     try {
       const next: { file: File; objectPath: string; preview: ImportPreview }[] = [];
       for (const file of files) {
-        const requested = await upload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type || "text/csv" } });
-        const response = await fetch(requested.uploadURL, { method: "PUT", headers: { "Content-Type": file.type || "text/csv" }, body: file });
+        const isExcel = /\.xlsx?$/i.test(file.name);
+        const contentType = file.type || (isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv");
+        const requested = await upload.mutateAsync({ data: { name: file.name, size: file.size, contentType } });
+        const sameOriginUpload = (() => { try { return new URL(requested.uploadURL, window.location.href).origin === window.location.origin; } catch { return false; } })();
+        const response = await fetch(requested.uploadURL, { method: "PUT", headers: { "Content-Type": contentType }, body: file, ...(sameOriginUpload ? { credentials: "include" as const } : {}) });
         if (!response.ok) throw new Error("Upload failed");
-        const text = await file.text();
-        const rowCount = Math.max(0, text.split(/\r?\n/).filter(Boolean).length - 1);
+        const rowCount = isExcel ? 0 : Math.max(0, (await file.text()).split(/\r?\n/).filter(Boolean).length - 1);
         const filePreview = await preview.mutateAsync({ data: { objectPath: requested.objectPath, fileName: file.name, rowCount } });
         next.push({ file, objectPath: requested.objectPath, preview: filePreview });
         setPreviews([...next]);
@@ -339,7 +717,13 @@ function ImportPanel({ onClose }: { onClose: () => void }) {
       for (const item of previews) {
         await commit.mutateAsync({ data: { objectPath: item.objectPath, fileName: item.file.name, rowCount: item.preview.rowCount } });
       }
+      setFiles([]);
+      setPreviews([]);
       await history.refetch();
+      queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
     } catch {
       setError("The roster previewed successfully, but the commit failed.");
     }
@@ -352,8 +736,8 @@ function ImportPanel({ onClose }: { onClose: () => void }) {
     missing: total.missing + item.preview.diff.missingFromUpload,
   }), { added: 0, updated: 0, unchanged: 0, missing: 0 });
   return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5">
-    <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Roster ingestion</p><h2 className="mt-1 font-semibold">Import one or more roster files</h2><p className="mt-1 text-xs text-[#587278]">CSV, TSV, comma, semicolon, quoted, and mixed-delimiter rows are recovered before commit.</p></div><IconButton label="Close import" testId="button-close-import" onClick={onClose}><X size={16} /></IconButton></div>
-    <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" multiple accept=".csv,.tsv,text/csv,text/tab-separated-values" onChange={e => { setFiles(Array.from(e.target.files ?? [])); setPreviews([]); setError(""); }} data-testid="input-import-file" className="max-w-full rounded-lg border border-[#c4dcda] bg-white px-3 py-2 text-sm" /><button disabled={!files.length || pending} onClick={submit} data-testid="button-preview-import" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Reading files..." : `Preview ${files.length || ""} file${files.length === 1 ? "" : "s"}`}</button></div>
+    <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Roster ingestion</p><h2 className="mt-1 font-semibold">Import one or more roster files</h2><p className="mt-1 text-xs text-[#587278]">CSV, TSV, Excel (.xlsx/.xls), comma, semicolon, quoted, and mixed-delimiter rows are recovered before commit. First Excel sheet is used; headers like “AI Score” map automatically.</p></div><IconButton label="Close import" testId="button-close-import" onClick={onClose}><X size={16} /></IconButton></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" multiple accept=".csv,.tsv,.xlsx,.xls,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={e => { setFiles(Array.from(e.target.files ?? [])); setPreviews([]); setError(""); }} data-testid="input-import-file" className="max-w-full rounded-lg border border-[#c4dcda] bg-white px-3 py-2 text-sm" /><button disabled={!files.length || pending} onClick={submit} data-testid="button-preview-import" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Reading files..." : `Preview ${files.length || ""} file${files.length === 1 ? "" : "s"}`}</button></div>
     {files.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{files.map(file => <span key={`${file.name}-${file.lastModified}`} className="rounded-full bg-white px-3 py-1 text-xs text-[#587278]">{file.name} · {Math.ceil(file.size / 1024)} KB</span>)}</div>}
     {previews.length > 0 && <div className="mt-4 rounded-xl border border-[#b9d9d7] bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">{previews.length} preview{previews.length === 1 ? "" : "s"} ready</p><p className="mt-1 text-xs text-[#718189]">Review each file’s detected format and diff, then commit them together.</p></div><button disabled={commit.isPending || previews.length !== files.length} onClick={confirmImport} data-testid="button-commit-import" className="rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{commit.isPending ? "Committing..." : `Commit ${previews.length} file${previews.length === 1 ? "" : "s"}`}</button></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Added", totals.added, "text-[#168069]"], ["Updated", totals.updated, "text-[#466896]"], ["Unchanged", totals.unchanged, "text-[#718189]"], ["Missing from files", totals.missing, "text-[#bd5047]"]].map(([label, value, tone]) => <div key={String(label)} className="rounded-lg bg-[#f4f8f7] p-3"><p className="text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">{label}</p><p className={`mono mt-1 text-xl ${tone}`}>{value}</p></div>)}</div><div className="mt-4 space-y-2">{previews.map(item => <div key={item.objectPath} className="rounded-lg border border-[#e3ebeb] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold">{item.file.name}</span><span className="text-[11px] text-[#7c8c91]">{item.preview.rowCount} valid rows · delimiter: {item.preview.delimiter === "tab" ? "TAB" : item.preview.delimiter}</span></div>{item.preview.warnings.length > 0 && <p className="mt-2 text-xs text-[#805c08]">{item.preview.warnings.join(" ")}</p>}</div>)}</div></div>}
     {commit.isSuccess && <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#168069]"><Check size={14} /> Import committed successfully and saved to history.</p>}
@@ -414,12 +798,33 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
   </div>;
 }
 
-function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const update = useUpdateApplicant(); const [notes, setNotes] = useState(""); useEffect(() => { if (detail.data) setNotes(detail.data.notes); }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }); return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><p className="mt-3 text-sm leading-6 text-[#64777d]">{a.transcript || "No transcript attached."}</p></div></aside></div>; }
+function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); useEffect(() => { if (detail.data) { setNotes(detail.data.notes); setEditName(detail.data.name); setEditGrade(detail.data.grade); setEditEmail(detail.data.email ?? ""); setEditScore(String(detail.data.aiScore)); setEditRec(detail.data.aiRecommendation); } }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
+    setPhotoError("");
+    if (!file.type.startsWith("image/")) { setPhotoError("Please choose an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setPhotoError("Images must be under 5 MB."); return; }
+    try {
+      const requested = await photoUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
+      const putUrl = requested.uploadURL;
+      const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
+      const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+      if (!response.ok) throw new Error("Upload failed");
+      const photoUrl = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
+      save({ photoUrl });
+    } catch {
+      setPhotoError("Photo upload failed. Try again.");
+    }
+  };
+  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="hidden" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+
+const RESET_CONFIRM_PHRASE = "I understand";
 
 function Queue() {
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: 3000 } });
   const chat = useGetInterviewChat({ query: { queryKey: getGetInterviewChatQueryKey(), refetchInterval: 3000 } });
   const advance = useAdvanceQueue();
+  const callback = useCallbackQueue();
+  const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
+  const finished = useListApplicants(finishedParams, { query: { queryKey: getListApplicantsQueryKey(finishedParams) } });
   const reorder = useReorderQueue();
   const updateApplicant = useUpdateApplicant();
   const updateSettings = useUpdateQueueSettings();
@@ -431,11 +836,23 @@ function Queue() {
   const [drag, setDrag] = useState<string | null>(null);
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
+  const orderDirty = useRef(false);
   const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
+  useEffect(() => {
+    if (!resetOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setResetOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [resetOpen]);
   useEffect(() => {
     if (!queue.data) return;
-    setOrder(queue.data.nextApplicants);
+    if (!orderDirty.current) setOrder(queue.data.nextApplicants);
     if (!labelsDirty.current) setLabels(queue.data.interviewerLabels);
   }, [queue.data]);
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
@@ -446,13 +863,17 @@ function Queue() {
     : [];
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
   const saveNote = (id: string, note: string, original: string) => {
-    if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+    if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   const assignInterviewer = (id: string, interviewer: string) => {
-    updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+    updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   const finishApplicant = (id: string) => {
-    advance.mutate({ data: { applicantId: id } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+    advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
+  };
+  const recallApplicant = (id: string, name: string) => {
+    if (callback.isPending || !window.confirm(`Call ${name} back? They return to the front of the queue and the big screen will announce it.`)) return;
+    callback.mutate({ data: { applicantId: id } }, { onSuccess: () => { { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } finished.refetch(); } });
   };
   const move = (id: string, direction: -1 | 1) => {
     const index = order.findIndex(item => item.id === id);
@@ -461,7 +882,8 @@ function Queue() {
     const next = [...order];
     [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
     setOrder(next);
-    reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(item => item.id), ...next.map(item => item.id)] } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+    orderDirty.current = true;
+    reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(item => item.id), ...next.map(item => item.id)] } }, { onSuccess: () => { orderDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); }, onError: () => { orderDirty.current = false; } });
   };
   const saveLabels = () => {
     const clean = [...new Set(labels.map(label => label.trim()).filter(Boolean))];
@@ -469,19 +891,30 @@ function Queue() {
       onSuccess: response => {
         labelsDirty.current = false;
         setLabels(response.interviewerLabels);
+        if (selectedInterviewer && !response.interviewerLabels.includes(selectedInterviewer)) {
+          setSelectedInterviewer("");
+          try { window.localStorage.removeItem("selected-interviewer"); } catch { /* ignore */ }
+        }
         qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
       },
     });
   };
   const resetInterviewProgress = () => {
-    if (!window.confirm("Reset interview progress for all applicants? Applicant data, notes, and decisions will be preserved.")) return;
-    resetQueue.mutate(undefined, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) });
+    setResetConfirm("");
+    setResetOpen(true);
+  };
+  const confirmResetProgress = () => {
+    if (resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending) return;
+    setResetOpen(false);
+    resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim()) return;
     const submitted = message.trim();
     setMessage("");
+    setChatError("");
     const author = selectedInterviewer || "Interviewer";
     try {
       // Persist the original @ai request first so every interviewer sees the
@@ -493,8 +926,10 @@ function Queue() {
         await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer } });
       }
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+      setChatError("");
     } catch {
       // The persisted prompt remains visible if the AI request fails.
+      setChatError("The AI answer failed. Your message was saved — try again.");
     }
   };
   return <div className="fade-up">
@@ -509,14 +944,14 @@ function Queue() {
         <div className="relative">
           <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]">{visibleApplicants.length} assigned to you / {q.currentApplicants.length} active</span></div>
           <div className={`mt-8 grid gap-4 ${visibleApplicants.length > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }) })} />) : <div className="py-10 text-[#acc2c7]"><p>{selectedInterviewer ? `No applicant is assigned to ${selectedInterviewer} right now.` : "Select your interviewer identity to see your applicant."}</p>{selectedInterviewer && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, selectedInterviewer)} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
+            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } })} />) : <div className="py-10 text-[#acc2c7]"><p>{selectedInterviewer ? `No applicant is assigned to ${selectedInterviewer} right now.` : "Select your interviewer identity to see your applicant."}</p>{selectedInterviewer && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, selectedInterviewer)} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
           </div>
         </div>
       </section>
       <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
         <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
         <div className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chat.data?.items.length ? chat.data.items.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-        <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button disabled={!message.trim() || sendChat.isPending || ask.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div></form>
+        <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button disabled={!message.trim() || sendChat.isPending || ask.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div>{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
       </section>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
@@ -533,7 +968,9 @@ function Queue() {
         </div>
       </Section>
     </div>
-    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Reorder upcoming applicants</h2><p className="mt-1 text-xs text-[#7c8c91]">Reorder the next handoffs without linking applicants into pairs.</p></div><TimerReset size={20} className="text-[#16869a]" /></div><div className="mt-4 grid gap-2 md:grid-cols-2">{order.map((applicant, index) => <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => { if (!drag) return; const from = order.findIndex(item => item.id === drag); const next = [...order]; const [item] = next.splice(from, 1); next.splice(index, 0, item); setOrder(next); setDrag(null); reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(current => current.id), ...next.map(item => item.id)] } }); }} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`queue-order-${applicant.id}`}><GripVertical size={15} className="text-[#b5c3c6]" /><span className="mono w-5 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><span className="flex-1 text-sm font-semibold">{applicant.name}</span><button onClick={() => move(applicant.id, -1)} data-testid={`button-move-up-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => move(applicant.id, 1)} data-testid={`button-move-down-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↓</button></div>)}</div></section>
+    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Reorder upcoming applicants</h2><p className="mt-1 text-xs text-[#7c8c91]">Reorder the next handoffs without linking applicants into pairs.</p></div><TimerReset size={20} className="text-[#16869a]" /></div><div className="mt-4 grid gap-2 md:grid-cols-2">{order.map((applicant, index) => <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => { if (!drag) return; const from = order.findIndex(item => item.id === drag); if (from < 0) { setDrag(null); return; } const next = [...order]; const [item] = next.splice(from, 1); next.splice(index, 0, item); setOrder(next); setDrag(null); orderDirty.current = true; reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(current => current.id), ...next.map(item => item.id)] } }, { onSuccess: () => { orderDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); }, onError: () => { orderDirty.current = false; } }); }} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`queue-order-${applicant.id}`}><GripVertical size={15} className="text-[#b5c3c6]" /><span className="mono w-5 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><span className="flex-1 text-sm font-semibold">{applicant.name}</span><button onClick={() => move(applicant.id, -1)} data-testid={`button-move-up-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => move(applicant.id, 1)} data-testid={`button-move-down-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↓</button></div>)}</div></section>
+    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Finished — call back</h2><p className="mt-1 text-xs text-[#7c8c91]">Finished someone by accident? Send them back to the front. The big screen and audio will announce that they aren&apos;t done yet.</p></div><PhoneCall size={20} className="text-[#16869a]" /></div>{finished.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : finished.data && finished.data.total > 0 ? <div className="mt-4 grid gap-2 md:grid-cols-2">{finished.data.items.map(applicant => <div key={applicant.id} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`finished-applicant-${applicant.id}`}><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e5f3f1] text-xs font-bold text-[#16869a]">{applicant.name.slice(0, 1)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{applicant.name}</p><p className="text-xs text-[#7c8c91]">Grade {applicant.grade}</p></div><button onClick={() => recallApplicant(applicant.id, applicant.name)} disabled={callback.isPending} data-testid={`button-recall-${applicant.id}`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50"><PhoneCall size={13} /> Call back</button></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">Nobody finished yet.</p>}{callback.isError && <p className="mt-2 text-xs text-[#ad4b43]">Callback failed. Try again.</p>}</section>
+    {resetOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setResetOpen(false)} data-testid="reset-dialog"><div onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm reset interview progress" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Reset interview progress?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">This takes every applicant back to the start of the queue. Here is exactly what happens:</p><ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#52666e]"><li>All <strong>completed</strong> interviews move back to <strong>queued</strong> (completed count returns to 0).</li><li>Queue order is rebuilt and active recall flags are cleared.</li><li>The big screen switches back to calling the front of the queue.</li></ul><p className="mt-3 text-sm leading-6 text-[#52666e]">Preserved: applicant data, files, notes, decisions, and lanes.</p><label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={resetConfirm} onChange={event => setResetConfirm(event.target.value)} autoFocus data-testid="input-reset-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setResetOpen(false)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmResetProgress} disabled={resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending} data-testid="button-confirm-reset" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div></div></div>}
   </div>;
 }
 
@@ -577,7 +1014,8 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
 }) {
   const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: 5000 } });
   const [notes, setNotes] = useState(applicant.notes);
-  useEffect(() => setNotes(detail.data?.notes ?? applicant.notes), [detail.data?.notes, applicant.notes]);
+  const notesEditing = useRef(false);
+  useEffect(() => { if (!notesEditing.current) setNotes(detail.data?.notes ?? applicant.notes); }, [detail.data?.notes, applicant.notes]);
   const a = detail.data;
   const transcript = readableTranscript(a?.transcript);
   const looksMalformed = Boolean(a && (/https?:\/\//i.test(a.name) || /@/.test(a.name) || a.name.length > 60));
@@ -596,7 +1034,7 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
       </div>
     </details>}
     <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm text-white"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<select value={applicant.interviewDecision} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm font-semibold text-white">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
-    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => setNotes(event.target.value)} onBlur={() => onSaveNote(applicant.id, notes, applicant.notes)} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>
+    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => setNotes(event.target.value)} onFocus={() => { notesEditing.current = true; }} onBlur={() => { notesEditing.current = false; onSaveNote(applicant.id, notes, detail.data?.notes ?? applicant.notes); }} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>
   </article>;
 }
 
@@ -606,23 +1044,120 @@ function DisplayGallery() {
   </div>;
 }
 
+function speakLocalAnnouncement(text: string) {
+  try {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // Browser speech is best-effort; the display works fine silent.
+  }
+}
+
 function Display() {
-  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false);
+  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false); const audioWanted = useRef(false);
   const fullscreen = useFullscreen();
-  useEffect(() => { if (display.data && display.data.updatedAt !== lastUpdate.current) { if (lastUpdate.current && audioReady) { const audio = audioRef.current; if (audio) { audio.src = `${import.meta.env.BASE_URL}api/display/announcement`; audio.play().catch(() => undefined); } } lastUpdate.current = display.data.updatedAt; } }, [display.data, audioReady]);
+  useEffect(() => {
+    if (display.data && display.data.updatedAt !== lastUpdate.current) {
+      if (lastUpdate.current && audioReady) {
+        const d = display.data as DisplayState;
+        const fallback = `${d.headline ?? ""}. ${d.subheadline ?? ""}`.trim();
+        const audio = audioRef.current;
+        if (audio) {
+          let spoke = false;
+          const speakOnce = () => {
+            if (!spoke) {
+              spoke = true;
+              speakLocalAnnouncement(fallback);
+            }
+          };
+          audio.onerror = () => speakOnce();
+          audio.src = `${import.meta.env.BASE_URL}api/display/announcement`;
+          audio.play().catch(() => speakOnce());
+        }
+      }
+      lastUpdate.current = display.data.updatedAt;
+    }
+  }, [display.data, audioReady]);
   if (display.isLoading) return <div className="min-h-[100dvh] bg-[#0d1b28] p-12 text-white"><Skeleton className="h-10 w-48" /></div>; if (display.isError || !display.data) return <div className="flex min-h-[100dvh] items-center justify-center bg-[#0d1b28] text-white"><ErrorState compact onRetry={() => display.refetch()} /></div>;
-  const d = display.data as DisplayState; const applicants = d.currentApplicants ?? [];
-  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => setAudioReady(!audioReady)} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className="mx-auto mt-8 grid max-h-[45vh] w-full max-w-4xl gap-5 overflow-hidden sm:grid-cols-2">{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className="mt-4 break-words text-3xl font-semibold tracking-[-.04em] md:text-5xl">{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => setAudioReady(true)} preload="none" data-testid="display-announcement-audio" /></main>;
+  const d = display.data as DisplayState; const applicants = d.currentApplicants ?? []; const displayGridCols = applicants.length <= 1 ? "" : applicants.length === 2 ? "sm:grid-cols-2" : applicants.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"; const displayGridWidth = applicants.length >= 4 ? "max-w-6xl" : "max-w-4xl";
+  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => { audioWanted.current = !audioReady; if (audioReady && "speechSynthesis" in window) { try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } setAudioReady(!audioReady); }} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => { if (audioWanted.current) setAudioReady(true); }} preload="none" data-testid="display-announcement-audio" /></main>;
+}
+
+function ImageStudio() {
+  const generate = useGenerateAssistantImage();
+  const [prompt, setPrompt] = useState("");
+  const [size, setSize] = useState("1024x1024");
+  const [image, setImage] = useState<{ imageUrl: string; prompt: string } | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = prompt.trim();
+    if (!value || generate.isPending) return;
+    setLoaded(false);
+    generate.mutate({ data: { prompt: value, size } }, {
+      onSuccess: response => setImage({ imageUrl: response.imageUrl, prompt: response.prompt }),
+    });
+  };
+  return <Section title="Image studio" kicker="Keyless AI images for posters and the big screen" className="order-4"><form onSubmit={submit} className="space-y-2"><textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={3} maxLength={500} placeholder="A Wolverines robotics team poster, navy and gold..." data-testid="input-image-prompt" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-sm outline-none focus:border-[#16869a]" /><div className="flex items-center gap-2"><select value={size} onChange={event => setSize(event.target.value)} data-testid="select-image-size" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]"><option value="1024x1024">Large 1024</option><option value="512x512">Fast 512</option></select><button disabled={generate.isPending || !prompt.trim()} data-testid="button-generate-image" className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50">{generate.isPending ? "Creating..." : "Generate image"}</button></div></form>{generate.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="image-error">The image could not be created. Try again.</p>}{image && <div className="mt-3 overflow-hidden rounded-xl border border-[#e3ebeb]">{!loaded && <Skeleton className="aspect-square w-full" />}<img src={image.imageUrl} alt={image.prompt} onLoad={() => setLoaded(true)} className={loaded ? "block w-full" : "hidden"} data-testid="generated-image" /><div className="flex items-center justify-between gap-2 p-2"><p className="min-w-0 flex-1 truncate text-[11px] text-[#718189]">{image.prompt}</p><a href={image.imageUrl} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] font-semibold text-[#16869a]">Full size</a></div></div>}<p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Free keyless rendering. Only your prompt is sent — no applicant data. First view develops in ~30s.</p></Section>;
+}
+
+const ACTIVE_CONVERSATION_KEY = "robotics-active-conversation";
+
+function readStoredConversationId(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_CONVERSATION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
+  if (tool === "web_search") return { label: "Searched the web", Icon: Search };
+  if (tool === "python_exec" || tool === "python") return { label: "Ran Python", Icon: SquareTerminal };
+  if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };
+  if (tool === "web_fetch" || tool === "fetch_url") return { label: "Fetched page", Icon: Globe };
+  if (tool === "rename_conversation" || tool === "rename") return { label: "Renamed chat", Icon: Pencil };
+  return { label: tool, Icon: Sparkles };
+}
+
+function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
+  if (!activities.length) return null;
+  return <div className="mt-2 flex flex-wrap gap-1.5" data-testid="assistant-activities">{activities.map((activity, index) => {
+    const { label, Icon } = activityMeta(activity.tool);
+    return <span key={`${activity.tool}-${index}`} title={activity.detail} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#edf4f3] px-2.5 py-1 text-[11px] font-semibold text-[#3d6b72]"><Icon size={12} /><span className="max-w-[220px] truncate">{label} · {activity.detail}</span></span>;
+  })}</div>;
 }
 
 function ConversationAssistant() {
   const [question, setQuestion] = useState("");
-  const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId());
   const [renamingId, setRenamingId] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [streamingText, setStreamingText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamError, setStreamError] = useState("");
+  const [liveActivities, setLiveActivities] = useState<AssistantActivity[]>([]);
+  const liveActivitiesRef = useRef<AssistantActivity[]>([]);
+  const streamAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
   const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
   const activeMessages = useGetAssistantConversationMessages(activeConversationId, {
@@ -639,28 +1174,134 @@ function ConversationAssistant() {
   const prompts = ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
 
   useEffect(() => {
+    // Only ever fill a missing/invalid selection — never override the user's
+    // current chat (the stored id is already the initial state on reload).
     const items = conversations.data?.items ?? [];
-    if (items.length && (!activeConversationId || !items.some(item => item.id === activeConversationId))) {
+    if (!items.length) return;
+    if (!activeConversationId || !items.some(item => item.id === activeConversationId)) {
       setActiveConversationId(items[0].id);
     }
   }, [conversations.data, activeConversationId]);
 
   useEffect(() => {
-    setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer })) ?? []);
-  }, [activeConversationId, activeMessages.data]);
+    try {
+      if (activeConversationId) window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, activeConversationId);
+      else window.localStorage.removeItem(ACTIVE_CONVERSATION_KEY);
+    } catch {
+      // Private browsing etc.
+    }
+  }, [activeConversationId]);
+
+  const creatingRef = useRef(false);
+  useEffect(() => {
+    const existing = conversations.data?.items ?? [];
+    if (existing.length > 0) {
+      creatingRef.current = false;
+      return;
+    }
+    if (creatingRef.current || conversations.isLoading || createConversation.isPending || activeConversationId) return;
+    creatingRef.current = true;
+    createConversation.mutate({ data: {} }, {
+      onSuccess: conversation => {
+        setActiveConversationId(conversation.id);
+        setHistory([]);
+        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      },
+      onError: () => {
+        creatingRef.current = false;
+      },
+    });
+  }, [conversations.data, conversations.isLoading, activeConversationId, createConversation]);
+
+  useEffect(() => {
+    if (isStreaming || ask.isPending) return;
+    setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer, activities: item.activities ?? [] })) ?? []);
+  }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!question.trim() || !activeConversationId) return;
+    if (!question.trim() || !activeConversationId || isStreaming) return;
     const q = question.trim();
     setQuestion("");
-    ask.mutate({ data: { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined } }, {
-      onSuccess: response => {
-        setHistory(current => [...current, { q, a: response.answer }]);
+    setStreamError("");
+    setStreamingText("");
+    setLiveActivities([]);
+    liveActivitiesRef.current = [];
+    streamAbort.current?.abort();
+    const controller = new AbortController();
+    streamAbort.current = controller;
+    setIsStreaming(true);
+    const payload = { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined };
+    const authToken = getStoredAuthToken();
+    void (async () => {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/ask/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+          body: JSON.stringify(payload),
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) throw new Error(`Stream failed with status ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalAnswer = "";
+        let serverError = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const line = part.split("\n").find(entry => entry.startsWith("data:"));
+            if (!line) continue;
+            let message: { delta?: string; done?: boolean; answer?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string } | null = null;
+            try {
+              message = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; answer?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string };
+            } catch {
+              continue;
+            }
+            if (!message) continue;
+            if (typeof message.delta === "string" && message.delta) {
+              finalAnswer += message.delta;
+              setStreamingText(current => current + (message.delta as string));
+            } else if (message.error) {
+              serverError = message.error;
+            } else if (message.activity) {
+              const activity = message.activity;
+              liveActivitiesRef.current = [...liveActivitiesRef.current, activity];
+              setLiveActivities(liveActivitiesRef.current);
+            } else if (message.done) {
+              if (typeof message.answer === "string" && message.answer) finalAnswer = message.answer;
+              if (Array.isArray(message.activities)) {
+                liveActivitiesRef.current = message.activities;
+                setLiveActivities(message.activities);
+              }
+            }
+          }
+        }
+        if (serverError) throw new Error(serverError);
+        setHistory(current => [...current, { q, a: finalAnswer.trim() || "I could not produce an answer for that question.", activities: liveActivitiesRef.current }]);
         queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
         queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
-      },
-    });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // Streaming failed mid-flight; fall back to the classic request.
+        ask.mutate({ data: payload }, {
+          onSuccess: response => {
+            setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
+            queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
+            queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+          },
+          onError: fallback => setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again.")),
+        });
+      } finally {
+        setIsStreaming(false);
+        setStreamingText("");
+      }
+    })();
   };
 
   const newConversation = () => {
@@ -669,7 +1310,11 @@ function ConversationAssistant() {
       onSuccess: conversation => {
         setActiveConversationId(conversation.id);
         setHistory([]);
-        setHistoryOpen(false);
+        // Put the new chat in the list immediately so the auto-select logic
+        // never snaps back to an old chat while the refetch is in flight.
+        queryClient.setQueryData<AssistantConversationList>(getListAssistantConversationsQueryKey(), old => ({
+          items: [{ ...conversation, messageCount: 0 }, ...((old?.items ?? []).filter(item => item.id !== conversation.id))],
+        }));
         queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
       },
     });
@@ -692,9 +1337,10 @@ function ConversationAssistant() {
     deleteConversation.mutate({ conversationId: id }, {
       onSuccess: () => {
         if (activeConversationId === id) {
-          const next = conversations.data?.items.find(item => item.id !== id);
-          setActiveConversationId(next?.id ?? "");
+          const remaining = (conversations.data?.items ?? []).filter(item => item.id !== id);
           setHistory([]);
+          if (remaining.length === 0) newConversation();
+          else setActiveConversationId(remaining[0].id);
         }
         queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
       },
@@ -704,55 +1350,35 @@ function ConversationAssistant() {
 
   return <div className="fade-up">
     <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} />
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-      <section className="relative min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)]">
-        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the coordinator team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={() => setHistoryOpen(open => !open)} aria-expanded={historyOpen} aria-label="Open conversation history" title="Conversation history" data-testid="button-assistant-history" className={`rounded-lg p-2 transition ${historyOpen ? "bg-[#e3f4f2] text-[#16869a]" : "text-[#718189] hover:bg-[#f1f6f5] hover:text-[#16869a]"}`}><History size={17} /></button><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
-        {historyOpen && <div className="absolute left-4 top-[76px] z-20 w-[min(350px,calc(100%-2rem))] rounded-2xl border border-[#d5e3e1] bg-white p-3 shadow-[0_16px_45px_rgba(26,49,60,.18)]"><div className="flex items-center justify-between border-b border-[#edf1f1] px-2 pb-3"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Saved chats</p><p className="mt-1 text-sm font-semibold">Conversation history</p></div><button onClick={newConversation} disabled={createConversation.isPending} className="flex items-center gap-1 rounded-lg bg-[#e3f4f2] px-2.5 py-1.5 text-xs font-semibold text-[#16869a] disabled:opacity-50"><Plus size={14} /> New</button></div><div className="mt-2 max-h-[52vh] space-y-1 overflow-y-auto">{conversations.isLoading && [1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}{conversations.data?.items.map(conversation => <div key={conversation.id} className={`rounded-xl border p-2 transition ${conversation.id === activeConversationId ? "border-[#a9d3ce] bg-[#eff8f6]" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9]"}`}>{renamingId === conversation.id ? <form onSubmit={event => saveRename(event, conversation.id)} className="flex items-center gap-1"><input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#b7d5d1] bg-white px-2 py-1.5 text-xs outline-none focus:border-[#16869a]" /><button type="submit" aria-label="Save conversation name" className="rounded-md p-1 text-[#16869a] hover:bg-[#dff2ee]"><Check size={14} /></button><button type="button" onClick={() => setRenamingId("")} aria-label="Cancel rename" className="rounded-md p-1 text-[#718189] hover:bg-[#edf1f1]"><X size={14} /></button></form> : <div className="flex items-center gap-1"><button onClick={() => { setActiveConversationId(conversation.id); setHistoryOpen(false); }} className="min-w-0 flex-1 text-left" data-testid={`button-assistant-conversation-${conversation.id}`}><p className="truncate text-xs font-semibold text-[#38555e]">{conversation.title}</p><p className="mt-1 text-[10px] text-[#819197]">{conversation.messageCount} {conversation.messageCount === 1 ? "exchange" : "exchanges"}</p></button><button onClick={() => { setRenamingId(conversation.id); setRenameValue(conversation.title); }} aria-label={`Rename ${conversation.title}`} title="Rename conversation" data-testid={`button-rename-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#7d9398] hover:bg-[#dff2ee] hover:text-[#16869a]"><Pencil size={13} /></button><button onClick={() => deleteConversationById(conversation.id, conversation.title)} aria-label={`Delete ${conversation.title}`} title="Delete conversation" data-testid={`button-delete-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#a34d46] hover:bg-[#fff1ef]"><Trash2 size={13} /></button></div>}</div>)}{!conversations.isLoading && !conversations.data?.items.length && <p className="px-2 py-5 text-xs leading-5 text-[#7c8c91]">No saved conversations yet.</p>}</div></div>}
+    <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
+      <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
+        <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>
+        <p className="mono mt-5 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Previous chats</p>
+        <div className="mt-2 max-h-[52vh] space-y-1 overflow-y-auto xl:max-h-[62vh]">
+          {conversations.isLoading && [1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}
+          {conversations.data?.items.map(conversation => <div key={conversation.id} className={`rounded-xl border p-2 transition ${conversation.id === activeConversationId ? "border-[#a9d3ce] bg-[#eff8f6]" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9]"}`}>{renamingId === conversation.id ? <form onSubmit={event => saveRename(event, conversation.id)} className="flex items-center gap-1"><input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} data-testid="input-rename-conversation" className="min-w-0 flex-1 rounded-md border border-[#b7d5d1] bg-white px-2 py-1.5 text-xs outline-none focus:border-[#16869a]" /><button type="submit" aria-label="Save conversation name" className="rounded-md p-1 text-[#16869a] hover:bg-[#dff2ee]"><Check size={14} /></button><button type="button" onClick={() => setRenamingId("")} aria-label="Cancel rename" className="rounded-md p-1 text-[#718189] hover:bg-[#edf1f1]"><X size={14} /></button></form> : <div className="flex items-center gap-1"><button onClick={() => { setActiveConversationId(conversation.id); setHistory([]); }} className="min-w-0 flex-1 text-left" data-testid={`button-assistant-conversation-${conversation.id}`}><p className="truncate text-xs font-semibold text-[#38555e]">{conversation.title}</p><p className="mt-1 text-[10px] text-[#819197]">{timeAgo(conversation.updatedAt)}{conversation.messageCount > 0 ? ` · ${conversation.messageCount} ${conversation.messageCount === 1 ? "exchange" : "exchanges"}` : ""}</p></button><button onClick={() => { setRenamingId(conversation.id); setRenameValue(conversation.title); }} aria-label={`Rename ${conversation.title}`} title="Rename conversation" data-testid={`button-rename-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#7d9398] hover:bg-[#dff2ee] hover:text-[#16869a]"><Pencil size={13} /></button><button onClick={() => deleteConversationById(conversation.id, conversation.title)} aria-label={`Delete ${conversation.title}`} title="Delete conversation" data-testid={`button-delete-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#a34d46] hover:bg-[#fff1ef]"><Trash2 size={13} /></button></div>}</div>)}
+          {!conversations.isLoading && !conversations.data?.items.length && <p className="px-1 py-4 text-xs leading-5 text-[#7c8c91]">No saved conversations yet. Start a new chat above.</p>}
+        </div>
+      </aside>
+      <section className="relative order-1 min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
+        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the coordinator team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
+        
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
           {!activeMessages.isLoading && !history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in this conversation.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
-          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><MarkdownContent source={item.a} className="text-[#52666e]" /></div></div>)}
+          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div></div></div>)}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
-          {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}
+          {isStreaming && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
+          {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
+          {streamError && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
         </div>
-        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
-      <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section>
+      <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer" className="order-3"><div className="space-y-2">{list.data && list.data.total > 8 && <p className="px-2 text-[11px] text-[#8a999d]">Showing first 8 of {list.data.total} — search on the Applicants page for the rest.</p>}{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section><ImageStudio />
     </div>
   </div>;
 }
-
-function Assistant() {
-  const [question, setQuestion] = useState("");
-  const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
-  const ask = useAskAssistant();
-  const clearHistory = useClearAssistantHistory();
-  const persisted = useGetAssistantHistory({ query: { queryKey: getGetAssistantHistoryQueryKey() } });
-  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
-  const [selected, setSelected] = useState<string[]>([]);
-  useEffect(() => {
-    if (persisted.data) setHistory(persisted.data.items.map(item => ({ q: item.question, a: item.answer })));
-  }, [persisted.data]);
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim()) return;
-    const q = question;
-    setQuestion("");
-    ask.mutate({ data: { question: q, applicantIds: selected.length ? selected : undefined } }, { onSuccess: r => setHistory(h => [...h, { q, a: r.answer }]) });
-  };
-  const clearConversation = () => {
-    if (!history.length || clearHistory.isPending || !window.confirm("Clear the shared assistant conversation for everyone?")) return;
-    clearHistory.mutate(undefined, {
-      onSuccess: () => {
-        setHistory([]);
-        queryClient.invalidateQueries({ queryKey: getGetAssistantHistoryQueryKey() });
-      },
-    });
-  };
-  const prompts = ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
-  return <div className="fade-up"><PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A filter-aware second set of eyes. Bring a question; keep the final call human." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} /><div className="grid gap-5 xl:grid-cols-[1fr_330px]"><section className="min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div><h2 className="font-semibold">Control room assistant</h2><p className="text-xs text-[#7c8c91]">Applicant data and assistant history stay inside this workspace.</p></div><button onClick={clearConversation} disabled={!history.length || ask.isPending || clearHistory.isPending} aria-label="Clear assistant conversation" title="Clear shared assistant conversation" data-testid="button-clear-assistant-conversation" className="ml-auto rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30">{clearHistory.isPending ? <RefreshCw size={17} className="animate-spin" /> : <Trash2 size={17} />}</button></div><div className="space-y-5 py-6">{!history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">What should we look at?</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">Ask for a shortlist, a comparison, or a question to use in the interview bay.</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((p, i) => <button key={p} onClick={() => setQuestion(p)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{p}</button>)}</div></div>}{history.map((h, i) => <div key={`${h.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{h.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><MarkdownContent source={h.a} className="text-[#52666e]" /></div></div>)}{ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}{ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">The assistant could not answer that just now. Try again.</p>}</div><form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={e => setQuestion(e.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || !question.trim()} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form></section><Section title="Focus the context" kicker="Optional: select applicants for a sharper answer"><div className="space-y-2">{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(a => <label key={a.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(a.id)} onChange={e => setSelected(s => e.target.checked ? [...s,a.id] : s.filter(x => x !== a.id))} data-testid={`checkbox-assistant-${a.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{a.name}</span><span className="mono text-[10px] text-[#16869a]">{a.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section></div></div>;
-}
-
 function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export default App;

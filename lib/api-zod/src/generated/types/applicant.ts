@@ -13,6 +13,8 @@ export interface Applicant {
   /** @nullable */
   email?: string | null;
   /** @nullable */
+  photoUrl?: string | null;
+  /** @nullable */
   transcript?: string | null;
   aiScore: number;
   aiRecommendation: string;

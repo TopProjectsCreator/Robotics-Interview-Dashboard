@@ -102,6 +102,7 @@ export const ListApplicantsResponse = zod.object({
   "name": zod.string(),
   "grade": zod.string(),
   "email": zod.string().nullish(),
+  "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -136,6 +137,7 @@ export const GetApplicantResponse = zod.object({
   "name": zod.string(),
   "grade": zod.string(),
   "email": zod.string().nullish(),
+  "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -164,6 +166,15 @@ export const UpdateApplicantParams = zod.object({
 })
 
 export const UpdateApplicantBody = zod.object({
+  "name": zod.string().optional(),
+  "grade": zod.string().optional(),
+  "email": zod.string().optional(),
+  "photoUrl": zod.string().nullish(),
+  "aiScore": zod.number().optional().describe('-1 marks an invalid score needing coordinator review'),
+  "aiRecommendation": zod.string().optional(),
+  "roboticsExperience": zod.string().optional(),
+  "commit10Hours": zod.string().optional(),
+  "parentVolunteer": zod.string().optional(),
   "category": zod.string().optional(),
   "rank": zod.number().int().optional(),
   "notes": zod.string().optional(),
@@ -179,6 +190,50 @@ export const UpdateApplicantResponse = zod.object({
   "name": zod.string(),
   "grade": zod.string(),
   "email": zod.string().nullish(),
+  "photoUrl": zod.string().nullish(),
+  "transcript": zod.string().nullish(),
+  "aiScore": zod.number().int(),
+  "aiRecommendation": zod.string(),
+  "aiSummary": zod.string(),
+  "aiStrengths": zod.string(),
+  "aiConcerns": zod.string(),
+  "roboticsExperience": zod.string(),
+  "commit10Hours": zod.string(),
+  "parentVolunteer": zod.string(),
+  "interviewStatus": zod.string(),
+  "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
+  "category": zod.string(),
+  "rank": zod.number().int(),
+  "notes": zod.string(),
+  "queuePosition": zod.number().int()
+})
+
+
+/**
+ * @summary Delete an applicant permanently
+ */
+export const DeleteApplicantParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteApplicantResponse = zod.void()
+
+
+/**
+ * @summary Regenerate AI score, recommendation, and readout from the transcript
+ */
+export const RegenerateApplicantParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RegenerateApplicantResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "email": zod.string().nullish(),
+  "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -509,6 +564,46 @@ export const ReorderQueueResponse = zod.object({
 
 
 /**
+ * @summary Recall a finished applicant to the front of the queue
+ */
+export const CallbackQueueBody = zod.object({
+  "applicantId": zod.string(),
+  "note": zod.string().optional()
+})
+
+export const CallbackQueueResponse = zod.object({
+  "currentApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
+})),
+  "nextApplicants": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "aiScore": zod.number().int(),
+  "category": zod.string(),
+  "queuePosition": zod.number().int(),
+  "interviewer": zod.string(),
+  "notes": zod.string(),
+  "interviewDecision": zod.string(),
+  "callbackRequested": zod.boolean()
+})),
+  "interviewerLabels": zod.array(zod.string()),
+  "completedCount": zod.number().int(),
+  "remainingCount": zod.number().int(),
+  "updatedAt": zod.string()
+})
+
+
+/**
  * @summary Get sanitized big-screen state
  */
 export const GetDisplayStateResponse = zod.object({
@@ -535,8 +630,93 @@ export const AskAssistantBody = zod.object({
 })
 
 export const AskAssistantResponse = zod.object({
-  "answer": zod.string()
+  "answer": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional()
 })
+
+
+/**
+ * @summary Generate an AI image from a coordinator prompt (keyless provider)
+ */
+export const GenerateAssistantImageBody = zod.object({
+  "prompt": zod.string(),
+  "size": zod.string().optional().describe('1024x1024 or 512x512')
+})
+
+export const GenerateAssistantImageResponse = zod.object({
+  "imageUrl": zod.string(),
+  "prompt": zod.string(),
+  "seed": zod.number().int()
+})
+
+
+/**
+ * @summary List saved custom dashboard charts
+ */
+export const ListDashboardChartsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "source": zod.string(),
+  "chart": zod.string(),
+  "position": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Save a custom dashboard chart
+ */
+export const CreateDashboardChartBody = zod.object({
+  "source": zod.string(),
+  "chart": zod.string()
+})
+
+export const CreateDashboardChartResponse = zod.object({
+  "id": zod.string(),
+  "source": zod.string(),
+  "chart": zod.string(),
+  "position": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Update a custom dashboard chart
+ */
+export const UpdateDashboardChartParams = zod.object({
+  "chartId": zod.coerce.string()
+})
+
+export const UpdateDashboardChartBody = zod.object({
+  "source": zod.string().optional(),
+  "chart": zod.string().optional(),
+  "position": zod.number().int().optional()
+})
+
+export const UpdateDashboardChartResponse = zod.object({
+  "id": zod.string(),
+  "source": zod.string(),
+  "chart": zod.string(),
+  "position": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a custom dashboard chart
+ */
+export const DeleteDashboardChartParams = zod.object({
+  "chartId": zod.coerce.string()
+})
+
+export const DeleteDashboardChartResponse = zod.void()
 
 
 /**
@@ -547,6 +727,10 @@ export const GetAssistantHistoryResponse = zod.object({
   "id": zod.string(),
   "question": zod.string(),
   "answer": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional(),
   "createdAt": zod.string()
 }))
 })
@@ -630,6 +814,10 @@ export const GetAssistantConversationMessagesResponse = zod.object({
   "id": zod.string(),
   "question": zod.string(),
   "answer": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional(),
   "createdAt": zod.string()
 }))
 })

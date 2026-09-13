@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db, applicantsTable, interviewQueueTable, type Applicant } from "@workspace/db";
 
 export const demoApplicants = [
@@ -16,7 +16,7 @@ export const demoApplicants = [
 let demoChecked = false;
 
 export async function ensureDemoData(): Promise<void> {
-  if (demoChecked) return;
+  if (demoChecked || process.env.DISABLE_DEMO_SEED === "true") return;
   const existing = await db.select({ id: applicantsTable.id }).from(applicantsTable).limit(1);
   if (existing.length === 0) {
     await db.insert(applicantsTable).values(
@@ -85,6 +85,7 @@ export function applicantResponse(applicant: Applicant) {
     name: applicant.name,
     grade: applicant.grade,
     email: applicant.email,
+    photoUrl: applicant.photoUrl,
     transcript: applicant.transcript,
     aiScore: applicant.aiScore,
     aiRecommendation: applicant.aiRecommendation,
@@ -157,10 +158,24 @@ export async function getInterviewSettings(): Promise<string[]> {
 export async function getQueueState() {
   const applicants = await getApplicants({ sort: "queue" });
   const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
-  const nextApplicants = remaining.slice(2, 4);
   const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
   const interviewerLabels = await getInterviewSettings();
-  const currentApplicants = balancedCurrentApplicants(remaining.slice(0, 2), interviewerLabels);
+  // One active interview slot per interviewer label, plus an equal-sized bench.
+  const slotCount = Math.max(1, interviewerLabels.length);
+  const nextApplicants = remaining.slice(slotCount, slotCount * 2);
+  const currentApplicants = balancedCurrentApplicants(remaining.slice(0, slotCount), interviewerLabels);
+  // Sticky interviewers: the first label an applicant receives is persisted,
+  // so nobody rotates through interviewers as the queue advances. Labels a
+  // coordinator set by hand (or assigned on a previous poll) are never touched.
+  const storedById = new Map(remaining.map((applicant) => [applicant.id, applicant.interviewer]));
+  for (const applicant of currentApplicants) {
+    if (!storedById.get(applicant.id) && applicant.interviewer) {
+      await db.update(applicantsTable).set({
+        interviewer: applicant.interviewer,
+        updatedAt: new Date(),
+      }).where(eq(applicantsTable.id, applicant.id));
+    }
+  }
   const latestUpdatedAt = applicants.reduce(
     (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
     0,
@@ -239,7 +254,9 @@ export function parseSemicolonCsv(input: string): { headers: string[]; rows: str
   if (unclosedQuote) warnings.push("The file ended with an open quote; the last row was recovered as best as possible.");
   const headerRecord = records.shift() ?? "";
   const delimiter = detectDelimiter(headerRecord);
-  const headers = parseRecord(headerRecord, delimiter).map((header) => header.trim());
+  const normalizeHeader = (header: string) =>
+    header.trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  const headers = parseRecord(headerRecord, delimiter).map(normalizeHeader);
   const candidates = [delimiter, ",", ";", "\t"].filter((value, index, array) => array.indexOf(value) === index);
   const rows = records.flatMap((record, index) => {
     const parsed = candidates
@@ -280,9 +297,20 @@ export function importDiff(
   };
 }
 
+export function normalizeAiScore(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value === -1) return -1;
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+  if (typeof value !== "string" || value.trim() === "") return -1;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return -1;
+  if (parsed === -1) return -1;
+  return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+
 export function csvToApplicant(values: string[], headers: string[], queuePosition: number) {
   const record = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  const rawScore = Number(record.ai_score);
   return {
     id: record.id || randomUUID(),
     name: record.name || "Unnamed applicant",
@@ -290,7 +318,7 @@ export function csvToApplicant(values: string[], headers: string[], queuePositio
     email: record.email || null,
     transcript: record.transcript || null,
     attachments: record.attachments || null,
-    aiScore: Number.isFinite(rawScore) ? rawScore : -1,
+    aiScore: normalizeAiScore(record.ai_score),
     aiRecommendation: record.ai_recommendation || "Review",
     aiSummary: record.ai_summary || "",
     aiStrengths: record.ai_strengths || "",
@@ -304,7 +332,7 @@ export function csvToApplicant(values: string[], headers: string[], queuePositio
     callbackRequested: false,
     category: "unranked",
     rank: queuePosition + 1,
-    notes: "",
+    notes: record.notes || "",
     queuePosition,
   };
 }

@@ -7,6 +7,17 @@
  */
 
 export interface ApplicantUpdate {
+  name?: string;
+  grade?: string;
+  email?: string;
+  /** @nullable */
+  photoUrl?: string | null;
+  /** -1 marks an invalid score needing coordinator review */
+  aiScore?: number;
+  aiRecommendation?: string;
+  roboticsExperience?: string;
+  commit10Hours?: string;
+  parentVolunteer?: string;
   category?: string;
   rank?: number;
   notes?: string;

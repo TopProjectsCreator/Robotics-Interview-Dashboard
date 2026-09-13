@@ -9,9 +9,9 @@ export function getStoredAuthToken(): string | null {
 }
 
 export function storeAuthToken(token: string | undefined): void {
-  if (!token) return;
   try {
-    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    if (!token) window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    else window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
   } catch {
     // The cookie session remains available when storage is disabled.
   }

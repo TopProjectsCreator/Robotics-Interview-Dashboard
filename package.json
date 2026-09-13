@@ -15,5 +15,21 @@
   "devDependencies": {
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
-  }
+  },
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TopProjectsCreator/Robotics-Interview-Dashboard.git"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/TopProjectsCreator/Robotics-Interview-Dashboard/issues"
+  },
+  "homepage": "https://github.com/TopProjectsCreator/Robotics-Interview-Dashboard#readme"
 }

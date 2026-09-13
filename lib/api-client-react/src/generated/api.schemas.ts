@@ -58,6 +58,8 @@ export interface Applicant {
   /** @nullable */
   email?: string | null;
   /** @nullable */
+  photoUrl?: string | null;
+  /** @nullable */
   transcript?: string | null;
   aiScore: number;
   aiRecommendation: string;
@@ -83,6 +85,17 @@ export interface ApplicantList {
 }
 
 export interface ApplicantUpdate {
+  name?: string;
+  grade?: string;
+  email?: string;
+  /** @nullable */
+  photoUrl?: string | null;
+  /** -1 marks an invalid score needing coordinator review */
+  aiScore?: number;
+  aiRecommendation?: string;
+  roboticsExperience?: string;
+  commit10Hours?: string;
+  parentVolunteer?: string;
   category?: string;
   rank?: number;
   notes?: string;
@@ -208,6 +221,11 @@ export interface ReorderQueueInput {
   applicantIds: string[];
 }
 
+export interface QueueCallbackInput {
+  applicantId: string;
+  note?: string;
+}
+
 export interface DisplayApplicant {
   id: string;
   name: string;
@@ -223,14 +241,56 @@ export interface DisplayState {
   updatedAt: string;
 }
 
+export interface DashboardChart {
+  id: string;
+  source: string;
+  chart: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DashboardChartList {
+  items: DashboardChart[];
+}
+
+export interface DashboardChartInput {
+  source: string;
+  chart: string;
+}
+
+export interface DashboardChartUpdate {
+  source?: string;
+  chart?: string;
+  position?: number;
+}
+
 export interface AssistantInput {
   question: string;
   conversationId?: string;
   applicantIds?: string[];
 }
 
+export interface AssistantActivity {
+  tool: string;
+  detail: string;
+}
+
 export interface AssistantResponse {
   answer: string;
+  activities?: AssistantActivity[];
+}
+
+export interface GenerateImageInput {
+  prompt: string;
+  /** 1024x1024 or 512x512 */
+  size?: string;
+}
+
+export interface GenerateImageResult {
+  imageUrl: string;
+  prompt: string;
+  seed: number;
 }
 
 export interface AssistantConversation {
@@ -257,6 +317,7 @@ export type AssistantHistoryItemsItem = {
   id: string;
   question: string;
   answer: string;
+  activities?: AssistantActivity[];
   createdAt: string;
 };
 

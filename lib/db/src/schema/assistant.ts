@@ -15,6 +15,7 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   question: text("question").notNull(),
   answer: text("answer").notNull(),
   applicantIds: text("applicant_ids").notNull().default("[]"),
+  activities: text("activities").notNull().default("[]"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -32,9 +32,15 @@ import type {
   AssistantInput,
   AssistantResponse,
   AuthSession,
+  DashboardChart,
+  DashboardChartInput,
+  DashboardChartList,
+  DashboardChartUpdate,
   DashboardSummary,
   DisplayState,
   ErrorResponse,
+  GenerateImageInput,
+  GenerateImageResult,
   HealthStatus,
   ImportHistory,
   ImportInput,
@@ -46,6 +52,7 @@ import type {
   ListApplicantsParams,
   LoginInput,
   MessageResponse,
+  QueueCallbackInput,
   QueueSettingsInput,
   QueueState,
   ReorderQueueInput,
@@ -685,6 +692,148 @@ export const useUpdateApplicant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateApplicantMutationOptions(options));
+    }
+
+export const getDeleteApplicantUrl = (id: string,) => {
+
+
+
+
+  return `/api/applicants/${id}`
+}
+
+/**
+ * @summary Delete an applicant permanently
+ */
+export const deleteApplicant = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteApplicantUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteApplicantMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApplicant>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteApplicant>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteApplicant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteApplicant>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteApplicant(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteApplicantMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApplicant>>>
+
+    export type DeleteApplicantMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete an applicant permanently
+ */
+export const useDeleteApplicant = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApplicant>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteApplicant>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteApplicantMutationOptions(options));
+    }
+
+export const getRegenerateApplicantUrl = (id: string,) => {
+
+
+
+
+  return `/api/applicants/${id}/regenerate`
+}
+
+/**
+ * @summary Regenerate AI score, recommendation, and readout from the transcript
+ */
+export const regenerateApplicant = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<Applicant> => {
+
+  return customFetch<Applicant>(getRegenerateApplicantUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRegenerateApplicantMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateApplicant>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateApplicant>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['regenerateApplicant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateApplicant>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  regenerateApplicant(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateApplicantMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateApplicant>>>
+
+    export type RegenerateApplicantMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Regenerate AI score, recommendation, and readout from the transcript
+ */
+export const useRegenerateApplicant = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateApplicant>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateApplicant>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRegenerateApplicantMutationOptions(options));
     }
 
 export const getCommitImportUrl = () => {
@@ -1486,6 +1635,77 @@ export const useReorderQueue = <TError = ErrorType<unknown>,
       return useMutation(getReorderQueueMutationOptions(options));
     }
 
+export const getCallbackQueueUrl = () => {
+
+
+
+
+  return `/api/queue/callback`
+}
+
+/**
+ * @summary Recall a finished applicant to the front of the queue
+ */
+export const callbackQueue = async (queueCallbackInput: QueueCallbackInput, options?: Parameters<typeof customFetch>[1]): Promise<QueueState> => {
+
+  return customFetch<QueueState>(getCallbackQueueUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(queueCallbackInput)
+  }
+);}
+
+
+
+
+
+export const getCallbackQueueMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof callbackQueue>>, TError,{data: BodyType<QueueCallbackInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof callbackQueue>>, TError,{data: BodyType<QueueCallbackInput>}, TContext> => {
+
+const mutationKey = ['callbackQueue'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof callbackQueue>>, {data: BodyType<QueueCallbackInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  callbackQueue(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CallbackQueueMutationResult = NonNullable<Awaited<ReturnType<typeof callbackQueue>>>
+    export type CallbackQueueMutationBody = BodyType<QueueCallbackInput>
+    export type CallbackQueueMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Recall a finished applicant to the front of the queue
+ */
+export const useCallbackQueue = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof callbackQueue>>, TError,{data: BodyType<QueueCallbackInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof callbackQueue>>,
+        TError,
+        {data: BodyType<QueueCallbackInput>},
+        TContext
+      > => {
+      return useMutation(getCallbackQueueMutationOptions(options));
+    }
+
 export const getGetDisplayStateUrl = () => {
 
 
@@ -1632,6 +1852,368 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
+    }
+
+export const getGenerateAssistantImageUrl = () => {
+
+
+
+
+  return `/api/assistant/images`
+}
+
+/**
+ * @summary Generate an AI image from a coordinator prompt (keyless provider)
+ */
+export const generateAssistantImage = async (generateImageInput: GenerateImageInput, options?: Parameters<typeof customFetch>[1]): Promise<GenerateImageResult> => {
+
+  return customFetch<GenerateImageResult>(getGenerateAssistantImageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(generateImageInput)
+  }
+);}
+
+
+
+
+
+export const getGenerateAssistantImageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAssistantImage>>, TError,{data: BodyType<GenerateImageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateAssistantImage>>, TError,{data: BodyType<GenerateImageInput>}, TContext> => {
+
+const mutationKey = ['generateAssistantImage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateAssistantImage>>, {data: BodyType<GenerateImageInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  generateAssistantImage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateAssistantImageMutationResult = NonNullable<Awaited<ReturnType<typeof generateAssistantImage>>>
+    export type GenerateAssistantImageMutationBody = BodyType<GenerateImageInput>
+    export type GenerateAssistantImageMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate an AI image from a coordinator prompt (keyless provider)
+ */
+export const useGenerateAssistantImage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateAssistantImage>>, TError,{data: BodyType<GenerateImageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateAssistantImage>>,
+        TError,
+        {data: BodyType<GenerateImageInput>},
+        TContext
+      > => {
+      return useMutation(getGenerateAssistantImageMutationOptions(options));
+    }
+
+export const getListDashboardChartsUrl = () => {
+
+
+
+
+  return `/api/dashboard/charts`
+}
+
+/**
+ * @summary List saved custom dashboard charts
+ */
+export const listDashboardCharts = async ( options?: Parameters<typeof customFetch>[1]): Promise<DashboardChartList> => {
+
+  return customFetch<DashboardChartList>(getListDashboardChartsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDashboardChartsQueryKey = () => {
+    return [
+    `/api/dashboard/charts`
+    ] as const;
+    }
+
+
+export const getListDashboardChartsQueryOptions = <TData = Awaited<ReturnType<typeof listDashboardCharts>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDashboardCharts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDashboardChartsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDashboardCharts>>> = ({ signal }) => listDashboardCharts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDashboardCharts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDashboardChartsQueryResult = NonNullable<Awaited<ReturnType<typeof listDashboardCharts>>>
+export type ListDashboardChartsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List saved custom dashboard charts
+ */
+
+export function useListDashboardCharts<TData = Awaited<ReturnType<typeof listDashboardCharts>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDashboardCharts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDashboardChartsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateDashboardChartUrl = () => {
+
+
+
+
+  return `/api/dashboard/charts`
+}
+
+/**
+ * @summary Save a custom dashboard chart
+ */
+export const createDashboardChart = async (dashboardChartInput: DashboardChartInput, options?: Parameters<typeof customFetch>[1]): Promise<DashboardChart> => {
+
+  return customFetch<DashboardChart>(getCreateDashboardChartUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(dashboardChartInput)
+  }
+);}
+
+
+
+
+
+export const getCreateDashboardChartMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDashboardChart>>, TError,{data: BodyType<DashboardChartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDashboardChart>>, TError,{data: BodyType<DashboardChartInput>}, TContext> => {
+
+const mutationKey = ['createDashboardChart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDashboardChart>>, {data: BodyType<DashboardChartInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDashboardChart(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDashboardChartMutationResult = NonNullable<Awaited<ReturnType<typeof createDashboardChart>>>
+    export type CreateDashboardChartMutationBody = BodyType<DashboardChartInput>
+    export type CreateDashboardChartMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a custom dashboard chart
+ */
+export const useCreateDashboardChart = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDashboardChart>>, TError,{data: BodyType<DashboardChartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDashboardChart>>,
+        TError,
+        {data: BodyType<DashboardChartInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDashboardChartMutationOptions(options));
+    }
+
+export const getUpdateDashboardChartUrl = (chartId: string,) => {
+
+
+
+
+  return `/api/dashboard/charts/${chartId}`
+}
+
+/**
+ * @summary Update a custom dashboard chart
+ */
+export const updateDashboardChart = async (chartId: string,
+    dashboardChartUpdate: DashboardChartUpdate, options?: Parameters<typeof customFetch>[1]): Promise<DashboardChart> => {
+
+  return customFetch<DashboardChart>(getUpdateDashboardChartUrl(chartId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(dashboardChartUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateDashboardChartMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDashboardChart>>, TError,{chartId: string;data: BodyType<DashboardChartUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDashboardChart>>, TError,{chartId: string;data: BodyType<DashboardChartUpdate>}, TContext> => {
+
+const mutationKey = ['updateDashboardChart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDashboardChart>>, {chartId: string;data: BodyType<DashboardChartUpdate>}> = (props) => {
+          const {chartId,data} = props ?? {};
+
+          return  updateDashboardChart(chartId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDashboardChartMutationResult = NonNullable<Awaited<ReturnType<typeof updateDashboardChart>>>
+    export type UpdateDashboardChartMutationBody = BodyType<DashboardChartUpdate>
+    export type UpdateDashboardChartMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update a custom dashboard chart
+ */
+export const useUpdateDashboardChart = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDashboardChart>>, TError,{chartId: string;data: BodyType<DashboardChartUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDashboardChart>>,
+        TError,
+        {chartId: string;data: BodyType<DashboardChartUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateDashboardChartMutationOptions(options));
+    }
+
+export const getDeleteDashboardChartUrl = (chartId: string,) => {
+
+
+
+
+  return `/api/dashboard/charts/${chartId}`
+}
+
+/**
+ * @summary Delete a custom dashboard chart
+ */
+export const deleteDashboardChart = async (chartId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteDashboardChartUrl(chartId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteDashboardChartMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDashboardChart>>, TError,{chartId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDashboardChart>>, TError,{chartId: string}, TContext> => {
+
+const mutationKey = ['deleteDashboardChart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDashboardChart>>, {chartId: string}> = (props) => {
+          const {chartId} = props ?? {};
+
+          return  deleteDashboardChart(chartId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDashboardChartMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDashboardChart>>>
+
+    export type DeleteDashboardChartMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a custom dashboard chart
+ */
+export const useDeleteDashboardChart = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDashboardChart>>, TError,{chartId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDashboardChart>>,
+        TError,
+        {chartId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteDashboardChartMutationOptions(options));
     }
 
 export const getGetAssistantHistoryUrl = () => {

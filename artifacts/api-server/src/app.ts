@@ -30,7 +30,17 @@ app.use(
 // The dashboard can be hosted inside a coordinator's iframe. Reflect the
 // embedding origin so browser requests are allowed to include the session
 // cookie, while keeping the API usable from the same-origin preview too.
-app.use(cors({ origin: true, credentials: true }));
+// In production, set ALLOWED_ORIGINS (comma-separated) to restrict which
+// sites may call the API — open reflection invites cross-site request
+// forgery against coordinator sessions.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  credentials: true,
+}));
 app.use(cookieParser());
 app.use(attachAdminSession);
 app.use(express.json());

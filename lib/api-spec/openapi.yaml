@@ -157,6 +157,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Applicant"
+    delete:
+      operationId: deleteApplicant
+      tags: [applicants]
+      summary: Delete an applicant permanently
+      parameters:
+        - $ref: "#/components/parameters/ApplicantId"
+      responses:
+        "204":
+          description: Applicant deleted
+        "404":
+          description: Applicant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /applicants/{id}/regenerate:
+    post:
+      operationId: regenerateApplicant
+      tags: [applicants]
+      summary: Regenerate AI score, recommendation, and readout from the transcript
+      parameters:
+        - $ref: "#/components/parameters/ApplicantId"
+      responses:
+        "200":
+          description: Applicant with regenerated evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
+        "404":
+          description: Applicant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /imports:
     post:
       operationId: commitImport
@@ -330,6 +365,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /queue/callback:
+    post:
+      operationId: callbackQueue
+      tags: [queue]
+      summary: Recall a finished applicant to the front of the queue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueueCallbackInput"
+      responses:
+        "200":
+          description: Updated queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueState"
   /display/state:
     get:
       operationId: getDisplayState
@@ -360,6 +413,96 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/images:
+    post:
+      operationId: generateAssistantImage
+      tags: [assistant]
+      summary: Generate an AI image from a coordinator prompt (keyless provider)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateImageInput"
+      responses:
+        "201":
+          description: Generated image URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateImageResult"
+  /dashboard/charts:
+    get:
+      operationId: listDashboardCharts
+      tags: [dashboard]
+      summary: List saved custom dashboard charts
+      responses:
+        "200":
+          description: Saved custom charts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardChartList"
+    post:
+      operationId: createDashboardChart
+      tags: [dashboard]
+      summary: Save a custom dashboard chart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DashboardChartInput"
+      responses:
+        "201":
+          description: Created custom chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardChart"
+  /dashboard/charts/{chartId}:
+    parameters:
+      - name: chartId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateDashboardChart
+      tags: [dashboard]
+      summary: Update a custom dashboard chart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DashboardChartUpdate"
+      responses:
+        "200":
+          description: Updated custom chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardChart"
+        "404":
+          description: Chart not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteDashboardChart
+      tags: [dashboard]
+      summary: Delete a custom dashboard chart
+      responses:
+        "204":
+          description: Chart deleted
+        "404":
+          description: Chart not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/history:
     get:
       operationId: getAssistantHistory
@@ -620,6 +763,8 @@ components:
           type: string
         email:
           type: ["string", "null"]
+        photoUrl:
+          type: ["string", "null"]
         transcript:
           type: ["string", "null"]
         aiScore:
@@ -667,6 +812,25 @@ components:
     ApplicantUpdate:
       type: object
       properties:
+        name:
+          type: string
+        grade:
+          type: string
+        email:
+          type: string
+        photoUrl:
+          type: ["string", "null"]
+        aiScore:
+          type: number
+          description: "-1 marks an invalid score needing coordinator review"
+        aiRecommendation:
+          type: string
+        roboticsExperience:
+          type: string
+        commit10Hours:
+          type: string
+        parentVolunteer:
+          type: string
         category:
           type: string
         rank:
@@ -894,6 +1058,14 @@ components:
           type: array
           items:
             type: string
+    QueueCallbackInput:
+      type: object
+      required: [applicantId]
+      properties:
+        applicantId:
+          type: string
+        note:
+          type: string
     DisplayState:
       type: object
       required: [mode, headline, subheadline, currentApplicants, updatedAt]
@@ -922,6 +1094,47 @@ components:
           type: string
         lane:
           type: string
+    DashboardChart:
+      type: object
+      required: [id, source, chart, position, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        chart:
+          type: string
+        position:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    DashboardChartList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardChart"
+    DashboardChartInput:
+      type: object
+      required: [source, chart]
+      properties:
+        source:
+          type: string
+        chart:
+          type: string
+    DashboardChartUpdate:
+      type: object
+      properties:
+        source:
+          type: string
+        chart:
+          type: string
+        position:
+          type: integer
     AssistantInput:
       type: object
       required: [question]
@@ -940,6 +1153,37 @@ components:
       properties:
         answer:
           type: string
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
+    AssistantActivity:
+      type: object
+      required: [tool, detail]
+      properties:
+        tool:
+          type: string
+        detail:
+          type: string
+    GenerateImageInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        size:
+          type: string
+          description: "1024x1024 or 512x512"
+    GenerateImageResult:
+      type: object
+      required: [imageUrl, prompt, seed]
+      properties:
+        imageUrl:
+          type: string
+        prompt:
+          type: string
+        seed:
+          type: integer
     AssistantConversation:
       type: object
       required: [id, title, createdAt, updatedAt, messageCount]
@@ -989,6 +1233,10 @@ components:
                 type: string
               answer:
                 type: string
+              activities:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantActivity"
               createdAt:
                 type: string
 

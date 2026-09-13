@@ -1,6 +1,6 @@
 # Robotics Interview Dashboard
 
-Private robotics tryout coordination software for two coordinators: review applicants, rank them into decision lanes, manage a two-person interview queue, ask an AI assistant for evidence-based summaries, and drive a sanitized waiting-room display.
+Private robotics tryout coordination software for two coordinators: review applicants, rank them into decision lanes, manage an interview queue sized to the interviewer roster, ask an AI assistant for evidence-based summaries, and drive a sanitized waiting-room display.
 
 ## Run & Operate
 
@@ -16,9 +16,14 @@ Required runtime services and secrets:
 
 - `DATABASE_URL` — PostgreSQL connection
 - `ADMIN_PASSWORD` — shared coordinator passcode; server-only
-- `SESSION_SECRET` — session signing secret
+- `SESSION_SECRET` — session signing secret (required in production)
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` — Replit-managed OpenAI integration
-- Object Storage variables provisioned by Replit for private CSV uploads
+- `AI_ASSISTANT_MODEL` — chat model override (default `gpt-4o-mini`)
+- `DISABLE_DEMO_SEED` — set `true` to stop sample applicants from seeding an empty roster
+- `ALLOWED_ORIGINS` — comma-separated origins allowed to call the API (default reflects any origin for iframe embedding; lock down in production)
+- `PYTHON_SANDBOX` — `auto` (default), `docker` (full stdlib, needs daemon + `python:3.12-slim` image), or `restricted`
+- `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, `PARALLEL_API_KEY` — optional, raise web-search limits (all four work keyless without them)
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` (default `app-uploads`) — Supabase Storage for roster uploads and profile photos; database and files all live in Supabase
 
 ## Stack
 
@@ -27,7 +32,7 @@ Required runtime services and secrets:
 - OpenAPI + Orval-generated React Query hooks and Zod schemas
 - Tailwind CSS, Space Grotesk, DM Mono, Lucide, Wouter
 - Replit-managed OpenAI integration for assistant answers and announcement audio
-- Replit Object Storage for private roster uploads
+- Supabase Storage (private bucket) for roster uploads and profile photos
 
 ## Where things live
 
@@ -45,7 +50,7 @@ Required runtime services and secrets:
 - Coordinator access uses one server-checked shared password and an HTTP-only signed session cookie. Clerk is intentionally not used.
 - The big-screen endpoint returns only names, grades, lanes, and announcement copy. It never exposes emails, transcripts, notes, or AI concerns.
 - The roster importer treats the source file as semicolon-delimited CSV so commas inside quoted JSON and free text remain intact. An AI score of `-1` is preserved as invalid.
-- Queue state is derived from applicant order and completion status, so finishing a pair updates every coordinator view and the display on the next poll.
+- Queue state is derived from applicant order and completion status, so finishing an interview updates every coordinator view and the display on the next poll. Active slots equal the interviewer label count (default 2, up to 12).
 - Display announcement audio is generated through the managed AI audio integration and cached by queue state to avoid repeated generation on each poll.
 
 ## Product
@@ -53,7 +58,7 @@ Required runtime services and secrets:
 - `/` — shared coordinator passcode entry
 - `/dashboard` — live totals, score distribution, recommendation signal, grade mix, commitment signal, and queue progress
 - `/applicants` — search, grade/category filters, drag-and-drop advance/hold/decline lanes, applicant detail drawer, notes, statuses, and private CSV import
-- `/queue` — current two-person pair, next pair, reordering, and finish-and-advance
+- `/queue` — currently interviewing group, up-next bench, reordering, and finish-and-advance
 - `/display` — full-screen non-interactive waiting-room display with polling and an audio-enable control
 - `/assistant` — filter-aware AI questions and comparisons over applicant records
 

@@ -5,10 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantActivity } from './assistantActivity';
 
 export type AssistantHistoryItemsItem = {
   id: string;
   question: string;
   answer: string;
+  activities?: AssistantActivity[];
   createdAt: string;
 };

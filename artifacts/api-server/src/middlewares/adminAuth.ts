@@ -1,12 +1,42 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { eq, lt } from "drizzle-orm";
+import { db, revokedSessionsTable } from "@workspace/db";
 
 const SESSION_COOKIE = "robotics_admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
+function sessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET must be set in production");
+  }
+  return secret ?? "development-session-secret";
+}
+
 function sessionDigest(payload: string): string {
-  const secret = process.env.SESSION_SECRET ?? "development-session-secret";
-  return createHmac("sha256", secret).update(payload).digest("hex");
+  return createHmac("sha256", sessionSecret()).update(payload).digest("hex");
+}
+
+function sessionTokenHash(session: string): string {
+  return createHash("sha256").update(session).digest("hex");
+}
+
+export async function revokeAdminSession(session: string | undefined): Promise<void> {
+  if (typeof session !== "string" || !session) return;
+  await db.insert(revokedSessionsTable).values({
+    tokenHash: sessionTokenHash(session),
+    expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+  }).onConflictDoNothing();
+  await db.delete(revokedSessionsTable).where(lt(revokedSessionsTable.expiresAt, new Date()));
+}
+
+export async function isRevokedAdminSession(session: string | undefined): Promise<boolean> {
+  if (typeof session !== "string" || !session) return false;
+  const [row] = await db.select({ tokenHash: revokedSessionsTable.tokenHash })
+    .from(revokedSessionsTable)
+    .where(eq(revokedSessionsTable.tokenHash, sessionTokenHash(session)));
+  return !!row;
 }
 
 export function createAdminSession(): string {
@@ -21,6 +51,9 @@ export function isValidAdminSession(value: unknown): boolean {
   const [timestamp, nonce, digest] = parts;
   const createdAt = Number(timestamp);
   if (!Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS) {
+    return false;
+  }
+  if (createdAt > Date.now() + 60000) {
     return false;
   }
   if (!nonce || !digest) return false;
@@ -66,7 +99,16 @@ export function requireAdmin(
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  next();
+  isRevokedAdminSession(session).then((revoked) => {
+    if (revoked) {
+      res.status(401).json({ error: "Session revoked" });
+      return;
+    }
+    next();
+  }).catch((error) => {
+    req.log.error({ err: error }, "Session revocation check failed");
+    res.status(503).json({ error: "Authentication unavailable" });
+  });
 }
 
 export function setAdminCookie(res: Response, session: string): void {
