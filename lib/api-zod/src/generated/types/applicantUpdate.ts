@@ -12,6 +12,13 @@ export interface ApplicantUpdate {
   email?: string;
   /** @nullable */
   photoUrl?: string | null;
+  /** @nullable */
+  transcript?: string | null;
+  /** @nullable */
+  attachments?: string | null;
+  aiSummary?: string;
+  aiStrengths?: string;
+  aiConcerns?: string;
   /** -1 marks an invalid score needing coordinator review */
   aiScore?: number;
   aiRecommendation?: string;

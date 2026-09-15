@@ -15,6 +15,7 @@ export const interviewChatMessagesTable = pgTable("interview_chat_messages", {
   id: text("id").primaryKey(),
   author: text("author").notNull(),
   message: text("message").notNull(),
+  activities: text("activities").notNull().default("[]"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

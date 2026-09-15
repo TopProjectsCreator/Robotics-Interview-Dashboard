@@ -5,8 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantActivity } from './assistantActivity';
 
 export interface InterviewChatInput {
   author: string;
   message: string;
+  activities?: AssistantActivity[];
 }

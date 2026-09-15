@@ -14,6 +14,7 @@ import {
   revokeAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
+import { deletePresenceHeartbeat } from "./presence";
 
 const router: IRouter = Router();
 
@@ -77,9 +78,11 @@ router.get("/auth/session", (req, res): void => {
 });
 
 router.post("/auth/logout", (req, res): void => {
-  revokeAdminSession(requestAdminSession(req)).catch((error) => {
+  const session = requestAdminSession(req);
+  revokeAdminSession(session).catch((error) => {
     req.log.error({ err: error }, "Failed to revoke session on logout");
   });
+  deletePresenceHeartbeat(session).catch(() => undefined);
   clearAdminCookie(res);
   res.json(LogoutResponse.parse({ message: "Logged out" }));
 });

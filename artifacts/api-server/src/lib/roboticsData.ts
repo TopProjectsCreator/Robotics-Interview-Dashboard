@@ -71,10 +71,15 @@ export async function getApplicants(filters?: {
     return true;
   });
   const sort = filters?.sort ?? "queue";
+  const gradeValue = (grade: string): number => {
+    const parsed = Number.parseInt(grade, 10);
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  };
   return filtered.sort((a, b) => {
     if (sort === "score") return b.aiScore - a.aiScore;
     if (sort === "name") return a.name.localeCompare(b.name);
     if (sort === "rank") return a.rank - b.rank;
+    if (sort === "grade") return gradeValue(a.grade) - gradeValue(b.grade) || a.name.localeCompare(b.name);
     return a.queuePosition - b.queuePosition;
   });
 }
@@ -131,6 +136,149 @@ function balancedCurrentApplicants(applicants: Applicant[], labels: string[]): A
     counts.set(preferred, (counts.get(preferred) ?? 0) + 1);
     return { ...applicant, interviewer: preferred };
   });
+}
+
+export type TransferPerson = { id: string; name: string; from: string };
+
+export type TransferPreview = {
+  ok: true;
+  dryRun: boolean;
+  from: string;
+  to: string;
+  moved: TransferPerson[];
+};
+
+export type TransferFailure = {
+  ok: false;
+  error: string;
+  fromCanonical?: string;
+  toCanonical?: string;
+  matched?: TransferPerson[];
+};
+
+function normalizedLetters(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Anagram / typo-tolerant match for interviewer names: "Maksim" finds the
+ * label "miskaM". Minimum length avoids trivial collisions on short names.
+ */
+function isNameVariant(a: string, b: string): boolean {
+  const ka = normalizedLetters(a);
+  const kb = normalizedLetters(b);
+  if (!ka || !kb || ka === kb || ka.length < 3 || kb.length < 3) return false;
+  if (ka.split("").sort().join("") === kb.split("").sort().join("")) return true;
+  return editDistance(ka, kb) <= 2;
+}
+
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let curr = i;
+    let rowMin = curr;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const next = Math.min(prev[j] + 1, curr + 1, prev[j - 1] + cost);
+      prev[j - 1] = curr;
+      curr = next;
+      if (next < rowMin) rowMin = next;
+    }
+    prev[b.length] = curr;
+    if (rowMin > 2) return 3;
+  }
+  return prev[b.length];
+}
+
+/**
+ * Move EVERY applicant currently carrying one interviewer value to another
+ * label, atomically. `from` matches case-insensitively against both the
+ * configured labels and the values actually stored on applicants (stale
+ * free-text like "Maksim" still matches even when it is no longer a label),
+ * and tolerates misspellings/anagrams ("Maksim" also finds label "miskaM") —
+ * every spelling taken along is reported. `from` also accepts "everyone"
+ * (every applicant holding any interviewer). `to` must match a configured
+ * label — except "unassigned" (or empty), which clears the field — so
+ * transfers can never recreate the stale-value mess; near-misses get a
+ * did-you-mean instead of a silent guess. dryRun previews without writing.
+ */
+export async function transferInterviewers(
+  fromRaw: string,
+  toRaw: string,
+  dryRun = false,
+): Promise<TransferPreview | TransferFailure> {
+  const from = fromRaw.trim();
+  const to = toRaw.trim();
+  if (!from) {
+    return { ok: false, error: "A source interviewer is required." };
+  }
+  const labels = await getInterviewSettings();
+  const byLabelLower = new Map(labels.map((label) => [label.toLowerCase(), label]));
+  const applicants = await getApplicants({ sort: "queue" });
+  const storedValues = new Map<string, string>();
+  for (const applicant of applicants) {
+    const value = (applicant.interviewer || "").trim();
+    if (value && !storedValues.has(value.toLowerCase())) {
+      storedValues.set(value.toLowerCase(), value);
+    }
+  }
+  // "everyone" as a source means every applicant holding any interviewer.
+  const matchAll = ["*", "all", "everyone", "everybody"].includes(from.toLowerCase());
+  // "unassigned" (or an empty string) as a destination clears the field.
+  const clearTo = ["", "unassigned", "none", "unassign", "clear", "cleared"].includes(to.toLowerCase());
+  if (!matchAll && from.toLowerCase() === to.toLowerCase()) {
+    return { ok: false, error: `"${from}" and "${to}" are the same interviewer — nothing to transfer.` };
+  }
+  const fromKey = from.toLowerCase();
+  const fromCanonical = matchAll ? "everyone" : (byLabelLower.get(fromKey) ?? storedValues.get(fromKey) ?? from);
+  const toCanonical = clearTo ? "" : byLabelLower.get(to.toLowerCase());
+  if (toCanonical === undefined) {
+    const suggestions = labels.filter(
+      (label) => isNameVariant(label, to) || label.toLowerCase().startsWith(to.toLowerCase().slice(0, 3)),
+    );
+    const hint = suggestions.length > 0 ? ` Did you mean "${suggestions[0]}"?` : "";
+    return { ok: false, error: `"${to}" is not a valid interviewer label (valid: ${labels.join(", ")}).${hint} Nothing was changed.` };
+  }
+  const toDisplay = clearTo ? "unassigned" : toCanonical;
+  // Exact matches plus spelling variants (anagrams/typos like "miskaM" for
+  // "Maksim"), deduped by applicant — the coordinator sees every spelling.
+  const seen = new Set<string>();
+  const matched: TransferPerson[] = [];
+  for (const applicant of applicants) {
+    const stored = (applicant.interviewer || "").trim();
+    if (!stored || seen.has(applicant.id)) continue;
+    const storedKey = stored.toLowerCase();
+    if (matchAll || storedKey === fromKey || isNameVariant(stored, from) || isNameVariant(byLabelLower.get(storedKey) ?? stored, from)) {
+      seen.add(applicant.id);
+      matched.push({ id: applicant.id, name: applicant.name, from: stored });
+    }
+  }
+  // A label that exists but currently holds nobody is still worth reporting.
+  if (matched.length === 0) {
+    const known = [...new Set([...labels, ...storedValues.values()])].join(", ");
+    const knownMatch = byLabelLower.has(fromKey) || storedValues.has(fromKey);
+    return {
+      ok: false,
+      error: knownMatch
+        ? `Nobody is currently assigned to "${fromCanonical}" — nothing to transfer.`
+        : `Nobody is assigned to "${from}". Known interviewer values: ${known || "none"}.`,
+      fromCanonical,
+      toCanonical,
+      matched: [],
+    };
+  }
+  if (!dryRun) {
+    await db.transaction(async (tx) => {
+      for (const person of matched) {
+        await tx
+          .update(applicantsTable)
+          .set({ interviewer: toCanonical, updatedAt: new Date() })
+          .where(eq(applicantsTable.id, person.id));
+      }
+    });
+  }
+  return { ok: true, dryRun, from: fromCanonical, to: toDisplay, moved: matched };
 }
 
 export function displayApplicantName(name: string): string {

@@ -98,6 +98,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+  /presence/heartbeat:
+    post:
+      operationId: postPresenceHeartbeat
+      tags: [presence]
+      summary: Record coordinator presence heartbeat
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceHeartbeatInput"
+      responses:
+        "200":
+          description: Presence recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceHeartbeat"
+  /presence:
+    get:
+      operationId: getPresence
+      tags: [presence]
+      summary: List currently online coordinators
+      responses:
+        "200":
+          description: Online presence list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceList"
+  /broadcasts:
+    post:
+      operationId: postBroadcast
+      tags: [broadcasts]
+      summary: Send a popup broadcast to coordinators
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastInput"
+      responses:
+        "201":
+          description: Broadcast created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+  /broadcasts/mine:
+    get:
+      operationId: getMyBroadcasts
+      tags: [broadcasts]
+      summary: List unacknowledged active popups for this session
+      responses:
+        "200":
+          description: Pending popups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastList"
+  /broadcasts/{broadcastId}/ack:
+    post:
+      operationId: ackBroadcast
+      tags: [broadcasts]
+      summary: Acknowledge a popup so it never shows again
+      parameters:
+        - name: broadcastId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastAck"
   /applicants:
     get:
       operationId: listApplicants
@@ -323,6 +401,9 @@ paths:
       operationId: getInterviewChat
       tags: [queue]
       summary: Get persisted interviewer chat
+      parameters:
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
           description: Interviewer chat
@@ -503,6 +584,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /snapshots:
+    get:
+      operationId: listSnapshots
+      tags: [snapshots]
+      summary: List data snapshots (newest first, no payloads)
+      responses:
+        "200":
+          description: Snapshot list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotList"
+    post:
+      operationId: createSnapshot
+      tags: [snapshots]
+      summary: Capture a snapshot of the current data
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnapshotInput"
+      responses:
+        "201":
+          description: Created snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+  /snapshots/{snapshotId}/restore:
+    parameters:
+      - name: snapshotId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: restoreSnapshot
+      tags: [snapshots]
+      summary: Restore a snapshot (current state is saved first as a new snapshot)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnapshotRestoreInput"
+      responses:
+        "200":
+          description: Restore result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotRestoreResult"
+        "404":
+          description: Snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/history:
     get:
       operationId: getAssistantHistory
@@ -579,12 +719,14 @@ paths:
         "204":
           description: Assistant conversation deleted
   /assistant/conversations/{conversationId}/messages:
-    parameters:
-      - $ref: "#/components/parameters/AssistantConversationId"
     get:
       operationId: getAssistantConversationMessages
       tags: [assistant]
       summary: Get messages in an assistant conversation
+      parameters:
+        - $ref: "#/components/parameters/AssistantConversationId"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/ChatLimit"
       responses:
         "200":
           description: Assistant conversation messages
@@ -641,6 +783,18 @@ components:
       in: query
       schema:
         type: string
+    Before:
+      name: before
+      in: query
+      description: Return messages created before this ISO timestamp (older history page).
+      schema:
+        type: string
+    ChatLimit:
+      name: limit
+      in: query
+      description: Max messages per page (1-100, default 30).
+      schema:
+        type: integer
   schemas:
     HealthStatus:
       type: object
@@ -687,6 +841,101 @@ components:
           type: string
         value:
           type: integer
+    PresenceEntry:
+      type: object
+      required:
+        - ip
+        - city
+        - region
+        - country
+        - page
+        - lastSeenAt
+        - isCurrent
+      properties:
+        ip:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        country:
+          type: string
+        page:
+          type: string
+        lastSeenAt:
+          type: string
+        isCurrent:
+          type: boolean
+    PresenceHeartbeatInput:
+      type: object
+      properties:
+        page:
+          type: string
+    PresenceList:
+      type: object
+      required:
+        - onlineCount
+        - entries
+      properties:
+        onlineCount:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresenceEntry"
+    PresenceHeartbeat:
+      type: object
+      required:
+        - onlineCount
+      properties:
+        onlineCount:
+          type: integer
+    Broadcast:
+      type: object
+      required:
+        - id
+        - message
+        - targetIp
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        targetIp:
+          type: string
+        createdAt:
+          type: string
+        expiresAt:
+          type: string
+    BroadcastList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Broadcast"
+    BroadcastInput:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        targetIp:
+          type: string
+        ttlMinutes:
+          type: integer
+    BroadcastAck:
+      type: object
+      required:
+        - acked
+      properties:
+        acked:
+          type: boolean
     DashboardSummary:
       type: object
       required:
@@ -820,6 +1069,16 @@ components:
           type: string
         photoUrl:
           type: ["string", "null"]
+        transcript:
+          type: ["string", "null"]
+        attachments:
+          type: ["string", "null"]
+        aiSummary:
+          type: string
+        aiStrengths:
+          type: string
+        aiConcerns:
+          type: string
         aiScore:
           type: number
           description: "-1 marks an invalid score needing coordinator review"
@@ -857,6 +1116,9 @@ components:
           type: string
         rowCount:
           type: integer
+        onlyNew:
+          type: boolean
+          description: "When true, insert only brand-new rows and skip updates to existing applicants." 
     ImportResult:
       type: object
       required: [importId, imported, skipped, delimiter, warnings, diff]
@@ -1030,6 +1292,10 @@ components:
           type: string
         message:
           type: string
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
     InterviewChatMessage:
       type: object
       required: [id, author, message, createdAt]
@@ -1040,6 +1306,10 @@ components:
           type: string
         message:
           type: string
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
         createdAt:
           type: string
     InterviewChat:
@@ -1135,6 +1405,52 @@ components:
           type: string
         position:
           type: integer
+    Snapshot:
+      type: object
+      required: [id, label, createdBy, applicantCount, createdAt]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        createdBy:
+          type: string
+        applicantCount:
+          type: integer
+        createdAt:
+          type: string
+    SnapshotList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Snapshot"
+    SnapshotInput:
+      type: object
+      properties:
+        label:
+          type: string
+    SnapshotRestoreInput:
+      type: object
+      properties:
+        dryRun:
+          type: boolean
+          description: "Preview only, write nothing. Default false."
+    SnapshotRestoreResult:
+      type: object
+      required: [restoredId, preRestoreId, applicantCount]
+      properties:
+        restoredId:
+          type: string
+        preRestoreId:
+          type: string
+        applicantCount:
+          type: integer
+        preview:
+          type: object
+          description: "Present on dry runs: counts of what would change."
     AssistantInput:
       type: object
       required: [question]
@@ -1147,6 +1463,28 @@ components:
           type: array
           items:
             type: string
+        attachments:
+          type: array
+          description: "Files attached in chat (already uploaded to storage)."
+          items:
+            type: object
+            required: [fileName, objectPath]
+            properties:
+              fileName:
+                type: string
+              objectPath:
+                type: string
+        chatContext:
+          type: array
+          description: "Recent interviewer chat messages for conversational context."
+          items:
+            type: object
+            required: [author, message]
+            properties:
+              author:
+                type: string
+              message:
+                type: string
     AssistantResponse:
       type: object
       required: [answer]

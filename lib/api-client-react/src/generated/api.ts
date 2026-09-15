@@ -32,6 +32,10 @@ import type {
   AssistantInput,
   AssistantResponse,
   AuthSession,
+  Broadcast,
+  BroadcastAck,
+  BroadcastInput,
+  BroadcastList,
   DashboardChart,
   DashboardChartInput,
   DashboardChartList,
@@ -41,6 +45,8 @@ import type {
   ErrorResponse,
   GenerateImageInput,
   GenerateImageResult,
+  GetAssistantConversationMessagesParams,
+  GetInterviewChatParams,
   HealthStatus,
   ImportHistory,
   ImportInput,
@@ -52,10 +58,18 @@ import type {
   ListApplicantsParams,
   LoginInput,
   MessageResponse,
+  PresenceHeartbeat,
+  PresenceHeartbeatInput,
+  PresenceList,
   QueueCallbackInput,
   QueueSettingsInput,
   QueueState,
   ReorderQueueInput,
+  Snapshot,
+  SnapshotInput,
+  SnapshotList,
+  SnapshotRestoreInput,
+  SnapshotRestoreResult,
   UploadInput,
   UploadResponse
 } from './api.schemas';
@@ -460,6 +474,373 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
 
 
 
+
+export const getPostPresenceHeartbeatUrl = () => {
+
+
+
+
+  return `/api/presence/heartbeat`
+}
+
+/**
+ * @summary Record coordinator presence heartbeat
+ */
+export const postPresenceHeartbeat = async (presenceHeartbeatInput?: PresenceHeartbeatInput, options?: Parameters<typeof customFetch>[1]): Promise<PresenceHeartbeat> => {
+
+  return customFetch<PresenceHeartbeat>(getPostPresenceHeartbeatUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(presenceHeartbeatInput)
+  }
+);}
+
+
+
+
+
+export const getPostPresenceHeartbeatMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postPresenceHeartbeat>>, TError,{data?: BodyType<PresenceHeartbeatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postPresenceHeartbeat>>, TError,{data?: BodyType<PresenceHeartbeatInput>}, TContext> => {
+
+const mutationKey = ['postPresenceHeartbeat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postPresenceHeartbeat>>, {data?: BodyType<PresenceHeartbeatInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  postPresenceHeartbeat(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostPresenceHeartbeatMutationResult = NonNullable<Awaited<ReturnType<typeof postPresenceHeartbeat>>>
+    export type PostPresenceHeartbeatMutationBody = BodyType<PresenceHeartbeatInput> | undefined
+    export type PostPresenceHeartbeatMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Record coordinator presence heartbeat
+ */
+export const usePostPresenceHeartbeat = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postPresenceHeartbeat>>, TError,{data?: BodyType<PresenceHeartbeatInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postPresenceHeartbeat>>,
+        TError,
+        {data?: BodyType<PresenceHeartbeatInput>},
+        TContext
+      > => {
+      return useMutation(getPostPresenceHeartbeatMutationOptions(options));
+    }
+
+export const getGetPresenceUrl = () => {
+
+
+
+
+  return `/api/presence`
+}
+
+/**
+ * @summary List currently online coordinators
+ */
+export const getPresence = async ( options?: Parameters<typeof customFetch>[1]): Promise<PresenceList> => {
+
+  return customFetch<PresenceList>(getGetPresenceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPresenceQueryKey = () => {
+    return [
+    `/api/presence`
+    ] as const;
+    }
+
+
+export const getGetPresenceQueryOptions = <TData = Awaited<ReturnType<typeof getPresence>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPresence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPresenceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPresence>>> = ({ signal }) => getPresence({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPresence>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPresenceQueryResult = NonNullable<Awaited<ReturnType<typeof getPresence>>>
+export type GetPresenceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List currently online coordinators
+ */
+
+export function useGetPresence<TData = Awaited<ReturnType<typeof getPresence>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPresence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPresenceQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPostBroadcastUrl = () => {
+
+
+
+
+  return `/api/broadcasts`
+}
+
+/**
+ * @summary Send a popup broadcast to coordinators
+ */
+export const postBroadcast = async (broadcastInput: BroadcastInput, options?: Parameters<typeof customFetch>[1]): Promise<Broadcast> => {
+
+  return customFetch<Broadcast>(getPostBroadcastUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(broadcastInput)
+  }
+);}
+
+
+
+
+
+export const getPostBroadcastMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postBroadcast>>, TError,{data: BodyType<BroadcastInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postBroadcast>>, TError,{data: BodyType<BroadcastInput>}, TContext> => {
+
+const mutationKey = ['postBroadcast'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postBroadcast>>, {data: BodyType<BroadcastInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  postBroadcast(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostBroadcastMutationResult = NonNullable<Awaited<ReturnType<typeof postBroadcast>>>
+    export type PostBroadcastMutationBody = BodyType<BroadcastInput>
+    export type PostBroadcastMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a popup broadcast to coordinators
+ */
+export const usePostBroadcast = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postBroadcast>>, TError,{data: BodyType<BroadcastInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postBroadcast>>,
+        TError,
+        {data: BodyType<BroadcastInput>},
+        TContext
+      > => {
+      return useMutation(getPostBroadcastMutationOptions(options));
+    }
+
+export const getGetMyBroadcastsUrl = () => {
+
+
+
+
+  return `/api/broadcasts/mine`
+}
+
+/**
+ * @summary List unacknowledged active popups for this session
+ */
+export const getMyBroadcasts = async ( options?: Parameters<typeof customFetch>[1]): Promise<BroadcastList> => {
+
+  return customFetch<BroadcastList>(getGetMyBroadcastsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyBroadcastsQueryKey = () => {
+    return [
+    `/api/broadcasts/mine`
+    ] as const;
+    }
+
+
+export const getGetMyBroadcastsQueryOptions = <TData = Awaited<ReturnType<typeof getMyBroadcasts>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBroadcasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyBroadcastsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBroadcasts>>> = ({ signal }) => getMyBroadcasts({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyBroadcasts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyBroadcastsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBroadcasts>>>
+export type GetMyBroadcastsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List unacknowledged active popups for this session
+ */
+
+export function useGetMyBroadcasts<TData = Awaited<ReturnType<typeof getMyBroadcasts>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBroadcasts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyBroadcastsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAckBroadcastUrl = (broadcastId: string,) => {
+
+
+
+
+  return `/api/broadcasts/${broadcastId}/ack`
+}
+
+/**
+ * @summary Acknowledge a popup so it never shows again
+ */
+export const ackBroadcast = async (broadcastId: string, options?: Parameters<typeof customFetch>[1]): Promise<BroadcastAck> => {
+
+  return customFetch<BroadcastAck>(getAckBroadcastUrl(broadcastId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAckBroadcastMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ackBroadcast>>, TError,{broadcastId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ackBroadcast>>, TError,{broadcastId: string}, TContext> => {
+
+const mutationKey = ['ackBroadcast'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ackBroadcast>>, {broadcastId: string}> = (props) => {
+          const {broadcastId} = props ?? {};
+
+          return  ackBroadcast(broadcastId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AckBroadcastMutationResult = NonNullable<Awaited<ReturnType<typeof ackBroadcast>>>
+
+    export type AckBroadcastMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Acknowledge a popup so it never shows again
+ */
+export const useAckBroadcast = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ackBroadcast>>, TError,{broadcastId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ackBroadcast>>,
+        TError,
+        {broadcastId: string},
+        TContext
+      > => {
+      return useMutation(getAckBroadcastMutationOptions(options));
+    }
 
 export const getListApplicantsUrl = (params?: ListApplicantsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -1416,20 +1797,27 @@ export const useResetQueue = <TError = ErrorType<unknown>,
       return useMutation(getResetQueueMutationOptions(options));
     }
 
-export const getGetInterviewChatUrl = () => {
+export const getGetInterviewChatUrl = (params?: GetInterviewChatParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/queue/chat`
+  return stringifiedParams.length > 0 ? `/api/queue/chat?${stringifiedParams}` : `/api/queue/chat`
 }
 
 /**
  * @summary Get persisted interviewer chat
  */
-export const getInterviewChat = async ( options?: Parameters<typeof customFetch>[1]): Promise<InterviewChat> => {
+export const getInterviewChat = async (params?: GetInterviewChatParams, options?: Parameters<typeof customFetch>[1]): Promise<InterviewChat> => {
 
-  return customFetch<InterviewChat>(getGetInterviewChatUrl(),
+  return customFetch<InterviewChat>(getGetInterviewChatUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1442,23 +1830,23 @@ export const getInterviewChat = async ( options?: Parameters<typeof customFetch>
 
 
 
-export const getGetInterviewChatQueryKey = () => {
+export const getGetInterviewChatQueryKey = (params?: GetInterviewChatParams,) => {
     return [
-    `/api/queue/chat`
+    `/api/queue/chat`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetInterviewChatQueryOptions = <TData = Awaited<ReturnType<typeof getInterviewChat>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetInterviewChatQueryOptions = <TData = Awaited<ReturnType<typeof getInterviewChat>>, TError = ErrorType<unknown>>(params?: GetInterviewChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetInterviewChatQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetInterviewChatQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInterviewChat>>> = ({ signal }) => getInterviewChat({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInterviewChat>>> = ({ signal }) => getInterviewChat(params, { signal, ...requestOptions });
 
 
 
@@ -1476,11 +1864,11 @@ export type GetInterviewChatQueryError = ErrorType<unknown>
  */
 
 export function useGetInterviewChat<TData = Awaited<ReturnType<typeof getInterviewChat>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetInterviewChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetInterviewChatQueryOptions(options)
+  const queryOptions = getGetInterviewChatQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -2216,6 +2604,226 @@ export const useDeleteDashboardChart = <TError = ErrorType<ErrorResponse>,
       return useMutation(getDeleteDashboardChartMutationOptions(options));
     }
 
+export const getListSnapshotsUrl = () => {
+
+
+
+
+  return `/api/snapshots`
+}
+
+/**
+ * @summary List data snapshots (newest first, no payloads)
+ */
+export const listSnapshots = async ( options?: Parameters<typeof customFetch>[1]): Promise<SnapshotList> => {
+
+  return customFetch<SnapshotList>(getListSnapshotsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSnapshotsQueryKey = () => {
+    return [
+    `/api/snapshots`
+    ] as const;
+    }
+
+
+export const getListSnapshotsQueryOptions = <TData = Awaited<ReturnType<typeof listSnapshots>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSnapshots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSnapshotsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSnapshots>>> = ({ signal }) => listSnapshots({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSnapshots>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSnapshotsQueryResult = NonNullable<Awaited<ReturnType<typeof listSnapshots>>>
+export type ListSnapshotsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List data snapshots (newest first, no payloads)
+ */
+
+export function useListSnapshots<TData = Awaited<ReturnType<typeof listSnapshots>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSnapshots>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSnapshotsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSnapshotUrl = () => {
+
+
+
+
+  return `/api/snapshots`
+}
+
+/**
+ * @summary Capture a snapshot of the current data
+ */
+export const createSnapshot = async (snapshotInput?: SnapshotInput, options?: Parameters<typeof customFetch>[1]): Promise<Snapshot> => {
+
+  return customFetch<Snapshot>(getCreateSnapshotUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(snapshotInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSnapshotMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSnapshot>>, TError,{data?: BodyType<SnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSnapshot>>, TError,{data?: BodyType<SnapshotInput>}, TContext> => {
+
+const mutationKey = ['createSnapshot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSnapshot>>, {data?: BodyType<SnapshotInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSnapshot(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSnapshotMutationResult = NonNullable<Awaited<ReturnType<typeof createSnapshot>>>
+    export type CreateSnapshotMutationBody = BodyType<SnapshotInput> | undefined
+    export type CreateSnapshotMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Capture a snapshot of the current data
+ */
+export const useCreateSnapshot = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSnapshot>>, TError,{data?: BodyType<SnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        TError,
+        {data?: BodyType<SnapshotInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSnapshotMutationOptions(options));
+    }
+
+export const getRestoreSnapshotUrl = (snapshotId: string,) => {
+
+
+
+
+  return `/api/snapshots/${snapshotId}/restore`
+}
+
+/**
+ * @summary Restore a snapshot (current state is saved first as a new snapshot)
+ */
+export const restoreSnapshot = async (snapshotId: string,
+    snapshotRestoreInput?: SnapshotRestoreInput, options?: Parameters<typeof customFetch>[1]): Promise<SnapshotRestoreResult> => {
+
+  return customFetch<SnapshotRestoreResult>(getRestoreSnapshotUrl(snapshotId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(snapshotRestoreInput)
+  }
+);}
+
+
+
+
+
+export const getRestoreSnapshotMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSnapshot>>, TError,{snapshotId: string;data?: BodyType<SnapshotRestoreInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreSnapshot>>, TError,{snapshotId: string;data?: BodyType<SnapshotRestoreInput>}, TContext> => {
+
+const mutationKey = ['restoreSnapshot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreSnapshot>>, {snapshotId: string;data?: BodyType<SnapshotRestoreInput>}> = (props) => {
+          const {snapshotId,data} = props ?? {};
+
+          return  restoreSnapshot(snapshotId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreSnapshotMutationResult = NonNullable<Awaited<ReturnType<typeof restoreSnapshot>>>
+    export type RestoreSnapshotMutationBody = BodyType<SnapshotRestoreInput> | undefined
+    export type RestoreSnapshotMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Restore a snapshot (current state is saved first as a new snapshot)
+ */
+export const useRestoreSnapshot = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreSnapshot>>, TError,{snapshotId: string;data?: BodyType<SnapshotRestoreInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreSnapshot>>,
+        TError,
+        {snapshotId: string;data?: BodyType<SnapshotRestoreInput>},
+        TContext
+      > => {
+      return useMutation(getRestoreSnapshotMutationOptions(options));
+    }
+
 export const getGetAssistantHistoryUrl = () => {
 
 
@@ -2655,20 +3263,29 @@ export const useDeleteAssistantConversation = <TError = ErrorType<unknown>,
       return useMutation(getDeleteAssistantConversationMutationOptions(options));
     }
 
-export const getGetAssistantConversationMessagesUrl = (conversationId: string,) => {
+export const getGetAssistantConversationMessagesUrl = (conversationId: string,
+    params?: GetAssistantConversationMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/assistant/conversations/${conversationId}/messages`
+  return stringifiedParams.length > 0 ? `/api/assistant/conversations/${conversationId}/messages?${stringifiedParams}` : `/api/assistant/conversations/${conversationId}/messages`
 }
 
 /**
  * @summary Get messages in an assistant conversation
  */
-export const getAssistantConversationMessages = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantHistory> => {
+export const getAssistantConversationMessages = async (conversationId: string,
+    params?: GetAssistantConversationMessagesParams, options?: Parameters<typeof customFetch>[1]): Promise<AssistantHistory> => {
 
-  return customFetch<AssistantHistory>(getGetAssistantConversationMessagesUrl(conversationId),
+  return customFetch<AssistantHistory>(getGetAssistantConversationMessagesUrl(conversationId,params),
   {
     ...options,
     method: 'GET'
@@ -2681,23 +3298,25 @@ export const getAssistantConversationMessages = async (conversationId: string, o
 
 
 
-export const getGetAssistantConversationMessagesQueryKey = (conversationId: string,) => {
+export const getGetAssistantConversationMessagesQueryKey = (conversationId: string,
+    params?: GetAssistantConversationMessagesParams,) => {
     return [
-    `/api/assistant/conversations/${conversationId}/messages`
+    `/api/assistant/conversations/${conversationId}/messages`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetAssistantConversationMessagesQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError = ErrorType<unknown>>(conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetAssistantConversationMessagesQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError = ErrorType<unknown>>(conversationId: string,
+    params?: GetAssistantConversationMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetAssistantConversationMessagesQueryKey(conversationId);
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantConversationMessagesQueryKey(conversationId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantConversationMessages>>> = ({ signal }) => getAssistantConversationMessages(conversationId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantConversationMessages>>> = ({ signal }) => getAssistantConversationMessages(conversationId,params, { signal, ...requestOptions });
 
 
 
@@ -2715,11 +3334,12 @@ export type GetAssistantConversationMessagesQueryError = ErrorType<unknown>
  */
 
 export function useGetAssistantConversationMessages<TData = Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError = ErrorType<unknown>>(
- conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ conversationId: string,
+    params?: GetAssistantConversationMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetAssistantConversationMessagesQueryOptions(conversationId,options)
+  const queryOptions = getGetAssistantConversationMessagesQueryOptions(conversationId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

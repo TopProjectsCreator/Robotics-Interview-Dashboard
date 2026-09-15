@@ -5,9 +5,15 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantInputAttachmentsItem } from './assistantInputAttachmentsItem';
+import type { AssistantInputChatContextItem } from './assistantInputChatContextItem';
 
 export interface AssistantInput {
   question: string;
   conversationId?: string;
   applicantIds?: string[];
+  /** Files attached in chat (already uploaded to storage). */
+  attachments?: AssistantInputAttachmentsItem[];
+  /** Recent interviewer chat messages for conversational context. */
+  chatContext?: AssistantInputChatContextItem[];
 }

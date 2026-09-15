@@ -99,4 +99,32 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
   }
 });
 
+/**
+ * DELETE /storage/objects/*
+ *
+ * Remove a file from Supabase Storage. Admin-only. Used to clean up
+ * orphaned uploads (e.g. images removed from a chat message before send).
+ */
+router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const raw = req.params.path;
+    const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
+    const objectPath = `/objects/${wildcardPath}`;
+    try {
+      await objectStorageService.downloadObject(objectPath);
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+      throw error;
+    }
+    await objectStorageService.deleteObject(objectPath);
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    req.log.error({ err: error }, 'Error deleting object');
+    res.status(500).json({ error: 'Failed to delete object' });
+  }
+});
+
 export default router;

@@ -10,4 +10,6 @@ export interface ImportInput {
   objectPath: string;
   fileName: string;
   rowCount: number;
+  /** When true, insert only brand-new rows and skip updates to existing applicants. */
+  onlyNew?: boolean;
 }

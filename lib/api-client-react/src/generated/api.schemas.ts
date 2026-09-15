@@ -34,6 +34,51 @@ export interface DashboardCount {
   value: number;
 }
 
+export interface PresenceEntry {
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  page: string;
+  lastSeenAt: string;
+  isCurrent: boolean;
+}
+
+export interface PresenceHeartbeatInput {
+  page?: string;
+}
+
+export interface PresenceList {
+  onlineCount: number;
+  entries: PresenceEntry[];
+}
+
+export interface PresenceHeartbeat {
+  onlineCount: number;
+}
+
+export interface Broadcast {
+  id: string;
+  message: string;
+  targetIp: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface BroadcastList {
+  items: Broadcast[];
+}
+
+export interface BroadcastInput {
+  message: string;
+  targetIp?: string;
+  ttlMinutes?: number;
+}
+
+export interface BroadcastAck {
+  acked: boolean;
+}
+
 export type DashboardSummaryInterviewProgress = {
   completed: number;
   remaining: number;
@@ -90,6 +135,13 @@ export interface ApplicantUpdate {
   email?: string;
   /** @nullable */
   photoUrl?: string | null;
+  /** @nullable */
+  transcript?: string | null;
+  /** @nullable */
+  attachments?: string | null;
+  aiSummary?: string;
+  aiStrengths?: string;
+  aiConcerns?: string;
   /** -1 marks an invalid score needing coordinator review */
   aiScore?: number;
   aiRecommendation?: string;
@@ -110,6 +162,8 @@ export interface ImportInput {
   objectPath: string;
   fileName: string;
   rowCount: number;
+  /** When true, insert only brand-new rows and skip updates to existing applicants. */
+  onlyNew?: boolean;
 }
 
 export interface ImportDiff {
@@ -201,15 +255,22 @@ export interface QueueSettingsInput {
   interviewerLabels: string[];
 }
 
+export interface AssistantActivity {
+  tool: string;
+  detail: string;
+}
+
 export interface InterviewChatInput {
   author: string;
   message: string;
+  activities?: AssistantActivity[];
 }
 
 export interface InterviewChatMessage {
   id: string;
   author: string;
   message: string;
+  activities?: AssistantActivity[];
   createdAt: string;
 }
 
@@ -265,15 +326,58 @@ export interface DashboardChartUpdate {
   position?: number;
 }
 
+export interface Snapshot {
+  id: string;
+  label: string;
+  createdBy: string;
+  applicantCount: number;
+  createdAt: string;
+}
+
+export interface SnapshotList {
+  items: Snapshot[];
+}
+
+export interface SnapshotInput {
+  label?: string;
+}
+
+export interface SnapshotRestoreInput {
+  /** Preview only, write nothing. Default false. */
+  dryRun?: boolean;
+}
+
+/**
+ * Present on dry runs: counts of what would change.
+ */
+export type SnapshotRestoreResultPreview = { [key: string]: unknown };
+
+export interface SnapshotRestoreResult {
+  restoredId: string;
+  preRestoreId: string;
+  applicantCount: number;
+  /** Present on dry runs: counts of what would change. */
+  preview?: SnapshotRestoreResultPreview;
+}
+
+export type AssistantInputAttachmentsItem = {
+  fileName: string;
+  objectPath: string;
+};
+
+export type AssistantInputChatContextItem = {
+  author: string;
+  message: string;
+};
+
 export interface AssistantInput {
   question: string;
   conversationId?: string;
   applicantIds?: string[];
-}
-
-export interface AssistantActivity {
-  tool: string;
-  detail: string;
+  /** Files attached in chat (already uploaded to storage). */
+  attachments?: AssistantInputAttachmentsItem[];
+  /** Recent interviewer chat messages for conversational context. */
+  chatContext?: AssistantInputChatContextItem[];
 }
 
 export interface AssistantResponse {
@@ -339,6 +443,16 @@ export type InvalidOnlyParameter = boolean;
 
 export type SortParameter = string;
 
+/**
+ * Return messages created before this ISO timestamp (older history page).
+ */
+export type BeforeParameter = string;
+
+/**
+ * Max messages per page (1-100, default 30).
+ */
+export type ChatLimitParameter = number;
+
 export type ListApplicantsParams = {
 search?: SearchParameter;
 grade?: GradeParameter;
@@ -347,5 +461,27 @@ interviewStatus?: InterviewStatusParameter;
 category?: CategoryParameter;
 invalidOnly?: InvalidOnlyParameter;
 sort?: SortParameter;
+};
+
+export type GetInterviewChatParams = {
+/**
+ * Return messages created before this ISO timestamp (older history page).
+ */
+before?: BeforeParameter;
+/**
+ * Max messages per page (1-100, default 30).
+ */
+limit?: ChatLimitParameter;
+};
+
+export type GetAssistantConversationMessagesParams = {
+/**
+ * Return messages created before this ISO timestamp (older history page).
+ */
+before?: BeforeParameter;
+/**
+ * Max messages per page (1-100, default 30).
+ */
+limit?: ChatLimitParameter;
 };
 

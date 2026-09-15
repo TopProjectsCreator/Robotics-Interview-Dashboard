@@ -23,6 +23,8 @@ Required runtime services and secrets:
 - `ALLOWED_ORIGINS` — comma-separated origins allowed to call the API (default reflects any origin for iframe embedding; lock down in production)
 - `PYTHON_SANDBOX` — `auto` (default), `docker` (full stdlib, needs daemon + `python:3.12-slim` image), or `restricted`
 - `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, `PARALLEL_API_KEY` — optional, raise web-search limits (all four work keyless without them)
+- `POLLINATIONS_API_KEY` — optional, server-only, never expose to the frontend. Authenticates image generation (honors `nologo`, higher RPM). Falls back to anonymous automatically on 401/402 with an hourly retry. Rotate immediately if ever pasted anywhere.
+- `POLLINATIONS_IMAGE_MODEL` — image model name (default `z-image-turbo`)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` (default `app-uploads`) — Supabase Storage for roster uploads and profile photos; database and files all live in Supabase
 
 ## Stack

@@ -8,6 +8,10 @@ import { attachAdminSession } from "./middlewares/adminAuth";
 
 const app: Express = express();
 
+// Trust the first proxy hop (Replit/Codespaces) so req.ip reflects the real
+// client for presence tracking and login rate limiting.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

@@ -47,3 +47,12 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local-only opencode encrypted_content auto-heal tooling (per-runner, not for commit)
+scripts/fix-opencode-fork.py
+scripts/opencode-wrapper.sh
+scripts/install-opencode-wrapper.sh
+
+# Local-only test-mode plugin (per-dev, not for commit)
+.opencode/plugins/test-mode.ts
+.opencode/plugins/test-mode.js

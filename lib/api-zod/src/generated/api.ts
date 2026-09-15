@@ -84,6 +84,79 @@ export const GetDashboardSummaryResponse = zod.object({
 
 
 /**
+ * @summary Record coordinator presence heartbeat
+ */
+export const PostPresenceHeartbeatBody = zod.object({
+  "page": zod.string().optional()
+})
+
+export const PostPresenceHeartbeatResponse = zod.object({
+  "onlineCount": zod.number().int()
+})
+
+
+/**
+ * @summary List currently online coordinators
+ */
+export const GetPresenceResponse = zod.object({
+  "onlineCount": zod.number().int(),
+  "entries": zod.array(zod.object({
+  "ip": zod.string(),
+  "city": zod.string(),
+  "region": zod.string(),
+  "country": zod.string(),
+  "page": zod.string(),
+  "lastSeenAt": zod.string(),
+  "isCurrent": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Send a popup broadcast to coordinators
+ */
+export const PostBroadcastBody = zod.object({
+  "message": zod.string(),
+  "targetIp": zod.string().optional(),
+  "ttlMinutes": zod.number().int().optional()
+})
+
+export const PostBroadcastResponse = zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "targetIp": zod.string(),
+  "createdAt": zod.string(),
+  "expiresAt": zod.string()
+})
+
+
+/**
+ * @summary List unacknowledged active popups for this session
+ */
+export const GetMyBroadcastsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "targetIp": zod.string(),
+  "createdAt": zod.string(),
+  "expiresAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Acknowledge a popup so it never shows again
+ */
+export const AckBroadcastParams = zod.object({
+  "broadcastId": zod.coerce.string()
+})
+
+export const AckBroadcastResponse = zod.object({
+  "acked": zod.boolean()
+})
+
+
+/**
  * @summary List applicants with filters and sorting
  */
 export const ListApplicantsQueryParams = zod.object({
@@ -170,6 +243,11 @@ export const UpdateApplicantBody = zod.object({
   "grade": zod.string().optional(),
   "email": zod.string().optional(),
   "photoUrl": zod.string().nullish(),
+  "transcript": zod.string().nullish(),
+  "attachments": zod.string().nullish(),
+  "aiSummary": zod.string().optional(),
+  "aiStrengths": zod.string().optional(),
+  "aiConcerns": zod.string().optional(),
   "aiScore": zod.number().optional().describe('-1 marks an invalid score needing coordinator review'),
   "aiRecommendation": zod.string().optional(),
   "roboticsExperience": zod.string().optional(),
@@ -260,7 +338,8 @@ export const RegenerateApplicantResponse = zod.object({
 export const CommitImportBody = zod.object({
   "objectPath": zod.string(),
   "fileName": zod.string(),
-  "rowCount": zod.number().int()
+  "rowCount": zod.number().int(),
+  "onlyNew": zod.boolean().optional().describe('When true, insert only brand-new rows and skip updates to existing applicants.')
 })
 
 export const CommitImportResponse = zod.object({
@@ -284,7 +363,8 @@ export const CommitImportResponse = zod.object({
 export const PreviewImportBody = zod.object({
   "objectPath": zod.string(),
   "fileName": zod.string(),
-  "rowCount": zod.number().int()
+  "rowCount": zod.number().int(),
+  "onlyNew": zod.boolean().optional().describe('When true, insert only brand-new rows and skip updates to existing applicants.')
 })
 
 export const PreviewImportResponse = zod.object({
@@ -498,11 +578,20 @@ export const ResetQueueResponse = zod.object({
 /**
  * @summary Get persisted interviewer chat
  */
+export const GetInterviewChatQueryParams = zod.object({
+  "before": zod.coerce.string().optional().describe('Return messages created before this ISO timestamp (older history page).'),
+  "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).')
+})
+
 export const GetInterviewChatResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional(),
   "createdAt": zod.string()
 }))
 })
@@ -513,13 +602,21 @@ export const GetInterviewChatResponse = zod.object({
  */
 export const SendInterviewChatBody = zod.object({
   "author": zod.string(),
-  "message": zod.string()
+  "message": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional()
 })
 
 export const SendInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional(),
   "createdAt": zod.string()
 })
 
@@ -626,7 +723,15 @@ export const GetDisplayStateResponse = zod.object({
 export const AskAssistantBody = zod.object({
   "question": zod.string(),
   "conversationId": zod.string().optional(),
-  "applicantIds": zod.array(zod.string()).optional()
+  "applicantIds": zod.array(zod.string()).optional(),
+  "attachments": zod.array(zod.object({
+  "fileName": zod.string(),
+  "objectPath": zod.string()
+})).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "chatContext": zod.array(zod.object({
+  "author": zod.string(),
+  "message": zod.string()
+})).optional().describe('Recent interviewer chat messages for conversational context.')
 })
 
 export const AskAssistantResponse = zod.object({
@@ -720,6 +825,57 @@ export const DeleteDashboardChartResponse = zod.void()
 
 
 /**
+ * @summary List data snapshots (newest first, no payloads)
+ */
+export const ListSnapshotsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdBy": zod.string(),
+  "applicantCount": zod.number().int(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Capture a snapshot of the current data
+ */
+export const CreateSnapshotBody = zod.object({
+  "label": zod.string().optional()
+})
+
+export const CreateSnapshotResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdBy": zod.string(),
+  "applicantCount": zod.number().int(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Restore a snapshot (current state is saved first as a new snapshot)
+ */
+export const RestoreSnapshotParams = zod.object({
+  "snapshotId": zod.coerce.string()
+})
+
+export const RestoreSnapshotBody = zod.object({
+  "dryRun": zod.boolean().optional().describe('Preview only, write nothing. Default false.')
+})
+
+export const RestoreSnapshotResponse = zod.object({
+  "restoredId": zod.string(),
+  "preRestoreId": zod.string(),
+  "applicantCount": zod.number().int(),
+  "preview": zod.object({
+
+}).passthrough().optional().describe('Present on dry runs: counts of what would change.')
+})
+
+
+/**
  * @summary Get persisted assistant conversations
  */
 export const GetAssistantHistoryResponse = zod.object({
@@ -807,6 +963,11 @@ export const DeleteAssistantConversationResponse = zod.void()
  */
 export const GetAssistantConversationMessagesParams = zod.object({
   "conversationId": zod.coerce.string()
+})
+
+export const GetAssistantConversationMessagesQueryParams = zod.object({
+  "before": zod.coerce.string().optional().describe('Return messages created before this ISO timestamp (older history page).'),
+  "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).')
 })
 
 export const GetAssistantConversationMessagesResponse = zod.object({

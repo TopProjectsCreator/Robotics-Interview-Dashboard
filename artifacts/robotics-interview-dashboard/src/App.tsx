@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, TimerReset, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download,
+   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
 } from "lucide-react";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
@@ -17,11 +17,16 @@ import {
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
+  useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
+  useGetMyBroadcasts, useAckBroadcast, getGetMyBroadcastsQueryKey,
+  useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
   useUpdateApplicant,
+  getInterviewChat,
+  getAssistantConversationMessages,
 } from "@workspace/api-client-react";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, DashboardCount, DashboardSummary, DisplayState, ImportPreview, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -70,7 +75,7 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
 }
 
 function renderInlineMarkdown(text: string): ReactNode[] {
-  const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
+  const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/|\/api\/storage\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -80,7 +85,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
     const token = match[0];
     const tokenKey = `inline-${key++}`;
-    const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/)[^)]+)\)$/);
+    const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/storage\/)[^)]+)\)$/);
     if (image) {
       nodes.push(<img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
       cursor = match.index + token.length;
@@ -338,6 +343,26 @@ function serverErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const CHAT_PAGE_SIZE = 30;
+
+function mergeChatItems<T extends { id: string; createdAt: string }>(...lists: T[][]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const list of lists) {
+    for (const item of list) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(item);
+    }
+  }
+  out.sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+  return out;
+}
+
+function isNearBottom(el: { scrollHeight: number; scrollTop: number; clientHeight: number }, margin = 120): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < margin;
+}
+
 function useFullscreen() {
   const [browserFullscreen, setBrowserFullscreen] = useState(false);
   const [iframeFullscreen, setIframeFullscreen] = useState(false);
@@ -367,6 +392,103 @@ function useFullscreen() {
   };
 
   return { isFullscreen: browserFullscreen || iframeFullscreen, toggleFullscreen };
+}
+
+const PRESENCE_PAGE_LABELS: Record<string, string> = {
+  "/": "Login",
+  "/dashboard": "Overview",
+  "/applicants": "Applicants",
+  "/queue": "Interview queue",
+  "/assistant": "AI assistant",
+  "/display": "Big screen",
+};
+
+function presencePageLabel(page: string): string {
+  return PRESENCE_PAGE_LABELS[page] ?? (page || "unknown page");
+}
+
+function usePresenceHeartbeat(enabled: boolean, page: string) {
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  useEffect(() => {
+    if (!enabled) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const beat = () => {
+      fetch(`${import.meta.env.BASE_URL}api/presence/heartbeat`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: pageRef.current }),
+      }).catch(() => undefined);
+    };
+    beat();
+    timer = setInterval(() => {
+      if (!stopped && document.visibilityState === "visible") beat();
+    }, 30000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") beat();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [enabled, page]);
+}
+
+function timeAgoShort(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
+}
+
+function PresencePanel() {
+  const presence = useGetPresence({
+    query: { queryKey: getGetPresenceQueryKey(), refetchInterval: 30000 },
+  });
+  if (presence.isLoading) return <Section title="Live now" kicker="Who is online"><Skeleton className="h-14" /></Section>;
+  if (presence.isError || !presence.data) return <Section title="Live now" kicker="Who is online"><p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p></Section>;
+  const entries = presence.data.entries;
+  return (
+    <Section title="Live now" kicker="Online coordinators (2-minute window)" >
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />
+        <p className="text-sm font-semibold" data-testid="presence-count">
+          {presence.data.onlineCount} online now
+        </p>
+      </div>
+      {entries.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {entries.map((entry) => (
+            <div key={`${entry.ip}-${entry.lastSeenAt}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs" data-testid="presence-entry">
+              <span className="mono font-semibold text-[#38555e]">{entry.ip}</span>
+              <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
+                {presencePageLabel(entry.page)}
+              </span>
+              <span className="text-[#718189]">
+                {[entry.city, entry.region, entry.country].filter(Boolean).join(", ") || "location unknown"}
+              </span>
+              {entry.isCurrent && (
+                <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
+                  This device
+                </span>
+              )}
+              <span className="mono ml-auto text-[#8a999d]">{timeAgoShort(entry.lastSeenAt)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-[#7c8c91]">No active sessions seen recently.</p>
+      )}
+    </Section>
+  );
 }
 
 function FullscreenButton({ active, onClick, dark = false }: { active: boolean; onClick: () => void; dark?: boolean }) {
@@ -421,10 +543,29 @@ function Shell({ children }: { children: ReactNode }) {
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const logout = useLogout();
+  usePresenceHeartbeat(session.data?.authenticated === true, location);
+  const qc = useQueryClient();
+  const broadcasts = useGetMyBroadcasts({
+    query: {
+      queryKey: getGetMyBroadcastsQueryKey(),
+      refetchInterval: 15000,
+      enabled: session.data?.authenticated === true,
+    },
+  });
+  const ackBroadcast = useAckBroadcast();
+  const [dismissedBroadcasts, setDismissedBroadcasts] = useState<string[]>([]);
+  const pendingBroadcast = (broadcasts.data?.items ?? []).filter((b) => !dismissedBroadcasts.includes(b.id))[0];
+  const dismissBroadcast = (id: string) => {
+    setDismissedBroadcasts((current) => (current.includes(id) ? current : [...current, id]));
+    ackBroadcast.mutate(
+      { broadcastId: id },
+      { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMyBroadcastsQueryKey() }) },
+    );
+  };
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Login />;
   const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/assistant", label: "AI assistant", icon: Bot }];
-  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main></div></div>;
+  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main>{pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}</div></div>;
 }
 
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail?: string; action?: ReactNode }) {
@@ -545,19 +686,71 @@ function Dashboard() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, coordinators." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5"><CustomCharts summary={d} /></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts summary={d} /></div><PresencePanel /></div></div>;
 }
 function Bars({ data, max, color }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green" }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div>; }
+
+function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
+  const snapshots = useListSnapshots({ query: { queryKey: getListSnapshotsQueryKey() } });
+  const create = useCreateSnapshot();
+  const restore = useRestoreSnapshot();
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
+  const [target, setTarget] = useState<{ id: string; label: string } | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [preview, setPreview] = useState<{ added: number; removed: number; changed: number; unchanged: number; addedNames: string[]; removedNames: string[]; labelsChanged?: boolean; labelsBefore?: string[]; labelsNow?: string[]; chartsChanged?: boolean; chartsBefore?: number; chartsNow?: number } | null>(null);
+  const refreshBoards = () => {
+    queryClient.invalidateQueries({ queryKey: getListSnapshotsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
+  };
+  const saveNow = () => {
+    setError("");
+    create.mutate({ data: label.trim() ? { label: label.trim() } : {} }, {
+      onSuccess: () => { setLabel(""); refreshBoards(); },
+      onError: () => setError("Could not save a version. Try again."),
+    });
+  };
+  const openRestore = (id: string, versionLabel: string) => {
+    setTarget({ id, label: versionLabel });
+    setConfirm("");
+    setPreview(null);
+    setError("");
+    restore.mutate({ snapshotId: id, data: { dryRun: true } }, {
+      onSuccess: response => setPreview(response.preview as { added: number; removed: number; changed: number; unchanged: number; addedNames: string[]; removedNames: string[] }),
+      onError: () => setError("Could not preview that version. Try again."),
+    });
+  };
+  const confirmRestore = () => {
+    if (!target || confirm !== RESET_CONFIRM_PHRASE || restore.isPending) return;
+    restore.mutate({ snapshotId: target.id }, {
+      onSuccess: () => { setTarget(null); setConfirm(""); refreshBoards(); },
+      onError: () => setError("Restore failed. Nothing was changed."),
+    });
+  };
+  return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5" data-testid="version-history-panel">
+    <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Version history</p><h2 className="mt-1 font-semibold">Restore any point in time</h2><p className="mt-1 text-xs text-[#587278]">Every restore saves the present first, so you can always go back and forth. Imports save a version automatically.</p></div><IconButton label="Close version history" testId="button-close-history" onClick={onClose}><X size={16} /></IconButton></div>
+    <div className="mt-4 flex flex-wrap items-center gap-2"><input value={label} onChange={event => setLabel(event.target.value)} placeholder="Label for this version (optional)" data-testid="input-snapshot-label" className="h-10 min-w-[220px] flex-1 rounded-lg border border-[#c4dcda] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button onClick={saveNow} disabled={create.isPending} data-testid="button-save-version" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{create.isPending ? "Saving..." : "Save version now"}</button></div>
+    <div className="mt-4 space-y-2">{snapshots.isLoading ? [1, 2].map(i => <Skeleton key={i} className="h-14" />) : snapshots.data && snapshots.data.items.length > 0 ? snapshots.data.items.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e3ebeb] bg-white p-3" data-testid={`snapshot-${item.id}`}><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.label}</p><p className="mt-0.5 text-[11px] text-[#718189]">{item.applicantCount} applicants · by {item.createdBy} · {new Date(item.createdAt).toLocaleString()}</p></div><button onClick={() => openRestore(item.id, item.label)} data-testid={`button-restore-${item.id}`} className="rounded-lg border border-[#c4dcda] px-3 py-2 text-xs font-semibold text-[#385762] hover:border-[#16869a] hover:text-[#16869a]">Restore</button></div>) : <p className="text-sm text-[#7c8c91]">No versions yet. Save one before your next big change.</p>}</div>
+    {error && <p className="mt-3 text-xs text-[#ad4b43]" data-testid="history-error">{error}</p>}
+    {target && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setTarget(null)} data-testid="restore-dialog"><div onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm restore version" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Restore “{target.label}”?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">The current data is saved as a new version first, so you can undo this restore afterward.</p>{preview ? <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3 text-sm text-[#38555e]"><p><strong>+{preview.added}</strong> would return{preview.addedNames.length > 0 ? ` (${preview.addedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>-{preview.removed}</strong> would leave{preview.removedNames.length > 0 ? ` (${preview.removedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>{preview.changed}</strong> would change, <strong>{preview.unchanged}</strong> stay the same</p>{preview.labelsChanged && <p className="mt-1">Interviewer labels: <strong>{(preview.labelsNow ?? []).join(", ")}</strong> → <strong>{(preview.labelsBefore ?? []).join(", ")}</strong></p>}{preview.chartsChanged && <p className="mt-1">Custom charts: <strong>{preview.chartsNow}</strong> now vs <strong>{preview.chartsBefore}</strong> in version</p>}</div> : <p className="mt-3 text-sm text-[#7c8c91]">Loading preview…</p>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={confirm} onChange={event => setConfirm(event.target.value)} autoFocus data-testid="input-restore-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setTarget(null)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmRestore} disabled={confirm !== RESET_CONFIRM_PHRASE || restore.isPending} data-testid="button-confirm-restore" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{restore.isPending ? "Restoring..." : "Restore version"}</button></div></div></div>}
+  </div>;
+}
 
 function Applicants() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
+  const [sort, setSort] = useState("rank");
   const [selected, setSelected] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
-  const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort: "rank" }), [search, category, grade]);
+  const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort }), [search, category, grade, sort]);
   const list = useListApplicants(params, { query: { queryKey: getListApplicantsQueryKey(params) } });
   const update = useUpdateApplicant();
   const qc = useQueryClient();
@@ -581,15 +774,18 @@ function Applicants() {
       <button onClick={() => setPrintOpen(true)} data-testid="button-print-roster" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Printer size={16} /> Print roster</button>
       <button onClick={() => setImportOpen(!importOpen)} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><FileUp size={16} /> Import roster</button>
       <button onClick={() => setExportOpen(!exportOpen)} data-testid="button-export" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Download size={16} /> Export roster</button>
+      <button onClick={() => setHistoryOpen(!historyOpen)} data-testid="button-version-history" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><History size={16} /> Version history</button>
     </div>} />
     {importOpen && <ImportPanel onClose={() => setImportOpen(false)} />}
     {exportOpen && <ExportPanel applicants={list.data?.items ?? []} onClose={() => setExportOpen(false)} />}
+    {historyOpen && <VersionHistoryPanel onClose={() => setHistoryOpen(false)} />}
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" placeholder="Search name, email, experience..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-        <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
-        <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
+        <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
+        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option></select>
+        <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">
@@ -820,7 +1016,18 @@ const RESET_CONFIRM_PHRASE = "I understand";
 
 function Queue() {
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: 3000 } });
-  const chat = useGetInterviewChat({ query: { queryKey: getGetInterviewChatQueryKey(), refetchInterval: 3000 } });
+  const chatParams = useMemo(() => ({ limit: CHAT_PAGE_SIZE }), []);
+  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: 3000 } });
+  const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(true);
+  const [chatLoadingMore, setChatLoadingMore] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const chatStickRef = useRef(true);
+  const chatLoadGuardRef = useRef(false);
+  const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
+  const chatItems = useMemo(() => mergeChatItems(olderChat, chat.data?.items ?? []), [olderChat, chat.data]);
+  const chatItemsRef = useRef<InterviewChatMessage[]>([]);
+  chatItemsRef.current = chatItems;
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
   const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
@@ -832,14 +1039,71 @@ function Queue() {
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
   const qc = useQueryClient();
-  const [order, setOrder] = useState<QueueApplicant[]>([]);
+  const chatImageUpload = useRequestUploadUrl();
+  const [chatImages, setChatImages] = useState<{ fileName: string; url: string }[]>([]);
+  const [chatImageError, setChatImageError] = useState("");
+  const [chatUploading, setChatUploading] = useState(false);
+  const [board, setBoard] = useState<Applicant[]>([]);
   const [drag, setDrag] = useState<string | null>(null);
+  const boardParams = useMemo(() => ({ sort: "queue" }), []);
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: 3000 } });
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
-  const orderDirty = useRef(false);
+  const boardDirty = useRef(false);
   const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
+  const loadOlderChat = useCallback(async () => {
+    if (chatLoadGuardRef.current) return;
+    const items = chatItemsRef.current;
+    if (!items.length) return;
+    chatLoadGuardRef.current = true;
+    setChatLoadingMore(true);
+    try {
+      const page = await getInterviewChat({ before: items[0].createdAt, limit: CHAT_PAGE_SIZE });
+      const el = chatScrollRef.current;
+      if (el) chatAnchorRef.current = { prevH: el.scrollHeight, prevTop: el.scrollTop };
+      setOlderChat(current => {
+        const ids = new Set(current.map(m => m.id));
+        return [...page.items.filter(m => !ids.has(m.id)), ...current];
+      });
+      if (page.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
+    } catch {
+      // Keep hasMore true so scrolling up retries.
+    } finally {
+      chatLoadGuardRef.current = false;
+      setChatLoadingMore(false);
+    }
+  }, []);
+  useLayoutEffect(() => {
+    const anchor = chatAnchorRef.current;
+    const el = chatScrollRef.current;
+    if (anchor && el) {
+      el.scrollTop = anchor.prevTop + (el.scrollHeight - anchor.prevH);
+      chatAnchorRef.current = null;
+    }
+  }, [olderChat]);
+  const chatPrevLenRef = useRef(0);
+  const chatOldestRef = useRef("");
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    const n = chatItems.length;
+    if (!el || n === 0) { chatPrevLenRef.current = n; return; }
+    const oldest = chatItems[0].id;
+    if (chatOldestRef.current && chatOldestRef.current !== oldest) {
+      chatOldestRef.current = oldest;
+      chatPrevLenRef.current = n;
+      return;
+    }
+    chatOldestRef.current = oldest;
+    if (chatPrevLenRef.current === 0 || (n > chatPrevLenRef.current && chatStickRef.current)) {
+      el.scrollTop = el.scrollHeight;
+    }
+    chatPrevLenRef.current = n;
+  }, [chatItems]);
+  useEffect(() => {
+    if (chat.data && olderChat.length === 0 && chat.data.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
+  }, [chat.data, olderChat.length]);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   useEffect(() => {
@@ -852,9 +1116,12 @@ function Queue() {
   }, [resetOpen]);
   useEffect(() => {
     if (!queue.data) return;
-    if (!orderDirty.current) setOrder(queue.data.nextApplicants);
     if (!labelsDirty.current) setLabels(queue.data.interviewerLabels);
   }, [queue.data]);
+  useEffect(() => {
+    if (!remaining.data || boardDirty.current) return;
+    setBoard(remaining.data.items.filter(applicant => applicant.interviewStatus !== "completed"));
+  }, [remaining.data]);
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
   if (queue.isError || !queue.data) return <ErrorState onRetry={() => queue.refetch()} />;
   const q = queue.data;
@@ -862,6 +1129,8 @@ function Queue() {
     ? q.currentApplicants.filter(applicant => applicant.interviewer === selectedInterviewer)
     : [];
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
+  const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: board.filter(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: board.filter(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
+  const boardIndex = new Map(board.map((applicant, index) => [applicant.id, index] as const));
   const saveNote = (id: string, note: string, original: string) => {
     if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
@@ -875,15 +1144,58 @@ function Queue() {
     if (callback.isPending || !window.confirm(`Call ${name} back? They return to the front of the queue and the big screen will announce it.`)) return;
     callback.mutate({ data: { applicantId: id } }, { onSuccess: () => { { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } finished.refetch(); } });
   };
-  const move = (id: string, direction: -1 | 1) => {
-    const index = order.findIndex(item => item.id === id);
+  const sendBoardOrder = (list: Applicant[]) => {
+    reorder.mutate({ data: { applicantIds: list.map(item => item.id) } }, {
+      onSuccess: () => { boardDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); },
+      onError: () => { boardDirty.current = false; },
+    });
+  };
+  const finishBoardDrop = (next: Applicant[], dragged: Applicant, newInterviewer: string) => {
+    setBoard(next);
+    setDrag(null);
+    boardDirty.current = true;
+    if ((dragged.interviewer || "") !== (newInterviewer || "")) {
+      updateApplicant.mutate({ id: dragged.id, data: { interviewer: newInterviewer } }, {
+        onSuccess: () => sendBoardOrder(next),
+        onError: () => { boardDirty.current = false; },
+      });
+    } else {
+      sendBoardOrder(next);
+    }
+  };
+  const dropOnCard = (targetId: string, targetLabel: string) => {
+    if (!drag || drag === targetId) return;
+    const dragged = board.find(item => item.id === drag);
+    if (!dragged) { setDrag(null); return; }
+    const next = board.filter(item => item.id !== drag);
+    const at = next.findIndex(item => item.id === targetId);
+    next.splice(at < 0 ? next.length : at, 0, dragged);
+    finishBoardDrop(next, dragged, targetLabel);
+  };
+  const dropOnColumn = (targetLabel: string) => {
+    if (!drag) return;
+    const dragged = board.find(item => item.id === drag);
+    if (!dragged) { setDrag(null); return; }
+    const next = board.filter(item => item.id !== drag);
+    let at = next.length;
+    for (let i = next.length - 1; i >= 0; i--) {
+      const member = next[i];
+      if (!member) continue;
+      const same = targetLabel ? (member.interviewer ?? "") === targetLabel : !q.interviewerLabels.includes(member.interviewer ?? "");
+      if (same) { at = i + 1; break; }
+    }
+    next.splice(at, 0, dragged);
+    finishBoardDrop(next, dragged, targetLabel);
+  };
+  const moveInBoard = (id: string, direction: -1 | 1) => {
+    const index = board.findIndex(item => item.id === id);
     const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= order.length) return;
-    const next = [...order];
+    if (index < 0 || nextIndex < 0 || nextIndex >= board.length) return;
+    const next = [...board];
     [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-    setOrder(next);
-    orderDirty.current = true;
-    reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(item => item.id), ...next.map(item => item.id)] } }, { onSuccess: () => { orderDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); }, onError: () => { orderDirty.current = false; } });
+    setBoard(next);
+    boardDirty.current = true;
+    sendBoardOrder(next);
   };
   const saveLabels = () => {
     const clean = [...new Set(labels.map(label => label.trim()).filter(Boolean))];
@@ -909,12 +1221,42 @@ function Queue() {
     setResetOpen(false);
     resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
+  const attachChatImages = async (files: FileList | File[]) => {
+    setChatImageError("");
+    const picked = Array.from(files);
+    if (!picked.length) return;
+    if (chatImages.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
+    for (const file of picked) {
+      if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
+      if (file.size > 5 * 1024 * 1024) { setChatImageError(`"${file.name}" must be under 5 MB.`); return; }
+    }
+    setChatUploading(true);
+    try {
+      for (const file of picked) {
+        const requested = await chatImageUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
+        const putUrl = requested.uploadURL;
+        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
+        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+        if (!response.ok) throw new Error("Upload failed");
+        const url = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
+        setChatImages(current => current.length < 3 ? [...current, { fileName: file.name, url }] : current);
+      }
+    } catch {
+      setChatImageError("Image upload failed. Try again.");
+    } finally {
+      setChatUploading(false);
+    }
+  };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!message.trim()) return;
-    const submitted = message.trim();
+    if (!message.trim() && !chatImages.length) return;
+    const embeds = chatImages.map(image => `![${image.fileName}](${image.url})`).join("\n");
+    const submitted = [message.trim(), embeds].filter(Boolean).join("\n");
+    if (submitted.length > 950) { setChatError("Message with images is too long — shorten the text or remove an image."); return; }
     setMessage("");
+    setChatImages([]);
     setChatError("");
+    chatStickRef.current = true;
     const author = selectedInterviewer || "Interviewer";
     try {
       // Persist the original @ai request first so every interviewer sees the
@@ -922,8 +1264,9 @@ function Queue() {
       await sendChat.mutateAsync({ data: { author, message: submitted } });
       if (/@ai\b/i.test(submitted)) {
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-        const response = await ask.mutateAsync({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id) } });
-        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer } });
+        const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
+        const response = await ask.mutateAsync({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id), chatContext } });
+        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } });
       }
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
       setChatError("");
@@ -950,8 +1293,8 @@ function Queue() {
       </section>
       <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
         <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
-        <div className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chat.data?.items.length ? chat.data.items.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-        <form onSubmit={submitChat} className="mt-3 space-y-2"><div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button disabled={!message.trim() || sendChat.isPending || ask.isPending} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">Send</button></div>{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
+        <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+        <form onSubmit={submitChat} className="mt-3 space-y-2">{chatImages.length > 0 && <div className="flex flex-wrap gap-2">{chatImages.map(image => <span key={image.url} className="relative inline-block" data-testid={`chat-image-${image.url}`}><img src={image.url} alt={image.fileName} className="h-16 w-16 rounded-lg border border-[#dce9e8] object-cover" /><button type="button" onClick={() => setChatImages(current => current.filter(x => x.url !== image.url))} aria-label={`Remove ${image.fileName}`} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={11} /></button></span>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatImages.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
       </section>
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
@@ -968,7 +1311,7 @@ function Queue() {
         </div>
       </Section>
     </div>
-    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Reorder upcoming applicants</h2><p className="mt-1 text-xs text-[#7c8c91]">Reorder the next handoffs without linking applicants into pairs.</p></div><TimerReset size={20} className="text-[#16869a]" /></div><div className="mt-4 grid gap-2 md:grid-cols-2">{order.map((applicant, index) => <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => { if (!drag) return; const from = order.findIndex(item => item.id === drag); if (from < 0) { setDrag(null); return; } const next = [...order]; const [item] = next.splice(from, 1); next.splice(index, 0, item); setOrder(next); setDrag(null); orderDirty.current = true; reorder.mutate({ data: { applicantIds: [...q.currentApplicants.map(current => current.id), ...next.map(item => item.id)] } }, { onSuccess: () => { orderDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); }, onError: () => { orderDirty.current = false; } }); }} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`queue-order-${applicant.id}`}><GripVertical size={15} className="text-[#b5c3c6]" /><span className="mono w-5 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><span className="flex-1 text-sm font-semibold">{applicant.name}</span><button onClick={() => move(applicant.id, -1)} data-testid={`button-move-up-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => move(applicant.id, 1)} data-testid={`button-move-down-${applicant.id}`} className="text-[#779096] hover:text-[#16869a]">↓</button></div>)}</div></section>
+    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5" data-testid="group-board"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Interview groups</h2><p className="mt-1 text-xs text-[#7c8c91]">Drag applicants between interviewers to assign them. Drag within or across columns, or use ↑↓, to set the overall interview order. Numbers show queue position.</p></div><UsersRound size={20} className="text-[#16869a]" /></div>{remaining.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16" />)}</div> : remaining.isError ? <ErrorState compact onRetry={() => remaining.refetch()} /> : <div className="mt-4 grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">{boardColumns.map(column => <div key={column.key} onDragOver={event => event.preventDefault()} onDrop={() => dropOnColumn(column.label)} data-testid={`group-column-${column.label.toLowerCase().replaceAll(" ", "-") || "unassigned"}`} className="min-h-[140px] rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-2"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{column.label || "Unassigned"}</p><span className="mono text-xs text-[#809196]">{column.members.length}</span></div>{column.members.length ? column.members.map(applicant => { const position = (boardIndex.get(applicant.id) ?? 0) + 1; return <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => dropOnCard(applicant.id, column.label)} data-testid={`group-card-${applicant.id}`} className="mb-2 flex cursor-grab items-center gap-2 rounded-xl border border-[#d7e4e3] bg-white px-3 py-2.5 text-left shadow-sm"><GripVertical size={14} className="shrink-0 text-[#b4c1c4]" /><span className="mono w-6 shrink-0 text-xs text-[#16869a]">{String(position).padStart(2, "0")}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{applicant.name}</span><span className="block text-[10px] text-[#819196]">Grade {applicant.grade}{position <= q.interviewerLabels.length ? " · up now" : ""}</span></span><button onClick={() => moveInBoard(applicant.id, -1)} aria-label={`Move ${applicant.name} earlier`} data-testid={`button-group-up-${applicant.id}`} className="shrink-0 text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => moveInBoard(applicant.id, 1)} aria-label={`Move ${applicant.name} later`} data-testid={`button-group-down-${applicant.id}`} className="shrink-0 text-[#779096] hover:text-[#16869a]">↓</button></div>; }) : <p className="px-2 py-6 text-center text-xs text-[#819196]">Drop applicants here</p>}</div>)}</div>}</section>
     <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Finished — call back</h2><p className="mt-1 text-xs text-[#7c8c91]">Finished someone by accident? Send them back to the front. The big screen and audio will announce that they aren&apos;t done yet.</p></div><PhoneCall size={20} className="text-[#16869a]" /></div>{finished.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : finished.data && finished.data.total > 0 ? <div className="mt-4 grid gap-2 md:grid-cols-2">{finished.data.items.map(applicant => <div key={applicant.id} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`finished-applicant-${applicant.id}`}><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e5f3f1] text-xs font-bold text-[#16869a]">{applicant.name.slice(0, 1)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{applicant.name}</p><p className="text-xs text-[#7c8c91]">Grade {applicant.grade}</p></div><button onClick={() => recallApplicant(applicant.id, applicant.name)} disabled={callback.isPending} data-testid={`button-recall-${applicant.id}`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50"><PhoneCall size={13} /> Call back</button></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">Nobody finished yet.</p>}{callback.isError && <p className="mt-2 text-xs text-[#ad4b43]">Callback failed. Try again.</p>}</section>
     {resetOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setResetOpen(false)} data-testid="reset-dialog"><div onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm reset interview progress" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Reset interview progress?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">This takes every applicant back to the start of the queue. Here is exactly what happens:</p><ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#52666e]"><li>All <strong>completed</strong> interviews move back to <strong>queued</strong> (completed count returns to 0).</li><li>Queue order is rebuilt and active recall flags are cleared.</li><li>The big screen switches back to calling the front of the queue.</li></ul><p className="mt-3 text-sm leading-6 text-[#52666e]">Preserved: applicant data, files, notes, decisions, and lanes.</p><label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={resetConfirm} onChange={event => setResetConfirm(event.target.value)} autoFocus data-testid="input-reset-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setResetOpen(false)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmResetProgress} disabled={resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending} data-testid="button-confirm-reset" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div></div></div>}
   </div>;
@@ -1133,15 +1476,57 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };
   if (tool === "web_fetch" || tool === "fetch_url") return { label: "Fetched page", Icon: Globe };
   if (tool === "rename_conversation" || tool === "rename") return { label: "Renamed chat", Icon: Pencil };
+  if (tool === "transfer_interviewer") return { label: "Transferred interviewer", Icon: UsersRound };
+  if (tool === "search_applicants") return { label: "Searched applicants", Icon: Search };
+  if (tool === "get_applicant") return { label: "Viewed applicant", Icon: UsersRound };
+  if (tool === "create_applicant") return { label: "Added applicant", Icon: Plus };
+  if (tool === "update_applicant") return { label: "Updated applicant", Icon: Pencil };
+  if (tool === "delete_applicant") return { label: "Removed applicant", Icon: Trash2 };
+  if (tool === "reorder_queue") return { label: "Reordered queue", Icon: ClipboardList };
+  if (tool === "move_applicant_in_queue") return { label: "Moved in queue", Icon: ClipboardList };
+  if (tool === "list_interviewers") return { label: "Listed interviewers", Icon: UsersRound };
+  if (tool === "assign_interviewers") return { label: "Assigned interviewers", Icon: UsersRound };
+  if (tool === "list_uploads") return { label: "Listed uploads", Icon: FileUp };
+  if (tool === "preview_import") return { label: "Previewed import", Icon: Search };
+  if (tool === "commit_import") return { label: "Committed import", Icon: Check };
+  if (tool === "list_snapshots") return { label: "Listed versions", Icon: History };
+  if (tool === "create_snapshot") return { label: "Saved version", Icon: Check };
+  if (tool === "restore_snapshot") return { label: "Restored version", Icon: RefreshCw };
+  if (tool === "list_conversations") return { label: "Listed previous chats", Icon: History };
+  if (tool === "read_conversation") return { label: "Read previous chat", Icon: History };
+  if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
   return { label: tool, Icon: Sparkles };
 }
 
 function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
   if (!activities.length) return null;
-  return <div className="mt-2 flex flex-wrap gap-1.5" data-testid="assistant-activities">{activities.map((activity, index) => {
-    const { label, Icon } = activityMeta(activity.tool);
-    return <span key={`${activity.tool}-${index}`} title={activity.detail} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#edf4f3] px-2.5 py-1 text-[11px] font-semibold text-[#3d6b72]"><Icon size={12} /><span className="max-w-[220px] truncate">{label} · {activity.detail}</span></span>;
-  })}</div>;
+  return (
+    <div className="mt-3 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f8faf9]" data-testid="assistant-activities">
+      <div className="flex items-center gap-1.5 bg-[#edf4f3] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#3d6b72]">
+        <Sparkles size={12} className="text-[#16869a]" />
+        {activities.length} tool call{activities.length > 1 ? "s" : ""}
+      </div>
+      <div className="divide-y divide-[#edf1f1]">
+        {activities.map((activity, index) => {
+          const { label, Icon } = activityMeta(activity.tool);
+          return (
+            <div key={`${activity.tool}-${index}`} className="flex items-start gap-2.5 px-3 py-2">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#dce9e8] bg-white text-[#16869a]">
+                <Icon size={12} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold leading-none text-[#38555e]">{label}</p>
+                <p className="mt-1 truncate text-xs leading-none text-[#7c8c91]" title={activity.detail}>
+                  {activity.detail || "—"}
+                </p>
+              </div>
+              <Check size={12} className="mt-1 shrink-0 text-[#3aa582]" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ConversationAssistant() {
@@ -1156,6 +1541,11 @@ function ConversationAssistant() {
   const [streamError, setStreamError] = useState("");
   const [liveActivities, setLiveActivities] = useState<AssistantActivity[]>([]);
   const liveActivitiesRef = useRef<AssistantActivity[]>([]);
+  const [attachments, setAttachments] = useState<{ fileName: string; objectPath: string; added: number; updated: number }[]>([]);
+  const [attachError, setAttachError] = useState("");
+  const [attaching, setAttaching] = useState(false);
+  const attachmentUpload = useRequestUploadUrl();
+  const attachmentPreview = usePreviewImport();
   const streamAbort = useRef<AbortController | null>(null);
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
@@ -1218,6 +1608,28 @@ function ConversationAssistant() {
     setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer, activities: item.activities ?? [] })) ?? []);
   }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
 
+  const attachFile = async (file: File) => {
+    setAttachError("");
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    if (!/\.(csv|tsv|xlsx|xls)$/i.test(file.name)) { setAttachError("Attach a roster file: CSV, TSV, or Excel."); return; }
+    if (file.size > 15 * 1024 * 1024) { setAttachError("Files must be under 15 MB."); return; }
+    setAttaching(true);
+    try {
+      const contentType = file.type || (isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv");
+      const requested = await attachmentUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType } });
+      const sameOrigin = (() => { try { return new URL(requested.uploadURL, window.location.href).origin === window.location.origin; } catch { return false; } })();
+      const response = await fetch(requested.uploadURL, { method: "PUT", headers: { "Content-Type": contentType }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+      if (!response.ok) throw new Error("Upload failed");
+      const rowCount = isExcel ? 0 : Math.max(0, (await file.text()).split(/\r?\n/).filter(Boolean).length - 1);
+      const filePreview = await attachmentPreview.mutateAsync({ data: { objectPath: requested.objectPath, fileName: file.name, rowCount } });
+      setAttachments(current => [...current, { fileName: file.name, objectPath: requested.objectPath, added: filePreview.diff.added, updated: filePreview.diff.updated }]);
+    } catch {
+      setAttachError("The file could not be attached. Try again.");
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!question.trim() || !activeConversationId || isStreaming) return;
@@ -1231,7 +1643,8 @@ function ConversationAssistant() {
     const controller = new AbortController();
     streamAbort.current = controller;
     setIsStreaming(true);
-    const payload = { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined };
+    const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
+    const payload = { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -1284,16 +1697,26 @@ function ConversationAssistant() {
         }
         if (serverError) throw new Error(serverError);
         setHistory(current => [...current, { q, a: finalAnswer.trim() || "I could not produce an answer for that question.", activities: liveActivitiesRef.current }]);
+        setAttachments([]);
         queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
         queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         // Streaming failed mid-flight; fall back to the classic request.
         ask.mutate({ data: payload }, {
           onSuccess: response => {
             setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
+            setAttachments([]);
             queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
             queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+            queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+            queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+            queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+            queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
           },
           onError: fallback => setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again.")),
         });
@@ -1372,7 +1795,9 @@ function ConversationAssistant() {
           {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
           {streamError && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
         </div>
-        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        {attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
+        {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
+        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4"><label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="hidden" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label><input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder="Ask about the applicants..." className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
         {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
       <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer" className="order-3"><div className="space-y-2">{list.data && list.data.total > 8 && <p className="px-2 text-[11px] text-[#8a999d]">Showing first 8 of {list.data.total} — search on the Applicants page for the rest.</p>}{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section><ImageStudio />

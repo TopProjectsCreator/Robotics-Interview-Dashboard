@@ -312,6 +312,60 @@ export async function searchWebFallback(query: string): Promise<WebSearchOutcome
   return null;
 }
 
+export const SEARCH_PROVIDER_NAMES = [
+  "tavily",
+  "firecrawl",
+  "exa",
+  "parallel",
+  "wikipedia",
+  "duckduckgo",
+] as const;
+
+export type SearchProviderName = (typeof SEARCH_PROVIDER_NAMES)[number] | "auto";
+
+const SEARCH_PROVIDER_FNS: Record<
+  (typeof SEARCH_PROVIDER_NAMES)[number],
+  (query: string) => Promise<WebSearchOutcome | null>
+> = {
+  tavily: searchTavily,
+  firecrawl: searchFirecrawl,
+  exa: searchExa,
+  parallel: searchParallel,
+  wikipedia: searchWikipedia,
+  duckduckgo: searchDuckDuckGo,
+};
+
+export function normalizeSearchProvider(value: unknown): SearchProviderName {
+  if (typeof value !== "string") return "auto";
+  const name = value.trim().toLowerCase();
+  return (SEARCH_PROVIDER_NAMES as readonly string[]).includes(name)
+    ? (name as (typeof SEARCH_PROVIDER_NAMES)[number])
+    : "auto";
+}
+
+/**
+ * Search with an explicit provider choice, defaulting to the full fallback
+ * chain ("auto"). An explicit pick is tried first; if it fails, the rest of
+ * the chain still runs so one dead provider never sinks a question. The
+ * outcome records which provider actually served the results.
+ */
+export async function searchWeb(
+  query: string,
+  provider: SearchProviderName = "auto",
+): Promise<WebSearchOutcome | null> {
+  const clean = query.trim().slice(0, 300);
+  if (!clean) return null;
+  if (provider === "auto") return searchWebFallback(clean);
+  const rest = (Object.keys(SEARCH_PROVIDER_FNS) as (keyof typeof SEARCH_PROVIDER_FNS)[])
+    .filter((name) => name !== provider)
+    .map((name) => SEARCH_PROVIDER_FNS[name]);
+  for (const fn of [SEARCH_PROVIDER_FNS[provider], ...rest]) {
+    const outcome = await fn(clean);
+    if (outcome) return outcome;
+  }
+  return null;
+}
+
 export function formatSearchResults(outcome: WebSearchOutcome): string {
   const lines = outcome.results.map(
     (result, index) => `[${index + 1}] ${result.title}\n${result.url}\n${result.snippet}`,
