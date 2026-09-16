@@ -57,6 +57,31 @@ export interface PresenceHeartbeat {
   onlineCount: number;
 }
 
+export type PresenceIpStatsPagesItem = {
+  page: string;
+  visits: number;
+  seconds: number;
+};
+
+export interface PresenceIpStats {
+  ip: string;
+  totalSeconds: number;
+  sessionCount: number;
+  visitCount: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  pages: PresenceIpStatsPagesItem[];
+}
+
+export interface PresenceKickInput {
+  ip: string;
+}
+
+export interface PresenceKickResult {
+  kicked: number;
+  ip: string;
+}
+
 export interface Broadcast {
   id: string;
   message: string;
@@ -118,6 +143,22 @@ export interface Applicant {
   interviewer?: string;
   interviewDecision?: string;
   callbackRequested?: boolean;
+  attendance: string;
+  /**
+     * Arrival time (HH:MM 24h) when attendance is late
+     * @nullable
+     */
+  lateArrivalTime?: string | null;
+  /**
+     * Makeup interview date (YYYY-MM-DD) when attendance is absent
+     * @nullable
+     */
+  makeupDate?: string | null;
+  /**
+     * true = excused, false = unexcused; only meaningful when attendance is late or absent
+     * @nullable
+     */
+  attendanceExcused?: boolean | null;
   category: string;
   rank: number;
   notes: string;
@@ -149,6 +190,22 @@ export interface ApplicantUpdate {
   commit10Hours?: string;
   parentVolunteer?: string;
   category?: string;
+  attendance?: string;
+  /**
+     * Arrival time (HH:MM 24h) when marking attendance late; null clears
+     * @nullable
+     */
+  lateArrivalTime?: string | null;
+  /**
+     * Makeup interview date (YYYY-MM-DD) when marking attendance absent; null clears
+     * @nullable
+     */
+  makeupDate?: string | null;
+  /**
+     * true = excused, false = unexcused (late/absent only); null clears
+     * @nullable
+     */
+  attendanceExcused?: boolean | null;
   rank?: number;
   notes?: string;
   interviewStatus?: string;
@@ -234,6 +291,13 @@ export interface QueueApplicant {
   notes: string;
   interviewDecision: string;
   callbackRequested: boolean;
+  attendance: string;
+  /** @nullable */
+  lateArrivalTime?: string | null;
+  /** @nullable */
+  makeupDate?: string | null;
+  /** @nullable */
+  attendanceExcused?: boolean | null;
 }
 
 export interface QueueState {
@@ -452,6 +516,10 @@ export type BeforeParameter = string;
  * Max messages per page (1-100, default 30).
  */
 export type ChatLimitParameter = number;
+
+export type GetPresenceStatsParams = {
+ip: string;
+};
 
 export type ListApplicantsParams = {
 search?: SearchParameter;

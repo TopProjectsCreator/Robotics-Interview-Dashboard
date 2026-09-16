@@ -26,6 +26,22 @@ export interface ApplicantUpdate {
   commit10Hours?: string;
   parentVolunteer?: string;
   category?: string;
+  attendance?: string;
+  /**
+     * Arrival time (HH:MM 24h) when marking attendance late; null clears
+     * @nullable
+     */
+  lateArrivalTime?: string | null;
+  /**
+     * Makeup interview date (YYYY-MM-DD) when marking attendance absent; null clears
+     * @nullable
+     */
+  makeupDate?: string | null;
+  /**
+     * true = excused, false = unexcused (late/absent only); null clears
+     * @nullable
+     */
+  attendanceExcused?: boolean | null;
   rank?: number;
   notes?: string;
   interviewStatus?: string;

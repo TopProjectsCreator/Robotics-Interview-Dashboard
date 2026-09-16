@@ -128,6 +128,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PresenceList"
+  /presence/stats:
+    get:
+      operationId: getPresenceStats
+      tags: [presence]
+      summary: Per-IP usage stats from page-visit history
+      parameters:
+        - name: ip
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Usage stats for one IP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceIpStats"
+  /presence/kick:
+    post:
+      operationId: kickPresence
+      tags: [presence]
+      summary: Kick all sessions from an IP (revoke + remove presence)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceKickInput"
+      responses:
+        "200":
+          description: Kick result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceKickResult"
   /broadcasts:
     post:
       operationId: postBroadcast
@@ -890,6 +926,57 @@ components:
       properties:
         onlineCount:
           type: integer
+    PresenceIpStats:
+      type: object
+      required:
+        - ip
+        - totalSeconds
+        - sessionCount
+        - visitCount
+        - firstSeenAt
+        - lastSeenAt
+        - pages
+      properties:
+        ip:
+          type: string
+        totalSeconds:
+          type: integer
+        sessionCount:
+          type: integer
+        visitCount:
+          type: integer
+        firstSeenAt:
+          type: string
+          nullable: true
+        lastSeenAt:
+          type: string
+          nullable: true
+        pages:
+          type: array
+          items:
+            type: object
+            required: [page, visits, seconds]
+            properties:
+              page:
+                type: string
+              visits:
+                type: integer
+              seconds:
+                type: integer
+    PresenceKickInput:
+      type: object
+      required: [ip]
+      properties:
+        ip:
+          type: string
+    PresenceKickResult:
+      type: object
+      required: [kicked, ip]
+      properties:
+        kicked:
+          type: integer
+        ip:
+          type: string
     Broadcast:
       type: object
       required:
@@ -999,6 +1086,7 @@ components:
         - interviewer
          - interviewDecision
          - callbackRequested
+        - attendance
         - category
         - rank
         - notes
@@ -1040,6 +1128,17 @@ components:
           type: string
         callbackRequested:
           type: boolean
+        attendance:
+          type: string
+        lateArrivalTime:
+          type: ["string", "null"]
+          description: "Arrival time (HH:MM 24h) when attendance is late"
+        makeupDate:
+          type: ["string", "null"]
+          description: "Makeup interview date (YYYY-MM-DD) when attendance is absent"
+        attendanceExcused:
+          type: ["boolean", "null"]
+          description: "true = excused, false = unexcused; only meaningful when attendance is late or absent"
         category:
           type: string
         rank:
@@ -1092,6 +1191,17 @@ components:
           type: string
         category:
           type: string
+        attendance:
+          type: string
+        lateArrivalTime:
+          type: ["string", "null"]
+          description: "Arrival time (HH:MM 24h) when marking attendance late; null clears"
+        makeupDate:
+          type: ["string", "null"]
+          description: "Makeup interview date (YYYY-MM-DD) when marking attendance absent; null clears"
+        attendanceExcused:
+          type: ["boolean", "null"]
+          description: "true = excused, false = unexcused (late/absent only); null clears"
         rank:
           type: integer
         notes:
@@ -1245,7 +1355,7 @@ components:
           type: string
     QueueApplicant:
       type: object
-      required: [id, name, grade, aiScore, category, queuePosition, interviewer, notes, interviewDecision, callbackRequested]
+      required: [id, name, grade, aiScore, category, queuePosition, interviewer, notes, interviewDecision, callbackRequested, attendance]
       properties:
         id:
           type: string
@@ -1267,6 +1377,14 @@ components:
           type: string
         callbackRequested:
           type: boolean
+        attendance:
+          type: string
+        lateArrivalTime:
+          type: ["string", "null"]
+        makeupDate:
+          type: ["string", "null"]
+        attendanceExcused:
+          type: ["boolean", "null"]
     AdvanceQueueInput:
       type: object
       required: [applicantId]

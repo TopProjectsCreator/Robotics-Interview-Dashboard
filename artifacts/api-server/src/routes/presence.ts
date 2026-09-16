@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { desc, eq, gt, lt } from "drizzle-orm";
 import { db, presenceHeartbeatsTable } from "@workspace/db";
-import { GetPresenceResponse, PostPresenceHeartbeatBody, PostPresenceHeartbeatResponse } from "@workspace/api-zod";
-import { requestAdminSession } from "../middlewares/adminAuth";
-import { geoLookup, getClientIp } from "../lib/presence";
+import { GetPresenceStatsResponse, GetPresenceResponse, KickPresenceBody, KickPresenceResponse, PostPresenceHeartbeatBody, PostPresenceHeartbeatResponse } from "@workspace/api-zod";
+import { isRevokedAdminSession, isValidAdminSession, requestAdminSession } from "../middlewares/adminAuth";
+import { closeOpenVisits, geoLookup, getClientIp, getIpStats, rotatePageVisit } from "../lib/presence";
 
 const router: IRouter = Router();
 
@@ -24,6 +24,7 @@ export async function deletePresenceHeartbeat(session: string | undefined): Prom
   } catch {
     // Presence cleanup is best-effort; stale rows prune themselves.
   }
+  await closeOpenVisits(hash);
 }
 
 async function pruneStale(): Promise<void> {
@@ -36,13 +37,27 @@ async function pruneStale(): Promise<void> {
   }
 }
 
-router.post("/presence/heartbeat", async (req, res): Promise<void> => {
+async function requirePresenceSession(req: import("express").Request, res: import("express").Response): Promise<string | null> {
   const session = requestAdminSession(req);
+  if (!isValidAdminSession(session)) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  if (await isRevokedAdminSession(session)) {
+    res.status(401).json({ error: "Session revoked" });
+    return null;
+  }
   const hash = presenceSessionHash(session);
   if (!hash) {
     res.status(401).json({ error: "Authentication required" });
-    return;
+    return null;
   }
+  return hash;
+}
+
+router.post("/presence/heartbeat", async (req, res): Promise<void> => {
+  const hash = await requirePresenceSession(req, res);
+  if (!hash) return;
   const ip = getClientIp(req);
   const userAgent = String(req.get("user-agent") ?? "").slice(0, 300);
   const parsed = PostPresenceHeartbeatBody.safeParse(req.body ?? {});
@@ -71,6 +86,7 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
         target: presenceHeartbeatsTable.sessionHash,
         set: { ip, userAgent, city, region, country, page, updatedAt: now },
       });
+    await rotatePageVisit(hash, ip, page, existing?.page ?? "");
     const online = await db
       .select({ sessionHash: presenceHeartbeatsTable.sessionHash })
       .from(presenceHeartbeatsTable)
@@ -83,12 +99,8 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
 });
 
 router.get("/presence", async (req, res): Promise<void> => {
-  const session = requestAdminSession(req);
-  const hash = presenceSessionHash(session);
-  if (!hash) {
-    res.status(401).json({ error: "Authentication required" });
-    return;
-  }
+  const hash = await requirePresenceSession(req, res);
+  if (!hash) return;
   try {
     await pruneStale();
     const rows = await db
@@ -112,6 +124,64 @@ router.get("/presence", async (req, res): Promise<void> => {
     );
   } catch (error) {
     req.log.error({ err: error }, "Presence list failed");
+    res.status(503).json({ error: "Presence unavailable" });
+  }
+});
+
+router.get("/presence/stats", async (req, res): Promise<void> => {
+  const hash = await requirePresenceSession(req, res);
+  if (!hash) return;
+  const ip = String(req.query.ip ?? "").trim().slice(0, 45);
+  if (!ip) {
+    res.status(400).json({ error: "Query parameter ip is required" });
+    return;
+  }
+  try {
+    const stats = await getIpStats(ip);
+    res.json(GetPresenceStatsResponse.parse(stats));
+  } catch (error) {
+    req.log.error({ err: error }, "Presence stats failed");
+    res.status(503).json({ error: "Presence unavailable" });
+  }
+});
+
+router.post("/presence/kick", async (req, res): Promise<void> => {
+  const hash = await requirePresenceSession(req, res);
+  if (!hash) return;
+  const parsed = KickPresenceBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const ip = parsed.data.ip.trim().slice(0, 45);
+  if (!ip) {
+    res.status(400).json({ error: "ip is required" });
+    return;
+  }
+  if (req.body && typeof req.body === "object" && "targetIp" in (req.body as Record<string, unknown>)) {
+    res.status(400).json({ error: "Use { ip }, not { targetIp }" });
+    return;
+  }
+  try {
+    const victims = await db.select({ sessionHash: presenceHeartbeatsTable.sessionHash }).from(presenceHeartbeatsTable).where(eq(presenceHeartbeatsTable.ip, ip));
+    const hashes = victims.map((r) => r.sessionHash).filter((h) => h && h !== hash);
+    if (hashes.length === 0) {
+      const selfOnly = victims.some((r) => r.sessionHash === hash);
+      res.status(selfOnly ? 400 : 404).json({ error: selfOnly ? "Cannot kick your own session" : "No online session found for that IP" });
+      return;
+    }
+    for (const victimHash of hashes) {
+      await db.insert((await import("@workspace/db")).revokedSessionsTable).values({
+        tokenHash: victimHash,
+        expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+      }).onConflictDoNothing();
+      await db.delete(presenceHeartbeatsTable).where(eq(presenceHeartbeatsTable.sessionHash, victimHash));
+      const { closeOpenVisits } = await import("../lib/presence");
+      await closeOpenVisits(victimHash);
+    }
+    res.json(KickPresenceResponse.parse({ kicked: hashes.length, ip }));
+  } catch (error) {
+    req.log.error({ err: error }, "Presence kick failed");
     res.status(503).json({ error: "Presence unavailable" });
   }
 });

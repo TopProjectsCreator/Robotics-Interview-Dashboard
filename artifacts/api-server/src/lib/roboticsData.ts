@@ -104,6 +104,10 @@ export function applicantResponse(applicant: Applicant) {
     interviewer: applicant.interviewer,
     interviewDecision: applicant.interviewDecision,
     callbackRequested: applicant.callbackRequested,
+    attendance: applicant.attendance,
+    lateArrivalTime: applicant.lateArrivalTime ?? null,
+    makeupDate: applicant.makeupDate ?? null,
+    attendanceExcused: applicant.attendanceExcused ?? null,
     category: applicant.category,
     rank: applicant.rank,
     notes: applicant.notes,
@@ -123,6 +127,10 @@ export function queueApplicantResponse(applicant: Applicant) {
     notes: applicant.notes,
     interviewDecision: applicant.interviewDecision,
     callbackRequested: applicant.callbackRequested,
+    attendance: applicant.attendance,
+    lateArrivalTime: applicant.lateArrivalTime ?? null,
+    makeupDate: applicant.makeupDate ?? null,
+    attendanceExcused: applicant.attendanceExcused ?? null,
   };
 }
 
@@ -478,6 +486,9 @@ export function csvToApplicant(values: string[], headers: string[], queuePositio
     interviewer: "",
     interviewDecision: "Undecided",
     callbackRequested: false,
+    attendance: ["unmarked", "here", "absent", "late"].includes((record.attendance || "").trim().toLowerCase())
+      ? (record.attendance || "").trim().toLowerCase()
+      : "unmarked",
     category: "unranked",
     rank: queuePosition + 1,
     notes: record.notes || "",

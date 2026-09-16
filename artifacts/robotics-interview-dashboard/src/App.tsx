@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, UsersRound, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
+   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, UsersRound, Volume1, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
 } from "lucide-react";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
@@ -19,6 +19,8 @@ import {
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetMyBroadcasts, useAckBroadcast, getGetMyBroadcastsQueryKey,
+  useKickPresence,
+  useGetPresenceStats, getGetPresenceStatsQueryKey,
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
@@ -34,6 +36,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import "@/index.css";
+import { KOKORO_TEST_PHRASE, ensureLocalTts, speakLocalKokoro, stopLocalTts } from "./lib/localTts";
 
 const queryClient = new QueryClient();
 const categories = ["advance", "hold", "decline", "unranked"];
@@ -126,6 +129,82 @@ function sanitizeSvg(raw: string): string | null {
 
 const MARKDOWN_MAX_CHARS = 50000;
 
+function stripMarkdownCell(cell: string): string {
+  return cell
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(`)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .trim();
+}
+
+function MarkdownTableExport({ header, rows, aligns, tableKey }: { header: string[]; rows: string[][]; aligns: ("left" | "center" | "right")[]; tableKey: string }) {
+  const [busy, setBusy] = useState(false);
+  const fileBase = `ai-table-${new Date().toISOString().slice(0, 10)}`;
+  const plainHeader = header.map(stripMarkdownCell);
+  const plainRows = rows.map((row) => row.map(stripMarkdownCell));
+  const downloadDelimited = (delimiter: string, extension: string, mime: string) => {
+    const lines = [
+      plainHeader.map((cell) => escapeDelimitedCell(cell, delimiter)).join(delimiter),
+      ...plainRows.map((row) => row.map((cell) => escapeDelimitedCell(cell, delimiter)).join(delimiter)),
+    ];
+    downloadBlob(new Blob([lines.join("\n")], { type: `${mime};charset=utf-8` }), `${fileBase}.${extension}`);
+  };
+  const downloadExcel = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const XLSX = await import("xlsx");
+      const sheet = XLSX.utils.aoa_to_sheet([plainHeader, ...plainRows]);
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Table");
+      const bytes = XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+      downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${fileBase}.xlsx`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#dce9e8]">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-[#edf4f3]">
+              {header.map((cell, cellIndex) => (
+                <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#dce9e8] px-3 py-2 font-semibold text-[#183a4b]">
+                  {renderInlineMarkdown(cell)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyRowsFallback(rows, aligns, tableKey)}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-[#dce9e8] bg-[#f7faf9] px-3 py-2">
+        <span className="mr-1 text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Export table</span>
+        <button onClick={() => downloadDelimited(",", "csv", "text/csv")} data-testid={`export-table-csv-${tableKey}`} className="rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b]">CSV</button>
+        <button onClick={() => downloadDelimited(";", "csv", "text/csv")} data-testid={`export-table-semicolon-${tableKey}`} className="rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b]">CSV (;)</button>
+        <button onClick={() => void downloadExcel()} disabled={busy} data-testid={`export-table-xlsx-${tableKey}`} className="flex items-center gap-1 rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b] disabled:opacity-50"><Download size={12} />{busy ? "..." : "Excel"}</button>
+      </div>
+    </div>
+  );
+}
+
+function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string) {
+  return rows.map((row, rowIndex) => (
+    <tr key={`tr-${tableKey}-${rowIndex}`} className="odd:bg-white even:bg-[#f7faf9]">
+      {row.map((cell, cellIndex) => (
+        <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#eef3f2] px-3 py-2 align-top">
+          {renderInlineMarkdown(cell)}
+        </td>
+      ))}
+    </tr>
+  ));
+}
+
 function MarkdownContent({ source, className = "" }: { source: string; className?: string }) {
   const capped = source.length > MARKDOWN_MAX_CHARS ? `${source.slice(0, MARKDOWN_MAX_CHARS)}\n\n…(truncated)` : source;
   const blocks: ReactNode[] = [];
@@ -184,7 +263,8 @@ function MarkdownContent({ source, className = "" }: { source: string; className
           const rowCells = splitRow(rowLine);
           if (rowCells.length === header.length) bodyRows.push(rowCells);
         }
-        blocks.push(<div key={`table-${key++}`} className="overflow-x-auto rounded-xl border border-[#dce9e8]"><table className="w-full border-collapse text-sm"><thead><tr className="bg-[#edf4f3]">{header.map((cell, cellIndex) => <th key={`th-${key++}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#dce9e8] px-3 py-2 font-semibold text-[#183a4b]">{renderInlineMarkdown(cell)}</th>)}</tr></thead><tbody>{bodyRows.map(row => <tr key={`tr-${key++}`} className="odd:bg-white even:bg-[#f7faf9]">{row.map((cell, cellIndex) => <td key={`td-${key++}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#eef3f2] px-3 py-2 align-top">{renderInlineMarkdown(cell)}</td>)}</tr>)}</tbody></table></div>);
+        const tableKey = `table-${key++}`;
+        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} />);
         for (let skip = 1; skip <= consumed; skip += 1) allLines[lineIndex + skip] = "";
         return;
       }
@@ -449,10 +529,79 @@ function timeAgoShort(iso: string): string {
   return `${Math.floor(minutes / 60)}h ago`;
 }
 
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m ${totalSeconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
+  const stats = useGetPresenceStats(
+    { ip },
+    { query: { queryKey: getGetPresenceStatsQueryKey({ ip }), enabled: Boolean(ip) } },
+  );
+  const maxSeconds = Math.max(...(stats.data?.pages.map((p) => p.seconds) ?? [1]), 1);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={onClose} data-testid="presence-stats-modal">
+      <div onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Usage for ${ip}`} className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Session history</p>
+            <h2 className="mono mt-1 break-all text-lg font-semibold text-[#182232]">{ip}</h2>
+          </div>
+          <button onClick={onClose} aria-label="Close usage details" className="rounded-lg p-1.5 text-[#718189] hover:bg-[#edf1f1]"><X size={16} /></button>
+        </div>
+        {stats.isLoading ? (
+          <div className="mt-4 space-y-2"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
+        ) : stats.isError || !stats.data ? (
+          <p className="mt-4 text-sm text-[#7c8c91]">Stats unavailable. <button onClick={() => stats.refetch()} className="font-semibold text-[#16869a]">Retry</button></p>
+        ) : (
+          <div className="mt-4">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-[#f4f8f7] p-3"><p className="mono text-lg font-semibold text-[#183a4b]">{formatDuration(stats.data.totalSeconds)}</p><p className="mt-1 text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Total time</p></div>
+              <div className="rounded-xl bg-[#f4f8f7] p-3"><p className="mono text-lg font-semibold text-[#183a4b]">{stats.data.visitCount}</p><p className="mt-1 text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Visits</p></div>
+              <div className="rounded-xl bg-[#f4f8f7] p-3"><p className="mono text-lg font-semibold text-[#183a4b]">{stats.data.sessionCount}</p><p className="mt-1 text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Sessions</p></div>
+            </div>
+            <p className="mt-3 text-[11px] text-[#8a999d]">
+              {stats.data.firstSeenAt ? `First seen ${new Date(stats.data.firstSeenAt).toLocaleString()}` : "Never seen"}
+              {stats.data.lastSeenAt ? ` · last seen ${new Date(stats.data.lastSeenAt).toLocaleString()}` : ""}
+            </p>
+            <p className="mono mt-4 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Pages visited most</p>
+            {stats.data.pages.length > 0 ? (
+              <div className="mt-2 space-y-3">
+                {stats.data.pages.map((page) => (
+                  <div key={page.page || "(unknown)"}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-[#38555e]">{presencePageLabel(page.page) === "unknown page" && page.page ? page.page : presencePageLabel(page.page)}</span>
+                      <span className="mono text-[#7b8a8f]">{page.visits} visit{page.visits === 1 ? "" : "s"} · {formatDuration(page.seconds)}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]">
+                      <div className="h-full rounded-full bg-[#16869a]" style={{ width: `${Math.max(4, (page.seconds / maxSeconds) * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-[#7c8c91]">No page visits recorded yet.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PresencePanel() {
   const presence = useGetPresence({
     query: { queryKey: getGetPresenceQueryKey(), refetchInterval: 30000 },
   });
+  const kick = useKickPresence();
+  const queryClient = useQueryClient();
+  const [selectedIp, setSelectedIp] = useState<string | null>(null);
+  const [kickTarget, setKickTarget] = useState<string | null>(null);
   if (presence.isLoading) return <Section title="Live now" kicker="Who is online"><Skeleton className="h-14" /></Section>;
   if (presence.isError || !presence.data) return <Section title="Live now" kicker="Who is online"><p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p></Section>;
   const entries = presence.data.entries;
@@ -468,24 +617,59 @@ function PresencePanel() {
         <div className="mt-3 space-y-2">
           {entries.map((entry) => (
             <div key={`${entry.ip}-${entry.lastSeenAt}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs" data-testid="presence-entry">
-              <span className="mono font-semibold text-[#38555e]">{entry.ip}</span>
+              <button onClick={() => setSelectedIp(entry.ip)} title={`View usage for ${entry.ip}`} data-testid={`presence-ip-${entry.ip}`} className="mono rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
+                {entry.ip}
+              </button>
               <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
                 {presencePageLabel(entry.page)}
               </span>
               <span className="text-[#718189]">
                 {[entry.city, entry.region, entry.country].filter(Boolean).join(", ") || "location unknown"}
               </span>
-              {entry.isCurrent && (
+              {entry.isCurrent ? (
                 <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
                   This device
                 </span>
+              ) : (
+                <button onClick={() => setKickTarget(entry.ip)} title={`Kick ${entry.ip}`} data-testid={`button-kick-${entry.ip}`} className="ml-auto rounded-full border border-[#e8c4c0] bg-white px-2.5 py-1 text-[10px] font-bold text-[#b34a42] transition hover:bg-[#fff1ef]">
+                  Kick
+                </button>
               )}
-              <span className="mono ml-auto text-[#8a999d]">{timeAgoShort(entry.lastSeenAt)}</span>
+              <span className="mono text-[#8a999d]">{timeAgoShort(entry.lastSeenAt)}</span>
             </div>
           ))}
         </div>
       ) : (
         <p className="mt-3 text-sm text-[#7c8c91]">No active sessions seen recently.</p>
+      )}
+      {selectedIp && <PresenceIpModal ip={selectedIp} onClose={() => setSelectedIp(null)} />}
+      {kickTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setKickTarget(null)} data-testid="kick-confirm">
+          <div onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Kick ${kickTarget}`} className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Kick {kickTarget}?</h2>
+            <p className="mt-2 text-sm leading-6 text-[#52666e]">They will be logged out and removed from Live now. They must log in again to return.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setKickTarget(null)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button>
+              <button
+                onClick={() => {
+                  const ip = kickTarget;
+                  setKickTarget(null);
+                  kick.mutate(
+                    { data: { ip } },
+                    {
+                      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetPresenceQueryKey() }),
+                    },
+                  );
+                }}
+                disabled={kick.isPending}
+                data-testid="button-confirm-kick"
+                className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {kick.isPending ? "Kicking..." : "Kick"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </Section>
   );
@@ -790,17 +974,17 @@ function Applicants() {
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">
           <div className="flex items-center justify-between border-b border-[#e5ecec] px-5 py-4"><div><h2 className="font-semibold">Review queue <span className="mono ml-2 text-xs text-[#16869a]">{list.data?.total ?? 0}</span></h2></div><span className="flex items-center gap-2 text-xs text-[#7c8c91]"><Filter size={14} /> filtered view</span></div>
-          {!list.data?.items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p><p className="mt-1 text-sm text-[#7c8c91]">Try widening the field or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{list.data.items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => setSelected(a.id)} onDragStart={() => setDragId(a.id)} />)}</div>}
+          {!list.data?.items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p><p className="mt-1 text-sm text-[#7c8c91]">Try widening the field or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{list.data.items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => setSelected(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
         </div>
-        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={list.data?.items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={setSelected} />)}</div>
+        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={list.data?.items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={setSelected} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
       </div>
     </>}
     {selected && <ApplicantDetail id={selected} onClose={() => setSelected(null)} />}
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; return <div draggable onDragStart={onDragStart} data-testid={`row-applicant-${a.id}`} className="group flex cursor-grab items-center gap-3 px-5 py-4 transition hover:bg-[#f6f9f8]"><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button><div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
-function DropLane({ category, applicants, onDrop, onSelect }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className="group flex cursor-grab items-center gap-3 px-5 py-4 transition hover:bg-[#f6f9f8]"><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button><div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
 type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; extension: string; mime: string }[] = [
@@ -810,10 +994,10 @@ const EXPORT_FORMATS: { value: ExportFormat; label: string; extension: string; m
   { value: "xlsx", label: "Excel (.xlsx)", extension: "xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
 ];
 
-const EXPORT_HEADERS = ["id", "name", "grade", "email", "ai_score", "ai_recommendation", "ai_summary", "ai_strengths", "ai_concerns", "robotics_experience", "commit_10_hours", "parent_volunteer", "category", "interview_status", "interviewer", "interview_decision", "notes"];
+const EXPORT_HEADERS = ["id", "name", "grade", "email", "ai_score", "ai_recommendation", "ai_summary", "ai_strengths", "ai_concerns", "robotics_experience", "commit_10_hours", "parent_volunteer", "category", "attendance", "late_arrival_time", "makeup_date", "attendance_excused", "interview_status", "interviewer", "interview_decision", "notes"];
 
 function applicantToExportRow(a: Applicant): (string | number)[] {
-  return [a.id, a.name, a.grade, a.email ?? "", a.aiScore, a.aiRecommendation, a.aiSummary, a.aiStrengths, a.aiConcerns, a.roboticsExperience, a.commit10Hours, a.parentVolunteer, a.category, a.interviewStatus, a.interviewer, a.interviewDecision, a.notes];
+  return [a.id, a.name, a.grade, a.email ?? "", a.aiScore, a.aiRecommendation, a.aiSummary, a.aiStrengths, a.aiConcerns, a.roboticsExperience, a.commit10Hours, a.parentVolunteer, a.category, a.attendance ?? "unmarked", a.lateArrivalTime ?? "", a.makeupDate ?? "", a.attendanceExcused == null ? "" : a.attendanceExcused ? "excused" : "unexcused", a.interviewStatus ?? "", a.interviewer ?? "", a.interviewDecision ?? "", a.notes ?? ""];
 }
 
 function escapeDelimitedCell(value: string | number, delimiter: string): string {
@@ -1010,9 +1194,132 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPhotoError("Photo upload failed. Try again.");
     }
   };
-  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="hidden" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="hidden" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
+
+const ATTENDANCE_OPTIONS = ["here", "late", "absent", "unmarked"] as const;
+
+function attendanceLabel(value: string | null | undefined): string {
+  if (value === "here") return "Here";
+  if (value === "late") return "Late";
+  if (value === "absent") return "Absent";
+  return "Unmarked";
+}
+
+function formatArrivalTime(hhmm: string | null | undefined): string {
+  if (!hhmm) return "";
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm.trim());
+  if (!m) return hhmm;
+  let h = parseInt(m[1], 10);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return hhmm;
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ap}`;
+}
+
+function formatMakeupDate(ymd: string | null | undefined): string {
+  if (!ymd) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd.trim());
+  if (!m) return ymd;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const mi = parseInt(m[2], 10);
+  if (!mi || mi < 1 || mi > 12) return ymd;
+  return `${months[mi - 1]} ${parseInt(m[3], 10)}`;
+}
+
+function localYMD(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function localHHMM(d = new Date()): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; makeupDate?: string | null; attendanceExcused?: boolean | null };
+
+function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
+  applicants: Applicant[];
+  pending: boolean;
+  onMark: (id: string, patch: AttendancePatch) => void;
+  onMarkAll: () => void;
+}) {
+  const here = applicants.filter(a => a.attendance === "here").length;
+  const late = applicants.filter(a => a.attendance === "late").length;
+  const absent = applicants.filter(a => a.attendance === "absent").length;
+  const unmarked = applicants.length - here - late - absent;
+  const excused = applicants.filter(a => (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true).length;
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [excusedDraft, setExcusedDraft] = useState(false);
+  const openEditor = (a: Applicant, kind: "late" | "absent") => {
+    setEditing(`${a.id}:${kind}`);
+    setDraft(kind === "late" ? (a.lateArrivalTime || localHHMM()) : (a.makeupDate || ""));
+    setExcusedDraft(a.attendanceExcused ?? false);
+  };
+  const saveEditor = (a: Applicant, kind: "late" | "absent") => {
+    if (kind === "late") {
+      if (!draft) return;
+      onMark(a.id, { attendance: "late", lateArrivalTime: draft, makeupDate: null, attendanceExcused: excusedDraft });
+    } else {
+      onMark(a.id, { attendance: "absent", makeupDate: draft || null, lateArrivalTime: null, attendanceExcused: excusedDraft });
+    }
+    setEditing(null);
+  };
+  const clearEditor = (a: Applicant) => {
+    onMark(a.id, { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
+    setEditing(null);
+  };
+  const excusedToggle = (id: string) => <div className="flex shrink-0 overflow-hidden rounded-lg border border-[#d5e0e0]" role="group" aria-label="Excused status">
+    <button onClick={() => setExcusedDraft(true)} data-testid={`button-excused-${id}`} title="Mark excused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-[#28a47f] text-white" : "bg-white text-[#63747c] hover:bg-[#eef3f2]"}`}>Excused</button>
+    <button onClick={() => setExcusedDraft(false)} data-testid={`button-unexcused-${id}`} title="Mark unexcused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-white text-[#63747c] hover:bg-[#eef3f2]" : "bg-[#3d4b54] text-white"}`}>Unexcused</button>
+  </div>;
+  const rowTone = (a: Applicant) => a.attendance === "absent" ? "border-[#e5c4c0] bg-[#fff7f6] opacity-80" : a.attendance === "late" ? "border-[#e8d9b0] bg-[#fffdf4]" : "border-[#e1e9e8] bg-white";
+  return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="attendance-panel">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">Attendance <span className="mono ml-2 text-xs text-[#16869a]">{here} here · {late} late · {absent} absent · {unmarked} unmarked · {excused} excused</span></p><p className="mt-1 text-xs text-[#7c8c91]">Mark who showed up before interviews start. Late arrivals record a time; absent applicants can get a makeup date; both can be marked excused or unexcused. Absent applicants stay in the queue until you decide.</p></div>
+      <button onClick={onMarkAll} disabled={pending || !applicants.length} data-testid="button-attendance-all-here" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {applicants.map(a => {
+        const lateOpen = editing === `${a.id}:late`;
+        const absentOpen = editing === `${a.id}:absent`;
+        const arrival = formatArrivalTime(a.lateArrivalTime);
+        const makeup = formatMakeupDate(a.makeupDate);
+        return <div key={a.id} className={`rounded-xl border p-2 ${rowTone(a)}`} data-testid={`attendance-row-${a.id}`}>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{a.name}</span>
+              {a.attendance === "late" && arrival && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#8a6d1c]">Late · arrived {arrival}</span>}
+              {a.attendance === "absent" && makeup && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#a34d46]">Makeup {makeup}</span>}
+              {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#1d7a5f]">Excused</span>}
+              {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === false && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#a34d46]">Unexcused</span>}
+            </span>
+            <div className="flex shrink-0 gap-1">
+              <button onClick={() => { setEditing(null); onMark(a.id, { attendance: a.attendance === "here" ? "unmarked" : "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} disabled={pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
+              <button onClick={() => { if (lateOpen) setEditing(null); else openEditor(a, "late"); }} disabled={pending} data-testid={`button-attendance-late-${a.id}`} title="Mark late" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "late" ? "bg-[#c99a1f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Late</button>
+              <button onClick={() => { if (absentOpen) setEditing(null); else openEditor(a, "absent"); }} disabled={pending} data-testid={`button-attendance-absent-${a.id}`} title="Mark absent" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Absent</button>
+            </div>
+          </div>
+          {lateOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input type="time" value={draft} onChange={e => setDraft(e.target.value)} data-testid={`input-late-time-${a.id}`} aria-label={`Arrival time for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            {excusedToggle(a.id)}
+            <button onClick={() => saveEditor(a, "late")} disabled={pending || !draft} data-testid={`button-late-save-${a.id}`} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
+            <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-late-clear-${a.id}`} title="Clear late mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
+            <button onClick={() => setEditing(null)} data-testid={`button-late-cancel-${a.id}`} className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Cancel</button>
+          </div>}
+          {absentOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input type="date" value={draft} min={localYMD()} onChange={e => setDraft(e.target.value)} data-testid={`input-makeup-date-${a.id}`} aria-label={`Makeup date for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            {excusedToggle(a.id)}
+            <button onClick={() => saveEditor(a, "absent")} disabled={pending} data-testid={`button-absent-save-${a.id}`} title={draft ? "Save with makeup date" : "Save absent without makeup date"} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
+            <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-absent-clear-${a.id}`} title="Clear absent mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
+            <button onClick={() => setEditing(null)} data-testid={`button-absent-cancel-${a.id}`} className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Cancel</button>
+          </div>}
+        </div>;
+      })}
+    </div>
+    {!applicants.length && <p className="mt-3 text-sm text-[#7c8c91]">Nobody left in the queue.</p>}
+  </section>;
+}
 
 function Queue() {
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: 3000 } });
@@ -1131,6 +1438,13 @@ function Queue() {
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
   const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: board.filter(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: board.filter(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
   const boardIndex = new Map(board.map((applicant, index) => [applicant.id, index] as const));
+  const markAttendance = (id: string, patch: AttendancePatch) => {
+    updateApplicant.mutate({ id, data: patch }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
+  };
+  const markAllHere = () => {
+    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && a.attendance !== "here");
+    todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); } }));
+  };
   const saveNote = (id: string, note: string, original: string) => {
     if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
@@ -1277,6 +1591,7 @@ function Queue() {
   };
   return <div className="fade-up">
     <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
+    <AttendancePanel applicants={(remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed")} pending={updateApplicant.isPending} onMark={markAttendance} onMarkAll={markAllHere} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
       <div><p className="text-sm font-semibold">I am working as</p><p className="mt-1 text-xs text-[#7c8c91]">This controls which assigned applicant files you see and labels your chat messages.</p></div>
       <div className="flex flex-wrap items-center gap-2">{q.interviewerLabels.map(label => <button key={label} onClick={() => { setSelectedInterviewer(label); window.localStorage.setItem("selected-interviewer", label); }} className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedInterviewer === label ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-select-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}<a href="#interviewer-settings" className="rounded-xl border border-dashed border-[#b8cbcc] px-3 py-2 text-xs font-semibold text-[#527079] hover:border-[#16869a] hover:text-[#16869a]">+ Add interviewer</a></div>
@@ -1400,7 +1715,7 @@ function speakLocalAnnouncement(text: string) {
 }
 
 function Display() {
-  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false); const audioWanted = useRef(false);
+  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false); const audioWanted = useRef(false); const [audioTest, setAudioTest] = useState<"idle" | "loading" | "playing" | "done">("idle"); const [audioTestProgress, setAudioTestProgress] = useState(0); const playServerUrl = (url: string, timeoutMs: number) => new Promise<boolean>((resolve) => { let settled = false; const done = (ok: boolean) => { if (!settled) { settled = true; resolve(ok); } }; try { const el = new Audio(url); el.onended = () => done(true); el.onerror = () => done(false); el.play().catch(() => done(false)); window.setTimeout(() => done(false), timeoutMs); } catch { done(false); } }); const testAudio = async () => { if (audioTest === "loading" || audioTest === "playing") return; try { if (await playServerUrl(`${import.meta.env.BASE_URL}api/display/announcement?test=1`, 15000)) { setAudioTest("done"); return; } } catch { /* server voice unavailable — use the on-device voice */ } try { setAudioTest("loading"); setAudioTestProgress(0); await ensureLocalTts(fraction => setAudioTestProgress(Math.round(fraction * 100))); setAudioTest("playing"); await speakLocalKokoro(KOKORO_TEST_PHRASE); } catch { speakLocalAnnouncement(KOKORO_TEST_PHRASE); } setAudioTest("done"); };
   const fullscreen = useFullscreen();
   useEffect(() => {
     if (display.data && display.data.updatedAt !== lastUpdate.current) {
@@ -1413,7 +1728,10 @@ function Display() {
           const speakOnce = () => {
             if (!spoke) {
               spoke = true;
-              speakLocalAnnouncement(fallback);
+              // Server voice failed: use the on-device Kokoro voice, then the
+              // browser voice as a last resort. The model is usually already
+              // warm because enabling audio preloads it.
+              void speakLocalKokoro(fallback).catch(() => speakLocalAnnouncement(fallback));
             }
           };
           audio.onerror = () => speakOnce();
@@ -1426,7 +1744,7 @@ function Display() {
   }, [display.data, audioReady]);
   if (display.isLoading) return <div className="min-h-[100dvh] bg-[#0d1b28] p-12 text-white"><Skeleton className="h-10 w-48" /></div>; if (display.isError || !display.data) return <div className="flex min-h-[100dvh] items-center justify-center bg-[#0d1b28] text-white"><ErrorState compact onRetry={() => display.refetch()} /></div>;
   const d = display.data as DisplayState; const applicants = d.currentApplicants ?? []; const displayGridCols = applicants.length <= 1 ? "" : applicants.length === 2 ? "sm:grid-cols-2" : applicants.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"; const displayGridWidth = applicants.length >= 4 ? "max-w-6xl" : "max-w-4xl";
-  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => { audioWanted.current = !audioReady; if (audioReady && "speechSynthesis" in window) { try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } setAudioReady(!audioReady); }} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => { if (audioWanted.current) setAudioReady(true); }} preload="none" data-testid="display-announcement-audio" /></main>;
+  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => void testAudio()} disabled={audioTest === "loading" || audioTest === "playing"} data-testid="button-display-audio-test" title="Play a spoken audio test through the on-device voice" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${(audioTest === "loading" || audioTest === "playing") ? "border-[#f8c84a] text-[#f8c84a]" : "border-[#617d86] text-[#a7bdc3] hover:border-[#9db6bd] hover:text-white"}`}><Volume1 size={15} /> {audioTest === "loading" ? `Loading voice ${audioTestProgress}%` : audioTest === "playing" ? "Testing…" : audioTest === "done" ? "Test again" : "Test audio"}</button><button onClick={() => { const enabling = !audioReady; audioWanted.current = enabling; if (enabling) { void ensureLocalTts().catch(() => { /* announcements fall back to the browser voice */ }); } else { stopLocalTts(); if ("speechSynthesis" in window) { try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } } setAudioReady(enabling); }} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => { if (audioWanted.current) setAudioReady(true); }} preload="none" data-testid="display-announcement-audio" /></main>;
 }
 
 function ImageStudio() {
@@ -1494,6 +1812,8 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "restore_snapshot") return { label: "Restored version", Icon: RefreshCw };
   if (tool === "list_conversations") return { label: "Listed previous chats", Icon: History };
   if (tool === "read_conversation") return { label: "Read previous chat", Icon: History };
+  if (tool === "kick_presence") return { label: "Kicked IP", Icon: LogOut };
+  if (tool === "presence_stats") return { label: "Checked IP stats", Icon: UsersRound };
   if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
   return { label: tool, Icon: Sparkles };
 }

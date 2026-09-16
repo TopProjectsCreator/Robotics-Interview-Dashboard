@@ -28,6 +28,22 @@ export interface Applicant {
   interviewer?: string;
   interviewDecision?: string;
   callbackRequested?: boolean;
+  attendance: string;
+  /**
+     * Arrival time (HH:MM 24h) when attendance is late
+     * @nullable
+     */
+  lateArrivalTime?: string | null;
+  /**
+     * Makeup interview date (YYYY-MM-DD) when attendance is absent
+     * @nullable
+     */
+  makeupDate?: string | null;
+  /**
+     * true = excused, false = unexcused; only meaningful when attendance is late or absent
+     * @nullable
+     */
+  attendanceExcused?: boolean | null;
   category: string;
   rank: number;
   notes: string;

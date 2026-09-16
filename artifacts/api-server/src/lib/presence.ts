@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Request } from "express";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { db, pageVisitsTable } from "@workspace/db";
 
 export type GeoInfo = { city: string; region: string; country: string };
 
@@ -38,6 +41,90 @@ export function getClientIp(req: Request): string {
   const raw = req.ip ?? req.socket?.remoteAddress ?? "unknown";
   const cleaned = raw.replace(/^::ffff:/, "");
   return cleaned.slice(0, 45) || "unknown";
+}
+
+export type IpPageStat = { page: string; visits: number; seconds: number };
+
+export type IpStats = {
+  ip: string;
+  totalSeconds: number;
+  sessionCount: number;
+  visitCount: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  pages: IpPageStat[];
+};
+
+export async function rotatePageVisit(sessionHash: string, ip: string, page: string, storedPage: string): Promise<void> {
+  try {
+    if (storedPage !== page) {
+      await db
+        .update(pageVisitsTable)
+        .set({ exitedAt: new Date() })
+        .where(and(eq(pageVisitsTable.sessionHash, sessionHash), isNull(pageVisitsTable.exitedAt)));
+      if (page) {
+        await db.insert(pageVisitsTable).values({
+          id: randomUUID(),
+          sessionHash,
+          ip,
+          page,
+        });
+      }
+    }
+  } catch {
+    // Visit tracking is best-effort; heartbeat must not fail.
+  }
+}
+
+export async function closeOpenVisits(sessionHash: string): Promise<void> {
+  try {
+    await db
+      .update(pageVisitsTable)
+      .set({ exitedAt: new Date() })
+      .where(and(eq(pageVisitsTable.sessionHash, sessionHash), isNull(pageVisitsTable.exitedAt)));
+  } catch {
+    // Best-effort.
+  }
+}
+
+export async function getIpStats(ip: string): Promise<IpStats> {
+  const now = Date.now();
+  const rows = await db
+    .select()
+    .from(pageVisitsTable)
+    .where(eq(pageVisitsTable.ip, ip))
+    .orderBy(desc(pageVisitsTable.enteredAt))
+    .limit(5000);
+  const sessions = new Set<string>();
+  const byPage = new Map<string, { visits: number; seconds: number }>();
+  let totalSeconds = 0;
+  let firstSeen: number | null = null;
+  let lastSeen: number | null = null;
+  for (const row of rows) {
+    sessions.add(row.sessionHash);
+    const entered = row.enteredAt.getTime();
+    const exited = row.exitedAt ? row.exitedAt.getTime() : now;
+    const seconds = Math.max(0, Math.round((exited - entered) / 1000));
+    totalSeconds += seconds;
+    if (firstSeen === null || entered < firstSeen) firstSeen = entered;
+    if (lastSeen === null || exited > lastSeen) lastSeen = exited;
+    const key = row.page || "(unknown)";
+    const entry = byPage.get(key) ?? { visits: 0, seconds: 0 };
+    entry.visits += 1;
+    entry.seconds += seconds;
+    byPage.set(key, entry);
+  }
+  return {
+    ip,
+    totalSeconds,
+    sessionCount: sessions.size,
+    visitCount: rows.length,
+    firstSeenAt: firstSeen !== null ? new Date(firstSeen).toISOString() : null,
+    lastSeenAt: lastSeen !== null ? new Date(lastSeen).toISOString() : null,
+    pages: [...byPage.entries()]
+      .map(([page, v]) => ({ page, visits: v.visits, seconds: v.seconds }))
+      .sort((a, b) => b.seconds - a.seconds),
+  };
 }
 
 export function localGeo(ip: string): GeoInfo | null {

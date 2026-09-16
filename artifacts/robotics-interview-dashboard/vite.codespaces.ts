@@ -56,6 +56,14 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    // Cross-origin isolation enables SharedArrayBuffer, which the
+    // on-device TTS runtime (threaded WASM / WebGPU JSEP binaries) requires.
+    // `credentialless` (not `require-corp`) keeps cross-origin images, fonts,
+    // and the same-origin API proxy working as before.
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -71,5 +79,9 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
 });

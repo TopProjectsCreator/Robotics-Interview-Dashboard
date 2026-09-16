@@ -47,6 +47,7 @@ import type {
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
   GetInterviewChatParams,
+  GetPresenceStatsParams,
   HealthStatus,
   ImportHistory,
   ImportInput,
@@ -60,6 +61,9 @@ import type {
   MessageResponse,
   PresenceHeartbeat,
   PresenceHeartbeatInput,
+  PresenceIpStats,
+  PresenceKickInput,
+  PresenceKickResult,
   PresenceList,
   QueueCallbackInput,
   QueueSettingsInput,
@@ -622,6 +626,161 @@ export function useGetPresence<TData = Awaited<ReturnType<typeof getPresence>>, 
 
 
 
+
+export const getGetPresenceStatsUrl = (params: GetPresenceStatsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/presence/stats?${stringifiedParams}` : `/api/presence/stats`
+}
+
+/**
+ * @summary Per-IP usage stats from page-visit history
+ */
+export const getPresenceStats = async (params: GetPresenceStatsParams, options?: Parameters<typeof customFetch>[1]): Promise<PresenceIpStats> => {
+
+  return customFetch<PresenceIpStats>(getGetPresenceStatsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPresenceStatsQueryKey = (params?: GetPresenceStatsParams,) => {
+    return [
+    `/api/presence/stats`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPresenceStatsQueryOptions = <TData = Awaited<ReturnType<typeof getPresenceStats>>, TError = ErrorType<unknown>>(params: GetPresenceStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPresenceStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPresenceStatsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPresenceStats>>> = ({ signal }) => getPresenceStats(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPresenceStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPresenceStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getPresenceStats>>>
+export type GetPresenceStatsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Per-IP usage stats from page-visit history
+ */
+
+export function useGetPresenceStats<TData = Awaited<ReturnType<typeof getPresenceStats>>, TError = ErrorType<unknown>>(
+ params: GetPresenceStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPresenceStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPresenceStatsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getKickPresenceUrl = () => {
+
+
+
+
+  return `/api/presence/kick`
+}
+
+/**
+ * @summary Kick all sessions from an IP (revoke + remove presence)
+ */
+export const kickPresence = async (presenceKickInput: PresenceKickInput, options?: Parameters<typeof customFetch>[1]): Promise<PresenceKickResult> => {
+
+  return customFetch<PresenceKickResult>(getKickPresenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(presenceKickInput)
+  }
+);}
+
+
+
+
+
+export const getKickPresenceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof kickPresence>>, TError,{data: BodyType<PresenceKickInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof kickPresence>>, TError,{data: BodyType<PresenceKickInput>}, TContext> => {
+
+const mutationKey = ['kickPresence'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof kickPresence>>, {data: BodyType<PresenceKickInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  kickPresence(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type KickPresenceMutationResult = NonNullable<Awaited<ReturnType<typeof kickPresence>>>
+    export type KickPresenceMutationBody = BodyType<PresenceKickInput>
+    export type KickPresenceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Kick all sessions from an IP (revoke + remove presence)
+ */
+export const useKickPresence = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof kickPresence>>, TError,{data: BodyType<PresenceKickInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof kickPresence>>,
+        TError,
+        {data: BodyType<PresenceKickInput>},
+        TContext
+      > => {
+      return useMutation(getKickPresenceMutationOptions(options));
+    }
 
 export const getPostBroadcastUrl = () => {
 

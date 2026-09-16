@@ -17,4 +17,11 @@ export interface QueueApplicant {
   notes: string;
   interviewDecision: string;
   callbackRequested: boolean;
+  attendance: string;
+  /** @nullable */
+  lateArrivalTime?: string | null;
+  /** @nullable */
+  makeupDate?: string | null;
+  /** @nullable */
+  attendanceExcused?: boolean | null;
 }

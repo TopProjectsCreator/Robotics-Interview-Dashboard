@@ -113,6 +113,41 @@ export const GetPresenceResponse = zod.object({
 
 
 /**
+ * @summary Per-IP usage stats from page-visit history
+ */
+export const GetPresenceStatsQueryParams = zod.object({
+  "ip": zod.coerce.string()
+})
+
+export const GetPresenceStatsResponse = zod.object({
+  "ip": zod.string(),
+  "totalSeconds": zod.number().int(),
+  "sessionCount": zod.number().int(),
+  "visitCount": zod.number().int(),
+  "firstSeenAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable(),
+  "pages": zod.array(zod.object({
+  "page": zod.string(),
+  "visits": zod.number().int(),
+  "seconds": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Kick all sessions from an IP (revoke + remove presence)
+ */
+export const KickPresenceBody = zod.object({
+  "ip": zod.string()
+})
+
+export const KickPresenceResponse = zod.object({
+  "kicked": zod.number().int(),
+  "ip": zod.string()
+})
+
+
+/**
  * @summary Send a popup broadcast to coordinators
  */
 export const PostBroadcastBody = zod.object({
@@ -189,6 +224,10 @@ export const ListApplicantsResponse = zod.object({
   "interviewer": zod.string().optional(),
   "interviewDecision": zod.string().optional(),
   "callbackRequested": zod.boolean().optional(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -224,6 +263,10 @@ export const GetApplicantResponse = zod.object({
   "interviewer": zod.string().optional(),
   "interviewDecision": zod.string().optional(),
   "callbackRequested": zod.boolean().optional(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -254,6 +297,10 @@ export const UpdateApplicantBody = zod.object({
   "commit10Hours": zod.string().optional(),
   "parentVolunteer": zod.string().optional(),
   "category": zod.string().optional(),
+  "attendance": zod.string().optional(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when marking attendance late; null clears'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when marking attendance absent; null clears'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused (late\/absent only); null clears'),
   "rank": zod.number().int().optional(),
   "notes": zod.string().optional(),
   "interviewStatus": zod.string().optional(),
@@ -282,6 +329,10 @@ export const UpdateApplicantResponse = zod.object({
   "interviewer": zod.string().optional(),
   "interviewDecision": zod.string().optional(),
   "callbackRequested": zod.boolean().optional(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -325,6 +376,10 @@ export const RegenerateApplicantResponse = zod.object({
   "interviewer": zod.string().optional(),
   "interviewDecision": zod.string().optional(),
   "callbackRequested": zod.boolean().optional(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -437,7 +492,11 @@ export const GetQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -449,7 +508,11 @@ export const GetQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -477,7 +540,11 @@ export const AdvanceQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -489,7 +556,11 @@ export const AdvanceQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -519,7 +590,11 @@ export const UpdateQueueSettingsResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -531,7 +606,11 @@ export const UpdateQueueSettingsResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -554,7 +633,11 @@ export const ResetQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -566,7 +649,11 @@ export const ResetQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -639,7 +726,11 @@ export const ReorderQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -651,7 +742,11 @@ export const ReorderQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),
@@ -679,7 +774,11 @@ export const CallbackQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "nextApplicants": zod.array(zod.object({
   "id": zod.string(),
@@ -691,7 +790,11 @@ export const CallbackQueueResponse = zod.object({
   "interviewer": zod.string(),
   "notes": zod.string(),
   "interviewDecision": zod.string(),
-  "callbackRequested": zod.boolean()
+  "callbackRequested": zod.boolean(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish(),
+  "makeupDate": zod.string().nullish(),
+  "attendanceExcused": zod.boolean().nullish()
 })),
   "interviewerLabels": zod.array(zod.string()),
   "completedCount": zod.number().int(),

@@ -17,6 +17,40 @@ function cleanSnippet(value: unknown): string {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_SNIPPET);
 }
 
+function normalizeSources(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out: string[] = [];
+  for (const entry of value.slice(0, 5)) {
+    if (typeof entry !== "string") continue;
+    let host = entry.trim().toLowerCase();
+    if (!host) continue;
+    try {
+      const url = new URL(host.includes("://") ? host : `https://${host}`);
+      host = url.hostname.toLowerCase();
+    } catch {
+      host = host.replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
+    }
+    host = host.replace(/^\.+/, "").replace(/\.+$/, "");
+    if (!host || !host.includes(".")) continue;
+    // Strip obvious garbage from model hallucinations.
+    if (/[^a-z0-9.-]/.test(host) || host.includes("..")) continue;
+    out.push(host);
+  }
+  return out.length > 0 ? [...new Set(out)] : null;
+}
+
+function filterBySources(results: WebSearchResult[], sources: string[] | null): WebSearchResult[] {
+  if (!sources) return results;
+  return results.filter((r) => {
+    try {
+      const host = new URL(r.url).hostname.toLowerCase();
+      return sources.some((s) => host === s || host.endsWith(`.${s}`));
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
@@ -60,15 +94,17 @@ export async function searchFirecrawl(query: string): Promise<WebSearchOutcome |
   }
 }
 
-export async function searchTavily(query: string): Promise<WebSearchOutcome | null> {
+export async function searchTavily(query: string, sources: string[] | null = null): Promise<WebSearchOutcome | null> {
   // Keyless: X-Tavily-Access-Mode header (search+extract, rate-limited).
   // A TAVILY_API_KEY, when set, raises limits and unlocks all endpoints.
   try {
     const key = process.env.TAVILY_API_KEY;
+    const body: Record<string, unknown> = { query, max_results: 5, include_answer: false };
+    if (sources) (body as Record<string, unknown>).include_domains = sources;
     const response = await postJson(
       "https://api.tavily.com/search",
       key ? { Authorization: `Bearer ${key}` } : { "X-Tavily-Access-Mode": "keyless" },
-      { query, max_results: 5, include_answer: false },
+      body,
     );
     if (!okStatus(response.status)) return null;
     const data = (await response.json()) as {
@@ -194,14 +230,16 @@ function parseExaText(text: string): WebSearchResult[] {
   return results;
 }
 
-export async function searchExa(query: string): Promise<WebSearchOutcome | null> {
+export async function searchExa(query: string, sources: string[] | null = null): Promise<WebSearchOutcome | null> {
   // Keyless: hosted MCP works anonymously (rate-limited). EXA_API_KEY raises limits.
   const key = process.env.EXA_API_KEY;
+  const args: Record<string, unknown> = { query };
+  if (sources) args.includeDomains = sources;
   const content = await mcpCall(
     "https://mcp.exa.ai/mcp",
     key ? { "x-api-key": key } : {},
     "web_search_exa",
-    { query },
+    args,
   );
   if (!content) return null;
   const combined = content.map((item) => item.text ?? "").join("\n");
@@ -209,14 +247,16 @@ export async function searchExa(query: string): Promise<WebSearchOutcome | null>
   return results.length > 0 ? { results, provider: key ? "exa" : "exa-keyless" } : null;
 }
 
-export async function searchParallel(query: string): Promise<WebSearchOutcome | null> {
+export async function searchParallel(query: string, sources: string[] | null = null): Promise<WebSearchOutcome | null> {
   // Keyless: hosted Search MCP is free anonymously. PARALLEL_API_KEY raises limits.
   const key = process.env.PARALLEL_API_KEY;
+  const args: Record<string, unknown> = { objective: query, search_queries: [query] };
+  if (sources) (args as Record<string, unknown>).include_domains = sources;
   const content = await mcpCall(
     "https://search.parallel.ai/mcp",
     key ? { Authorization: `Bearer ${key}` } : {},
     "web_search",
-    { objective: query, search_queries: [query] },
+    args,
   );
   if (!content) return null;
   try {
@@ -301,13 +341,23 @@ async function searchDuckDuckGo(query: string): Promise<WebSearchOutcome | null>
  * failure (401/402/429/5xx/timeout) falls through to the next one. Returns
  * null when every provider fails.
  */
-export async function searchWebFallback(query: string): Promise<WebSearchOutcome | null> {
+export async function searchWebFallback(query: string, sources: string[] | null = null): Promise<WebSearchOutcome | null> {
   const clean = query.trim().slice(0, 300);
   if (!clean) return null;
-  const chain = [searchTavily, searchFirecrawl, searchExa, searchParallel, searchWikipedia, searchDuckDuckGo];
+  const wanted = normalizeSources(sources);
+  const chain: Array<(q: string) => Promise<WebSearchOutcome | null>> = [
+    (q) => searchTavily(q, wanted),
+    (q) => searchFirecrawl(q),
+    (q) => searchExa(q, wanted),
+    (q) => searchParallel(q, wanted),
+    (q) => searchWikipedia(q),
+    (q) => searchDuckDuckGo(q),
+  ];
   for (const provider of chain) {
     const outcome = await provider(clean);
-    if (outcome) return outcome;
+    if (!outcome) continue;
+    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
+    if (filtered.results.length > 0) return filtered;
   }
   return null;
 }
@@ -347,21 +397,32 @@ export function normalizeSearchProvider(value: unknown): SearchProviderName {
  * Search with an explicit provider choice, defaulting to the full fallback
  * chain ("auto"). An explicit pick is tried first; if it fails, the rest of
  * the chain still runs so one dead provider never sinks a question. The
- * outcome records which provider actually served the results.
+ * outcome records which provider actually served the results. When sources
+ * are given, results from other domains are dropped — supported providers
+ * also receive a server-side domain filter.
  */
 export async function searchWeb(
   query: string,
   provider: SearchProviderName = "auto",
+  sources: string[] | null = null,
 ): Promise<WebSearchOutcome | null> {
   const clean = query.trim().slice(0, 300);
   if (!clean) return null;
-  if (provider === "auto") return searchWebFallback(clean);
+  const wanted = normalizeSources(sources);
+  if (provider === "auto") return searchWebFallback(clean, wanted);
   const rest = (Object.keys(SEARCH_PROVIDER_FNS) as (keyof typeof SEARCH_PROVIDER_FNS)[])
     .filter((name) => name !== provider)
     .map((name) => SEARCH_PROVIDER_FNS[name]);
-  for (const fn of [SEARCH_PROVIDER_FNS[provider], ...rest]) {
+  const primary = SEARCH_PROVIDER_FNS[provider];
+  const ordered: Array<(q: string) => Promise<WebSearchOutcome | null>> = [
+    (q) => (primary as unknown as (query: string, sources: string[] | null) => Promise<WebSearchOutcome | null>)(q, wanted),
+    ...rest,
+  ];
+  for (const fn of ordered) {
     const outcome = await fn(clean);
-    if (outcome) return outcome;
+    if (!outcome) continue;
+    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
+    if (filtered.results.length > 0) return filtered;
   }
   return null;
 }
