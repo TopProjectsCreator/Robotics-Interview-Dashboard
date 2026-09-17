@@ -1,0 +1,1 @@
+{"version":3,"file":"displaySettings.d.ts","sourceRoot":"","sources":["../../../src/generated/types/displaySettings.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,MAAM,WAAW,eAAe;IAC9B;;;SAGK;IACL,QAAQ,EAAE,MAAM,GAAG,IAAI,CAAC;IACxB;;;SAGK;IACL,WAAW,EAAE,MAAM,GAAG,IAAI,CAAC;IAC3B,SAAS,EAAE,OAAO,CAAC;IACnB,QAAQ,EAAE,OAAO,CAAC;IAClB,SAAS,EAAE,MAAM,CAAC;CACnB"}

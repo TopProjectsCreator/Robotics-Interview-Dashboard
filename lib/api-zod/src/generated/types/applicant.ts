@@ -44,6 +44,16 @@ export interface Applicant {
      * @nullable
      */
   attendanceExcused?: boolean | null;
+  /**
+     * Seating chart row (0-based), null = unseated
+     * @nullable
+     */
+  seatRow?: number | null;
+  /**
+     * Seating chart column (0-based), null = unseated
+     * @nullable
+     */
+  seatCol?: number | null;
   category: string;
   rank: number;
   notes: string;

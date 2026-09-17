@@ -42,10 +42,14 @@ export interface PresenceEntry {
   page: string;
   lastSeenAt: string;
   isCurrent: boolean;
+  /** This session's browser Notification permission: granted, denied, default, or unsupported */
+  notifyPermission?: string;
 }
 
 export interface PresenceHeartbeatInput {
   page?: string;
+  /** Browser Notification permission: granted, denied, default, or unsupported */
+  notifyPermission?: string;
 }
 
 export interface PresenceList {
@@ -71,6 +75,12 @@ export interface PresenceIpStats {
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   pages: PresenceIpStatsPagesItem[];
+  /** Online sessions from this IP with browser notifications granted */
+  notifyGranted: number;
+  /** Online sessions from this IP with browser notifications denied or dismissed */
+  notifyDenied: number;
+  /** Online sessions from this IP with unknown or unsupported notification state */
+  notifyUnknown: number;
 }
 
 export interface PresenceKickInput {
@@ -85,6 +95,8 @@ export interface PresenceKickResult {
 export interface Broadcast {
   id: string;
   message: string;
+  /** message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say) */
+  kind: string;
   targetIp: string;
   createdAt: string;
   expiresAt: string;
@@ -96,6 +108,8 @@ export interface BroadcastList {
 
 export interface BroadcastInput {
   message: string;
+  /** message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say */
+  kind?: string;
   targetIp?: string;
   ttlMinutes?: number;
 }
@@ -159,6 +173,16 @@ export interface Applicant {
      * @nullable
      */
   attendanceExcused?: boolean | null;
+  /**
+     * Seating chart row (0-based), null = unseated
+     * @nullable
+     */
+  seatRow?: number | null;
+  /**
+     * Seating chart column (0-based), null = unseated
+     * @nullable
+     */
+  seatCol?: number | null;
   category: string;
   rank: number;
   notes: string;
@@ -206,6 +230,16 @@ export interface ApplicantUpdate {
      * @nullable
      */
   attendanceExcused?: boolean | null;
+  /**
+     * Seating chart row (0-based); null unseats
+     * @nullable
+     */
+  seatRow?: number | null;
+  /**
+     * Seating chart column (0-based); null unseats
+     * @nullable
+     */
+  seatCol?: number | null;
   rank?: number;
   notes?: string;
   interviewStatus?: string;
@@ -362,8 +396,66 @@ export interface DisplayState {
   mode: string;
   headline: string;
   subheadline: string;
+  /** Exact spoken text for the big screen: 'Name please go to Interviewer' per applicant, or the custom text when set */
+  announcement: string;
+  /** Master switch: false mutes spoken auto-announcements (manual tests still speak) */
+  announce: boolean;
   currentApplicants: DisplayApplicant[];
   updatedAt: string;
+}
+
+export interface DisplaySettings {
+  /**
+     * Custom big-screen heading, null = automatic
+     * @nullable
+     */
+  headline: string | null;
+  /**
+     * Custom big-screen subheading, null = automatic
+     * @nullable
+     */
+  subheadline: string | null;
+  showNames: boolean;
+  announce: boolean;
+  updatedAt: string;
+}
+
+export interface SeatingSettings {
+  /** Seating chart rows (1-10) */
+  rows: number;
+  /** Seating chart columns (1-10) */
+  cols: number;
+  updatedAt: string;
+}
+
+export interface SeatingSettingsInput {
+  /** Rows 1-10 */
+  rows?: number;
+  /** Columns 1-10 */
+  cols?: number;
+}
+
+export interface SeatingAssignInput {
+  applicantId: string;
+  /** Target row (0-based), -1 unseats */
+  row: number;
+  /** Target column (0-based), -1 unseats */
+  col: number;
+}
+
+export interface DisplaySettingsInput {
+  /**
+     * Custom heading (empty string clears back to automatic)
+     * @nullable
+     */
+  headline?: string | null;
+  /**
+     * Custom subheading (empty string clears back to automatic)
+     * @nullable
+     */
+  subheadline?: string | null;
+  showNames?: boolean;
+  announce?: boolean;
 }
 
 export interface DashboardChart {

@@ -10,6 +10,7 @@ export const presenceHeartbeatsTable = pgTable("presence_heartbeats", {
   region: text("region").notNull().default(""),
   country: text("country").notNull().default(""),
   page: text("page").notNull().default(""),
+  notifyPermission: text("notify_permission").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

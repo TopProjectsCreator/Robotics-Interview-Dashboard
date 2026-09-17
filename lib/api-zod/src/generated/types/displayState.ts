@@ -11,6 +11,10 @@ export interface DisplayState {
   mode: string;
   headline: string;
   subheadline: string;
+  /** Exact spoken text for the big screen: 'Name please go to Interviewer' per applicant, or the custom text when set */
+  announcement: string;
+  /** Master switch: false mutes spoken auto-announcements (manual tests still speak) */
+  announce: boolean;
   currentApplicants: DisplayApplicant[];
   updatedAt: string;
 }

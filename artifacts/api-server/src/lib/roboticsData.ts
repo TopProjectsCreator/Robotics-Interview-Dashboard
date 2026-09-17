@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
-import { db, applicantsTable, interviewQueueTable, type Applicant } from "@workspace/db";
+import { and, asc, eq } from "drizzle-orm";
+import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, type Applicant } from "@workspace/db";
 
 export const demoApplicants = [
   ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
@@ -79,6 +79,8 @@ export async function getApplicants(filters?: {
     if (sort === "score") return b.aiScore - a.aiScore;
     if (sort === "name") return a.name.localeCompare(b.name);
     if (sort === "rank") return a.rank - b.rank;
+    if (sort === "newest") return b.createdAt.getTime() - a.createdAt.getTime();
+    if (sort === "oldest") return a.createdAt.getTime() - b.createdAt.getTime();
     if (sort === "grade") return gradeValue(a.grade) - gradeValue(b.grade) || a.name.localeCompare(b.name);
     return a.queuePosition - b.queuePosition;
   });
@@ -108,6 +110,8 @@ export function applicantResponse(applicant: Applicant) {
     lateArrivalTime: applicant.lateArrivalTime ?? null,
     makeupDate: applicant.makeupDate ?? null,
     attendanceExcused: applicant.attendanceExcused ?? null,
+    seatRow: applicant.seatRow ?? null,
+    seatCol: applicant.seatCol ?? null,
     category: applicant.category,
     rank: applicant.rank,
     notes: applicant.notes,
@@ -292,6 +296,190 @@ export async function transferInterviewers(
 export function displayApplicantName(name: string): string {
   const trimmed = name.trim();
   return !trimmed || trimmed.length > 48 || /https?:\/\//i.test(trimmed) || /@/.test(trimmed) ? "Applicant" : trimmed;
+}
+
+/**
+ * Spoken big-screen announcement: one "Name please go to Interviewer"
+ * sentence per called applicant ("Dillan please go to Maksim"). This is the
+ * single source of truth — both the server TTS endpoint and the display's
+ * on-device fallback speak exactly this text.
+ */
+export function buildAnnouncementText(
+  applicants: { name: string; interviewer: string; callbackRequested: boolean }[],
+): string {
+  const desk = (interviewer: string) => interviewer.trim().slice(0, 30) || "your interviewer";
+  const firstName = (name: string) => displayApplicantName(name).split(/\s+/)[0] || "Applicant";
+  const recalled = applicants.filter((applicant) => applicant.callbackRequested);
+  if (recalled.length) {
+    return recalled.map((a) => `${firstName(a.name)} please go back to ${desk(a.interviewer)}`).join(". ") + ".";
+  }
+  if (applicants.length) {
+    return applicants.map((a) => `${firstName(a.name)} please go to ${desk(a.interviewer)}`).join(". ") + ".";
+  }
+  return "The interview block is complete. Thank you for coming to the robotics tryouts.";
+}
+
+export interface DisplaySettingsState {
+  customHeadline: string | null;
+  customSubheadline: string | null;
+  showNames: boolean;
+  announce: boolean;
+}
+
+const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsState = {
+  customHeadline: null,
+  customSubheadline: null,
+  showNames: true,
+  announce: true,
+};
+
+export async function getDisplaySettings(): Promise<DisplaySettingsState> {
+  const [row] = await db.select().from(displaySettingsTable).limit(1);
+  if (!row) return { ...DEFAULT_DISPLAY_SETTINGS };
+  return {
+    customHeadline: row.customHeadline?.trim() ? row.customHeadline : null,
+    customSubheadline: row.customSubheadline?.trim() ? row.customSubheadline : null,
+    showNames: row.showNames,
+    announce: row.announce,
+  };
+}
+
+export function displaySettingsResponse(row: {
+  customHeadline: string | null;
+  customSubheadline: string | null;
+  showNames: boolean;
+  announce: boolean;
+  updatedAt: Date;
+}) {
+  return {
+    headline: row.customHeadline,
+    subheadline: row.customSubheadline,
+    showNames: row.showNames,
+    announce: row.announce,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * What the big screen shows and says. Custom coordinator text wins when set
+ * (and then the spoken announcement IS the custom text); otherwise the
+ * automatic headline plus the per-applicant "Name please go to Interviewer"
+ * call-out. Pills visibility never affects speech — the announce switch does.
+ */
+export function resolveDisplaySpeech(
+  autoHeadline: string,
+  autoSubheadline: string,
+  queueApplicants: { name: string; interviewer: string; callbackRequested: boolean }[],
+  settings: DisplaySettingsState,
+): { headline: string; subheadline: string; announcement: string } {
+  const headline = settings.customHeadline?.trim() || autoHeadline;
+  const subheadline = settings.customSubheadline?.trim() || autoSubheadline;
+  const custom = Boolean(settings.customHeadline?.trim() || settings.customSubheadline?.trim());
+  return {
+    headline,
+    subheadline,
+    announcement: custom ? `${headline}. ${subheadline}.` : buildAnnouncementText(queueApplicants),
+  };
+}
+
+export function humanList(names: string[]): string {
+  if (names.length > 2) return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  return names.join(" and ");
+}
+
+export interface DisplayView {
+  mode: string;
+  headline: string;
+  subheadline: string;
+  announcement: string;
+  currentApplicants: { id: string; name: string; grade: string; lane: string }[];
+  updatedAt: string;
+}
+
+/** Everything the big screen shows and says, before pill visibility is applied. */
+export async function getDisplayView(): Promise<DisplayView> {
+  const queue = await getQueueState();
+  const settings = await getDisplaySettings();
+  const mapped = queue.currentApplicants.map((applicant, index) => ({
+    id: applicant.id,
+    name: displayApplicantName(applicant.name),
+    grade: applicant.grade,
+    lane: applicant.interviewer || queue.interviewerLabels[index % queue.interviewerLabels.length] || "Your interviewer",
+  }));
+  const recalled = queue.currentApplicants
+    .filter((applicant) => applicant.callbackRequested)
+    .map((applicant) => displayApplicantName(applicant.name));
+  const isCallback = recalled.length > 0;
+  const autoHeadline = isCallback
+    ? "Please return to your interviewer"
+    : mapped.length ? "Please come to your corresponding interviewer" : "Interview block complete";
+  const autoSubheadline = isCallback
+    ? `${humanList(recalled)} — we aren't done with you yet, please come back`
+    : mapped.length ? "Your Wolverines interview team is ready for you" : "Thank you for showing up and building boldly";
+  const speech = resolveDisplaySpeech(autoHeadline, autoSubheadline, queue.currentApplicants, settings);
+  return {
+    mode: isCallback ? "callback" : mapped.length ? "calling" : "complete",
+    headline: speech.headline,
+    subheadline: speech.subheadline,
+    announcement: speech.announcement,
+    currentApplicants: mapped,
+    updatedAt: queue.updatedAt,
+  };
+}
+
+export interface SeatingSettingsState {
+  rows: number;
+  cols: number;
+}
+
+export async function getSeatingSettings(): Promise<SeatingSettingsState> {
+  const [row] = await db.select().from(seatingSettingsTable).limit(1);
+  return {
+    rows: Math.min(10, Math.max(1, row?.rows ?? 4)),
+    cols: Math.min(10, Math.max(1, row?.cols ?? 6)),
+  };
+}
+
+export function seatingSettingsResponse(row: { rows: number; cols: number; updatedAt: Date }) {
+  return {
+    rows: row.rows,
+    cols: row.cols,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Seat an applicant. row/col < 0 unseats. When the target seat is taken the
+ * occupant swaps into the moved applicant's old seat (or becomes unseated).
+ * Returns the updated applicant row, or null when the id is unknown.
+ */
+export async function assignSeat(applicantId: string, row: number, col: number) {
+  if (row < 0 || col < 0) {
+    const [cleared] = await db
+      .update(applicantsTable)
+      .set({ seatRow: null, seatCol: null, updatedAt: new Date() })
+      .where(eq(applicantsTable.id, applicantId))
+      .returning();
+    return cleared ?? null;
+  }
+  const [me] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, applicantId));
+  if (!me) return null;
+  const [occupant] = await db
+    .select({ id: applicantsTable.id })
+    .from(applicantsTable)
+    .where(and(eq(applicantsTable.seatRow, row), eq(applicantsTable.seatCol, col)));
+  if (occupant && occupant.id !== applicantId) {
+    await db
+      .update(applicantsTable)
+      .set({ seatRow: me.seatRow, seatCol: me.seatCol, updatedAt: new Date() })
+      .where(eq(applicantsTable.id, occupant.id));
+  }
+  const [updated] = await db
+    .update(applicantsTable)
+    .set({ seatRow: row, seatCol: col, updatedAt: new Date() })
+    .where(eq(applicantsTable.id, applicantId))
+    .returning();
+  return updated ?? null;
 }
 
 export async function getInterviewSettings(): Promise<string[]> {

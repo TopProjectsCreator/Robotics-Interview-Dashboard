@@ -9,6 +9,8 @@
 export interface Broadcast {
   id: string;
   message: string;
+  /** message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say) */
+  kind: string;
   targetIp: string;
   createdAt: string;
   expiresAt: string;

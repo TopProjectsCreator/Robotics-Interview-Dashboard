@@ -194,6 +194,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BroadcastList"
+  /broadcasts/commands:
+    get:
+      operationId: getBroadcastCommands
+      tags: [broadcasts]
+      summary: List unexpired big-screen commands (public; the display needs no login)
+      responses:
+        "200":
+          description: Pending display commands, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastList"
   /broadcasts/{broadcastId}/ack:
     post:
       operationId: ackBroadcast
@@ -512,6 +524,82 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DisplayState"
+  /display/settings:
+    get:
+      operationId: getDisplaySettings
+      tags: [display]
+      summary: Get big-screen text and announcement settings
+      responses:
+        "200":
+          description: Display settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisplaySettings"
+    post:
+      operationId: updateDisplaySettings
+      tags: [display]
+      summary: Update big-screen text, name pills, and announcements
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisplaySettingsInput"
+      responses:
+        "200":
+          description: Updated display settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisplaySettings"
+  /seating/settings:
+    get:
+      operationId: getSeatingSettings
+      tags: [seating]
+      summary: Get seating chart dimensions
+      responses:
+        "200":
+          description: Seating settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatingSettings"
+    post:
+      operationId: updateSeatingSettings
+      tags: [seating]
+      summary: Resize the seating chart (out-of-bounds seats are cleared)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatingSettingsInput"
+      responses:
+        "200":
+          description: Updated seating settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatingSettings"
+  /seating/assign:
+    post:
+      operationId: assignSeat
+      tags: [seating]
+      summary: Seat an applicant (occupant swaps into their old seat; row/col -1 unseats)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatingAssignInput"
+      responses:
+        "200":
+          description: Seat assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Applicant"
   /assistant/ask:
     post:
       operationId: askAssistant
@@ -902,11 +990,17 @@ components:
           type: string
         isCurrent:
           type: boolean
+        notifyPermission:
+          type: string
+          description: "This session's browser Notification permission: granted, denied, default, or unsupported"
     PresenceHeartbeatInput:
       type: object
       properties:
         page:
           type: string
+        notifyPermission:
+          type: string
+          description: "Browser Notification permission: granted, denied, default, or unsupported"
     PresenceList:
       type: object
       required:
@@ -936,6 +1030,9 @@ components:
         - firstSeenAt
         - lastSeenAt
         - pages
+        - notifyGranted
+        - notifyDenied
+        - notifyUnknown
       properties:
         ip:
           type: string
@@ -963,6 +1060,15 @@ components:
                 type: integer
               seconds:
                 type: integer
+        notifyGranted:
+          type: integer
+          description: "Online sessions from this IP with browser notifications granted"
+        notifyDenied:
+          type: integer
+          description: "Online sessions from this IP with browser notifications denied or dismissed"
+        notifyUnknown:
+          type: integer
+          description: "Online sessions from this IP with unknown or unsupported notification state"
     PresenceKickInput:
       type: object
       required: [ip]
@@ -982,6 +1088,7 @@ components:
       required:
         - id
         - message
+        - kind
         - targetIp
         - createdAt
         - expiresAt
@@ -990,6 +1097,9 @@ components:
           type: string
         message:
           type: string
+        kind:
+          type: string
+          description: "message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)"
         targetIp:
           type: string
         createdAt:
@@ -1012,6 +1122,9 @@ components:
       properties:
         message:
           type: string
+        kind:
+          type: string
+          description: "message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say"
         targetIp:
           type: string
         ttlMinutes:
@@ -1139,6 +1252,12 @@ components:
         attendanceExcused:
           type: ["boolean", "null"]
           description: "true = excused, false = unexcused; only meaningful when attendance is late or absent"
+        seatRow:
+          type: ["integer", "null"]
+          description: "Seating chart row (0-based), null = unseated"
+        seatCol:
+          type: ["integer", "null"]
+          description: "Seating chart column (0-based), null = unseated"
         category:
           type: string
         rank:
@@ -1202,6 +1321,12 @@ components:
         attendanceExcused:
           type: ["boolean", "null"]
           description: "true = excused, false = unexcused (late/absent only); null clears"
+        seatRow:
+          type: ["integer", "null"]
+          description: "Seating chart row (0-based); null unseats"
+        seatCol:
+          type: ["integer", "null"]
+          description: "Seating chart column (0-based); null unseats"
         rank:
           type: integer
         notes:
@@ -1456,7 +1581,7 @@ components:
           type: string
     DisplayState:
       type: object
-      required: [mode, headline, subheadline, currentApplicants, updatedAt]
+      required: [mode, headline, subheadline, announcement, announce, currentApplicants, updatedAt]
       properties:
         mode:
           type: string
@@ -1464,12 +1589,80 @@ components:
           type: string
         subheadline:
           type: string
+        announcement:
+          type: string
+          description: "Exact spoken text for the big screen: 'Name please go to Interviewer' per applicant, or the custom text when set"
+        announce:
+          type: boolean
+          description: "Master switch: false mutes spoken auto-announcements (manual tests still speak)"
         currentApplicants:
           type: array
           items:
             $ref: "#/components/schemas/DisplayApplicant"
         updatedAt:
           type: string
+    DisplaySettings:
+      type: object
+      required: [headline, subheadline, showNames, announce, updatedAt]
+      properties:
+        headline:
+          type: ["string", "null"]
+          description: "Custom big-screen heading, null = automatic"
+        subheadline:
+          type: ["string", "null"]
+          description: "Custom big-screen subheading, null = automatic"
+        showNames:
+          type: boolean
+        announce:
+          type: boolean
+        updatedAt:
+          type: string
+    SeatingSettings:
+      type: object
+      required: [rows, cols, updatedAt]
+      properties:
+        rows:
+          type: integer
+          description: "Seating chart rows (1-10)"
+        cols:
+          type: integer
+          description: "Seating chart columns (1-10)"
+        updatedAt:
+          type: string
+    SeatingSettingsInput:
+      type: object
+      properties:
+        rows:
+          type: integer
+          description: "Rows 1-10"
+        cols:
+          type: integer
+          description: "Columns 1-10"
+    SeatingAssignInput:
+      type: object
+      required: [applicantId, row, col]
+      properties:
+        applicantId:
+          type: string
+        row:
+          type: integer
+          description: "Target row (0-based), -1 unseats"
+        col:
+          type: integer
+          description: "Target column (0-based), -1 unseats"
+    DisplaySettingsInput:
+      type: object
+      properties:
+        headline:
+          type: ["string", "null"]
+          description: "Custom heading (empty string clears back to automatic)"
+        subheadline:
+          type: ["string", "null"]
+          description: "Custom subheading (empty string clears back to automatic)"
+        showNames:
+          type: boolean
+        announce:
+          type: boolean
     DisplayApplicant:
       type: object
       required: [id, name, grade, lane]

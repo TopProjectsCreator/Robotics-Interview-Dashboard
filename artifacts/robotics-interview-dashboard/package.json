@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "dompurify": "^3.4.15",
+    "kitten-tts-webgpu": "^0.1.1",
     "kokoro-js": "^1.2.1",
     "xlsx": "^0.18.5"
   }

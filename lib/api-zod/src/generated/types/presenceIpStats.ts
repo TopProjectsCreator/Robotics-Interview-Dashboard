@@ -15,4 +15,10 @@ export interface PresenceIpStats {
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   pages: PresenceIpStatsPagesItem[];
+  /** Online sessions from this IP with browser notifications granted */
+  notifyGranted: number;
+  /** Online sessions from this IP with browser notifications denied or dismissed */
+  notifyDenied: number;
+  /** Online sessions from this IP with unknown or unsupported notification state */
+  notifyUnknown: number;
 }

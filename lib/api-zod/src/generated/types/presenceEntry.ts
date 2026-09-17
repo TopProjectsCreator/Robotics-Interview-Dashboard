@@ -14,4 +14,6 @@ export interface PresenceEntry {
   page: string;
   lastSeenAt: string;
   isCurrent: boolean;
+  /** This session's browser Notification permission: granted, denied, default, or unsupported */
+  notifyPermission?: string;
 }

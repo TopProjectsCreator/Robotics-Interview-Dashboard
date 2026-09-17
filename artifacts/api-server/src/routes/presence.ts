@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { desc, eq, gt, lt } from "drizzle-orm";
+import { and, desc, eq, gt, lt } from "drizzle-orm";
 import { db, presenceHeartbeatsTable } from "@workspace/db";
 import { GetPresenceStatsResponse, GetPresenceResponse, KickPresenceBody, KickPresenceResponse, PostPresenceHeartbeatBody, PostPresenceHeartbeatResponse } from "@workspace/api-zod";
 import { isRevokedAdminSession, isValidAdminSession, requestAdminSession } from "../middlewares/adminAuth";
@@ -63,6 +63,8 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
   const parsed = PostPresenceHeartbeatBody.safeParse(req.body ?? {});
   const rawPage = parsed.success && typeof parsed.data.page === "string" ? parsed.data.page : "";
   const page = /^\/[a-z-]*\/?$/.test(rawPage) ? rawPage.slice(0, 32) : "";
+  const rawNotify = parsed.success ? String((parsed.data as Record<string, unknown>).notifyPermission ?? "") : "";
+  const notifyPermission = ["granted", "denied", "default", "unsupported"].includes(rawNotify) ? rawNotify : "";
   try {
     await pruneStale();
     const [existing] = await db
@@ -79,12 +81,16 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
       country = geo.country;
     }
     const now = new Date();
+    const existingNotify = existing?.notifyPermission ?? "";
+    // Only overwrite a known permission with another known one — a heartbeat
+    // sent before the client reports permission must not wipe "granted".
+    const nextNotify = notifyPermission || existingNotify;
     await db
       .insert(presenceHeartbeatsTable)
-      .values({ sessionHash: hash, ip, userAgent, city, region, country, page, createdAt: now, updatedAt: now })
+      .values({ sessionHash: hash, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, createdAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: presenceHeartbeatsTable.sessionHash,
-        set: { ip, userAgent, city, region, country, page, updatedAt: now },
+        set: { ip, userAgent, city, region, country, page, notifyPermission: nextNotify, updatedAt: now },
       });
     await rotatePageVisit(hash, ip, page, existing?.page ?? "");
     const online = await db
@@ -119,6 +125,7 @@ router.get("/presence", async (req, res): Promise<void> => {
           page: row.page,
           lastSeenAt: row.updatedAt.toISOString(),
           isCurrent: row.sessionHash === hash,
+          notifyPermission: row.notifyPermission ?? "",
         })),
       }),
     );
@@ -138,7 +145,24 @@ router.get("/presence/stats", async (req, res): Promise<void> => {
   }
   try {
     const stats = await getIpStats(ip);
-    res.json(GetPresenceStatsResponse.parse(stats));
+    const online = await db
+      .select({ notifyPermission: presenceHeartbeatsTable.notifyPermission })
+      .from(presenceHeartbeatsTable)
+      .where(
+        and(
+          eq(presenceHeartbeatsTable.ip, ip),
+          gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)),
+        ),
+      );
+    let notifyGranted = 0;
+    let notifyDenied = 0;
+    let notifyUnknown = 0;
+    for (const session of online) {
+      if (session.notifyPermission === "granted") notifyGranted += 1;
+      else if (session.notifyPermission === "denied" || session.notifyPermission === "default") notifyDenied += 1;
+      else notifyUnknown += 1;
+    }
+    res.json(GetPresenceStatsResponse.parse({ ...stats, notifyGranted, notifyDenied, notifyUnknown }));
   } catch (error) {
     req.log.error({ err: error }, "Presence stats failed");
     res.status(503).json({ error: "Presence unavailable" });

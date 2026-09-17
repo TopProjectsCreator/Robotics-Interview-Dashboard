@@ -8,6 +8,8 @@
 
 export interface BroadcastInput {
   message: string;
+  /** message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say */
+  kind?: string;
   targetIp?: string;
   ttlMinutes?: number;
 }

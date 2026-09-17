@@ -87,7 +87,8 @@ export const GetDashboardSummaryResponse = zod.object({
  * @summary Record coordinator presence heartbeat
  */
 export const PostPresenceHeartbeatBody = zod.object({
-  "page": zod.string().optional()
+  "page": zod.string().optional(),
+  "notifyPermission": zod.string().optional().describe('Browser Notification permission: granted, denied, default, or unsupported')
 })
 
 export const PostPresenceHeartbeatResponse = zod.object({
@@ -107,7 +108,8 @@ export const GetPresenceResponse = zod.object({
   "country": zod.string(),
   "page": zod.string(),
   "lastSeenAt": zod.string(),
-  "isCurrent": zod.boolean()
+  "isCurrent": zod.boolean(),
+  "notifyPermission": zod.string().optional().describe('This session\'s browser Notification permission: granted, denied, default, or unsupported')
 }))
 })
 
@@ -130,7 +132,10 @@ export const GetPresenceStatsResponse = zod.object({
   "page": zod.string(),
   "visits": zod.number().int(),
   "seconds": zod.number().int()
-}))
+})),
+  "notifyGranted": zod.number().int().describe('Online sessions from this IP with browser notifications granted'),
+  "notifyDenied": zod.number().int().describe('Online sessions from this IP with browser notifications denied or dismissed'),
+  "notifyUnknown": zod.number().int().describe('Online sessions from this IP with unknown or unsupported notification state')
 })
 
 
@@ -152,6 +157,7 @@ export const KickPresenceResponse = zod.object({
  */
 export const PostBroadcastBody = zod.object({
   "message": zod.string(),
+  "kind": zod.string().optional().describe('message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say'),
   "targetIp": zod.string().optional(),
   "ttlMinutes": zod.number().int().optional()
 })
@@ -159,6 +165,7 @@ export const PostBroadcastBody = zod.object({
 export const PostBroadcastResponse = zod.object({
   "id": zod.string(),
   "message": zod.string(),
+  "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
   "targetIp": zod.string(),
   "createdAt": zod.string(),
   "expiresAt": zod.string()
@@ -172,6 +179,22 @@ export const GetMyBroadcastsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "message": zod.string(),
+  "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
+  "targetIp": zod.string(),
+  "createdAt": zod.string(),
+  "expiresAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary List unexpired big-screen commands (public; the display needs no login)
+ */
+export const GetBroadcastCommandsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
   "targetIp": zod.string(),
   "createdAt": zod.string(),
   "expiresAt": zod.string()
@@ -228,6 +251,8 @@ export const ListApplicantsResponse = zod.object({
   "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
   "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
   "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based), null = unseated'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based), null = unseated'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -267,6 +292,8 @@ export const GetApplicantResponse = zod.object({
   "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
   "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
   "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based), null = unseated'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based), null = unseated'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -301,6 +328,8 @@ export const UpdateApplicantBody = zod.object({
   "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when marking attendance late; null clears'),
   "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when marking attendance absent; null clears'),
   "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused (late\/absent only); null clears'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based); null unseats'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based); null unseats'),
   "rank": zod.number().int().optional(),
   "notes": zod.string().optional(),
   "interviewStatus": zod.string().optional(),
@@ -333,6 +362,8 @@ export const UpdateApplicantResponse = zod.object({
   "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
   "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
   "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based), null = unseated'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based), null = unseated'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -380,6 +411,8 @@ export const RegenerateApplicantResponse = zod.object({
   "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
   "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
   "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based), null = unseated'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based), null = unseated'),
   "category": zod.string(),
   "rank": zod.number().int(),
   "notes": zod.string(),
@@ -810,6 +843,8 @@ export const GetDisplayStateResponse = zod.object({
   "mode": zod.string(),
   "headline": zod.string(),
   "subheadline": zod.string(),
+  "announcement": zod.string().describe('Exact spoken text for the big screen: \'Name please go to Interviewer\' per applicant, or the custom text when set'),
+  "announce": zod.boolean().describe('Master switch: false mutes spoken auto-announcements (manual tests still speak)'),
   "currentApplicants": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -817,6 +852,103 @@ export const GetDisplayStateResponse = zod.object({
   "lane": zod.string()
 })),
   "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Get big-screen text and announcement settings
+ */
+export const GetDisplaySettingsResponse = zod.object({
+  "headline": zod.string().nullable().describe('Custom big-screen heading, null = automatic'),
+  "subheadline": zod.string().nullable().describe('Custom big-screen subheading, null = automatic'),
+  "showNames": zod.boolean(),
+  "announce": zod.boolean(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Update big-screen text, name pills, and announcements
+ */
+export const UpdateDisplaySettingsBody = zod.object({
+  "headline": zod.string().nullish().describe('Custom heading (empty string clears back to automatic)'),
+  "subheadline": zod.string().nullish().describe('Custom subheading (empty string clears back to automatic)'),
+  "showNames": zod.boolean().optional(),
+  "announce": zod.boolean().optional()
+})
+
+export const UpdateDisplaySettingsResponse = zod.object({
+  "headline": zod.string().nullable().describe('Custom big-screen heading, null = automatic'),
+  "subheadline": zod.string().nullable().describe('Custom big-screen subheading, null = automatic'),
+  "showNames": zod.boolean(),
+  "announce": zod.boolean(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Get seating chart dimensions
+ */
+export const GetSeatingSettingsResponse = zod.object({
+  "rows": zod.number().int().describe('Seating chart rows (1-10)'),
+  "cols": zod.number().int().describe('Seating chart columns (1-10)'),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Resize the seating chart (out-of-bounds seats are cleared)
+ */
+export const UpdateSeatingSettingsBody = zod.object({
+  "rows": zod.number().int().optional().describe('Rows 1-10'),
+  "cols": zod.number().int().optional().describe('Columns 1-10')
+})
+
+export const UpdateSeatingSettingsResponse = zod.object({
+  "rows": zod.number().int().describe('Seating chart rows (1-10)'),
+  "cols": zod.number().int().describe('Seating chart columns (1-10)'),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Seat an applicant (occupant swaps into their old seat; row/col -1 unseats)
+ */
+export const AssignSeatBody = zod.object({
+  "applicantId": zod.string(),
+  "row": zod.number().int().describe('Target row (0-based), -1 unseats'),
+  "col": zod.number().int().describe('Target column (0-based), -1 unseats')
+})
+
+export const AssignSeatResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "grade": zod.string(),
+  "email": zod.string().nullish(),
+  "photoUrl": zod.string().nullish(),
+  "transcript": zod.string().nullish(),
+  "aiScore": zod.number().int(),
+  "aiRecommendation": zod.string(),
+  "aiSummary": zod.string(),
+  "aiStrengths": zod.string(),
+  "aiConcerns": zod.string(),
+  "roboticsExperience": zod.string(),
+  "commit10Hours": zod.string(),
+  "parentVolunteer": zod.string(),
+  "interviewStatus": zod.string(),
+  "interviewer": zod.string().optional(),
+  "interviewDecision": zod.string().optional(),
+  "callbackRequested": zod.boolean().optional(),
+  "attendance": zod.string(),
+  "lateArrivalTime": zod.string().nullish().describe('Arrival time (HH:MM 24h) when attendance is late'),
+  "makeupDate": zod.string().nullish().describe('Makeup interview date (YYYY-MM-DD) when attendance is absent'),
+  "attendanceExcused": zod.boolean().nullish().describe('true = excused, false = unexcused; only meaningful when attendance is late or absent'),
+  "seatRow": zod.number().int().nullish().describe('Seating chart row (0-based), null = unseated'),
+  "seatCol": zod.number().int().nullish().describe('Seating chart column (0-based), null = unseated'),
+  "category": zod.string(),
+  "rank": zod.number().int(),
+  "notes": zod.string(),
+  "queuePosition": zod.number().int()
 })
 
 

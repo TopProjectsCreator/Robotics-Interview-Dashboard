@@ -26,6 +26,8 @@ export const applicantsTable = pgTable("applicants", {
   lateArrivalTime: text("late_arrival_time"),
   makeupDate: text("makeup_date"),
   attendanceExcused: boolean("attendance_excused"),
+  seatRow: integer("seat_row"),
+  seatCol: integer("seat_col"),
   category: text("category").notNull().default("Unsorted"),
   rank: integer("rank").notNull().default(0),
   notes: text("notes").notNull().default(""),

@@ -41,6 +41,8 @@ import type {
   DashboardChartList,
   DashboardChartUpdate,
   DashboardSummary,
+  DisplaySettings,
+  DisplaySettingsInput,
   DisplayState,
   ErrorResponse,
   GenerateImageInput,
@@ -69,6 +71,9 @@ import type {
   QueueSettingsInput,
   QueueState,
   ReorderQueueInput,
+  SeatingAssignInput,
+  SeatingSettings,
+  SeatingSettingsInput,
   Snapshot,
   SnapshotInput,
   SnapshotList,
@@ -918,6 +923,83 @@ export function useGetMyBroadcasts<TData = Awaited<ReturnType<typeof getMyBroadc
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMyBroadcastsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetBroadcastCommandsUrl = () => {
+
+
+
+
+  return `/api/broadcasts/commands`
+}
+
+/**
+ * @summary List unexpired big-screen commands (public; the display needs no login)
+ */
+export const getBroadcastCommands = async ( options?: Parameters<typeof customFetch>[1]): Promise<BroadcastList> => {
+
+  return customFetch<BroadcastList>(getGetBroadcastCommandsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBroadcastCommandsQueryKey = () => {
+    return [
+    `/api/broadcasts/commands`
+    ] as const;
+    }
+
+
+export const getGetBroadcastCommandsQueryOptions = <TData = Awaited<ReturnType<typeof getBroadcastCommands>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBroadcastCommandsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBroadcastCommands>>> = ({ signal }) => getBroadcastCommands({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBroadcastCommandsQueryResult = NonNullable<Awaited<ReturnType<typeof getBroadcastCommands>>>
+export type GetBroadcastCommandsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List unexpired big-screen commands (public; the display needs no login)
+ */
+
+export function useGetBroadcastCommands<TData = Awaited<ReturnType<typeof getBroadcastCommands>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBroadcastCommandsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -2329,6 +2411,373 @@ export function useGetDisplayState<TData = Awaited<ReturnType<typeof getDisplayS
 
 
 
+
+export const getGetDisplaySettingsUrl = () => {
+
+
+
+
+  return `/api/display/settings`
+}
+
+/**
+ * @summary Get big-screen text and announcement settings
+ */
+export const getDisplaySettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<DisplaySettings> => {
+
+  return customFetch<DisplaySettings>(getGetDisplaySettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDisplaySettingsQueryKey = () => {
+    return [
+    `/api/display/settings`
+    ] as const;
+    }
+
+
+export const getGetDisplaySettingsQueryOptions = <TData = Awaited<ReturnType<typeof getDisplaySettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplaySettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDisplaySettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDisplaySettings>>> = ({ signal }) => getDisplaySettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDisplaySettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDisplaySettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getDisplaySettings>>>
+export type GetDisplaySettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get big-screen text and announcement settings
+ */
+
+export function useGetDisplaySettings<TData = Awaited<ReturnType<typeof getDisplaySettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplaySettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDisplaySettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateDisplaySettingsUrl = () => {
+
+
+
+
+  return `/api/display/settings`
+}
+
+/**
+ * @summary Update big-screen text, name pills, and announcements
+ */
+export const updateDisplaySettings = async (displaySettingsInput: DisplaySettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<DisplaySettings> => {
+
+  return customFetch<DisplaySettings>(getUpdateDisplaySettingsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(displaySettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateDisplaySettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDisplaySettings>>, TError,{data: BodyType<DisplaySettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDisplaySettings>>, TError,{data: BodyType<DisplaySettingsInput>}, TContext> => {
+
+const mutationKey = ['updateDisplaySettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDisplaySettings>>, {data: BodyType<DisplaySettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateDisplaySettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDisplaySettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateDisplaySettings>>>
+    export type UpdateDisplaySettingsMutationBody = BodyType<DisplaySettingsInput>
+    export type UpdateDisplaySettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update big-screen text, name pills, and announcements
+ */
+export const useUpdateDisplaySettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDisplaySettings>>, TError,{data: BodyType<DisplaySettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDisplaySettings>>,
+        TError,
+        {data: BodyType<DisplaySettingsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDisplaySettingsMutationOptions(options));
+    }
+
+export const getGetSeatingSettingsUrl = () => {
+
+
+
+
+  return `/api/seating/settings`
+}
+
+/**
+ * @summary Get seating chart dimensions
+ */
+export const getSeatingSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<SeatingSettings> => {
+
+  return customFetch<SeatingSettings>(getGetSeatingSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSeatingSettingsQueryKey = () => {
+    return [
+    `/api/seating/settings`
+    ] as const;
+    }
+
+
+export const getGetSeatingSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getSeatingSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSeatingSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSeatingSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSeatingSettings>>> = ({ signal }) => getSeatingSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSeatingSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSeatingSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getSeatingSettings>>>
+export type GetSeatingSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get seating chart dimensions
+ */
+
+export function useGetSeatingSettings<TData = Awaited<ReturnType<typeof getSeatingSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSeatingSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSeatingSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSeatingSettingsUrl = () => {
+
+
+
+
+  return `/api/seating/settings`
+}
+
+/**
+ * @summary Resize the seating chart (out-of-bounds seats are cleared)
+ */
+export const updateSeatingSettings = async (seatingSettingsInput: SeatingSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<SeatingSettings> => {
+
+  return customFetch<SeatingSettings>(getUpdateSeatingSettingsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(seatingSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateSeatingSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSeatingSettings>>, TError,{data: BodyType<SeatingSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSeatingSettings>>, TError,{data: BodyType<SeatingSettingsInput>}, TContext> => {
+
+const mutationKey = ['updateSeatingSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSeatingSettings>>, {data: BodyType<SeatingSettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateSeatingSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSeatingSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateSeatingSettings>>>
+    export type UpdateSeatingSettingsMutationBody = BodyType<SeatingSettingsInput>
+    export type UpdateSeatingSettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resize the seating chart (out-of-bounds seats are cleared)
+ */
+export const useUpdateSeatingSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSeatingSettings>>, TError,{data: BodyType<SeatingSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSeatingSettings>>,
+        TError,
+        {data: BodyType<SeatingSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSeatingSettingsMutationOptions(options));
+    }
+
+export const getAssignSeatUrl = () => {
+
+
+
+
+  return `/api/seating/assign`
+}
+
+/**
+ * @summary Seat an applicant (occupant swaps into their old seat; row/col -1 unseats)
+ */
+export const assignSeat = async (seatingAssignInput: SeatingAssignInput, options?: Parameters<typeof customFetch>[1]): Promise<Applicant> => {
+
+  return customFetch<Applicant>(getAssignSeatUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(seatingAssignInput)
+  }
+);}
+
+
+
+
+
+export const getAssignSeatMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assignSeat>>, TError,{data: BodyType<SeatingAssignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof assignSeat>>, TError,{data: BodyType<SeatingAssignInput>}, TContext> => {
+
+const mutationKey = ['assignSeat'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof assignSeat>>, {data: BodyType<SeatingAssignInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  assignSeat(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AssignSeatMutationResult = NonNullable<Awaited<ReturnType<typeof assignSeat>>>
+    export type AssignSeatMutationBody = BodyType<SeatingAssignInput>
+    export type AssignSeatMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Seat an applicant (occupant swaps into their old seat; row/col -1 unseats)
+ */
+export const useAssignSeat = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assignSeat>>, TError,{data: BodyType<SeatingAssignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof assignSeat>>,
+        TError,
+        {data: BodyType<SeatingAssignInput>},
+        TContext
+      > => {
+      return useMutation(getAssignSeatMutationOptions(options));
+    }
 
 export const getAskAssistantUrl = () => {
 

@@ -5,6 +5,9 @@ import { z } from "zod/v4";
 export const broadcastsTable = pgTable("broadcasts", {
   id: text("id").primaryKey(),
   message: text("message").notNull(),
+  // message = popup for coordinators; audio-test / audio-engine / audio-reset
+  // are silent commands the big screen executes (payload: engine id).
+  kind: text("kind").notNull().default("message"),
   targetIp: text("target_ip").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

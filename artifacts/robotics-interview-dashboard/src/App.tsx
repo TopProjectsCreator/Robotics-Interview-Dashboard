@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, UsersRound, Volume1, Volume2, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
+   Pencil, Plus, RefreshCw, Search, ShieldCheck, Sparkles, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
 } from "lucide-react";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
@@ -18,6 +18,9 @@ import {
   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
+  useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
+  useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
+  useGetSeatingSettings, getGetSeatingSettingsQueryKey, useUpdateSeatingSettings, useAssignSeat,
   useGetMyBroadcasts, useAckBroadcast, getGetMyBroadcastsQueryKey,
   useKickPresence,
   useGetPresenceStats, getGetPresenceStatsQueryKey,
@@ -36,7 +39,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import "@/index.css";
-import { KOKORO_TEST_PHRASE, ensureLocalTts, speakLocalKokoro, stopLocalTts } from "./lib/localTts";
+import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 
 const queryClient = new QueryClient();
 const categories = ["advance", "hold", "decline", "unranked"];
@@ -479,12 +482,23 @@ const PRESENCE_PAGE_LABELS: Record<string, string> = {
   "/dashboard": "Overview",
   "/applicants": "Applicants",
   "/queue": "Interview queue",
+  "/attendance": "Attendance",
+  "/big-screen": "Big screen controls",
   "/assistant": "AI assistant",
   "/display": "Big screen",
 };
 
 function presencePageLabel(page: string): string {
   return PRESENCE_PAGE_LABELS[page] ?? (page || "unknown page");
+}
+
+function browserNotifyPermission(): string {
+  try {
+    if (!("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  } catch {
+    return "unsupported";
+  }
 }
 
 function usePresenceHeartbeat(enabled: boolean, page: string) {
@@ -499,7 +513,7 @@ function usePresenceHeartbeat(enabled: boolean, page: string) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: pageRef.current }),
+        body: JSON.stringify({ page: pageRef.current, notifyPermission: browserNotifyPermission() }),
       }).catch(() => undefined);
     };
     beat();
@@ -569,6 +583,15 @@ function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
               {stats.data.firstSeenAt ? `First seen ${new Date(stats.data.firstSeenAt).toLocaleString()}` : "Never seen"}
               {stats.data.lastSeenAt ? ` · last seen ${new Date(stats.data.lastSeenAt).toLocaleString()}` : ""}
             </p>
+            <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3" data-testid="presence-notify-status">
+              <p className="mono text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Browser notifications · online sessions</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="flex items-center gap-1.5 rounded-full bg-[#dff3ec] px-2.5 py-1 text-[#1d7a5f]"><Bell size={12} /> {stats.data.notifyGranted} on</span>
+                <span className="flex items-center gap-1.5 rounded-full bg-[#fbe4e1] px-2.5 py-1 text-[#a34d46]"><BellOff size={12} /> {stats.data.notifyDenied} off</span>
+                {(stats.data.notifyUnknown ?? 0) > 0 && <span className="rounded-full bg-[#eef3f2] px-2.5 py-1 text-[#63747c]">{stats.data.notifyUnknown} unknown</span>}
+              </div>
+              {stats.data.notifyGranted === 0 && <p className="mt-2 text-[11px] leading-5 text-[#8a999d]">Nobody on this IP accepted pushes — broadcasts only appear as in-app popups. Ask them to tap the bell in the top bar.</p>}
+            </div>
             <p className="mono mt-4 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Pages visited most</p>
             {stats.data.pages.length > 0 ? (
               <div className="mt-2 space-y-3">
@@ -591,6 +614,48 @@ function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
         )}
       </div>
     </div>
+  );
+}
+
+function BroadcastCard() {
+  const queryClient = useQueryClient();
+  const send = usePostBroadcast();
+  const presence = useGetPresence({
+    query: { queryKey: getGetPresenceQueryKey() },
+  });
+  const [message, setMessage] = useState("");
+  const [targetIp, setTargetIp] = useState("");
+  const [sentNote, setSentNote] = useState("");
+  const onlineIps = [...new Set((presence.data?.entries ?? []).map((entry) => entry.ip))].sort();
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const text = message.trim();
+    if (!text || send.isPending) return;
+    setSentNote("");
+    send.mutate({ data: { message: text, targetIp: targetIp || undefined, ttlMinutes: 60 } }, {
+      onSuccess: (created) => {
+        setMessage("");
+        setSentNote(created.targetIp ? `Sent to ${created.targetIp} — pops up there within seconds.` : "Sent to everyone online — pops up within seconds.");
+        queryClient.invalidateQueries({ queryKey: getGetMyBroadcastsQueryKey() });
+      },
+      onError: () => setSentNote("Send failed. Try again."),
+    });
+  };
+  return (
+    <Section title="Broadcast" kicker="Message the other coordinator">
+      <form onSubmit={submit} className="mt-1 space-y-2">
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-sm outline-none focus:border-[#16869a]" />
+        <div className="flex gap-2">
+          <select value={targetIp} onChange={(event) => setTargetIp(event.target.value)} data-testid="select-broadcast-target" aria-label="Broadcast target" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">
+            <option value="">Everyone online</option>
+            {onlineIps.map((ip) => <option key={ip} value={ip}>{ip}</option>)}
+          </select>
+          <button disabled={send.isPending || !message.trim()} data-testid="button-broadcast-send" className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Send size={15} /> {send.isPending ? "Sending…" : "Send"}</button>
+        </div>
+      </form>
+      {sentNote && <p className="mt-2 text-xs text-[#718189]" data-testid="broadcast-sent-note">{sentNote}</p>}
+      <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Coordinators with browser notifications on also get a push, even in another tab.</p>
+    </Section>
   );
 }
 
@@ -626,6 +691,19 @@ function PresencePanel() {
               <span className="text-[#718189]">
                 {[entry.city, entry.region, entry.country].filter(Boolean).join(", ") || "location unknown"}
               </span>
+              {entry.notifyPermission === "granted" ? (
+                <span title="Browser notifications on — broadcasts push to this session" data-testid={`presence-notify-on-${entry.ip}`} className="flex items-center gap-1 rounded-full bg-[#dff3ec] px-2 py-0.5 text-[10px] font-bold text-[#1d7a5f]">
+                  <Bell size={11} /> Push on
+                </span>
+              ) : entry.notifyPermission === "denied" ? (
+                <span title="Browser notifications blocked for this session" data-testid={`presence-notify-off-${entry.ip}`} className="flex items-center gap-1 rounded-full bg-[#fbe4e1] px-2 py-0.5 text-[10px] font-bold text-[#a34d46]">
+                  <BellOff size={11} /> Push off
+                </span>
+              ) : entry.notifyPermission === "default" ? (
+                <span title="This session has not enabled browser notifications yet" className="flex items-center gap-1 rounded-full bg-[#eef3f2] px-2 py-0.5 text-[10px] font-bold text-[#63747c]">
+                  <Bell size={11} /> Push not enabled
+                </span>
+              ) : null}
               {entry.isCurrent ? (
                 <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
                   This device
@@ -738,7 +816,7 @@ function Shell({ children }: { children: ReactNode }) {
   });
   const ackBroadcast = useAckBroadcast();
   const [dismissedBroadcasts, setDismissedBroadcasts] = useState<string[]>([]);
-  const pendingBroadcast = (broadcasts.data?.items ?? []).filter((b) => !dismissedBroadcasts.includes(b.id))[0];
+  const pendingBroadcast = (broadcasts.data?.items ?? []).filter((b) => b.kind === "message" && !dismissedBroadcasts.includes(b.id))[0];
   const dismissBroadcast = (id: string) => {
     setDismissedBroadcasts((current) => (current.includes(id) ? current : [...current, id]));
     ackBroadcast.mutate(
@@ -746,10 +824,36 @@ function Shell({ children }: { children: ReactNode }) {
       { onSuccess: () => qc.invalidateQueries({ queryKey: getGetMyBroadcastsQueryKey() }) },
     );
   };
+  const [notifyState, setNotifyState] = useState<string>(() => browserNotifyPermission());
+  const seenBroadcasts = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const items = (broadcasts.data?.items ?? []).filter((b) => b.kind === "message");
+    if (seenBroadcasts.current === null) {
+      // Seed on first load so pending popups don't all push at once.
+      seenBroadcasts.current = new Set(items.map((b) => b.id));
+      return;
+    }
+    for (const item of items) {
+      if (seenBroadcasts.current.has(item.id)) continue;
+      seenBroadcasts.current.add(item.id);
+      if (dismissedBroadcasts.includes(item.id)) continue;
+      try {
+        if (browserNotifyPermission() === "granted") {
+          const note = new Notification("Robotics tryouts", { body: item.message });
+          note.onclick = () => {
+            window.focus();
+            note.close();
+          };
+        }
+      } catch {
+        // OS notifications unavailable — the in-app popup still shows.
+      }
+    }
+  }, [broadcasts.data, dismissedBroadcasts]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Login />;
-  const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/assistant", label: "AI assistant", icon: Bot }];
-  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main>{pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}</div></div>;
+  const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/attendance", label: "Attendance", icon: ClipboardCheck }, { href: "/big-screen", label: "Big screen", icon: MonitorCheck }, { href: "/assistant", label: "AI assistant", icon: Bot }];
+  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77]">MZ</div></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{children}</main>{pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}</div></div>;
 }
 
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail?: string; action?: ReactNode }) {
@@ -870,7 +974,7 @@ function Dashboard() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, coordinators." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts summary={d} /></div><PresencePanel /></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts summary={d} /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
 }
 function Bars({ data, max, color }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green" }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div>; }
 
@@ -968,7 +1072,7 @@ function Applicants() {
         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" placeholder="Search name, email, experience..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
-        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option></select>
+        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
@@ -994,10 +1098,10 @@ const EXPORT_FORMATS: { value: ExportFormat; label: string; extension: string; m
   { value: "xlsx", label: "Excel (.xlsx)", extension: "xlsx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
 ];
 
-const EXPORT_HEADERS = ["id", "name", "grade", "email", "ai_score", "ai_recommendation", "ai_summary", "ai_strengths", "ai_concerns", "robotics_experience", "commit_10_hours", "parent_volunteer", "category", "attendance", "late_arrival_time", "makeup_date", "attendance_excused", "interview_status", "interviewer", "interview_decision", "notes"];
+const EXPORT_HEADERS = ["id", "name", "grade", "email", "ai_score", "ai_recommendation", "ai_summary", "ai_strengths", "ai_concerns", "robotics_experience", "commit_10_hours", "parent_volunteer", "category", "attendance", "late_arrival_time", "makeup_date", "attendance_excused", "seat", "interview_status", "interviewer", "interview_decision", "notes"];
 
 function applicantToExportRow(a: Applicant): (string | number)[] {
-  return [a.id, a.name, a.grade, a.email ?? "", a.aiScore, a.aiRecommendation, a.aiSummary, a.aiStrengths, a.aiConcerns, a.roboticsExperience, a.commit10Hours, a.parentVolunteer, a.category, a.attendance ?? "unmarked", a.lateArrivalTime ?? "", a.makeupDate ?? "", a.attendanceExcused == null ? "" : a.attendanceExcused ? "excused" : "unexcused", a.interviewStatus ?? "", a.interviewer ?? "", a.interviewDecision ?? "", a.notes ?? ""];
+  return [a.id, a.name, a.grade, a.email ?? "", a.aiScore, a.aiRecommendation, a.aiSummary, a.aiStrengths, a.aiConcerns, a.roboticsExperience, a.commit10Hours, a.parentVolunteer, a.category, a.attendance ?? "unmarked", a.lateArrivalTime ?? "", a.makeupDate ?? "", a.attendanceExcused == null ? "" : a.attendanceExcused ? "excused" : "unexcused", a.seatRow != null && a.seatCol != null ? `R${a.seatRow + 1}C${a.seatCol + 1}` : "", a.interviewStatus ?? "", a.interviewer ?? "", a.interviewDecision ?? "", a.notes ?? ""];
 }
 
 function escapeDelimitedCell(value: string | number, delimiter: string): string {
@@ -1194,7 +1298,7 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPhotoError("Photo upload failed. Try again.");
     }
   };
-  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="hidden" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="hidden" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
 
@@ -1238,17 +1342,214 @@ function localHHMM(d = new Date()): string {
 
 type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; makeupDate?: string | null; attendanceExcused?: boolean | null };
 
+function DisplayTextCard() {
+  const qc = useQueryClient();
+  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: 5000 } });
+  const live = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 5000 } });
+  const update = useUpdateDisplaySettings();
+  // Draft-first: edits live here only. Nothing reaches the big screen until
+  // "Push to big screen" — the preview below shows exactly what push will do.
+  const [headline, setHeadline] = useState("");
+  const [subheading, setSubheading] = useState("");
+  const [showNames, setShowNames] = useState(true);
+  const [announce, setAnnounce] = useState(true);
+  const [synced, setSynced] = useState(false);
+  const saved = settings.data;
+  useEffect(() => {
+    if (saved && !synced) {
+      setHeadline(saved.headline ?? "");
+      setSubheading(saved.subheadline ?? "");
+      setShowNames(saved.showNames ?? true);
+      setAnnounce(saved.announce ?? true);
+      setSynced(true);
+    }
+  }, [saved, synced]);
+  const applySaved = (fresh: { headline: string | null; subheadline: string | null; showNames: boolean; announce: boolean }) => {
+    setHeadline(fresh.headline ?? "");
+    setSubheading(fresh.subheadline ?? "");
+    setShowNames(fresh.showNames);
+    setAnnounce(fresh.announce);
+    setSynced(true);
+  };
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: getGetDisplaySettingsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+  };
+  const push = () => {
+    update.mutate({ data: { headline: headline.trim() || null, subheadline: subheading.trim() || null, showNames, announce } }, {
+      onSuccess: (fresh) => {
+        applySaved(fresh);
+        refresh();
+      },
+    });
+  };
+  const discard = () => {
+    if (saved) applySaved(saved);
+  };
+  const clearDraft = () => {
+    setHeadline("");
+    setSubheading("");
+  };
+  const liveAnnouncement = (live.data as DisplayState | undefined)?.announcement ?? "";
+  const liveHeadline = (live.data as DisplayState | undefined)?.headline ?? "";
+  const liveSubheadline = (live.data as DisplayState | undefined)?.subheadline ?? "";
+  const draftCustom = Boolean(headline.trim() || subheading.trim());
+  const dirty = headline !== (saved?.headline ?? "") || subheading !== (saved?.subheadline ?? "") || showNames !== (saved?.showNames ?? true) || announce !== (saved?.announce ?? true);
+  // The preview IS the big-screen page in an iframe (same component, same
+  // CSS → pixel-identical), with the draft passed as query overrides.
+  // Debounced so typing does not reload it on every keystroke.
+  const [previewSrc, setPreviewSrc] = useState(`${import.meta.env.BASE_URL}display`);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!dirty) {
+        setPreviewSrc(`${import.meta.env.BASE_URL}display`);
+        return;
+      }
+      const params = new URLSearchParams({ preview: "1" });
+      if (headline.trim()) params.set("headline", headline.trim());
+      if (subheading.trim()) params.set("subheadline", subheading.trim());
+      params.set("showNames", showNames ? "1" : "0");
+      setPreviewSrc(`${import.meta.env.BASE_URL}display?${params.toString()}`);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [headline, subheading, showNames, dirty]);
+  const hasCustom = Boolean(saved?.headline ?? saved?.subheadline);
+  const statusBits = [
+    hasCustom ? "custom text" : "automatic text",
+    `pills ${saved?.showNames === false ? "hidden" : "shown"}`,
+    `announcements ${saved?.announce === false ? "muted" : "on"}`,
+  ];
+  // Spoken line mirrors server logic: custom text wins when set, otherwise
+  // the live announcement.
+  const previewSpoken = !announce ? "" : draftCustom ? `${headline.trim() || liveHeadline}. ${subheading.trim() || liveSubheadline}.` : liveAnnouncement;
+  return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="display-text-card">
+    <div><p className="text-sm font-semibold">Big-screen text</p><p className="mt-1 text-xs text-[#7c8c91]">Edits stay here as a draft — the big screen does not change until you push. Check the preview, then push when it looks right. The announce switch mutes spoken announcements (manual tests still speak).</p></div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <label className="text-xs font-semibold text-[#63747c]">Heading<input value={headline} onChange={e => setHeadline(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-headline" placeholder="Automatic heading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
+      <label className="text-xs font-semibold text-[#63747c]">Subheading<input value={subheading} onChange={e => setSubheading(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-subheading" placeholder="Automatic subheading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button onClick={push} disabled={update.isPending || settings.isLoading || !dirty} data-testid="button-display-text-save" title="Publish this draft to the big screen" className="flex h-10 items-center gap-2 rounded-xl bg-[#183a4b] px-4 text-xs font-semibold text-white disabled:opacity-50"><Check size={15} /> {update.isPending ? "Pushing…" : "Push to big screen"}</button>
+      <button onClick={discard} disabled={update.isPending || !dirty} data-testid="button-display-discard" title="Throw away the draft and go back to what is live now" className="flex h-10 items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50"><X size={15} /> Discard draft</button>
+      <button onClick={clearDraft} disabled={update.isPending || settings.isLoading || (!headline && !subheading)} data-testid="button-display-text-clear" title="Empty the draft (push to return the big screen to automatic)" className="flex h-10 items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50"><Trash2 size={15} /> Clear custom text</button>
+      <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={showNames} disabled={update.isPending || settings.isLoading} onChange={e => setShowNames(e.target.checked)} data-testid="input-display-show-names" className="h-4 w-4 accent-[#16869a]" /> Show name pills</label>
+      <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={announce} disabled={update.isPending || settings.isLoading} onChange={e => setAnnounce(e.target.checked)} data-testid="input-display-announce" className="h-4 w-4 accent-[#16869a]" /> Announce</label>
+    </div>
+    <div className="mt-3 overflow-hidden rounded-2xl border border-[#0d1b28]" data-testid="display-preview">
+      <div className="flex items-center justify-between gap-2 bg-[#0d1b28] px-4 py-2">
+        <p className="mono text-[10px] uppercase tracking-[.25em] text-[#f8c84a]">Preview — {dirty ? "draft (not live yet)" : "matches the big screen"}</p>
+        <a href={previewSrc} target="_blank" rel="noreferrer" data-testid="link-display-preview-full" className="mono shrink-0 text-[10px] font-semibold text-[#9db6bd] hover:text-white">Open full size</a>
+      </div>
+      <iframe key={previewSrc} src={previewSrc} title="Big-screen preview" className="aspect-video w-full border-0 bg-[#0d1b28]" />
+      <p className="mono break-words bg-[#0d1b28] px-4 pb-3 text-[11px] leading-5 text-[#7fa3ac]" data-testid="display-preview-spoken">{previewSpoken ? `Will announce: “${previewSpoken}”` : "Announcements muted — the big screen stays silent."}</p>
+    </div>
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#7c8c91]">
+      {settings.isLoading && <span>Loading display settings…</span>}
+      {settings.isError && <span className="font-semibold text-[#ad4b43]">Could not load display settings.</span>}
+      {update.isError && <span className="font-semibold text-[#ad4b43]">Push failed. Try again.</span>}
+      {dirty && <span className="font-semibold text-[#a4680a]" data-testid="display-draft-badge">Unpublished changes — push to update the big screen.</span>}
+      {saved && !dirty && <span data-testid="display-text-status">Now showing: {statusBits.join(" · ")}</span>}
+    </div>
+  </section>;
+}
+
+function AudioCard() {
+  const [engine, setEngine] = useState<TtsEngineId>(() => getSelectedEngine());
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [sayText, setSayText] = useState("");
+  const [saying, setSaying] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const sendCommand = usePostBroadcast();
+  // Local-only preview: hear the selected voice on THIS machine before
+  // pushing anything to the room. Nothing is sent to the big screen.
+  const previewHere = async () => {
+    if (previewing || sending || saying || clearing) return;
+    setPreviewing(true);
+    setNote("");
+    try {
+      await speakWithEngine(engine, KOKORO_TEST_PHRASE);
+      setNote("That played on this machine only — the big screen heard nothing.");
+    } catch {
+      setNote("Local preview failed on this machine — the big-screen test below still works.");
+    }
+    setPreviewing(false);
+  };
+  // Everything here is remote: the buttons sit on the interviewers' screen,
+  // the sound comes out of the big screen. The display polls for commands
+  // every few seconds, speaks (or switches voice), and never shows a popup.
+  const pick = (id: TtsEngineId) => {
+    setEngine(id);
+    setSelectedEngine(id);
+    setNote("");
+    if (id !== "system") setNote("Voice updated — the big screen switches to it for the next announcement.");
+    sendCommand.mutate({ data: { message: id, kind: "audio-engine", ttlMinutes: 60 } }, {
+      onError: () => setNote("Could not reach the big screen. It keeps its current voice."),
+    });
+  };
+  const test = () => {
+    if (sending || clearing) return;
+    setSending(true);
+    setNote("");
+    sendCommand.mutate({ data: { message: engine, kind: "audio-test", ttlMinutes: 5 } }, {
+      onSuccess: () => setNote("Sent — the big screen speaks within a few seconds. First use downloads the voice there, so allow a one-time wait."),
+      onError: () => setNote("Could not reach the big screen. Check that the display is open and online."),
+      onSettled: () => setSending(false),
+    });
+  };
+  const sayIt = () => {
+    const text = sayText.trim().slice(0, 500);
+    if (!text || saying || sending || clearing) return;
+    setSaying(true);
+    setNote("");
+    sendCommand.mutate({ data: { message: text, kind: "audio-say", ttlMinutes: 5 } }, {
+      onSuccess: () => {
+        setNote("Sent — the big screen says it within a few seconds. Display text is untouched.");
+        setSayText("");
+      },
+      onError: () => setNote("Could not reach the big screen. Check that the display is open and online."),
+      onSettled: () => setSaying(false),
+    });
+  };
+  const redownload = async () => {
+    if (!window.confirm("Reset voices on this machine AND the big screen? Downloaded voice files are deleted everywhere; both pages reload fresh. Use this when speech sounds garbled.")) return;
+    setClearing(true);
+    try {
+      await clearLocalTtsCaches();
+    } catch {
+      // The reload below drops in-memory copies regardless.
+    }
+    sendCommand.mutate({ data: { message: engine, kind: "audio-reset", ttlMinutes: 5 } });
+    window.location.reload();
+  };
+  const detail = TTS_ENGINES.find(option => option.id === engine)?.detail ?? "";
+  return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="audio-card">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">Big-screen audio</p><p className="mt-1 text-xs text-[#7c8c91]">These buttons live here, the sound comes out of the big screen. {detail}.</p></div>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <select value={engine} onChange={e => pick(e.target.value as TtsEngineId)} data-testid="select-tts-engine" aria-label="Announcement voice" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
+        {TTS_ENGINES.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+      <button onClick={() => void previewHere()} disabled={previewing || sending || clearing || saying} data-testid="button-audio-preview-here" title="Hear the selected voice on this machine only — nothing plays on the big screen" className="flex h-10 items-center gap-2 rounded-xl border border-[#16869a] px-4 text-xs font-semibold text-[#12737d] hover:bg-[#e3f4f2] disabled:opacity-50"><Volume1 size={15} /> {previewing ? "Playing here…" : "Preview voice here"}</button>
+      <button onClick={test} disabled={sending || clearing || saying || previewing} data-testid="button-audio-test" className="flex h-10 items-center gap-2 rounded-xl bg-[#183a4b] px-4 text-xs font-semibold text-white disabled:opacity-50"><Volume1 size={15} /> {sending ? "Sending…" : "Test big-screen audio"}</button>
+      {engine !== "system" && <button onClick={() => void redownload()} disabled={clearing || sending || saying} data-testid="button-audio-redownload" title="Delete downloaded voice files here and on the big screen, then reload (fixes garbled speech from a bad download)" className="flex h-10 items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50"><RefreshCw size={15} className={clearing ? "animate-spin" : ""} /> {clearing ? "Clearing…" : "Redownload voices"}</button>}
+    </div>
+    <div className="mt-3 flex flex-wrap items-stretch gap-2">
+      <textarea value={sayText} onChange={e => setSayText(e.target.value)} maxLength={500} rows={2} disabled={saying || sending || clearing} data-testid="input-audio-say" placeholder="Type a custom announcement — spoken only, display text stays as-is…" className="min-h-[68px] min-w-0 flex-1 resize-y rounded-xl border border-[#d5e0e0] bg-white p-3 text-sm text-[#182232] outline-none focus:border-[#16869a]" />
+      <button onClick={sayIt} disabled={!sayText.trim() || saying || sending || clearing} data-testid="button-audio-say" title="Speak this text on the big screen without changing its text" className="flex items-center gap-2 rounded-xl bg-[#16869a] px-4 text-xs font-semibold text-white disabled:opacity-50"><Megaphone size={15} /> {saying ? "Sending…" : "Announce it"}</button>
+    </div>
+    {note && <p className="mt-2 text-xs text-[#7c8c91]" data-testid="audio-note">{note}</p>}
+  </section>;
+}
+
 function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
   applicants: Applicant[];
   pending: boolean;
   onMark: (id: string, patch: AttendancePatch) => void;
   onMarkAll: () => void;
 }) {
-  const here = applicants.filter(a => a.attendance === "here").length;
-  const late = applicants.filter(a => a.attendance === "late").length;
-  const absent = applicants.filter(a => a.attendance === "absent").length;
-  const unmarked = applicants.length - here - late - absent;
-  const excused = applicants.filter(a => (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true).length;
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [excusedDraft, setExcusedDraft] = useState(false);
@@ -1274,11 +1575,13 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
     <button onClick={() => setExcusedDraft(true)} data-testid={`button-excused-${id}`} title="Mark excused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-[#28a47f] text-white" : "bg-white text-[#63747c] hover:bg-[#eef3f2]"}`}>Excused</button>
     <button onClick={() => setExcusedDraft(false)} data-testid={`button-unexcused-${id}`} title="Mark unexcused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-white text-[#63747c] hover:bg-[#eef3f2]" : "bg-[#3d4b54] text-white"}`}>Unexcused</button>
   </div>;
-  const rowTone = (a: Applicant) => a.attendance === "absent" ? "border-[#e5c4c0] bg-[#fff7f6] opacity-80" : a.attendance === "late" ? "border-[#e8d9b0] bg-[#fffdf4]" : "border-[#e1e9e8] bg-white";
+  const rowTone = (a: Applicant) => a.attendance === "absent" ? "border-[#e5c4c0] bg-[#fff7f6]" : a.attendance === "late" ? "border-[#e8d9b0] bg-[#fffdf4]" : a.attendance === "here" ? "border-[#bfe3d8] bg-[#f4fbf8]" : "border-[#e1e9e8] bg-white";
+  const avatarTone = (a: Applicant) => a.attendance === "here" ? "bg-[#28a47f] text-white" : a.attendance === "late" ? "bg-[#c99a1f] text-white" : a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#dcecea] text-[#176a77]";
+  const pillTone = (a: Applicant) => a.attendance === "here" ? "bg-[#dff3ec] text-[#1d7a5f]" : a.attendance === "late" ? "bg-[#fdf3d7] text-[#8a6d1c]" : a.attendance === "absent" ? "bg-[#fbe4e1] text-[#a34d46]" : "bg-[#eef3f2] text-[#63747c]";
+  const initials = (name: string) => name.split(" ").map(x => x[0]).join("").slice(0, 2).toUpperCase() || "?";
   return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="attendance-panel">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><p className="text-sm font-semibold">Attendance <span className="mono ml-2 text-xs text-[#16869a]">{here} here · {late} late · {absent} absent · {unmarked} unmarked · {excused} excused</span></p><p className="mt-1 text-xs text-[#7c8c91]">Mark who showed up before interviews start. Late arrivals record a time; absent applicants can get a makeup date; both can be marked excused or unexcused. Absent applicants stay in the queue until you decide.</p></div>
-      <button onClick={onMarkAll} disabled={pending || !applicants.length} data-testid="button-attendance-all-here" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+      <div><p className="text-sm font-semibold">Check-in list <span className="mono ml-2 text-xs text-[#16869a]">{applicants.length} shown</span></p><p className="mt-1 text-xs text-[#7c8c91]">Tap Here, or open Late / Absent for arrival time, makeup date, and excused status.</p></div>
     </div>
     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {applicants.map(a => {
@@ -1286,13 +1589,16 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
         const absentOpen = editing === `${a.id}:absent`;
         const arrival = formatArrivalTime(a.lateArrivalTime);
         const makeup = formatMakeupDate(a.makeupDate);
-        return <div key={a.id} className={`rounded-xl border p-2 ${rowTone(a)}`} data-testid={`attendance-row-${a.id}`}>
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{a.name}</span>
-              {a.attendance === "late" && arrival && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#8a6d1c]">Late · arrived {arrival}</span>}
-              {a.attendance === "absent" && makeup && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#a34d46]">Makeup {makeup}</span>}
-              {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#1d7a5f]">Excused</span>}
-              {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === false && <span className="mono mt-0.5 block text-[10px] font-semibold text-[#a34d46]">Unexcused</span>}
+        return <div key={a.id} className={`rounded-xl border p-2.5 ${rowTone(a)}`} data-testid={`attendance-row-${a.id}`}>
+          <div className="flex items-center gap-2.5">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${avatarTone(a)}`}>{initials(a.name)}</span>
+            <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="block min-w-0 flex-1 truncate text-xs font-semibold">{a.name}</span>{seatLabel(a.seatRow, a.seatCol) && <span className="mono shrink-0 rounded bg-[#eef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#527079]" data-testid={`attendance-seat-${a.id}`}>{seatLabel(a.seatRow, a.seatCol)}</span>}</span>
+              <span className="mt-1 flex flex-wrap items-center gap-1">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${pillTone(a)}`}>{a.attendance === "here" ? "Here" : a.attendance === "late" ? `Late${arrival ? ` · ${arrival}` : ""}` : a.attendance === "absent" ? "Absent" : "Unmarked"}</span>
+                {a.attendance === "absent" && makeup && <span className="mono rounded-full bg-[#fbe4e1] px-2 py-0.5 text-[10px] font-semibold text-[#a34d46]">Makeup {makeup}</span>}
+                {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true && <span className="mono rounded-full bg-[#dff3ec] px-2 py-0.5 text-[10px] font-semibold text-[#1d7a5f]">Excused</span>}
+                {(a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === false && <span className="mono rounded-full bg-[#fbe4e1] px-2 py-0.5 text-[10px] font-semibold text-[#a34d46]">Unexcused</span>}
+              </span>
             </span>
             <div className="flex shrink-0 gap-1">
               <button onClick={() => { setEditing(null); onMark(a.id, { attendance: a.attendance === "here" ? "unmarked" : "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} disabled={pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
@@ -1438,13 +1744,6 @@ function Queue() {
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
   const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: board.filter(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: board.filter(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
   const boardIndex = new Map(board.map((applicant, index) => [applicant.id, index] as const));
-  const markAttendance = (id: string, patch: AttendancePatch) => {
-    updateApplicant.mutate({ id, data: patch }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
-  const markAllHere = () => {
-    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && a.attendance !== "here");
-    todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); } }));
-  };
   const saveNote = (id: string, note: string, original: string) => {
     if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
@@ -1591,7 +1890,6 @@ function Queue() {
   };
   return <div className="fade-up">
     <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
-    <AttendancePanel applicants={(remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed")} pending={updateApplicant.isPending} onMark={markAttendance} onMarkAll={markAllHere} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
       <div><p className="text-sm font-semibold">I am working as</p><p className="mt-1 text-xs text-[#7c8c91]">This controls which assigned applicant files you see and labels your chat messages.</p></div>
       <div className="flex flex-wrap items-center gap-2">{q.interviewerLabels.map(label => <button key={label} onClick={() => { setSelectedInterviewer(label); window.localStorage.setItem("selected-interviewer", label); }} className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedInterviewer === label ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-select-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}<a href="#interviewer-settings" className="rounded-xl border border-dashed border-[#b8cbcc] px-3 py-2 text-xs font-semibold text-[#527079] hover:border-[#16869a] hover:text-[#16869a]">+ Add interviewer</a></div>
@@ -1702,49 +2000,115 @@ function DisplayGallery() {
   </div>;
 }
 
-function speakLocalAnnouncement(text: string) {
-  try {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    window.speechSynthesis.speak(utterance);
-  } catch {
-    // Browser speech is best-effort; the display works fine silent.
-  }
-}
-
 function Display() {
-  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null); const [audioReady, setAudioReady] = useState(false); const audioWanted = useRef(false); const [audioTest, setAudioTest] = useState<"idle" | "loading" | "playing" | "done">("idle"); const [audioTestProgress, setAudioTestProgress] = useState(0); const playServerUrl = (url: string, timeoutMs: number) => new Promise<boolean>((resolve) => { let settled = false; const done = (ok: boolean) => { if (!settled) { settled = true; resolve(ok); } }; try { const el = new Audio(url); el.onended = () => done(true); el.onerror = () => done(false); el.play().catch(() => done(false)); window.setTimeout(() => done(false), timeoutMs); } catch { done(false); } }); const testAudio = async () => { if (audioTest === "loading" || audioTest === "playing") return; try { if (await playServerUrl(`${import.meta.env.BASE_URL}api/display/announcement?test=1`, 15000)) { setAudioTest("done"); return; } } catch { /* server voice unavailable — use the on-device voice */ } try { setAudioTest("loading"); setAudioTestProgress(0); await ensureLocalTts(fraction => setAudioTestProgress(Math.round(fraction * 100))); setAudioTest("playing"); await speakLocalKokoro(KOKORO_TEST_PHRASE); } catch { speakLocalAnnouncement(KOKORO_TEST_PHRASE); } setAudioTest("done"); };
+  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
   const fullscreen = useFullscreen();
+  // ?preview=1 turns this page into the big-screen tab's preview: query
+  // params override the live text through the exact same render path (so the
+  // preview is pixel-identical), and every audio/command behavior is disabled
+  // so the preview never speaks, warms voices, or reboots.
+  const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const isPreview = previewParams.get("preview") === "1";
+  // The big screen has no audio buttons (they live on the interviewers'
+  // Queue screen). It warms the selected on-device voice silently and speaks
+  // every queue change: server voice first, then the selected engine, then
+  // the browser voice.
   useEffect(() => {
+    if (isPreview) return;
+    void warmEngine(getSelectedEngine()).catch(() => { /* announcements fall back on demand */ });
+  }, [isPreview]);
+  const commands = useGetBroadcastCommands({ query: { queryKey: getGetBroadcastCommandsQueryKey(), refetchInterval: 3000, enabled: !isPreview } });
+  useEffect(() => {
+    if (isPreview) return;
+    const items = commands.data?.items ?? [];
+    if (!items.length) return;
+    // Silent remote control from the interviewers' Queue screen: speak the
+    // test phrase, switch the voice, or wipe cached voices and reboot.
+    // Executed ids persist in localStorage so a command never replays.
+    void (async () => {
+      let done: unknown;
+      try {
+        done = JSON.parse(window.localStorage.getItem("display-commands-done") ?? "[]");
+      } catch {
+        done = [];
+      }
+      const seen = new Set(Array.isArray(done) ? done.filter((id): id is string => typeof id === "string") : []);
+      const remember = () => {
+        try {
+          window.localStorage.setItem("display-commands-done", JSON.stringify([...seen].slice(-50)));
+        } catch {
+          // Ephemeral session — commands may replay after a reload.
+        }
+      };
+      for (const cmd of items) {
+        if (seen.has(cmd.id)) continue;
+        seen.add(cmd.id);
+        remember();
+        if (cmd.kind === "audio-say") {
+          // Custom audio-only announcement: spoken as-is, display text untouched.
+          const said = cmd.message.trim().slice(0, 500);
+          if (said) {
+            const engine = getSelectedEngine();
+            try {
+              await speakWithEngine(engine, said);
+            } catch {
+              speakSystemVoice(said);
+            }
+          }
+        } else if (cmd.kind === "audio-engine" || cmd.kind === "audio-test") {
+          const engine = (["kokoro", "kitten", "system"] as const).find((id) => id === cmd.message) ?? getSelectedEngine();
+          setSelectedEngine(engine);
+          if (cmd.kind === "audio-test") {
+            try {
+              await speakWithEngine(engine, KOKORO_TEST_PHRASE);
+            } catch {
+              speakSystemVoice(KOKORO_TEST_PHRASE);
+            }
+          } else {
+            void warmEngine(engine).catch(() => { /* announcements fall back on demand */ });
+          }
+        } else if (cmd.kind === "audio-reset") {
+          try {
+            await clearLocalTtsCaches();
+          } catch {
+            // The reload below drops in-memory copies regardless.
+          }
+          window.location.reload();
+          return;
+        }
+      }
+    })();
+  }, [commands.data, isPreview]);
+  useEffect(() => {
+    if (isPreview) return;
     if (display.data && display.data.updatedAt !== lastUpdate.current) {
-      if (lastUpdate.current && audioReady) {
+      if (lastUpdate.current) {
         const d = display.data as DisplayState;
-        const fallback = `${d.headline ?? ""}. ${d.subheadline ?? ""}`.trim();
+        const spoken = (d.announcement ?? "").trim() || `${d.headline ?? ""}. ${d.subheadline ?? ""}`.trim();
         const audio = audioRef.current;
-        if (audio) {
+        // The announce switch mutes auto-announcements (manual tests always speak).
+        if (audio && spoken && d.announce !== false) {
           let spoke = false;
           const speakOnce = () => {
             if (!spoke) {
               spoke = true;
-              // Server voice failed: use the on-device Kokoro voice, then the
-              // browser voice as a last resort. The model is usually already
-              // warm because enabling audio preloads it.
-              void speakLocalKokoro(fallback).catch(() => speakLocalAnnouncement(fallback));
+              const engine = getSelectedEngine();
+              void speakWithEngine(engine, spoken).catch(() => speakSystemVoice(spoken));
             }
           };
           audio.onerror = () => speakOnce();
-          audio.src = `${import.meta.env.BASE_URL}api/display/announcement`;
+          // Cache-buster: without it, repeat finishes reuse the same URL and
+          // the browser never refetches, so nothing speaks a second time.
+          audio.src = `${import.meta.env.BASE_URL}api/display/announcement?t=${Date.now()}`;
           audio.play().catch(() => speakOnce());
         }
       }
       lastUpdate.current = display.data.updatedAt;
     }
-  }, [display.data, audioReady]);
+  }, [display.data, isPreview]);
   if (display.isLoading) return <div className="min-h-[100dvh] bg-[#0d1b28] p-12 text-white"><Skeleton className="h-10 w-48" /></div>; if (display.isError || !display.data) return <div className="flex min-h-[100dvh] items-center justify-center bg-[#0d1b28] text-white"><ErrorState compact onRetry={() => display.refetch()} /></div>;
-  const d = display.data as DisplayState; const applicants = d.currentApplicants ?? []; const displayGridCols = applicants.length <= 1 ? "" : applicants.length === 2 ? "sm:grid-cols-2" : applicants.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"; const displayGridWidth = applicants.length >= 4 ? "max-w-6xl" : "max-w-4xl";
-  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><button onClick={() => void testAudio()} disabled={audioTest === "loading" || audioTest === "playing"} data-testid="button-display-audio-test" title="Play a spoken audio test through the on-device voice" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${(audioTest === "loading" || audioTest === "playing") ? "border-[#f8c84a] text-[#f8c84a]" : "border-[#617d86] text-[#a7bdc3] hover:border-[#9db6bd] hover:text-white"}`}><Volume1 size={15} /> {audioTest === "loading" ? `Loading voice ${audioTestProgress}%` : audioTest === "playing" ? "Testing…" : audioTest === "done" ? "Test again" : "Test audio"}</button><button onClick={() => { const enabling = !audioReady; audioWanted.current = enabling; if (enabling) { void ensureLocalTts().catch(() => { /* announcements fall back to the browser voice */ }); } else { stopLocalTts(); if ("speechSynthesis" in window) { try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } } setAudioReady(enabling); }} data-testid="button-display-audio" className={`flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold ${audioReady ? "border-[#51d2ad] text-[#51d2ad]" : "border-[#617d86] text-[#a7bdc3]"}`}><Volume2 size={15} /> {audioReady ? "Announcements on" : "Enable audio"}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer><audio ref={audioRef} onCanPlay={() => { if (audioWanted.current) setAudioReady(true); }} preload="none" data-testid="display-announcement-audio" /></main>;
+  const liveDisplay = display.data as DisplayState; const previewHeadline = isPreview ? (previewParams.get("headline") || "") : ""; const previewSubheadline = isPreview ? (previewParams.get("subheadline") || "") : ""; const d = isPreview ? { ...liveDisplay, headline: previewHeadline || liveDisplay.headline, subheadline: previewSubheadline || liveDisplay.subheadline } : liveDisplay; const applicants = ((isPreview && previewParams.get("showNames") === "0" ? [] : liveDisplay.currentApplicants) ?? []); const displayGridCols = applicants.length <= 1 ? "" : applicants.length === 2 ? "sm:grid-cols-2" : applicants.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"; const displayGridWidth = applicants.length >= 4 ? "max-w-6xl" : "max-w-4xl";
+  return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark /><div className="flex items-center gap-2"><div className="hidden h-10 w-28 overflow-hidden rounded-xl border border-[#39616d] opacity-80 sm:block"><img src={officialDisplayImages[0]} alt="Wolverines team" className="h-full w-full object-cover" /></div><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your Wolverines interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Wolverines / Team 23442 · All Claws on Deck! · PLMS · Sammamish, Washington · Spencer & Tesla leagues</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer>{!isPreview && <audio ref={audioRef} preload="none" data-testid="display-announcement-audio" />}</main>;
 }
 
 function ImageStudio() {
@@ -1870,7 +2234,7 @@ function ConversationAssistant() {
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
   const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
-  const activeMessages = useGetAssistantConversationMessages(activeConversationId, {
+  const activeMessages = useGetAssistantConversationMessages(activeConversationId, undefined, {
     query: {
       queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId),
       enabled: Boolean(activeConversationId),
@@ -2124,6 +2488,242 @@ function ConversationAssistant() {
     </div>
   </div>;
 }
-function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function seatLabel(row: number | null | undefined, col: number | null | undefined): string {
+  return row == null || col == null ? "" : `R${row + 1}·C${col + 1}`;
+}
+
+function seatDot(attendance: string | null | undefined): string {
+  if (attendance === "here") return "bg-[#28a47f]";
+  if (attendance === "late") return "bg-[#c99a1f]";
+  if (attendance === "absent") return "bg-[#b34a42]";
+  return "bg-[#b4c1c4]";
+}
+
+function SeatingChart({ applicants }: { applicants: Applicant[] }) {
+  const qc = useQueryClient();
+  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: 5000 } });
+  const updateSettings = useUpdateSeatingSettings();
+  const assign = useAssignSeat();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const busy = assign.isPending || updateSettings.isPending;
+  const rows = settings.data?.rows ?? 4;
+  const cols = settings.data?.cols ?? 6;
+  const bySeat = new Map<string, Applicant>();
+  for (const a of applicants) {
+    if (a.seatRow != null && a.seatCol != null) bySeat.set(`${a.seatRow}:${a.seatCol}`, a);
+  }
+  const unseated = applicants.filter(a => a.seatRow == null || a.seatCol == null);
+  const selected = applicants.find(a => a.id === selectedId) ?? null;
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+  };
+  const place = (applicantId: string, row: number, col: number) => {
+    assign.mutate({ data: { applicantId, row, col } }, {
+      onSuccess: () => { setSelectedId(null); invalidate(); },
+    });
+  };
+  const tapSeat = (row: number, col: number) => {
+    if (busy) return;
+    const occupant = bySeat.get(`${row}:${col}`);
+    if (selectedId) {
+      // Tapping the selected student's own seat again unseats them.
+      if (occupant?.id === selectedId) place(selectedId, -1, -1);
+      else place(selectedId, row, col);
+    } else if (occupant) {
+      setSelectedId(occupant.id);
+    }
+  };
+  const resize = (nextRows: number, nextCols: number) => {
+    updateSettings.mutate({ data: { rows: nextRows, cols: nextCols } }, { onSuccess: invalidate });
+  };
+  const unseatAll = () => {
+    if (!window.confirm("Remove everyone from their seats?")) return;
+    const seated = applicants.filter(a => a.seatRow != null && a.seatCol != null);
+    seated.forEach(a => assign.mutate({ data: { applicantId: a.id, row: -1, col: -1 } }, { onSuccess: invalidate }));
+  };
+  return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="seating-chart">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">Seating chart <span className="mono ml-2 text-xs text-[#16869a]">{bySeat.size} seated · {unseated.length} unseated · {rows}×{cols}</span></p><p className="mt-1 text-xs text-[#7c8c91]">Tap a student below, then tap their seat. Tap a seated student, then another seat to move them — or their own seat again to unseat.</p></div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 text-xs font-semibold text-[#63747c]"><span>Rows</span><button onClick={() => resize(rows - 1, cols)} disabled={busy || rows <= 1} data-testid="button-seats-rows-minus" className="rounded-lg border border-[#d5e0e0] px-2 py-1 disabled:opacity-30">−</button><span className="mono w-5 text-center">{rows}</span><button onClick={() => resize(rows + 1, cols)} disabled={busy || rows >= 10} data-testid="button-seats-rows-plus" className="rounded-lg border border-[#d5e0e0] px-2 py-1 disabled:opacity-30">+</button></div>
+        <div className="flex items-center gap-1 text-xs font-semibold text-[#63747c]"><span>Cols</span><button onClick={() => resize(rows, cols - 1)} disabled={busy || cols <= 1} data-testid="button-seats-cols-minus" className="rounded-lg border border-[#d5e0e0] px-2 py-1 disabled:opacity-30">−</button><span className="mono w-5 text-center">{cols}</span><button onClick={() => resize(rows, cols + 1)} disabled={busy || cols >= 10} data-testid="button-seats-cols-plus" className="rounded-lg border border-[#d5e0e0] px-2 py-1 disabled:opacity-30">+</button></div>
+        {bySeat.size > 0 && <button onClick={unseatAll} disabled={busy} data-testid="button-seats-clear" className="rounded-lg border border-[#d5e0e0] px-3 py-1.5 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Unseat all</button>}
+      </div>
+    </div>
+    {settings.isError && <p className="mt-2 text-xs font-semibold text-[#ad4b43]">Could not load the seating chart.</p>}
+    <div className="mt-3 rounded-xl bg-[#172a3a] px-3 py-2 text-center"><span className="mono text-[10px] uppercase tracking-[.25em] text-[#f8c84a]">Front of room</span></div>
+    <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-[#7c8c91]">
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#28a47f]" />Here</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#c99a1f]" />Late</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b34a42]" />Absent</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b4c1c4]" />Unmarked</span>
+    </div>
+    <div className="mt-2 overflow-x-auto">
+      <div className="grid min-w-[520px] gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        {Array.from({ length: rows * cols }, (_, i) => {
+          const row = Math.floor(i / cols);
+          const col = i % cols;
+          const occupant = bySeat.get(`${row}:${col}`);
+          const isSelected = occupant && occupant.id === selectedId;
+          return <button key={`${row}:${col}`} onClick={() => tapSeat(row, col)} disabled={busy} data-testid={`seat-${row}-${col}`} title={occupant ? `${occupant.name} (${seatLabel(row, col)})` : `Empty seat ${seatLabel(row, col)}`} className={`flex min-h-[52px] flex-col justify-center rounded-xl border px-2 py-1.5 text-left transition disabled:opacity-60 ${occupant ? (isSelected ? "border-[#16869a] bg-[#e3f4f2]" : "border-[#d7e4e3] bg-[#f7faf9] hover:border-[#16869a]") : selected ? "border-dashed border-[#b8cbcc] bg-white hover:border-[#16869a] hover:bg-[#eef7f6]" : "border-[#edf1f1] bg-white hover:border-[#b8cbcc]"}`}>
+            {occupant ? <><span className="flex items-center gap-1.5"><span className={`h-2 w-2 shrink-0 rounded-full ${seatDot(occupant.attendance)}`} /><span className="min-w-0 flex-1 truncate text-[11px] font-bold text-[#182232]">{occupant.name}</span></span><span className="mono mt-0.5 text-[10px] text-[#809196]">{seatLabel(row, col)}</span></> : <span className="mono text-[10px] text-[#b4c1c4]">{selected ? `Seat ${selected.name.split(" ")[0]} here` : seatLabel(row, col)}</span>}
+          </button>;
+        })}
+      </div>
+    </div>
+    <div className="mt-3">
+      <p className="text-xs font-semibold text-[#63747c]">Students {selected ? <span className="text-[#12737d]">— placing {selected.name}, tap a seat</span> : "— tap one, then tap their seat"}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {unseated.length ? unseated.map(a => <button key={a.id} onClick={() => setSelectedId(current => current === a.id ? null : a.id)} disabled={busy} data-testid={`unseated-${a.id}`} title={`Seat ${a.name}`} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${selectedId === a.id ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`}><span className={`h-2 w-2 rounded-full ${seatDot(a.attendance)}`} />{a.name}</button>) : <p className="text-xs text-[#7c8c91]">Everyone has a seat.</p>}
+      </div>
+      {selected && <button onClick={() => place(selected.id, -1, -1)} disabled={busy} data-testid="button-unseat-selected" className="mt-2 rounded-lg border border-[#d5e0e0] px-3 py-1.5 text-[11px] font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Unseat {selected.name}</button>}
+    </div>
+  </section>;
+}
+
+function AttendancePage() {
+  const qc = useQueryClient();
+  const boardParams = useMemo(() => ({ sort: "queue" }), []);
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: 3000 } });
+  const updateApplicant = useUpdateApplicant();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+  };
+  const markAttendance = (id: string, patch: AttendancePatch) => {
+    updateApplicant.mutate({ id, data: patch }, { onSuccess: invalidate });
+  };
+  const markAllHere = () => {
+    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && a.attendance !== "here");
+    todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
+  };
+  const [statusFilter, setStatusFilter] = useState<"all" | "remaining" | "completed">("all");
+  const [attFilter, setAttFilter] = useState<"all" | "here" | "late" | "absent" | "unmarked" | "excused">("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"name" | "seat" | "status">("name");
+  const [copied, setCopied] = useState(false);
+  const all = remaining.data?.items ?? [];
+  const eligible = all.filter(a => a.interviewStatus !== "completed");
+  const here = eligible.filter(a => a.attendance === "here").length;
+  const late = eligible.filter(a => a.attendance === "late").length;
+  const absent = eligible.filter(a => a.attendance === "absent").length;
+  const unmarked = eligible.length - here - late - absent;
+  const excused = eligible.filter(a => (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true).length;
+  const seated = all.filter(a => a.seatRow != null && a.seatCol != null).length;
+  const checkedIn = here + late;
+  const pct = eligible.length ? Math.round((checkedIn / eligible.length) * 100) : 0;
+  const lateList = eligible.filter(a => a.attendance === "late").sort((x, y) => x.name.localeCompare(y.name));
+  const absentList = eligible.filter(a => a.attendance === "absent").sort((x, y) => x.name.localeCompare(y.name));
+  const query = search.trim().toLowerCase();
+  const statusRank = (a: Applicant) => a.attendance === "unmarked" ? 0 : a.attendance === "late" ? 1 : a.attendance === "absent" ? 2 : a.attendance === "here" ? 3 : 4;
+  const visible = all
+    .filter(a =>
+      (statusFilter === "all" || (statusFilter === "remaining" ? a.interviewStatus !== "completed" : a.interviewStatus === "completed")) &&
+      (attFilter === "all" || (attFilter === "excused" ? (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused === true : a.attendance === attFilter)) &&
+      (!query || a.name.toLowerCase().includes(query)),
+    )
+    .sort((x, y) => sort === "seat" ? ((x.seatRow ?? 999) * 100 + (x.seatCol ?? 999) - ((y.seatRow ?? 999) * 100 + (y.seatCol ?? 999)) || x.name.localeCompare(y.name)) : sort === "status" ? (statusRank(x) - statusRank(y) || x.name.localeCompare(y.name)) : x.name.localeCompare(y.name));
+  const filterButton = (value: "all" | "remaining" | "completed", label: string, count: number) => <button key={value} onClick={() => setStatusFilter(value)} data-testid={`button-attendance-filter-${value}`} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${statusFilter === value ? "bg-[#183a4b] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{label} · {count}</button>;
+  const toggleAtt = (value: "here" | "late" | "absent" | "unmarked" | "excused") => setAttFilter(current => current === value ? "all" : value);
+  const clearMarks = () => {
+    if (!window.confirm("Clear all attendance marks? Everyone goes back to unmarked (times, makeup dates, and excused flags are removed). Seats are kept.")) return;
+    const todo = eligible.filter(a => a.attendance !== "unmarked" || a.lateArrivalTime || a.makeupDate || a.attendanceExcused != null);
+    todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
+  };
+  const copySummary = async () => {
+    const lines = [
+      `Attendance — ${new Date().toLocaleDateString([], { month: "short", day: "numeric" })} (${checkedIn}/${eligible.length} checked in)`,
+      `Here ${here} · Late ${late} · Absent ${absent} · Unmarked ${unmarked} · Excused ${excused} · Seated ${seated}/${all.length}`,
+      lateList.length ? `Late: ${lateList.map(a => `${a.name} (${formatArrivalTime(a.lateArrivalTime) || "no time"}${a.attendanceExcused === true ? ", excused" : a.attendanceExcused === false ? ", unexcused" : ""})`).join("; ")}` : "Late: none",
+      absentList.length ? `Absent: ${absentList.map(a => `${a.name} (${a.makeupDate ? `makeup ${formatMakeupDate(a.makeupDate)}` : "no makeup date"}${a.attendanceExcused === true ? ", excused" : a.attendanceExcused === false ? ", unexcused" : ""})`).join("; ")}` : "Absent: none",
+    ];
+    const text = lines.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        // Clipboard unavailable — the summary stays on screen instead.
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  const ringR = 40;
+  const ringC = 2 * Math.PI * ringR;
+  const tile = (value: "here" | "late" | "absent" | "unmarked" | "excused", label: string, count: number, numClass: string) => <button key={value} onClick={() => toggleAtt(value)} data-testid={`button-attendance-tile-${value}`} title={attFilter === value ? "Show all" : `Show only ${label.toLowerCase()}`} className={`min-w-[86px] flex-1 rounded-2xl border px-3 py-3 text-left transition ${attFilter === value ? "border-[#f8c84a] bg-[#f8c84a]/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}><p className={`mono text-2xl font-bold ${numClass}`}>{count}</p><p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[.12em] text-[#9db6bd]">{label}</p></button>;
+  return <div className="fade-up">
+    <PageHeading eyebrow="Interview bay / check-in" title="Attendance" detail="Mark who showed up before interviews start. Late arrivals record a time, absent applicants can get a makeup date, and both can be excused." />
+    {remaining.isLoading ? <Skeleton className="h-64" /> : remaining.isError || !remaining.data ? <ErrorState onRetry={() => remaining.refetch()} /> : <>
+      <section className="relative mb-5 overflow-hidden rounded-3xl bg-[#172a3a] p-6 text-white" data-testid="attendance-hero">
+        <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full border border-[#f8c84a]/20" />
+        <div className="relative flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-4">
+            <svg width="104" height="104" viewBox="0 0 104 104" role="img" aria-label={`${pct}% checked in`}>
+              <circle cx="52" cy="52" r={ringR} fill="none" stroke="#2a4356" strokeWidth="10" />
+              <circle cx="52" cy="52" r={ringR} fill="none" stroke="#51d2ad" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(pct / 100) * ringC} ${ringC}`} transform="rotate(-90 52 52)" />
+              <text x="52" y="50" textAnchor="middle" fill="#fff" fontSize="20" fontWeight="700">{pct}%</text>
+              <text x="52" y="68" textAnchor="middle" fill="#89a4ab" fontSize="11">{checkedIn}/{eligible.length}</text>
+            </svg>
+            <div><p className="font-semibold">Checked in</p><p className="mt-1 max-w-[180px] text-xs leading-5 text-[#9db6bd]">{eligible.length ? `${checkedIn} of ${eligible.length} expected students are here or late.` : "Nobody left to check in."} Finished students excluded.</p></div>
+          </div>
+          <div className="flex min-w-[280px] flex-1 flex-wrap gap-2">
+            {tile("here", "Here", here, "text-[#51d2ad]")}
+            {tile("late", "Late", late, "text-[#f8c84a]")}
+            {tile("absent", "Absent", absent, "text-[#ff9b8f]")}
+            {tile("unmarked", "Unmarked", unmarked, "text-[#a7bdc3]")}
+            {tile("excused", "Excused", excused, "text-[#7fe3c0]")}
+            <div className="min-w-[86px] flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-3"><p className="mono text-2xl font-bold text-[#9dc3e8]">{seated}<span className="text-sm text-[#66848d]">/{all.length}</span></p><p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[.12em] text-[#9db6bd]">Seated</p></div>
+          </div>
+        </div>
+        {attFilter !== "all" && <p className="relative mt-3 text-xs text-[#f8c84a]">Filtering by {attFilter} — tap the tile again to show everyone.</p>}
+      </section>
+      <SeatingChart applicants={all} />
+      {(lateList.length > 0 || absentList.length > 0) && <section className="mb-5 rounded-2xl border border-[#e8d9b0] bg-[#fffdf4] p-4" data-testid="attendance-followup">
+        <p className="text-sm font-semibold">Needs follow-up <span className="mono ml-2 text-xs text-[#8a6d1c]">{lateList.length} late · {absentList.length} absent</span></p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#8a6d1c]">Late arrivals</p>{lateList.length ? lateList.map(a => <div key={a.id} className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-[#e8d9b0] bg-white px-3 py-2 text-xs"><span className="font-semibold">{a.name}</span>{seatLabel(a.seatRow, a.seatCol) && <span className="mono rounded bg-[#eef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#527079]">{seatLabel(a.seatRow, a.seatCol)}</span>}<span className="mono text-[#8a6d1c]">{formatArrivalTime(a.lateArrivalTime) || "no time recorded"}</span>{a.attendanceExcused != null && <span className={`mono rounded-full px-2 py-0.5 text-[10px] font-semibold ${a.attendanceExcused ? "bg-[#dff3ec] text-[#1d7a5f]" : "bg-[#fbe4e1] text-[#a34d46]"}`}>{a.attendanceExcused ? "Excused" : "Unexcused"}</span>}</div>) : <p className="mt-1.5 text-xs text-[#7c8c91]">Nobody late.</p>}</div>
+          <div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[#a34d46]">Absent</p>{absentList.length ? absentList.map(a => <div key={a.id} className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-[#e5c4c0] bg-white px-3 py-2 text-xs"><span className="font-semibold">{a.name}</span>{seatLabel(a.seatRow, a.seatCol) && <span className="mono rounded bg-[#eef3f2] px-1.5 py-0.5 text-[10px] font-bold text-[#527079]">{seatLabel(a.seatRow, a.seatCol)}</span>}<span className="mono text-[#a34d46]">{a.makeupDate ? `Makeup ${formatMakeupDate(a.makeupDate)}` : "no makeup date"}</span>{a.attendanceExcused != null && <span className={`mono rounded-full px-2 py-0.5 text-[10px] font-semibold ${a.attendanceExcused ? "bg-[#dff3ec] text-[#1d7a5f]" : "bg-[#fbe4e1] text-[#a34d46]"}`}>{a.attendanceExcused ? "Excused" : "Unexcused"}</span>}</div>) : <p className="mt-1.5 text-xs text-[#7c8c91]">Nobody absent.</p>}</div>
+        </div>
+      </section>}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {filterButton("all", "All students", all.length)}
+        {filterButton("remaining", "To check in", eligible.length)}
+        {filterButton("completed", "Finished", all.filter(a => a.interviewStatus === "completed").length)}
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" data-testid="input-attendance-search" aria-label="Search students" className="h-9 min-w-[180px] flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none focus:border-[#16869a] sm:max-w-xs" />
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select value={sort} onChange={e => setSort(e.target.value as "name" | "seat" | "status")} data-testid="select-attendance-sort" aria-label="Sort check-in list" className="h-9 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
+          <option value="name">Sort: Name</option>
+          <option value="seat">Sort: Seat</option>
+          <option value="status">Sort: Needs attention</option>
+        </select>
+        <button onClick={markAllHere} disabled={updateApplicant.isPending || !eligible.length} data-testid="button-attendance-all-here" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+        <button onClick={clearMarks} disabled={updateApplicant.isPending} data-testid="button-attendance-clear" title="Reset everyone to unmarked (seats are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Clear marks</button>
+        <button onClick={() => void copySummary()} data-testid="button-attendance-copy" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2]">{copied ? "Copied!" : "Copy summary"}</button>
+      </div>
+      {visible.length ? <AttendancePanel applicants={visible} pending={updateApplicant.isPending} onMark={markAttendance} onMarkAll={markAllHere} /> : <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]">No students match this filter.</p>}
+    </>}
+  </div>;
+}
+
+function BigScreenPage() {
+  return <div className="fade-up">
+    <PageHeading eyebrow="Event command / big screen" title="Big screen" detail="Control what the big screen shows and says. Buttons live here — the sound comes out of the big screen." action={<Link href="/display" target="_blank" data-testid="link-open-big-screen" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Open display</Link>} />
+    <DisplayTextCard />
+    <AudioCard />
+  </div>;
+}
+
+function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export default App;

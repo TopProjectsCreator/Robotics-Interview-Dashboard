@@ -8,4 +8,6 @@
 
 export interface PresenceHeartbeatInput {
   page?: string;
+  /** Browser Notification permission: granted, denied, default, or unsupported */
+  notifyPermission?: string;
 }

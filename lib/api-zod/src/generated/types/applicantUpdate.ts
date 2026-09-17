@@ -42,6 +42,16 @@ export interface ApplicantUpdate {
      * @nullable
      */
   attendanceExcused?: boolean | null;
+  /**
+     * Seating chart row (0-based); null unseats
+     * @nullable
+     */
+  seatRow?: number | null;
+  /**
+     * Seating chart column (0-based); null unseats
+     * @nullable
+     */
+  seatCol?: number | null;
   rank?: number;
   notes?: string;
   interviewStatus?: string;
