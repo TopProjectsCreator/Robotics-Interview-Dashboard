@@ -1,5 +1,5 @@
 // Heuristic skill/gender signals derived from applicant text fields.
-// There are no dedicated build/CAD/coach/gender columns, so these scan
+// There are no dedicated build/code/CAD/gender columns, so these scan
 // roboticsExperience, transcript, AI summaries/strengths, and notes for
 // evidence. All matches are keyword heuristics, not verified facts.
 
@@ -16,8 +16,8 @@ export interface ApplicantSignalInput {
 
 export interface ApplicantSignals {
   build: boolean;
+  code: boolean;
   cad: boolean;
-  coach: boolean;
   gender: ApplicantGender;
 }
 
@@ -27,8 +27,8 @@ const BUILD_RE =
 const CAD_RE =
   /\b(\bcad\b|onshape|fusion\s?360|tinkercad|solidworks|autodesk(\s+inventor)?|inventor|freecad|sketchup|3d\s+(model\w*|design\w*|print\w*|cad)|designed?\s+(a\s+|the\s+)?(robot|chassis|part|bracket|mount|intake|arm|claw))\b/;
 
-const COACH_RE =
-  /\b(coach\w*|mentor\w*|captain|team\s+(lead\w*|captain)|led\s+the\s+team|taught|teach\w*|tutor\w*|referee|leadership|volunteer\w*|outreach|president|officer|organiz\w*\s+(the\s+|an?\s+)?(event|workshop|team|club|fundraiser)|judge\w*\s+(at|for))\b/;
+const CODE_RE =
+  /\b(cod\w*|programming|programmers?|programmed|python|javascript|typescript|c\+\+|scratch|robotc|micropython|software|algorithms?|debugg\w*|block\s+(coding|programming|code)|code\.org)/;
 
 const MASCULINE_RE = /\b(he|him|his|himself|boy|son|brother)\b/g;
 const FEMININE_RE = /\b(she|her|hers|herself|girl|daughter|sister)\b/g;
@@ -67,16 +67,16 @@ export function getApplicantSignals(input: ApplicantSignalInput): ApplicantSigna
     .filter((text): text is string => text !== null);
 
   let build = false;
+  let code = false;
   let cad = false;
-  let coach = false;
   let masculine = 0;
   let feminine = 0;
 
   for (const field of fields) {
     const lower = field.toLowerCase();
     if (!build && BUILD_RE.test(lower)) build = true;
+    if (!code && CODE_RE.test(lower)) code = true;
     if (!cad && CAD_RE.test(lower)) cad = true;
-    if (!coach && COACH_RE.test(lower)) coach = true;
     masculine += countMatches(lower, MASCULINE_RE);
     feminine += countMatches(lower, FEMININE_RE);
   }
@@ -85,5 +85,5 @@ export function getApplicantSignals(input: ApplicantSignalInput): ApplicantSigna
   const gender: ApplicantGender =
     masculine > 0 && feminine === 0 ? "M" : feminine > 0 && masculine === 0 ? "F" : null;
 
-  return { build, cad, coach, gender };
+  return { build, code, cad, gender };
 }

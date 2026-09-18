@@ -83,11 +83,11 @@ function Skeleton({ className = "" }: { className?: string }) { return <div clas
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
   const chips: { label: string; className: string; title: string }[] = [];
   if (signals.build) chips.push({ label: "Build", className: "bg-[#e7f4ec] text-[#1d7a44]", title: "Hands-on build experience mentioned in file" });
+  if (signals.code) chips.push({ label: "Code", className: "bg-[#efe7fb] text-[#5e35b1]", title: "Coding / software experience mentioned in file" });
   if (signals.cad) chips.push({ label: "CAD", className: "bg-[#e5effc] text-[#1a5fb4]", title: "CAD / 3D design experience mentioned in file" });
-  if (signals.coach) chips.push({ label: "Coach", className: "bg-[#fdf3e0] text-[#8a6100]", title: "Coaching / mentoring / leadership mentioned in file" });
   if (signals.gender === "M") chips.push({ label: "M", className: "bg-[#e5effc] text-[#1a5fb4]", title: "Pronouns in file suggest male" });
-  if (signals.gender === "F") chips.push({ label: "F", className: "bg-[#fbe4ec] text-[#b0144f]", title: "Pronouns in file suggest female" });
-  if (!chips.length) return null;
+  else if (signals.gender === "F") chips.push({ label: "F", className: "bg-[#fbe4ec] text-[#b0144f]", title: "Pronouns in file suggest female" });
+  else chips.push({ label: "?", className: "bg-[#edf1f3] text-[#7a8b90]", title: "No gender signal in file" });
   return <span className="flex flex-wrap items-center gap-1">{chips.map(c => <span key={c.label} title={c.title} className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c.className}`}>{c.label}</span>)}</span>;
 }
 function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compact?: boolean }) {
