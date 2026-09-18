@@ -30,6 +30,8 @@ import {
   useUpdateApplicant,
   getInterviewChat,
   getAssistantConversationMessages,
+  listApplicants,
+  regenerateApplicant,
 } from "@workspace/api-client-react";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
@@ -1038,6 +1040,8 @@ function Applicants() {
   const [exportOpen, setExportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
+  const [regenAll, setRegenAll] = useState<{ running: boolean; done: number; total: number; current: string; failed: string[]; finished: boolean; cancelled: boolean; error: string }>({ running: false, done: 0, total: 0, current: "", failed: [], finished: false, cancelled: false, error: "" });
+  const regenAllCancel = useRef(false);
   const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort }), [search, category, grade, sort]);
   const list = useListApplicants(params, { query: { queryKey: getListApplicantsQueryKey(params) } });
   const update = useUpdateApplicant();
@@ -1057,16 +1061,63 @@ function Applicants() {
       });
     }
   };
+  const regenerateAllScores = async () => {
+    if (regenAll.running) return;
+    let roster: Applicant[];
+    try {
+      const full = await listApplicants({ sort: "rank" });
+      roster = full.items;
+    } catch {
+      setRegenAll(prev => ({ ...prev, finished: true, cancelled: false, error: "Could not load the roster. Try again." }));
+      return;
+    }
+    if (!roster.length) return;
+    if (!window.confirm(`Regenerate AI scores for all ${roster.length} applicants? This overwrites every score, recommendation, and summary from transcripts, and can take several minutes. Keep this tab open.`)) return;
+    regenAllCancel.current = false;
+    setRegenAll({ running: true, done: 0, total: roster.length, current: roster[0].name, failed: [], finished: false, cancelled: false, error: "" });
+    const failed: string[] = [];
+    for (let i = 0; i < roster.length; i += 1) {
+      if (regenAllCancel.current) break;
+      const applicant = roster[i];
+      setRegenAll(prev => ({ ...prev, current: applicant.name }));
+      try {
+        await regenerateApplicant(applicant.id);
+      } catch {
+        failed.push(applicant.name);
+      }
+      setRegenAll(prev => ({ ...prev, done: i + 1 }));
+      if (i < roster.length - 1 && !regenAllCancel.current) await new Promise(resolve => setTimeout(resolve, 750));
+    }
+    const cancelled = regenAllCancel.current;
+    qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+    setRegenAll(prev => ({ ...prev, running: false, failed, finished: true, cancelled }));
+  };
   return <div className="fade-up">
     <PageHeading eyebrow="Applicant review / triage" title="The applicant field." detail="Rank with your co-coordinator. Drag a candidate into a decision lane when the signal is clear." action={<div className="flex flex-wrap gap-2">
       <button onClick={() => setPrintOpen(true)} data-testid="button-print-roster" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Printer size={16} /> Print roster</button>
       <button onClick={() => setImportOpen(!importOpen)} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><FileUp size={16} /> Import roster</button>
       <button onClick={() => setExportOpen(!exportOpen)} data-testid="button-export" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Download size={16} /> Export roster</button>
       <button onClick={() => setHistoryOpen(!historyOpen)} data-testid="button-version-history" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><History size={16} /> Version history</button>
+      <button onClick={() => void regenerateAllScores()} disabled={regenAll.running} data-testid="button-regenerate-all-scores" title="Regenerate every AI score from transcripts" className="flex items-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-3 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={16} className={regenAll.running ? "animate-spin" : ""} /> {regenAll.running ? `Regenerating ${regenAll.done}/${regenAll.total}` : "Regenerate all scores"}</button>
     </div>} />
     {importOpen && <ImportPanel onClose={() => setImportOpen(false)} />}
     {exportOpen && <ExportPanel applicants={list.data?.items ?? []} onClose={() => setExportOpen(false)} />}
     {historyOpen && <VersionHistoryPanel onClose={() => setHistoryOpen(false)} />}
+    {(regenAll.running || regenAll.finished) && <div className="mb-5 rounded-2xl border border-[#a9d3ce] bg-[#eff8f6] p-5" data-testid="regen-all-panel">
+      <div className="flex items-start justify-between gap-3"><div>
+        <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Bulk AI scoring</p>
+        {regenAll.error ? <h2 className="mt-1 font-semibold">{regenAll.error}</h2> : regenAll.running
+          ? <h2 className="mt-1 font-semibold">Regenerating {regenAll.done} of {regenAll.total} — {regenAll.current}…</h2>
+          : <h2 className="mt-1 font-semibold">{regenAll.cancelled ? `Stopped after ${regenAll.done} of ${regenAll.total}` : `Finished ${regenAll.done} of ${regenAll.total}`}{regenAll.failed.length > 0 ? ` · ${regenAll.failed.length} failed` : regenAll.done > 0 ? " · all saved" : ""}</h2>}
+        {!regenAll.error && <p className="mt-1 text-xs text-[#587278]">{regenAll.running ? "Scores regenerate one by one to stay under the free AI tier limit. Keep this tab open." : regenAll.failed.length > 0 ? `Failed: ${regenAll.failed.join(", ")}. Re-run to retry them.` : "Every applicant now has a fresh evaluation from their transcript."}</p>}
+      </div>{regenAll.running
+        ? <button onClick={() => { regenAllCancel.current = true; }} data-testid="button-cancel-regen-all" className="shrink-0 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2.5 text-sm font-semibold text-[#a34d46]">Cancel</button>
+        : <button onClick={() => setRegenAll(prev => ({ ...prev, finished: false, error: "" }))} data-testid="button-dismiss-regen-all" className="shrink-0 rounded-lg border border-[#cbd9da] bg-white px-4 py-2.5 text-sm font-semibold text-[#385762]">Dismiss</button>}</div>
+      {!regenAll.error && <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#d7e8e5]"><div className="h-full rounded-full bg-[#16869a] transition-all" style={{ width: `${regenAll.total ? Math.round((regenAll.done / regenAll.total) * 100) : 0}%` }} /></div>}
+    </div>}
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" placeholder="Search name, email, experience..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
