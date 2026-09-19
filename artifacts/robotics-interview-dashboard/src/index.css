@@ -44,3 +44,41 @@ button { cursor: pointer; }
   .print-only th, .print-only td { border: 1px solid #bbb; padding: 6px; text-align: left; vertical-align: top; }
   .print-only th { background: #eee; font-weight: 700; }
 }
+
+/* Dark coordinator theme. Applied via next-themes (html.dark). These
+   unlayered rules win over Tailwind v4 layered utilities and remap the
+   app's light surfaces/text to dark equivalents. Dark-by-design areas
+   (sidebar, big screen, yellow/red buttons) are intentionally untouched. */
+.dark {
+  color-scheme: dark;
+  --background: 220 32% 7%; --foreground: 210 20% 90%; --border: 215 20% 22%; --card: 218 28% 11%; --card-foreground: 210 20% 90%; --card-border: 215 20% 22%;
+  --popover: 218 28% 11%; --popover-foreground: 210 20% 90%; --secondary: 215 22% 18%; --secondary-foreground: 210 18% 88%;
+  --muted: 215 22% 16%; --muted-foreground: 214 14% 62%; --input: 215 20% 26%; --ring: 190 60% 55%;
+}
+.dark [class*="bg-white"] { background-color: #16262f; }
+.dark [class*="bg-[#f3f6f5]"] { background-color: #0c161e; }
+.dark [class*="bg-[#eef3f2]"], .dark [class*="bg-[#eef4f3]"], .dark [class*="bg-[#f4f8f7]"], .dark [class*="bg-[#f7faf9]"], .dark [class*="bg-[#f1f6f5]"] { background-color: #13222c; }
+.dark [class*="bg-[#edf1f1]"], .dark [class*="bg-[#d7e8e5]"], .dark [class*="bg-[#dfe7ea]"] { background-color: #22374a; }
+.dark [class*="bg-[#edf1f3]"] { background-color: #2a3f52; }
+.dark [class*="bg-[#dcecea]"] { background-color: #1d3a47; }
+.dark [class*="bg-[#e3f4f2]"] { background-color: #173c44; }
+.dark [class*="bg-[#fff3cf]"] { background-color: #3a2f14; }
+.dark [class*="bg-[#fbe4e2]"], .dark [class*="bg-[#fbe4e1]"] { background-color: #40221f; }
+.dark [class*="bg-[#e2ebfa]"], .dark [class*="bg-[#e5effc]"] { background-color: #1c2c46; }
+.dark [class*="bg-[#e7f4ec]"] { background-color: #173326; }
+.dark [class*="bg-[#efe7fb]"] { background-color: #2a2140; }
+.dark [class*="bg-[#fbe4ec]"] { background-color: #3d1f30; }
+.dark [class*="hover:bg-[#f6f9f8]"]:hover, .dark [class*="hover:bg-[#edf2f2]"]:hover, .dark [class*="hover:bg-[#f1f6f5]"]:hover, .dark [class*="hover:bg-[#e3ebeb]"]:hover { background-color: #1d323f; }
+.dark [class*="text-[#182232]"], .dark [class*="text-[#183a4b]"] { color: #e8eef2; }
+.dark [class*="text-[#385762]"], .dark [class*="text-[#38555e]"], .dark [class*="text-[#52666e]"], .dark [class*="text-[#4f6870]"], .dark [class*="text-[#4f626b]"], .dark [class*="text-[#315a61]"] { color: #b9c9d1; }
+.dark [class*="text-[#7c8c91]"], .dark [class*="text-[#819198]"], .dark [class*="text-[#718189]"], .dark [class*="text-[#7a8b90]"], .dark [class*="text-[#8a999d]"], .dark [class*="text-[#60757c]"], .dark [class*="text-[#63747c]"], .dark [class*="text-[#587278]"], .dark [class*="text-[#7b8a8f]"], .dark [class*="text-[#7f9da6]"], .dark [class*="text-[#809196]"], .dark [class*="text-[#9aa7aa]"], .dark [class*="text-[#9db6bd]"], .dark [class*="text-[#87a3ac]"], .dark [class*="text-[#617d86]"], .dark [class*="text-[#78949d]"], .dark [class*="text-[#365965]"] { color: #8fa1ab; }
+.dark [class*="text-[#176a77]"], .dark [class*="text-[#12737d]"], .dark [class*="text-[#16869a]"] { color: #6fc3cf; }
+.dark [class*="text-[#805c08]"] { color: #e8c85a; }
+.dark [class*="text-[#9f3b33]"], .dark [class*="text-[#a34d46]"], .dark [class*="text-[#ad4b43]"], .dark [class*="text-[#b34a42]"], .dark [class*="text-[#bd5047]"] { color: #e89890; }
+.dark [class*="text-[#375e93]"], .dark [class*="text-[#1a5fb4]"] { color: #8fb3e8; }
+.dark [class*="text-[#1d7a44]"], .dark [class*="text-[#1d7a5f]"], .dark [class*="text-[#28a47f]"] { color: #6fce8f; }
+.dark [class*="text-[#5e35b1]"] { color: #b39ddb; }
+.dark [class*="text-[#b0144f]"] { color: #f48fb1; }
+.dark [class*="border-[#dce5e5]"], .dark [class*="border-[#e5ecec]"], .dark [class*="border-[#d5e0e0]"], .dark [class*="border-[#cbd9da]"], .dark [class*="border-[#dce9e8]"], .dark [class*="border-[#e3ebeb]"], .dark [class*="border-[#d2e1e3]"] { border-color: #2a3f52; }
+.dark [class*="divide-[#edf1f1]"] > :not([hidden]) ~ :not([hidden]) { border-color: #2a3f52; }
+.dark input::placeholder, .dark textarea::placeholder { color: #5f7480; }
