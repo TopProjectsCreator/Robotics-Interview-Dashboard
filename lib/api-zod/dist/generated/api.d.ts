@@ -533,7 +533,8 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         interviewer: zod.ZodOptional<zod.ZodString>;
         interviewDecision: zod.ZodOptional<zod.ZodString>;
         callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
-        attendance: zod.ZodString;
+        flagged: zod.ZodOptional<zod.ZodBoolean>;
+        attendance: zod.ZodOptional<zod.ZodString>;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         attendanceExcused: zod.ZodOptional<zod.ZodNullable<zod.ZodBoolean>>;
@@ -557,7 +558,6 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         roboticsExperience: string;
         commit10Hours: string;
         parentVolunteer: string;
-        attendance: string;
         rank: number;
         notes: string;
         queuePosition: number;
@@ -567,6 +567,8 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         interviewer?: string | undefined;
         interviewDecision?: string | undefined;
         callbackRequested?: boolean | undefined;
+        flagged?: boolean | undefined;
+        attendance?: string | undefined;
         lateArrivalTime?: string | null | undefined;
         makeupDate?: string | null | undefined;
         attendanceExcused?: boolean | null | undefined;
@@ -586,7 +588,6 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         roboticsExperience: string;
         commit10Hours: string;
         parentVolunteer: string;
-        attendance: string;
         rank: number;
         notes: string;
         queuePosition: number;
@@ -596,6 +597,8 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         interviewer?: string | undefined;
         interviewDecision?: string | undefined;
         callbackRequested?: boolean | undefined;
+        flagged?: boolean | undefined;
+        attendance?: string | undefined;
         lateArrivalTime?: string | null | undefined;
         makeupDate?: string | null | undefined;
         attendanceExcused?: boolean | null | undefined;
@@ -619,7 +622,6 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         roboticsExperience: string;
         commit10Hours: string;
         parentVolunteer: string;
-        attendance: string;
         rank: number;
         notes: string;
         queuePosition: number;
@@ -629,6 +631,8 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         interviewer?: string | undefined;
         interviewDecision?: string | undefined;
         callbackRequested?: boolean | undefined;
+        flagged?: boolean | undefined;
+        attendance?: string | undefined;
         lateArrivalTime?: string | null | undefined;
         makeupDate?: string | null | undefined;
         attendanceExcused?: boolean | null | undefined;
@@ -651,7 +655,6 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         roboticsExperience: string;
         commit10Hours: string;
         parentVolunteer: string;
-        attendance: string;
         rank: number;
         notes: string;
         queuePosition: number;
@@ -661,6 +664,8 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
         interviewer?: string | undefined;
         interviewDecision?: string | undefined;
         callbackRequested?: boolean | undefined;
+        flagged?: boolean | undefined;
+        attendance?: string | undefined;
         lateArrivalTime?: string | null | undefined;
         makeupDate?: string | null | undefined;
         attendanceExcused?: boolean | null | undefined;
@@ -697,7 +702,8 @@ export declare const GetApplicantResponse: zod.ZodObject<{
     interviewer: zod.ZodOptional<zod.ZodString>;
     interviewDecision: zod.ZodOptional<zod.ZodString>;
     callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
-    attendance: zod.ZodString;
+    flagged: zod.ZodOptional<zod.ZodBoolean>;
+    attendance: zod.ZodOptional<zod.ZodString>;
     lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     attendanceExcused: zod.ZodOptional<zod.ZodNullable<zod.ZodBoolean>>;
@@ -721,7 +727,6 @@ export declare const GetApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -731,6 +736,8 @@ export declare const GetApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -750,7 +757,6 @@ export declare const GetApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -760,6 +766,8 @@ export declare const GetApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -804,6 +812,7 @@ export declare const UpdateApplicantBody: zod.ZodObject<{
     interviewer: zod.ZodOptional<zod.ZodString>;
     interviewDecision: zod.ZodOptional<zod.ZodString>;
     callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
+    flagged: zod.ZodOptional<zod.ZodBoolean>;
     queuePosition: zod.ZodOptional<zod.ZodNumber>;
 }, "strip", zod.ZodTypeAny, {
     grade?: string | undefined;
@@ -824,6 +833,7 @@ export declare const UpdateApplicantBody: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
     attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
@@ -853,6 +863,7 @@ export declare const UpdateApplicantBody: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
     attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
@@ -883,7 +894,8 @@ export declare const UpdateApplicantResponse: zod.ZodObject<{
     interviewer: zod.ZodOptional<zod.ZodString>;
     interviewDecision: zod.ZodOptional<zod.ZodString>;
     callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
-    attendance: zod.ZodString;
+    flagged: zod.ZodOptional<zod.ZodBoolean>;
+    attendance: zod.ZodOptional<zod.ZodString>;
     lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     attendanceExcused: zod.ZodOptional<zod.ZodNullable<zod.ZodBoolean>>;
@@ -907,7 +919,6 @@ export declare const UpdateApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -917,6 +928,8 @@ export declare const UpdateApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -936,7 +949,6 @@ export declare const UpdateApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -946,6 +958,8 @@ export declare const UpdateApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -992,7 +1006,8 @@ export declare const RegenerateApplicantResponse: zod.ZodObject<{
     interviewer: zod.ZodOptional<zod.ZodString>;
     interviewDecision: zod.ZodOptional<zod.ZodString>;
     callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
-    attendance: zod.ZodString;
+    flagged: zod.ZodOptional<zod.ZodBoolean>;
+    attendance: zod.ZodOptional<zod.ZodString>;
     lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     attendanceExcused: zod.ZodOptional<zod.ZodNullable<zod.ZodBoolean>>;
@@ -1016,7 +1031,6 @@ export declare const RegenerateApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -1026,6 +1040,8 @@ export declare const RegenerateApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -1045,7 +1061,6 @@ export declare const RegenerateApplicantResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -1055,6 +1070,8 @@ export declare const RegenerateApplicantResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -1344,6 +1361,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1357,6 +1375,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1372,6 +1391,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1390,6 +1410,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1403,6 +1424,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1418,6 +1440,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1439,6 +1462,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1455,6 +1479,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1476,6 +1501,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1492,6 +1518,7 @@ export declare const GetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1529,6 +1556,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1542,6 +1570,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1557,6 +1586,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1575,6 +1605,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1588,6 +1619,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1603,6 +1635,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1624,6 +1657,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1640,6 +1674,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1661,6 +1696,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1677,6 +1713,7 @@ export declare const AdvanceQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1711,6 +1748,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1724,6 +1762,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1739,6 +1778,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1757,6 +1797,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1770,6 +1811,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1785,6 +1827,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1806,6 +1849,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1822,6 +1866,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1843,6 +1888,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1859,6 +1905,7 @@ export declare const UpdateQueueSettingsResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1886,6 +1933,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1899,6 +1947,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1914,6 +1963,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1932,6 +1982,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -1945,6 +1996,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1960,6 +2012,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1981,6 +2034,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -1997,6 +2051,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2018,6 +2073,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2034,6 +2090,7 @@ export declare const ResetQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2204,6 +2261,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -2217,6 +2275,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2232,6 +2291,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2250,6 +2310,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -2263,6 +2324,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2278,6 +2340,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2299,6 +2362,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2315,6 +2379,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2336,6 +2401,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2352,6 +2418,7 @@ export declare const ReorderQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2389,6 +2456,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -2402,6 +2470,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2417,6 +2486,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2435,6 +2505,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         notes: zod.ZodString;
         interviewDecision: zod.ZodString;
         callbackRequested: zod.ZodBoolean;
+        flagged: zod.ZodBoolean;
         attendance: zod.ZodString;
         lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
@@ -2448,6 +2519,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2463,6 +2535,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2484,6 +2557,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2500,6 +2574,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2521,6 +2596,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2537,6 +2613,7 @@ export declare const CallbackQueueResponse: zod.ZodObject<{
         interviewer: string;
         interviewDecision: string;
         callbackRequested: boolean;
+        flagged: boolean;
         attendance: string;
         notes: string;
         queuePosition: number;
@@ -2739,7 +2816,8 @@ export declare const AssignSeatResponse: zod.ZodObject<{
     interviewer: zod.ZodOptional<zod.ZodString>;
     interviewDecision: zod.ZodOptional<zod.ZodString>;
     callbackRequested: zod.ZodOptional<zod.ZodBoolean>;
-    attendance: zod.ZodString;
+    flagged: zod.ZodOptional<zod.ZodBoolean>;
+    attendance: zod.ZodOptional<zod.ZodString>;
     lateArrivalTime: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     makeupDate: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     attendanceExcused: zod.ZodOptional<zod.ZodNullable<zod.ZodBoolean>>;
@@ -2763,7 +2841,6 @@ export declare const AssignSeatResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -2773,6 +2850,8 @@ export declare const AssignSeatResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;
@@ -2792,7 +2871,6 @@ export declare const AssignSeatResponse: zod.ZodObject<{
     roboticsExperience: string;
     commit10Hours: string;
     parentVolunteer: string;
-    attendance: string;
     rank: number;
     notes: string;
     queuePosition: number;
@@ -2802,6 +2880,8 @@ export declare const AssignSeatResponse: zod.ZodObject<{
     interviewer?: string | undefined;
     interviewDecision?: string | undefined;
     callbackRequested?: boolean | undefined;
+    flagged?: boolean | undefined;
+    attendance?: string | undefined;
     lateArrivalTime?: string | null | undefined;
     makeupDate?: string | null | undefined;
     attendanceExcused?: boolean | null | undefined;

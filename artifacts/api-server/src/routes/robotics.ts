@@ -1090,6 +1090,7 @@ async function runAssistantTools(
         interviewer: typeof raw.interviewer === "string" ? String(raw.interviewer) : "",
         interviewDecision: typeof raw.interviewDecision === "string" ? String(raw.interviewDecision) : "Undecided",
         callbackRequested: typeof raw.callbackRequested === "boolean" ? Boolean(raw.callbackRequested) : false,
+        flagged: typeof raw.flagged === "boolean" ? Boolean(raw.flagged) : false,
         category: typeof raw.category === "string" && String(raw.category).trim() ? String(raw.category).trim() : "unranked",
         rank: typeof raw.rank === "number" && Number.isFinite(raw.rank) ? Math.floor(raw.rank as number) : nextPos + 1,
         notes: typeof raw.notes === "string" ? String(raw.notes).slice(0, 2000) : "",
@@ -1134,7 +1135,7 @@ async function runAssistantTools(
       if (typeof raw.interviewStatus === "string") patch.interviewStatus = String(raw.interviewStatus);
       if (typeof raw.interviewer === "string") patch.interviewer = String(raw.interviewer);
       if (typeof raw.interviewDecision === "string") patch.interviewDecision = String(raw.interviewDecision);
-      if (typeof raw.callbackRequested === "boolean") patch.callbackRequested = Boolean(raw.callbackRequested);
+      if (typeof raw.callbackRequested === "boolean") patch.callbackRequested = Boolean(raw.callbackRequested);       if (typeof raw.flagged === "boolean") patch.flagged = Boolean(raw.flagged);
       if (typeof raw.attendance === "string" && ["here", "late", "absent", "unmarked"].includes(String(raw.attendance))) patch.attendance = String(raw.attendance);
       if (typeof raw.lateArrivalTime === "string") patch.lateArrivalTime = String(raw.lateArrivalTime).trim().slice(0, 8) || null;
       if (typeof raw.makeupDate === "string") patch.makeupDate = String(raw.makeupDate).trim().slice(0, 10) || null;

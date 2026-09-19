@@ -17,6 +17,7 @@ export interface QueueApplicant {
   notes: string;
   interviewDecision: string;
   callbackRequested: boolean;
+  flagged: boolean;
   attendance: string;
   /** @nullable */
   lateArrivalTime?: string | null;

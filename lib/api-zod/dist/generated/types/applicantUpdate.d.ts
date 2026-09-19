@@ -57,6 +57,8 @@ export interface ApplicantUpdate {
     interviewer?: string;
     interviewDecision?: string;
     callbackRequested?: boolean;
+    /** Coordinator flag for follow-up */
+    flagged?: boolean;
     queuePosition?: number;
 }
 //# sourceMappingURL=applicantUpdate.d.ts.map

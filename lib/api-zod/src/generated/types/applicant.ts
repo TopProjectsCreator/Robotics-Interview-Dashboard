@@ -28,7 +28,9 @@ export interface Applicant {
   interviewer?: string;
   interviewDecision?: string;
   callbackRequested?: boolean;
-  attendance: string;
+  /** Coordinator flag for follow-up; set from the applicant list or detail view */
+  flagged?: boolean;
+  attendance?: string;
   /**
      * Arrival time (HH:MM 24h) when attendance is late
      * @nullable

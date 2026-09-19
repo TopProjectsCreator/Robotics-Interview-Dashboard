@@ -223,6 +223,7 @@ export async function restoreSnapshot(
         interviewer: String(rec.interviewer ?? ""),
         interviewDecision: String(rec.interviewDecision ?? "Undecided"),
         callbackRequested: Boolean(rec.callbackRequested ?? false),
+        flagged: Boolean(rec.flagged ?? false),
         category: String(rec.category ?? "unranked"),
         rank: typeof rec.rank === "number" ? rec.rank : 0,
         notes: String(rec.notes ?? ""),

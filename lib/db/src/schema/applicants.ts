@@ -22,6 +22,7 @@ export const applicantsTable = pgTable("applicants", {
   interviewer: text("interviewer").notNull().default(""),
   interviewDecision: text("interview_decision").notNull().default("Undecided"),
   callbackRequested: boolean("callback_requested").notNull().default(false),
+  flagged: boolean("flagged").notNull().default(false),
   attendance: text("attendance").notNull().default("unmarked"),
   lateArrivalTime: text("late_arrival_time"),
   makeupDate: text("makeup_date"),

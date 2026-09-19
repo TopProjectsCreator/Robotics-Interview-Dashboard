@@ -157,7 +157,9 @@ export interface Applicant {
   interviewer?: string;
   interviewDecision?: string;
   callbackRequested?: boolean;
-  attendance: string;
+  /** Coordinator flag for follow-up; set from the applicant list or detail view */
+  flagged?: boolean;
+  attendance?: string;
   /**
      * Arrival time (HH:MM 24h) when attendance is late
      * @nullable
@@ -246,6 +248,8 @@ export interface ApplicantUpdate {
   interviewer?: string;
   interviewDecision?: string;
   callbackRequested?: boolean;
+  /** Coordinator flag for follow-up */
+  flagged?: boolean;
   queuePosition?: number;
 }
 
@@ -325,6 +329,7 @@ export interface QueueApplicant {
   notes: string;
   interviewDecision: string;
   callbackRequested: boolean;
+  flagged: boolean;
   attendance: string;
   /** @nullable */
   lateArrivalTime?: string | null;

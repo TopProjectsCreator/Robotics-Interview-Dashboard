@@ -1199,7 +1199,8 @@ components:
         - interviewer
          - interviewDecision
          - callbackRequested
-        - attendance
+         - flagged
+         - attendance
         - category
         - rank
         - notes
@@ -1241,6 +1242,9 @@ components:
           type: string
         callbackRequested:
           type: boolean
+        flagged:
+          type: boolean
+          description: "Coordinator flag for follow-up; set from the applicant list or detail view"
         attendance:
           type: string
         lateArrivalTime:
@@ -1339,6 +1343,9 @@ components:
           type: string
         callbackRequested:
           type: boolean
+        flagged:
+          type: boolean
+          description: "Coordinator flag for follow-up"
         queuePosition:
           type: integer
     ImportInput:
@@ -1480,7 +1487,7 @@ components:
           type: string
     QueueApplicant:
       type: object
-      required: [id, name, grade, aiScore, category, queuePosition, interviewer, notes, interviewDecision, callbackRequested, attendance]
+      required: [id, name, grade, aiScore, category, queuePosition, interviewer, notes, interviewDecision, callbackRequested, flagged, attendance]
       properties:
         id:
           type: string
@@ -1501,6 +1508,8 @@ components:
         interviewDecision:
           type: string
         callbackRequested:
+          type: boolean
+        flagged:
           type: boolean
         attendance:
           type: string
