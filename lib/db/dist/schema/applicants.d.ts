@@ -326,6 +326,23 @@ export declare const applicantsTable: import("drizzle-orm/pg-core").PgTableWithC
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        flagged: import("drizzle-orm/pg-core").PgColumn<{
+            name: "flagged";
+            tableName: "applicants";
+            dataType: "boolean";
+            columnType: "PgBoolean";
+            data: boolean;
+            driverParam: boolean;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         attendance: import("drizzle-orm/pg-core").PgColumn<{
             name: "attendance";
             tableName: "applicants";
@@ -553,6 +570,7 @@ export declare const insertApplicantSchema: z.ZodObject<{
     interviewer: z.ZodOptional<z.ZodString>;
     interviewDecision: z.ZodOptional<z.ZodString>;
     callbackRequested: z.ZodOptional<z.ZodBoolean>;
+    flagged: z.ZodOptional<z.ZodBoolean>;
     attendance: z.ZodOptional<z.ZodString>;
     lateArrivalTime: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     makeupDate: z.ZodOptional<z.ZodNullable<z.ZodString>>;
