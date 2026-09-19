@@ -97880,7 +97880,22 @@ if (publicDir) {
 var app_default = app;
 
 // src/index.ts
+init_src();
 initRealtime();
+async function ensureSchema() {
+  const statements = [
+    `alter table "applicants" add column if not exists "flagged" boolean not null default false`
+  ];
+  for (const sql2 of statements) {
+    try {
+      await pool.query(sql2);
+    } catch (err) {
+      logger.error({ err, sql: sql2 }, "Schema migration failed");
+      throw err;
+    }
+  }
+  logger.info("Schema check passed");
+}
 var rawPort = process.env["PORT"];
 if (!rawPort) {
   throw new Error(
@@ -97897,6 +97912,10 @@ app_default.listen(port, (err) => {
     process.exit(1);
   }
   logger.info({ port }, "Server listening");
+  ensureSchema().catch((err2) => {
+    logger.error({ err: err2 }, "Schema migration failed; exiting");
+    process.exit(1);
+  });
 });
 /*! Bundled license information:
 
