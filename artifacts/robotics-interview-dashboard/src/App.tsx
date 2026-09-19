@@ -81,14 +81,17 @@ function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "ne
 function Skeleton({ className = "" }: { className?: string }) { return <div className={`animate-pulse rounded-lg bg-[#dfe7ea] ${className}`} />; }
 
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
-  const chips: { label: string; className: string; title: string }[] = [];
-  if (signals.build) chips.push({ label: "Build", className: "bg-[#e7f4ec] text-[#1d7a44]", title: "Hands-on build experience mentioned in file" });
-  if (signals.code) chips.push({ label: "Code", className: "bg-[#efe7fb] text-[#5e35b1]", title: "Coding / software experience mentioned in file" });
-  if (signals.cad) chips.push({ label: "CAD", className: "bg-[#e5effc] text-[#1a5fb4]", title: "CAD / 3D design experience mentioned in file" });
-  if (signals.gender === "M") chips.push({ label: "M", className: "bg-[#e5effc] text-[#1a5fb4]", title: "Pronouns in file suggest male" });
-  else if (signals.gender === "F") chips.push({ label: "F", className: "bg-[#fbe4ec] text-[#b0144f]", title: "Pronouns in file suggest female" });
-  else chips.push({ label: "?", className: "bg-[#edf1f3] text-[#7a8b90]", title: "No gender signal in file" });
-  return <span className="flex flex-wrap items-center gap-1">{chips.map(c => <span key={c.label} title={c.title} className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c.className}`}>{c.label}</span>)}</span>;
+  const chips: ({ label: string; className: string; title: string } | null)[] = [];
+  if (signals.skill === "BUILD") chips.push({ label: "Build", className: "bg-[#e7f4ec] text-[#1d7a44]", title: "Strongest signal: hands-on build experience" });
+  else if (signals.skill === "CODE") chips.push({ label: "Code", className: "bg-[#efe7fb] text-[#5e35b1]", title: "Strongest signal: coding / software experience" });
+  else if (signals.skill === "CAD") chips.push({ label: "CAD", className: "bg-[#e5effc] text-[#1a5fb4]", title: "Strongest signal: CAD / 3D design experience" });
+  chips.push(signals.gender === "M"
+    ? { label: "M", className: "bg-[#e5effc] text-[#1a5fb4]", title: "Gender" }
+    : signals.gender === "F"
+      ? { label: "F", className: "bg-[#fbe4ec] text-[#b0144f]", title: "Gender" }
+      : null);
+  const visible = chips.filter((c): c is { label: string; className: string; title: string } => c !== null);
+  return <span className="flex flex-wrap items-center gap-1">{visible.map(c => <span key={c.label} title={c.title} className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c.className}`}>{c.label}</span>)}</span>;
 }
 function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compact?: boolean }) {
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;
