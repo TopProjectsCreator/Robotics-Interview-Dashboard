@@ -1057,8 +1057,18 @@ function Applicants() {
   const [printOpen, setPrintOpen] = useState(false);
   const [regenAll, setRegenAll] = useState<{ running: boolean; done: number; total: number; current: string; failed: string[]; finished: boolean; cancelled: boolean; error: string }>({ running: false, done: 0, total: 0, current: "", failed: [], finished: false, cancelled: false, error: "" });
   const regenAllCancel = useRef(false);
-  const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort }), [search, category, grade, sort]);
+  const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort: sort === "skill" || sort === "gender" ? "rank" : sort }), [search, category, grade, sort]);
   const list = useListApplicants(params, { query: { queryKey: getListApplicantsQueryKey(params) } });
+  const skillRank = (s: ApplicantSignals) => s.skill === "BUILD" ? 0 : s.skill === "CAD" ? 1 : s.skill === "CODE" ? 2 : 3;
+  const genderRank = (s: ApplicantSignals) => s.gender === "M" ? 0 : s.gender === "F" ? 1 : 2;
+  const items = useMemo(() => {
+    const rows = list.data?.items ?? [];
+    if (sort !== "skill" && sort !== "gender") return rows;
+    const sig = new Map(rows.map(a => [a.id, getApplicantSignals(a)] as const));
+    const bySkill = (a: Applicant, b: Applicant) => skillRank(sig.get(a.id)!) - skillRank(sig.get(b.id)!) || a.name.localeCompare(b.name);
+    const byGender = (a: Applicant, b: Applicant) => genderRank(sig.get(a.id)!) - genderRank(sig.get(b.id)!) || a.name.localeCompare(b.name);
+    return [...rows].sort(sort === "skill" ? bySkill : byGender);
+  }, [list.data, sort]);
   const update = useUpdateApplicant();
   const qc = useQueryClient();
   const [dragId, setDragId] = useState<string | null>(null);
@@ -1138,15 +1148,15 @@ function Applicants() {
         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" placeholder="Search name, email, experience..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
-        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
+        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">
           <div className="flex items-center justify-between border-b border-[#e5ecec] px-5 py-4"><div><h2 className="font-semibold">Review queue <span className="mono ml-2 text-xs text-[#16869a]">{list.data?.total ?? 0}</span></h2></div><span className="flex items-center gap-2 text-xs text-[#7c8c91]"><Filter size={14} /> filtered view</span></div>
-          {!list.data?.items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p><p className="mt-1 text-sm text-[#7c8c91]">Try widening the field or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{list.data.items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => setSelected(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
+          {!items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p><p className="mt-1 text-sm text-[#7c8c91]">Try widening the field or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => setSelected(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
         </div>
-        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={list.data?.items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={setSelected} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
+        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={setSelected} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
       </div>
     </>}
     {selected && <ApplicantDetail id={selected} onClose={() => setSelected(null)} />}
