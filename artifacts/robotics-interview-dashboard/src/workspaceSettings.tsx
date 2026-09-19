@@ -9,6 +9,7 @@ export interface WorkspaceSettings {
   defaultSort: string;
   autoRefresh: boolean;
   refreshMs: number;
+  realtime: boolean;
 }
 
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   defaultSort: "rank",
   autoRefresh: true,
   refreshMs: 3000,
+  realtime: false,
 };
 
 export const REFRESH_OPTIONS = [

@@ -5,6 +5,7 @@ import roboticsRouter from "./robotics";
 import storageRouter from "./storage";
 import presenceRouter from "./presence";
 import broadcastsRouter from "./broadcasts";
+import eventsRouter from "./events";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(roboticsRouter);
 router.use(storageRouter);
 router.use(presenceRouter);
 router.use(broadcastsRouter);
+router.use(eventsRouter);
 
 export default router;

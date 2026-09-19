@@ -39,6 +39,7 @@ import type { LucideIcon } from "lucide-react";
 import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
+import { useRealtimeSync } from "./useRealtimeSync";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -168,6 +169,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
+        <SettingRow title="Instant updates" detail="Pushes changes in about a second via Supabase Realtime. Polling stays on as backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Notifications</p>
@@ -914,6 +916,7 @@ function Shell({ children }: { children: ReactNode }) {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const logout = useLogout();
   usePresenceHeartbeat(session.data?.authenticated === true, location);
+  useRealtimeSync(session.data?.authenticated === true);
   const qc = useQueryClient();
   const broadcasts = useGetMyBroadcasts({
     query: {

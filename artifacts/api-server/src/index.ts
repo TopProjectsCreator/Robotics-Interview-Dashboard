@@ -1,5 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { initRealtime } from "./lib/realtime";
+
+initRealtime();
 
 const rawPort = process.env["PORT"];
 

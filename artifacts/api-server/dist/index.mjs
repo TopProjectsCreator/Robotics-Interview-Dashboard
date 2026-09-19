@@ -5269,9 +5269,9 @@ var require_unpipe = __commonJS({
     "use strict";
     module.exports = unpipe;
     function hasPipeDataListeners(stream) {
-      var listeners = stream.listeners("data");
-      for (var i = 0; i < listeners.length; i++) {
-        if (listeners[i].name === "ondata") {
+      var listeners2 = stream.listeners("data");
+      for (var i = 0; i < listeners2.length; i++) {
+        if (listeners2[i].name === "ondata") {
           return true;
         }
       }
@@ -5289,9 +5289,9 @@ var require_unpipe = __commonJS({
         return;
       }
       var listener;
-      var listeners = stream.listeners("close");
-      for (var i = 0; i < listeners.length; i++) {
-        listener = listeners[i];
+      var listeners2 = stream.listeners("close");
+      for (var i = 0; i < listeners2.length; i++) {
+        listener = listeners2[i];
         if (listener.name !== "cleanup" && listener.name !== "onclose") {
           continue;
         }
@@ -20705,27 +20705,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router8;
+    module.exports = Router9;
     module.exports.Route = Route;
-    function Router8(options) {
-      if (!(this instanceof Router8)) {
-        return new Router8(options);
+    function Router9(options) {
+      if (!(this instanceof Router9)) {
+        return new Router9(options);
       }
       const opts = options || {};
-      function router8(req, res, next) {
-        router8.handle(req, res, next);
+      function router9(req, res, next) {
+        router9.handle(req, res, next);
       }
-      Object.setPrototypeOf(router8, this);
-      router8.caseSensitive = opts.caseSensitive;
-      router8.mergeParams = opts.mergeParams;
-      router8.params = {};
-      router8.strict = opts.strict;
-      router8.stack = [];
-      return router8;
+      Object.setPrototypeOf(router9, this);
+      router9.caseSensitive = opts.caseSensitive;
+      router9.mergeParams = opts.mergeParams;
+      router9.params = {};
+      router9.strict = opts.strict;
+      router9.stack = [];
+      return router9;
     }
-    Router8.prototype = function() {
+    Router9.prototype = function() {
     };
-    Router8.prototype.param = function param2(name2, fn) {
+    Router9.prototype.param = function param2(name2, fn) {
       if (!name2) {
         throw new TypeError("argument name is required");
       }
@@ -20745,7 +20745,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router8.prototype.handle = function handle(req, res, callback) {
+    Router9.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20872,7 +20872,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router8.prototype.use = function use(handler) {
+    Router9.prototype.use = function use(handler) {
       let offset = 0;
       let path4 = "/";
       if (typeof handler !== "function") {
@@ -20905,7 +20905,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router8.prototype.route = function route(path4) {
+    Router9.prototype.route = function route(path4) {
       const route2 = new Route(path4);
       const layer = new Layer(path4, {
         sensitive: this.caseSensitive,
@@ -20920,7 +20920,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router8.prototype[method] = function(path4) {
+      Router9.prototype[method] = function(path4) {
         const route = this.route(path4);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21103,13 +21103,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router8 = null;
+      var router9 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21118,13 +21118,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router8 === null) {
-            router8 = new Router8({
+          if (router9 === null) {
+            router9 = new Router9({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router8;
+          return router9;
         }
       });
     };
@@ -21195,15 +21195,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router8 = this.router;
+      var router9 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router8.use(path4, fn2);
+          return router9.use(path4, fn2);
         }
         debug(".use app under %s", path4);
         fn2.mountpath = path4;
         fn2.parent = this;
-        router8.use(path4, function mounted_app(req, res, next) {
+        router9.use(path4, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23788,7 +23788,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router8 = require_router();
+    var Router9 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23810,8 +23810,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router8.Route;
-    exports.Router = Router8;
+    exports.Route = Router9.Route;
+    exports.Router = Router9;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -58765,11 +58765,11 @@ var require_RealtimeChannel = __commonJS({
           this.socket.connect();
         }
         if (this.channelAdapter.isClosed()) {
-          const { config: { broadcast, presence, private: isPrivate, postgres_changes_options } } = this.params;
+          const { config: { broadcast: broadcast2, presence, private: isPrivate, postgres_changes_options } } = this.params;
           const postgres_changes = (_b = (_a3 = this.bindings.postgres_changes) === null || _a3 === void 0 ? void 0 : _a3.map((r) => r.filter)) !== null && _b !== void 0 ? _b : [];
           const presence_enabled = !!this.bindings[REALTIME_LISTEN_TYPES.PRESENCE] && this.bindings[REALTIME_LISTEN_TYPES.PRESENCE].length > 0 || ((_c = this.params.config.presence) === null || _c === void 0 ? void 0 : _c.enabled) === true;
           const accessTokenPayload = {};
-          const config2 = Object.assign({ broadcast, presence: Object.assign(Object.assign({}, presence), { enabled: presence_enabled }), postgres_changes, private: isPrivate }, postgres_changes_options ? { postgres_changes_options } : {});
+          const config2 = Object.assign({ broadcast: broadcast2, presence: Object.assign(Object.assign({}, presence), { enabled: presence_enabled }), postgres_changes, private: isPrivate }, postgres_changes_options ? { postgres_changes_options } : {});
           if (this.socket.accessTokenValue) {
             accessTokenPayload.access_token = this.socket.accessTokenValue;
           }
@@ -67309,15 +67309,15 @@ var require_GoTrueClient = __commonJS({
           this._debug(debugName, "end");
         }
       }
-      async _notifyAllSubscribers(event, session, broadcast = true) {
-        if (this._pendingInitNotifications !== null && broadcast) {
-          this._pendingInitNotifications.push({ event, session, broadcast });
+      async _notifyAllSubscribers(event, session, broadcast2 = true) {
+        if (this._pendingInitNotifications !== null && broadcast2) {
+          this._pendingInitNotifications.push({ event, session, broadcast: broadcast2 });
           return;
         }
         const debugName = `#_notifyAllSubscribers(${event})`;
-        this._debug(debugName, "begin", session, `broadcast = ${broadcast}`);
+        this._debug(debugName, "begin", session, `broadcast = ${broadcast2}`);
         try {
-          if (this.broadcastChannel && broadcast) {
+          if (this.broadcastChannel && broadcast2) {
             this.broadcastChannel.postMessage({ event, session });
           }
           const errors = [];
@@ -68803,7 +68803,7 @@ var require_main3 = __commonJS({
 });
 
 // src/app.ts
-var import_express8 = __toESM(require_express2(), 1);
+var import_express9 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_cookie_parser = __toESM(require_cookie_parser(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
@@ -68811,7 +68811,7 @@ import path3 from "node:path";
 import { existsSync } from "node:fs";
 
 // src/routes/index.ts
-var import_express7 = __toESM(require_express2(), 1);
+var import_express8 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -76286,8 +76286,8 @@ var EventStream = class {
    * @returns this ChatCompletionStream, so that calls can be chained
    */
   on(event, listener) {
-    const listeners = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] || (__classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = []);
-    listeners.push({ listener });
+    const listeners2 = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] || (__classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = []);
+    listeners2.push({ listener });
     return this;
   }
   /**
@@ -76298,12 +76298,12 @@ var EventStream = class {
    * @returns this ChatCompletionStream, so that calls can be chained
    */
   off(event, listener) {
-    const listeners = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event];
-    if (!listeners)
+    const listeners2 = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event];
+    if (!listeners2)
       return this;
-    const index = listeners.findIndex((l) => l.listener === listener);
+    const index = listeners2.findIndex((l) => l.listener === listener);
     if (index >= 0)
-      listeners.splice(index, 1);
+      listeners2.splice(index, 1);
     return this;
   }
   /**
@@ -76312,8 +76312,8 @@ var EventStream = class {
    * @returns this ChatCompletionStream, so that calls can be chained
    */
   once(event, listener) {
-    const listeners = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] || (__classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = []);
-    listeners.push({ listener, once: true });
+    const listeners2 = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] || (__classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = []);
+    listeners2.push({ listener, once: true });
     return this;
   }
   /**
@@ -76444,14 +76444,14 @@ var EventStream = class {
       __classPrivateFieldSet(this, _EventStream_ended, true, "f");
       __classPrivateFieldGet(this, _EventStream_resolveEndPromise, "f").call(this);
     }
-    const listeners = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event];
-    if (listeners) {
-      __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = listeners.filter((l) => !l.once);
-      listeners.forEach(({ listener }) => listener(...args));
+    const listeners2 = __classPrivateFieldGet(this, _EventStream_listeners, "f")[event];
+    if (listeners2) {
+      __classPrivateFieldGet(this, _EventStream_listeners, "f")[event] = listeners2.filter((l) => !l.once);
+      listeners2.forEach(({ listener }) => listener(...args));
     }
     if (event === "abort") {
       const error40 = args[0];
-      if (!__classPrivateFieldGet(this, _EventStream_catchingPromiseCreated, "f") && !listeners?.length) {
+      if (!__classPrivateFieldGet(this, _EventStream_catchingPromiseCreated, "f") && !listeners2?.length) {
         Promise.reject(error40);
       }
       __classPrivateFieldGet(this, _EventStream_rejectConnectedPromise, "f").call(this, error40);
@@ -76461,7 +76461,7 @@ var EventStream = class {
     }
     if (event === "error") {
       const error40 = args[0];
-      if (!__classPrivateFieldGet(this, _EventStream_catchingPromiseCreated, "f") && !listeners?.length) {
+      if (!__classPrivateFieldGet(this, _EventStream_catchingPromiseCreated, "f") && !listeners2?.length) {
         Promise.reject(error40);
       }
       __classPrivateFieldGet(this, _EventStream_rejectConnectedPromise, "f").call(this, error40);
@@ -97662,18 +97662,131 @@ router6.post("/broadcasts/:broadcastId/ack", async (req, res) => {
 });
 var broadcasts_default = router6;
 
-// src/routes/index.ts
+// src/routes/events.ts
+var import_express7 = __toESM(require_express2(), 1);
+
+// src/lib/realtime.ts
+var WATCHED_TABLES = [
+  "applicants",
+  "interview_queue",
+  "display_settings",
+  "interview_chat_messages",
+  "broadcasts",
+  "seating_settings",
+  "dashboard_charts"
+];
+var listeners = /* @__PURE__ */ new Set();
+var supabase2 = null;
+var started = false;
+function addRealtimeListener(listener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function broadcast(hint) {
+  for (const listener of listeners) {
+    try {
+      listener(hint);
+    } catch (error40) {
+      logger.error({ err: error40 }, "Realtime listener failed");
+    }
+  }
+}
+function initRealtime() {
+  if (started) return;
+  started = true;
+  const url2 = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url2 || !key) {
+    logger.warn(
+      "Supabase realtime relay disabled: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing. Live pages fall back to polling."
+    );
+    return;
+  }
+  try {
+    supabase2 = createClient(url2, key, {
+      realtime: { params: { eventsPerSecond: 20 } }
+    });
+    const channel = supabase2.channel("dashboard-changes");
+    for (const table of WATCHED_TABLES) {
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        (payload) => broadcast({ table, event: payload.eventType })
+      );
+    }
+    channel.subscribe((status, error40) => {
+      if (error40) {
+        logger.error({ err: error40 }, "Supabase realtime subscription error");
+        return;
+      }
+      logger.info({ status }, "Supabase realtime status");
+    });
+  } catch (error40) {
+    logger.error({ err: error40 }, "Failed to start Supabase realtime relay");
+    supabase2 = null;
+  }
+}
+var sseClients = /* @__PURE__ */ new Set();
+function addSseClient(res) {
+  sseClients.add(res);
+  const removeListener = addRealtimeListener((hint) => {
+    try {
+      res.write(`data: ${JSON.stringify(hint)}
+
+`);
+    } catch {
+    }
+  });
+  return () => {
+    removeListener();
+    sseClients.delete(res);
+  };
+}
+
+// src/routes/events.ts
 var router7 = (0, import_express7.Router)();
-router7.use(health_default);
-router7.use(auth_default);
-router7.use(robotics_default);
-router7.use(storage_default);
-router7.use(presence_default);
-router7.use(broadcasts_default);
-var routes_default = router7;
+router7.get("/events", requireAdmin, (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.flushHeaders();
+  res.write(`: connected
+
+`);
+  const remove2 = addSseClient(res);
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: ping
+
+`);
+    } catch {
+    }
+  }, 2e4);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    remove2();
+  });
+});
+var events_default = router7;
+
+// src/routes/index.ts
+var router8 = (0, import_express8.Router)();
+router8.use(health_default);
+router8.use(auth_default);
+router8.use(robotics_default);
+router8.use(storage_default);
+router8.use(presence_default);
+router8.use(broadcasts_default);
+router8.use(events_default);
+var routes_default = router8;
 
 // src/app.ts
-var app = (0, import_express8.default)();
+var app = (0, import_express9.default)();
 app.set("trust proxy", 1);
 app.use(
   (0, import_pino_http.default)({
@@ -97701,8 +97814,8 @@ app.use((0, import_cors.default)({
 }));
 app.use((0, import_cookie_parser.default)());
 app.use(attachAdminSession);
-app.use(import_express8.default.json());
-app.use(import_express8.default.urlencoded({ extended: true }));
+app.use(import_express9.default.json());
+app.use(import_express9.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 function resolvePublicDir() {
   const serverDir = globalThis.__dirname ?? process.cwd();
@@ -97727,7 +97840,7 @@ function resolvePublicDir() {
 var publicDir = resolvePublicDir();
 if (publicDir) {
   logger.info({ publicDir }, "Serving frontend build");
-  app.use(import_express8.default.static(publicDir, { index: false }));
+  app.use(import_express9.default.static(publicDir, { index: false }));
   app.use((req, res, next) => {
     if (req.path.startsWith("/api")) {
       res.status(404).json({ error: "Not found" });
@@ -97743,6 +97856,7 @@ if (publicDir) {
 var app_default = app;
 
 // src/index.ts
+initRealtime();
 var rawPort = process.env["PORT"];
 if (!rawPort) {
   throw new Error(
