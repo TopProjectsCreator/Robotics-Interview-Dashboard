@@ -391,12 +391,30 @@ export interface InterviewChatInput {
   activities?: AssistantActivity[];
 }
 
+export interface ChatReaction {
+  emoji: string;
+  count: number;
+  authors: string[];
+}
+
 export interface InterviewChatMessage {
   id: string;
   author: string;
   message: string;
   activities?: AssistantActivity[];
+  reactions?: ChatReaction[];
   createdAt: string;
+}
+
+export interface ChatReactionInput {
+  /** Single emoji character */
+  emoji: string;
+  /** Interviewer label reacting */
+  author: string;
+}
+
+export interface ChatReactionList {
+  reactions: ChatReaction[];
 }
 
 export interface InterviewChat {

@@ -490,6 +490,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/{messageId}/reactions:
+    post:
+      operationId: toggleChatReaction
+      tags: [queue]
+      summary: Toggle an emoji reaction on a chat message
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatReactionInput"
+      responses:
+        "200":
+          description: Updated reaction list for the message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatReactionList"
   /queue/reorder:
     post:
       operationId: reorderQueue
@@ -1612,8 +1636,42 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantActivity"
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatReaction"
         createdAt:
           type: string
+    ChatReaction:
+      type: object
+      required: [emoji, count, authors]
+      properties:
+        emoji:
+          type: string
+        count:
+          type: integer
+        authors:
+          type: array
+          items:
+            type: string
+    ChatReactionInput:
+      type: object
+      required: [emoji, author]
+      properties:
+        emoji:
+          type: string
+          description: "Single emoji character"
+        author:
+          type: string
+          description: "Interviewer label reacting"
+    ChatReactionList:
+      type: object
+      required: [reactions]
+      properties:
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatReaction"
     InterviewChat:
       type: object
       required: [items]

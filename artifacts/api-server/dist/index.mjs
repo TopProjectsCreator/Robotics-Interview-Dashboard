@@ -54502,7 +54502,7 @@ var init_applicants = __esm({
 });
 
 // ../../lib/db/src/schema/interview.ts
-var interviewQueueTable, interviewChatMessagesTable, importsTable, insertInterviewQueueSchema, insertImportSchema, insertInterviewChatMessageSchema;
+var interviewQueueTable, interviewChatMessagesTable, chatMessageReactionsTable, importsTable, insertInterviewQueueSchema, insertImportSchema, insertInterviewChatMessageSchema;
 var init_interview = __esm({
   "../../lib/db/src/schema/interview.ts"() {
     "use strict";
@@ -54518,6 +54518,13 @@ var init_interview = __esm({
       author: text("author").notNull(),
       message: text("message").notNull(),
       activities: text("activities").notNull().default("[]"),
+      createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+    });
+    chatMessageReactionsTable = pgTable("chat_message_reactions", {
+      id: text("id").primaryKey(),
+      messageId: text("message_id").notNull().references(() => interviewChatMessagesTable.id, { onDelete: "cascade" }),
+      emoji: text("emoji").notNull(),
+      author: text("author").notNull(),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
     });
     importsTable = pgTable("application_imports", {
@@ -54733,6 +54740,7 @@ __export(schema_exports, {
   assistantMessagesTable: () => assistantMessagesTable,
   broadcastAcksTable: () => broadcastAcksTable,
   broadcastsTable: () => broadcastsTable,
+  chatMessageReactionsTable: () => chatMessageReactionsTable,
   dashboardChartsTable: () => dashboardChartsTable,
   dataSnapshotsTable: () => dataSnapshotsTable,
   displaySettingsTable: () => displaySettingsTable,
@@ -54779,6 +54787,7 @@ __export(src_exports, {
   assistantMessagesTable: () => assistantMessagesTable,
   broadcastAcksTable: () => broadcastAcksTable,
   broadcastsTable: () => broadcastsTable,
+  chatMessageReactionsTable: () => chatMessageReactionsTable,
   dashboardChartsTable: () => dashboardChartsTable,
   dataSnapshotsTable: () => dataSnapshotsTable,
   db: () => db,
@@ -73272,6 +73281,11 @@ var GetInterviewChatResponse = objectType({
       "tool": stringType(),
       "detail": stringType()
     })).optional(),
+    "reactions": arrayType(objectType({
+      "emoji": stringType(),
+      "count": numberType().int(),
+      "authors": arrayType(stringType())
+    })).optional(),
     "createdAt": stringType()
   }))
 });
@@ -73291,7 +73305,26 @@ var SendInterviewChatResponse = objectType({
     "tool": stringType(),
     "detail": stringType()
   })).optional(),
+  "reactions": arrayType(objectType({
+    "emoji": stringType(),
+    "count": numberType().int(),
+    "authors": arrayType(stringType())
+  })).optional(),
   "createdAt": stringType()
+});
+var ToggleChatReactionParams = objectType({
+  "messageId": coerce.string()
+});
+var ToggleChatReactionBody = objectType({
+  "emoji": stringType().describe("Single emoji character"),
+  "author": stringType().describe("Interviewer label reacting")
+});
+var ToggleChatReactionResponse = objectType({
+  "reactions": arrayType(objectType({
+    "emoji": stringType(),
+    "count": numberType().int(),
+    "authors": arrayType(stringType())
+  }))
 });
 var ReorderQueueBody = objectType({
   "applicantIds": arrayType(stringType())
@@ -84984,1464 +85017,6 @@ var logger = (0, import_pino.default)({
   }
 });
 
-// src/lib/snapshots.ts
-init_drizzle_orm();
-init_src();
-import { randomUUID as randomUUID3 } from "node:crypto";
-
-// src/lib/roboticsData.ts
-init_drizzle_orm();
-init_src();
-import { randomUUID as randomUUID2 } from "node:crypto";
-var demoApplicants = [
-  ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
-  ["58054974-c229-4c14-9563-ed15b4e8969a", "Tester", "6th", 85, "Strong Yes", "Experience with mBot and Elegoo kits, including basic coding and physical assembly", "Yes", "Yes"],
-  ["8e0cb896-6b25-4e0f-a493-bdd8a920320d", "Demo Applicant", "6th", -1, "No", "None provided; responses were nonsensical or antagonistic", "No", "Unclear"],
-  ["d4ff3cbd-2cfe-4a68-b5af-6e90b32e9bf7", "Anonymous", "7th", 15, "No", "None", "No", "Yes"],
-  ["4e3280c8-738e-47a8-a775-7c4229bd9d19", "hi", "7th", 5, "No", "None", "Unclear", "Unclear"],
-  ["9b40960b-4edb-41dd-94db-d79dd8a246d5", "Demo Candidate", "6th", 15, "No", "Unknown; applicant refused to answer", "Unclear", "Unclear"],
-  ["039cd7ed-0e18-46c4-9ded-ed276de59a53", "a", "7th", 20, "No", "No known experience", "Unclear", "Unclear"],
-  ["3dfcf6f2-c91b-4d28-9035-3ee3acc619e7", "Demo Student", "7th", 95, "Strong Yes", "2 years of LEGO Mindstorms and VEX IQ with a focus on chassis and mechanical structures", "Yes", "Yes"]
-];
-var demoChecked = false;
-async function ensureDemoData() {
-  if (demoChecked || process.env.DISABLE_DEMO_SEED === "true") return;
-  const existing = await db.select({ id: applicantsTable.id }).from(applicantsTable).limit(1);
-  if (existing.length === 0) {
-    await db.insert(applicantsTable).values(
-      demoApplicants.map(([id, name2, grade, aiScore, aiRecommendation, roboticsExperience, commit10Hours, parentVolunteer], index) => ({
-        id,
-        name: name2,
-        grade,
-        aiScore,
-        aiRecommendation,
-        aiSummary: aiRecommendation === "Strong Yes" ? "A promising candidate with a clear learning mindset and evidence of practical robotics work." : "Review the application carefully during the coordinator interview.",
-        aiStrengths: aiRecommendation === "Strong Yes" ? "hands-on building; problem-solving; commitment" : "Application review required",
-        aiConcerns: aiScore < 0 ? "Invalid or bug score" : aiScore < 50 ? "Needs interview follow-up" : "",
-        roboticsExperience,
-        commit10Hours,
-        parentVolunteer,
-        category: aiRecommendation === "Strong Yes" ? "advance" : "hold",
-        rank: index + 1,
-        notes: "",
-        queuePosition: index,
-        interviewStatus: "queued",
-        interviewer: "",
-        interviewDecision: "Undecided",
-        callbackRequested: false,
-        transcript: null,
-        email: null,
-        attachments: null
-      }))
-    ).onConflictDoNothing();
-  }
-  demoChecked = true;
-}
-async function getApplicants(filters) {
-  await ensureDemoData();
-  const all = await db.select().from(applicantsTable).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
-  const filtered = all.filter((applicant) => {
-    const query = filters?.search?.trim().toLowerCase();
-    if (query && !`${applicant.name} ${applicant.id}`.toLowerCase().includes(query)) return false;
-    if (filters?.grade && filters.grade !== "all" && applicant.grade !== filters.grade) return false;
-    if (filters?.recommendation && filters.recommendation !== "all" && applicant.aiRecommendation !== filters.recommendation) return false;
-    if (filters?.interviewStatus && filters.interviewStatus !== "all" && applicant.interviewStatus !== filters.interviewStatus) return false;
-    if (filters?.category && filters.category !== "all" && applicant.category !== filters.category) return false;
-    if (filters?.invalidOnly && applicant.aiScore !== -1) return false;
-    return true;
-  });
-  const sort = filters?.sort ?? "queue";
-  const gradeValue = (grade) => {
-    const parsed = Number.parseInt(grade, 10);
-    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
-  };
-  return filtered.sort((a, b) => {
-    if (sort === "score") return b.aiScore - a.aiScore;
-    if (sort === "name") return a.name.localeCompare(b.name);
-    if (sort === "rank") return a.rank - b.rank;
-    if (sort === "newest") return b.createdAt.getTime() - a.createdAt.getTime();
-    if (sort === "oldest") return a.createdAt.getTime() - b.createdAt.getTime();
-    if (sort === "grade") return gradeValue(a.grade) - gradeValue(b.grade) || a.name.localeCompare(b.name);
-    return a.queuePosition - b.queuePosition;
-  });
-}
-function applicantResponse(applicant) {
-  return {
-    id: applicant.id,
-    name: applicant.name,
-    grade: applicant.grade,
-    email: applicant.email,
-    photoUrl: applicant.photoUrl,
-    transcript: applicant.transcript,
-    aiScore: applicant.aiScore,
-    aiRecommendation: applicant.aiRecommendation,
-    aiSummary: applicant.aiSummary,
-    aiStrengths: applicant.aiStrengths,
-    aiConcerns: applicant.aiConcerns,
-    roboticsExperience: applicant.roboticsExperience,
-    commit10Hours: applicant.commit10Hours,
-    parentVolunteer: applicant.parentVolunteer,
-    interviewStatus: applicant.interviewStatus,
-    interviewer: applicant.interviewer,
-    interviewDecision: applicant.interviewDecision,
-    callbackRequested: applicant.callbackRequested,
-    flagged: applicant.flagged,
-    attendance: applicant.attendance,
-    lateArrivalTime: applicant.lateArrivalTime ?? null,
-    makeupDate: applicant.makeupDate ?? null,
-    attendanceExcused: applicant.attendanceExcused ?? null,
-    seatRow: applicant.seatRow ?? null,
-    seatCol: applicant.seatCol ?? null,
-    category: applicant.category,
-    rank: applicant.rank,
-    notes: applicant.notes,
-    queuePosition: applicant.queuePosition
-  };
-}
-function queueApplicantResponse(applicant) {
-  return {
-    id: applicant.id,
-    name: applicant.name,
-    grade: applicant.grade,
-    aiScore: applicant.aiScore,
-    category: applicant.category,
-    queuePosition: applicant.queuePosition,
-    interviewer: applicant.interviewer,
-    notes: applicant.notes,
-    interviewDecision: applicant.interviewDecision,
-    callbackRequested: applicant.callbackRequested,
-    flagged: applicant.flagged,
-    attendance: applicant.attendance,
-    lateArrivalTime: applicant.lateArrivalTime ?? null,
-    makeupDate: applicant.makeupDate ?? null,
-    attendanceExcused: applicant.attendanceExcused ?? null
-  };
-}
-function balancedCurrentApplicants(applicants, labels) {
-  if (!labels.length) return applicants;
-  const counts = new Map(labels.map((label) => [label, 0]));
-  return applicants.map((applicant) => {
-    const preferred = labels.includes(applicant.interviewer) && (counts.get(applicant.interviewer) ?? 0) === 0 ? applicant.interviewer : [...counts.entries()].sort((a, b) => a[1] - b[1])[0][0];
-    counts.set(preferred, (counts.get(preferred) ?? 0) + 1);
-    return { ...applicant, interviewer: preferred };
-  });
-}
-function normalizedLetters(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-function isNameVariant(a, b) {
-  const ka = normalizedLetters(a);
-  const kb = normalizedLetters(b);
-  if (!ka || !kb || ka === kb || ka.length < 3 || kb.length < 3) return false;
-  if (ka.split("").sort().join("") === kb.split("").sort().join("")) return true;
-  return editDistance(ka, kb) <= 2;
-}
-function editDistance(a, b) {
-  if (Math.abs(a.length - b.length) > 2) return 3;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let curr = i;
-    let rowMin = curr;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      const next = Math.min(prev[j] + 1, curr + 1, prev[j - 1] + cost);
-      prev[j - 1] = curr;
-      curr = next;
-      if (next < rowMin) rowMin = next;
-    }
-    prev[b.length] = curr;
-    if (rowMin > 2) return 3;
-  }
-  return prev[b.length];
-}
-async function transferInterviewers(fromRaw, toRaw, dryRun = false) {
-  const from = fromRaw.trim();
-  const to = toRaw.trim();
-  if (!from) {
-    return { ok: false, error: "A source interviewer is required." };
-  }
-  const labels = await getInterviewSettings();
-  const byLabelLower = new Map(labels.map((label) => [label.toLowerCase(), label]));
-  const applicants = await getApplicants({ sort: "queue" });
-  const storedValues = /* @__PURE__ */ new Map();
-  for (const applicant of applicants) {
-    const value = (applicant.interviewer || "").trim();
-    if (value && !storedValues.has(value.toLowerCase())) {
-      storedValues.set(value.toLowerCase(), value);
-    }
-  }
-  const matchAll = ["*", "all", "everyone", "everybody"].includes(from.toLowerCase());
-  const clearTo = ["", "unassigned", "none", "unassign", "clear", "cleared"].includes(to.toLowerCase());
-  if (!matchAll && from.toLowerCase() === to.toLowerCase()) {
-    return { ok: false, error: `"${from}" and "${to}" are the same interviewer \u2014 nothing to transfer.` };
-  }
-  const fromKey = from.toLowerCase();
-  const fromCanonical = matchAll ? "everyone" : byLabelLower.get(fromKey) ?? storedValues.get(fromKey) ?? from;
-  const toCanonical = clearTo ? "" : byLabelLower.get(to.toLowerCase());
-  if (toCanonical === void 0) {
-    const suggestions = labels.filter(
-      (label) => isNameVariant(label, to) || label.toLowerCase().startsWith(to.toLowerCase().slice(0, 3))
-    );
-    const hint = suggestions.length > 0 ? ` Did you mean "${suggestions[0]}"?` : "";
-    return { ok: false, error: `"${to}" is not a valid interviewer label (valid: ${labels.join(", ")}).${hint} Nothing was changed.` };
-  }
-  const toDisplay = clearTo ? "unassigned" : toCanonical;
-  const seen = /* @__PURE__ */ new Set();
-  const matched = [];
-  for (const applicant of applicants) {
-    const stored = (applicant.interviewer || "").trim();
-    if (!stored || seen.has(applicant.id)) continue;
-    const storedKey = stored.toLowerCase();
-    if (matchAll || storedKey === fromKey || isNameVariant(stored, from) || isNameVariant(byLabelLower.get(storedKey) ?? stored, from)) {
-      seen.add(applicant.id);
-      matched.push({ id: applicant.id, name: applicant.name, from: stored });
-    }
-  }
-  if (matched.length === 0) {
-    const known = [.../* @__PURE__ */ new Set([...labels, ...storedValues.values()])].join(", ");
-    const knownMatch = byLabelLower.has(fromKey) || storedValues.has(fromKey);
-    return {
-      ok: false,
-      error: knownMatch ? `Nobody is currently assigned to "${fromCanonical}" \u2014 nothing to transfer.` : `Nobody is assigned to "${from}". Known interviewer values: ${known || "none"}.`,
-      fromCanonical,
-      toCanonical,
-      matched: []
-    };
-  }
-  if (!dryRun) {
-    await db.transaction(async (tx) => {
-      for (const person of matched) {
-        await tx.update(applicantsTable).set({ interviewer: toCanonical, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, person.id));
-      }
-    });
-  }
-  return { ok: true, dryRun, from: fromCanonical, to: toDisplay, moved: matched };
-}
-function displayApplicantName(name2) {
-  const trimmed = name2.trim();
-  return !trimmed || trimmed.length > 48 || /https?:\/\//i.test(trimmed) || /@/.test(trimmed) ? "Applicant" : trimmed;
-}
-function buildAnnouncementText(applicants) {
-  const desk = (interviewer) => interviewer.trim().slice(0, 30) || "your interviewer";
-  const firstName = (name2) => displayApplicantName(name2).split(/\s+/)[0] || "Applicant";
-  const recalled = applicants.filter((applicant) => applicant.callbackRequested);
-  if (recalled.length) {
-    return recalled.map((a) => `${firstName(a.name)} please go back to ${desk(a.interviewer)}`).join(". ") + ".";
-  }
-  if (applicants.length) {
-    return applicants.map((a) => `${firstName(a.name)} please go to ${desk(a.interviewer)}`).join(". ") + ".";
-  }
-  return "The interview block is complete. Thank you for coming to the robotics tryouts.";
-}
-var DEFAULT_DISPLAY_SETTINGS = {
-  customHeadline: null,
-  customSubheadline: null,
-  showNames: true,
-  announce: true
-};
-async function getDisplaySettings() {
-  const [row] = await db.select().from(displaySettingsTable).limit(1);
-  if (!row) return { ...DEFAULT_DISPLAY_SETTINGS };
-  return {
-    customHeadline: row.customHeadline?.trim() ? row.customHeadline : null,
-    customSubheadline: row.customSubheadline?.trim() ? row.customSubheadline : null,
-    showNames: row.showNames,
-    announce: row.announce
-  };
-}
-function displaySettingsResponse(row) {
-  return {
-    headline: row.customHeadline,
-    subheadline: row.customSubheadline,
-    showNames: row.showNames,
-    announce: row.announce,
-    updatedAt: row.updatedAt.toISOString()
-  };
-}
-function resolveDisplaySpeech(autoHeadline, autoSubheadline, queueApplicants, settings) {
-  const headline = settings.customHeadline?.trim() || autoHeadline;
-  const subheadline = settings.customSubheadline?.trim() || autoSubheadline;
-  const custom2 = Boolean(settings.customHeadline?.trim() || settings.customSubheadline?.trim());
-  return {
-    headline,
-    subheadline,
-    announcement: custom2 ? `${headline}. ${subheadline}.` : buildAnnouncementText(queueApplicants)
-  };
-}
-function humanList(names) {
-  if (names.length > 2) return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
-  return names.join(" and ");
-}
-async function getDisplayView() {
-  const queue = await getQueueState();
-  const settings = await getDisplaySettings();
-  const mapped = queue.currentApplicants.map((applicant, index) => ({
-    id: applicant.id,
-    name: displayApplicantName(applicant.name),
-    grade: applicant.grade,
-    lane: applicant.interviewer || queue.interviewerLabels[index % queue.interviewerLabels.length] || "Your interviewer"
-  }));
-  const recalled = queue.currentApplicants.filter((applicant) => applicant.callbackRequested).map((applicant) => displayApplicantName(applicant.name));
-  const isCallback = recalled.length > 0;
-  const autoHeadline = isCallback ? "Please return to your interviewer" : mapped.length ? "Please come to your corresponding interviewer" : "Interview block complete";
-  const autoSubheadline = isCallback ? `${humanList(recalled)} \u2014 we aren't done with you yet, please come back` : mapped.length ? "Your Wolverines interview team is ready for you" : "Thank you for showing up and building boldly";
-  const speech = resolveDisplaySpeech(autoHeadline, autoSubheadline, queue.currentApplicants, settings);
-  return {
-    mode: isCallback ? "callback" : mapped.length ? "calling" : "complete",
-    headline: speech.headline,
-    subheadline: speech.subheadline,
-    announcement: speech.announcement,
-    currentApplicants: mapped,
-    updatedAt: queue.updatedAt
-  };
-}
-async function getSeatingSettings() {
-  const [row] = await db.select().from(seatingSettingsTable).limit(1);
-  return {
-    rows: Math.min(10, Math.max(1, row?.rows ?? 4)),
-    cols: Math.min(10, Math.max(1, row?.cols ?? 6))
-  };
-}
-function seatingSettingsResponse(row) {
-  return {
-    rows: row.rows,
-    cols: row.cols,
-    updatedAt: row.updatedAt.toISOString()
-  };
-}
-async function assignSeat(applicantId, row, col) {
-  if (row < 0 || col < 0) {
-    const [cleared] = await db.update(applicantsTable).set({ seatRow: null, seatCol: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, applicantId)).returning();
-    return cleared ?? null;
-  }
-  const [me] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, applicantId));
-  if (!me) return null;
-  const [occupant] = await db.select({ id: applicantsTable.id }).from(applicantsTable).where(and(eq(applicantsTable.seatRow, row), eq(applicantsTable.seatCol, col)));
-  if (occupant && occupant.id !== applicantId) {
-    await db.update(applicantsTable).set({ seatRow: me.seatRow, seatCol: me.seatCol, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, occupant.id));
-  }
-  const [updated] = await db.update(applicantsTable).set({ seatRow: row, seatCol: col, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, applicantId)).returning();
-  return updated ?? null;
-}
-async function getInterviewSettings() {
-  let [settings] = await db.select().from(interviewQueueTable);
-  if (!settings) {
-    await db.insert(interviewQueueTable).values({ id: 1 }).onConflictDoNothing();
-    [settings] = await db.select().from(interviewQueueTable);
-  }
-  try {
-    const labels = JSON.parse(settings?.interviewerLabels ?? "[]");
-    if (Array.isArray(labels) && labels.every((label) => typeof label === "string") && labels.length > 0) {
-      return labels.map((label) => label.trim()).filter(Boolean);
-    }
-  } catch {
-  }
-  return ["Interviewer 1", "Interviewer 2"];
-}
-async function getQueueState() {
-  const applicants = await getApplicants({ sort: "queue" });
-  const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
-  const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
-  const interviewerLabels = await getInterviewSettings();
-  const slotCount = Math.max(1, interviewerLabels.length);
-  const nextApplicants = remaining.slice(slotCount, slotCount * 2);
-  const currentApplicants = balancedCurrentApplicants(remaining.slice(0, slotCount), interviewerLabels);
-  const storedById = new Map(remaining.map((applicant) => [applicant.id, applicant.interviewer]));
-  for (const applicant of currentApplicants) {
-    if (!storedById.get(applicant.id) && applicant.interviewer) {
-      await db.update(applicantsTable).set({
-        interviewer: applicant.interviewer,
-        updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq(applicantsTable.id, applicant.id));
-    }
-  }
-  const latestUpdatedAt = applicants.reduce(
-    (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
-    0
-  );
-  return {
-    currentApplicants: currentApplicants.map(queueApplicantResponse),
-    nextApplicants: nextApplicants.map(queueApplicantResponse),
-    interviewerLabels,
-    completedCount,
-    remainingCount: remaining.length,
-    updatedAt: new Date(latestUpdatedAt || Date.now()).toISOString()
-  };
-}
-function splitLogicalRecords(input) {
-  const records = [];
-  let record2 = "";
-  let quoted = false;
-  for (let index = 0; index < input.length; index += 1) {
-    const char2 = input[index];
-    const next = input[index + 1];
-    if (char2 === '"') {
-      if (quoted && next === '"') {
-        record2 += '""';
-        index += 1;
-      } else {
-        quoted = !quoted;
-        record2 += char2;
-      }
-    } else if ((char2 === "\n" || char2 === "\r") && !quoted) {
-      if (char2 === "\r" && next === "\n") index += 1;
-      if (record2.trim() !== "") records.push(record2);
-      record2 = "";
-    } else {
-      record2 += char2;
-    }
-  }
-  if (record2.trim() !== "") records.push(record2);
-  return { records, unclosedQuote: quoted };
-}
-function parseRecord(record2, delimiter) {
-  const values = [];
-  let cell = "";
-  let quoted = false;
-  for (let index = 0; index < record2.length; index += 1) {
-    const char2 = record2[index];
-    const next = record2[index + 1];
-    if (char2 === '"') {
-      if (quoted && next === '"') {
-        cell += '"';
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (char2 === delimiter && !quoted) {
-      values.push(cell);
-      cell = "";
-    } else {
-      cell += char2;
-    }
-  }
-  values.push(cell);
-  return values;
-}
-function detectDelimiter(header) {
-  return [",", ";", "	"].map((delimiter) => ({ delimiter, count: parseRecord(header, delimiter).length })).sort((a, b) => b.count - a.count)[0]?.delimiter ?? ",";
-}
-function parseSemicolonCsv(input) {
-  const warnings = [];
-  const { records, unclosedQuote } = splitLogicalRecords(input);
-  if (unclosedQuote) warnings.push("The file ended with an open quote; the last row was recovered as best as possible.");
-  const headerRecord = records.shift() ?? "";
-  const delimiter = detectDelimiter(headerRecord);
-  const normalizeHeader = (header) => header.trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");
-  const headers = parseRecord(headerRecord, delimiter).map(normalizeHeader);
-  const candidates = [delimiter, ",", ";", "	"].filter((value, index, array2) => array2.indexOf(value) === index);
-  const rows = records.flatMap((record2, index) => {
-    const parsed = candidates.map((candidate) => ({ candidate, values: parseRecord(record2, candidate) })).sort((a, b) => Number(b.values.length === headers.length) - Number(a.values.length === headers.length) || Math.abs(a.values.length - headers.length) - Math.abs(b.values.length - headers.length))[0];
-    if (!parsed || parsed.values.length !== headers.length) {
-      warnings.push(`Row ${index + 2} has ${parsed?.values.length ?? 0} fields; expected ${headers.length}.`);
-      return [];
-    }
-    return [parsed.values];
-  });
-  return { headers, rows, warnings, delimiter: delimiter === "	" ? "tab" : delimiter };
-}
-function importDiff(imported, existing) {
-  const existingById = new Map(existing.map((applicant) => [applicant.id, applicant]));
-  let added = 0;
-  let updated = 0;
-  let unchanged = 0;
-  for (const applicant of imported) {
-    const previous = existingById.get(applicant.id);
-    if (!previous) {
-      added += 1;
-      continue;
-    }
-    const fields = ["name", "grade", "email", "transcript", "aiScore", "aiRecommendation", "aiSummary", "aiStrengths", "aiConcerns", "roboticsExperience", "commit10Hours", "parentVolunteer"];
-    if (fields.some((field) => previous[field] !== applicant[field])) updated += 1;
-    else unchanged += 1;
-  }
-  return {
-    added,
-    updated,
-    unchanged,
-    missingFromUpload: existing.filter((applicant) => !imported.some((row) => row.id === applicant.id)).length
-  };
-}
-function normalizeAiScore(value) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    if (value === -1) return -1;
-    return Math.min(100, Math.max(0, Math.round(value)));
-  }
-  if (typeof value !== "string" || value.trim() === "") return -1;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return -1;
-  if (parsed === -1) return -1;
-  return Math.min(100, Math.max(0, Math.round(parsed)));
-}
-function csvToApplicant(values, headers, queuePosition) {
-  const record2 = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  return {
-    id: record2.id || randomUUID2(),
-    name: record2.name || "Unnamed applicant",
-    grade: record2.grade || "Unknown",
-    email: record2.email || null,
-    transcript: record2.transcript || null,
-    attachments: record2.attachments || null,
-    aiScore: normalizeAiScore(record2.ai_score),
-    aiRecommendation: record2.ai_recommendation || "Review",
-    aiSummary: record2.ai_summary || "",
-    aiStrengths: record2.ai_strengths || "",
-    aiConcerns: record2.ai_concerns || "",
-    roboticsExperience: record2.robotics_experience || "",
-    commit10Hours: record2.commit_10_hours || "Unclear",
-    parentVolunteer: record2.parent_volunteer || "Unclear",
-    interviewStatus: "queued",
-    interviewer: "",
-    interviewDecision: "Undecided",
-    callbackRequested: false,
-    attendance: ["unmarked", "here", "absent", "late"].includes((record2.attendance || "").trim().toLowerCase()) ? (record2.attendance || "").trim().toLowerCase() : "unmarked",
-    category: "unranked",
-    rank: queuePosition + 1,
-    notes: record2.notes || "",
-    queuePosition
-  };
-}
-
-// src/lib/snapshots.ts
-var MAX_SNAPSHOTS = 50;
-function serializeApplicants(rows) {
-  return rows.map((a) => ({
-    ...a,
-    createdAt: a.createdAt.toISOString(),
-    updatedAt: a.updatedAt.toISOString()
-  }));
-}
-function summarize(row) {
-  return {
-    id: row.id,
-    label: row.label,
-    createdBy: row.createdBy,
-    applicantCount: row.applicantCount,
-    createdAt: row.createdAt.toISOString()
-  };
-}
-function parsePayload(raw) {
-  const parsed = JSON.parse(raw);
-  if (!parsed || typeof parsed !== "object") throw new Error("Corrupt snapshot payload");
-  const payload = parsed;
-  if (payload.version !== 1 || !Array.isArray(payload.applicants) || !Array.isArray(payload.interviewLabels) || !Array.isArray(payload.charts)) {
-    throw new Error("Unsupported snapshot payload");
-  }
-  return payload;
-}
-async function enforceRetention() {
-  const rows = await db.select({ id: dataSnapshotsTable.id }).from(dataSnapshotsTable).orderBy(desc(dataSnapshotsTable.createdAt));
-  const overflow = rows.slice(MAX_SNAPSHOTS);
-  for (const row of overflow) {
-    await db.delete(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, row.id));
-  }
-}
-async function captureSnapshot(label, createdBy) {
-  const applicants = await db.select().from(applicantsTable);
-  const interviewLabels = await getInterviewSettings();
-  const charts = await db.select({
-    source: dashboardChartsTable.source,
-    chart: dashboardChartsTable.chart,
-    position: dashboardChartsTable.position
-  }).from(dashboardChartsTable).orderBy(asc(dashboardChartsTable.position));
-  const payload = {
-    version: 1,
-    applicants: serializeApplicants(applicants),
-    interviewLabels,
-    charts
-  };
-  const cleanLabel = label.trim().slice(0, 120) || "Snapshot";
-  const [row] = await db.insert(dataSnapshotsTable).values({
-    id: randomUUID3(),
-    label: cleanLabel,
-    createdBy: createdBy === "assistant" ? "assistant" : "coordinator",
-    applicantCount: applicants.length,
-    payload: JSON.stringify(payload)
-  }).returning();
-  await enforceRetention();
-  return summarize(row);
-}
-async function listSnapshots() {
-  const rows = await db.select().from(dataSnapshotsTable).orderBy(desc(dataSnapshotsTable.createdAt));
-  return rows.map(summarize);
-}
-async function diffSnapshot(id) {
-  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
-  if (!row) throw new Error("Snapshot not found");
-  const payload = parsePayload(row.payload);
-  const current = await db.select().from(applicantsTable);
-  const labelsNow = await getInterviewSettings();
-  const labelsBefore = payload.interviewLabels;
-  const chartsNow = (await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable)).length;
-  const before = new Map(payload.applicants.map((a) => [String(a.id), a]));
-  const now = new Map(current.map((a) => [a.id, a]));
-  const addedNames = [];
-  const removedNames = [];
-  let changed = 0;
-  let unchanged = 0;
-  for (const [aid, a] of now) {
-    const old = before.get(aid);
-    if (!old) {
-      if (removedNames.length < 5) removedNames.push(a.name);
-    } else {
-      const { updatedAt: _u1, ...restNow } = a;
-      const { updatedAt: _u2, ...restOld } = old;
-      const norm = (v) => v instanceof Date ? v.toISOString() : v;
-      const keys = /* @__PURE__ */ new Set([...Object.keys(restNow), ...Object.keys(restOld)]);
-      let same = true;
-      for (const key of keys) {
-        if (JSON.stringify(norm(restNow[key])) !== JSON.stringify(norm(restOld[key]))) {
-          same = false;
-          break;
-        }
-      }
-      if (same) unchanged += 1;
-      else changed += 1;
-    }
-  }
-  for (const [aid, a] of before) {
-    if (!now.has(aid)) {
-      const rec = a;
-      if (addedNames.length < 5) addedNames.push(String(rec.name ?? aid));
-    }
-  }
-  const addedIds = [...before.keys()].filter((k) => !now.has(k));
-  const removedIds = [...now.keys()].filter((k) => !before.has(k));
-  return {
-    summary: summarize(row),
-    diff: {
-      added: addedIds.length,
-      removed: removedIds.length,
-      changed,
-      unchanged,
-      addedNames,
-      removedNames,
-      labelsChanged: JSON.stringify([...labelsBefore].sort()) !== JSON.stringify([...labelsNow].sort()),
-      labelsBefore,
-      labelsNow,
-      chartsChanged: chartsNow !== payload.charts.length,
-      chartsBefore: payload.charts.length,
-      chartsNow
-    }
-  };
-}
-async function restoreSnapshot(id, actor) {
-  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
-  if (!row) throw new Error("Snapshot not found");
-  const payload = parsePayload(row.payload);
-  const pre = await captureSnapshot(`Before restoring "${row.label}"`, actor);
-  await db.transaction(async (tx) => {
-    await tx.delete(applicantsTable);
-    for (const raw of payload.applicants) {
-      const rec = raw;
-      await tx.insert(applicantsTable).values({
-        id: String(rec.id),
-        name: String(rec.name ?? "Unnamed applicant"),
-        grade: String(rec.grade ?? "Unknown"),
-        email: rec.email ?? null,
-        photoUrl: rec.photoUrl ?? null,
-        transcript: rec.transcript ?? null,
-        attachments: rec.attachments ?? null,
-        aiScore: typeof rec.aiScore === "number" ? rec.aiScore : -1,
-        aiRecommendation: String(rec.aiRecommendation ?? "Review"),
-        aiSummary: String(rec.aiSummary ?? ""),
-        aiStrengths: String(rec.aiStrengths ?? ""),
-        aiConcerns: String(rec.aiConcerns ?? ""),
-        roboticsExperience: String(rec.roboticsExperience ?? ""),
-        commit10Hours: String(rec.commit10Hours ?? "Unclear"),
-        parentVolunteer: String(rec.parentVolunteer ?? "Unclear"),
-        interviewStatus: String(rec.interviewStatus ?? "queued"),
-        interviewer: String(rec.interviewer ?? ""),
-        interviewDecision: String(rec.interviewDecision ?? "Undecided"),
-        callbackRequested: Boolean(rec.callbackRequested ?? false),
-        flagged: Boolean(rec.flagged ?? false),
-        category: String(rec.category ?? "unranked"),
-        rank: typeof rec.rank === "number" ? rec.rank : 0,
-        notes: String(rec.notes ?? ""),
-        queuePosition: typeof rec.queuePosition === "number" ? rec.queuePosition : 0,
-        createdAt: rec.createdAt ? new Date(String(rec.createdAt)) : /* @__PURE__ */ new Date(),
-        updatedAt: /* @__PURE__ */ new Date()
-      });
-    }
-    await tx.insert(interviewQueueTable).values({ id: 1, interviewerLabels: JSON.stringify(payload.interviewLabels) }).onConflictDoUpdate({
-      target: interviewQueueTable.id,
-      set: { interviewerLabels: JSON.stringify(payload.interviewLabels), updatedAt: /* @__PURE__ */ new Date() }
-    });
-    await tx.delete(dashboardChartsTable);
-    for (const chart of payload.charts) {
-      await tx.insert(dashboardChartsTable).values({
-        id: randomUUID3(),
-        source: chart.source,
-        chart: chart.chart,
-        position: chart.position
-      });
-    }
-  });
-  return { restoredId: id, preRestoreId: pre.id, applicantCount: payload.applicants.length };
-}
-
-// src/lib/websearch.ts
-import { promises as dns } from "node:dns";
-var FETCH_TIMEOUT_MS = 12e3;
-var MAX_SNIPPET = 300;
-function cleanSnippet(value) {
-  if (typeof value !== "string") return "";
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_SNIPPET);
-}
-function normalizeSources(value) {
-  if (!Array.isArray(value) || value.length === 0) return null;
-  const out = [];
-  for (const entry of value.slice(0, 5)) {
-    if (typeof entry !== "string") continue;
-    let host = entry.trim().toLowerCase();
-    if (!host) continue;
-    try {
-      const url2 = new URL(host.includes("://") ? host : `https://${host}`);
-      host = url2.hostname.toLowerCase();
-    } catch {
-      host = host.replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
-    }
-    host = host.replace(/^\.+/, "").replace(/\.+$/, "");
-    if (!host || !host.includes(".")) continue;
-    if (/[^a-z0-9.-]/.test(host) || host.includes("..")) continue;
-    out.push(host);
-  }
-  return out.length > 0 ? [...new Set(out)] : null;
-}
-function filterBySources(results, sources) {
-  if (!sources) return results;
-  return results.filter((r) => {
-    try {
-      const host = new URL(r.url).hostname.toLowerCase();
-      return sources.some((s) => host === s || host.endsWith(`.${s}`));
-    } catch {
-      return false;
-    }
-  });
-}
-async function postJson(url2, headers, body) {
-  return fetch(url2, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  });
-}
-function okStatus(status) {
-  return status >= 200 && status < 300;
-}
-async function searchFirecrawl(query) {
-  try {
-    const key = process.env.FIRECRAWL_API_KEY;
-    const response = await postJson(
-      "https://api.firecrawl.dev/v1/search",
-      key ? { Authorization: `Bearer ${key}` } : {},
-      { query, limit: 5 }
-    );
-    if (!okStatus(response.status)) return null;
-    const data = await response.json();
-    if (!data.success || !Array.isArray(data.data)) return null;
-    const results = data.data.filter((item) => item.url).slice(0, 5).map((item) => ({
-      title: item.title || item.url || "",
-      url: item.url || "",
-      snippet: cleanSnippet(item.description)
-    }));
-    return results.length > 0 ? { results, provider: "firecrawl" } : null;
-  } catch {
-    return null;
-  }
-}
-async function searchTavily(query, sources = null) {
-  try {
-    const key = process.env.TAVILY_API_KEY;
-    const body = { query, max_results: 5, include_answer: false };
-    if (sources) body.include_domains = sources;
-    const response = await postJson(
-      "https://api.tavily.com/search",
-      key ? { Authorization: `Bearer ${key}` } : { "X-Tavily-Access-Mode": "keyless" },
-      body
-    );
-    if (!okStatus(response.status)) return null;
-    const data = await response.json();
-    const results = (data.results ?? []).filter((item) => item.url).slice(0, 5).map((item) => ({
-      title: item.title || item.url || "",
-      url: item.url || "",
-      snippet: cleanSnippet(item.content)
-    }));
-    return results.length > 0 ? { results, provider: key ? "tavily" : "tavily-keyless" } : null;
-  } catch {
-    return null;
-  }
-}
-function parseMcpPayload(raw) {
-  const text2 = raw.trim();
-  if (!text2) return null;
-  try {
-    return JSON.parse(text2);
-  } catch {
-    const line2 = text2.split("\n").find((entry) => entry.startsWith("data:"));
-    if (!line2) return null;
-    try {
-      return JSON.parse(line2.slice(5).trim());
-    } catch {
-      return null;
-    }
-  }
-}
-var mcpSessions = /* @__PURE__ */ new Map();
-var MCP_SESSION_TTL_MS = 4 * 60 * 1e3;
-async function mcpInit(base, auth) {
-  const cached2 = mcpSessions.get(base);
-  if (cached2 && Date.now() - cached2.at < MCP_SESSION_TTL_MS) return cached2.session;
-  try {
-    const response = await fetch(base, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...auth },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "robotics-interview", version: "1.0" } }
-      }),
-      signal: AbortSignal.timeout(2e4)
-    });
-    if (!okStatus(response.status)) return null;
-    await response.text();
-    const session = response.headers.get("mcp-session-id");
-    if (!session) return null;
-    try {
-      await fetch(base, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Session-Id": session, ...auth },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-        signal: AbortSignal.timeout(15e3)
-      });
-    } catch {
-    }
-    mcpSessions.set(base, { session, at: Date.now() });
-    return session;
-  } catch {
-    return null;
-  }
-}
-async function mcpCall(base, auth, tool, args) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (attempt > 0) mcpSessions.delete(base);
-    const session = await mcpInit(base, auth);
-    if (!session) return null;
-    try {
-      const response = await fetch(base, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Session-Id": session, ...auth },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } }),
-        signal: AbortSignal.timeout(6e4)
-      });
-      if (response.status === 404 || response.status === 410) continue;
-      if (!okStatus(response.status)) return null;
-      const parsed = parseMcpPayload(await response.text());
-      if (!parsed || parsed.error || parsed.result?.isError) return null;
-      const content = parsed.result?.content ?? [];
-      return content.length > 0 ? content : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-function parseExaText(text2) {
-  const results = [];
-  for (const block of text2.split(/\n(?=Title:\s)/)) {
-    const title = block.match(/Title:\s*(.+)/)?.[1]?.trim() ?? "";
-    const url2 = block.match(/URL:\s*(\S+)/)?.[1]?.trim() ?? "";
-    if (!url2) continue;
-    const highlights = block.split(/Highlights:\s*/)[1] ?? "";
-    results.push({ title: title || url2, url: url2, snippet: cleanSnippet(highlights) });
-    if (results.length >= 5) break;
-  }
-  return results;
-}
-async function searchExa(query, sources = null) {
-  const key = process.env.EXA_API_KEY;
-  const args = { query };
-  if (sources) args.includeDomains = sources;
-  const content = await mcpCall(
-    "https://mcp.exa.ai/mcp",
-    key ? { "x-api-key": key } : {},
-    "web_search_exa",
-    args
-  );
-  if (!content) return null;
-  const combined = content.map((item) => item.text ?? "").join("\n");
-  const results = parseExaText(combined);
-  return results.length > 0 ? { results, provider: key ? "exa" : "exa-keyless" } : null;
-}
-async function searchParallel(query, sources = null) {
-  const key = process.env.PARALLEL_API_KEY;
-  const args = { objective: query, search_queries: [query] };
-  if (sources) args.include_domains = sources;
-  const content = await mcpCall(
-    "https://search.parallel.ai/mcp",
-    key ? { Authorization: `Bearer ${key}` } : {},
-    "web_search",
-    args
-  );
-  if (!content) return null;
-  try {
-    const combined = content.map((item) => item.text ?? "").join("\n");
-    const data = JSON.parse(combined);
-    const results = (data.results ?? []).filter((item) => item.url).slice(0, 5).map((item) => ({
-      title: (item.title || item.url || "").trim().slice(0, 120),
-      url: item.url || "",
-      snippet: cleanSnippet((item.excerpts ?? []).join(" "))
-    }));
-    return results.length > 0 ? { results, provider: key ? "parallel" : "parallel-keyless" } : null;
-  } catch {
-    return null;
-  }
-}
-async function searchWikipedia(query) {
-  try {
-    const url2 = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=5&origin=*`;
-    const response = await fetch(url2, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!okStatus(response.status)) return null;
-    const data = await response.json();
-    const hits = data.query?.search ?? [];
-    const results = hits.slice(0, 5).map((hit) => ({
-      title: hit.title || "",
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent((hit.title || "").replace(/ /g, "_"))}`,
-      snippet: cleanSnippet(hit.snippet)
-    }));
-    return results.length > 0 ? { results, provider: "wikipedia" } : null;
-  } catch {
-    return null;
-  }
-}
-async function searchDuckDuckGo(query) {
-  try {
-    const url2 = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-    const response = await fetch(url2, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!okStatus(response.status)) return null;
-    const data = await response.json();
-    const results = [];
-    if (data.AbstractURL) {
-      results.push({
-        title: "Instant answer",
-        url: data.AbstractURL,
-        snippet: cleanSnippet(data.AbstractText)
-      });
-    }
-    for (const item of [...data.Results ?? [], ...data.RelatedTopics ?? []]) {
-      if (results.length >= 5) break;
-      if (item.FirstURL && item.Text) {
-        results.push({ title: item.Text.slice(0, 80), url: item.FirstURL, snippet: cleanSnippet(item.Text) });
-      }
-    }
-    return results.length > 0 ? { results, provider: "duckduckgo" } : null;
-  } catch {
-    return null;
-  }
-}
-async function searchWebFallback(query, sources = null) {
-  const clean = query.trim().slice(0, 300);
-  if (!clean) return null;
-  const wanted = normalizeSources(sources);
-  const chain = [
-    (q) => searchTavily(q, wanted),
-    (q) => searchFirecrawl(q),
-    (q) => searchExa(q, wanted),
-    (q) => searchParallel(q, wanted),
-    (q) => searchWikipedia(q),
-    (q) => searchDuckDuckGo(q)
-  ];
-  for (const provider of chain) {
-    const outcome = await provider(clean);
-    if (!outcome) continue;
-    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
-    if (filtered.results.length > 0) return filtered;
-  }
-  return null;
-}
-var SEARCH_PROVIDER_NAMES = [
-  "tavily",
-  "firecrawl",
-  "exa",
-  "parallel",
-  "wikipedia",
-  "duckduckgo"
-];
-var SEARCH_PROVIDER_FNS = {
-  tavily: searchTavily,
-  firecrawl: searchFirecrawl,
-  exa: searchExa,
-  parallel: searchParallel,
-  wikipedia: searchWikipedia,
-  duckduckgo: searchDuckDuckGo
-};
-function normalizeSearchProvider(value) {
-  if (typeof value !== "string") return "auto";
-  const name2 = value.trim().toLowerCase();
-  return SEARCH_PROVIDER_NAMES.includes(name2) ? name2 : "auto";
-}
-async function searchWeb(query, provider = "auto", sources = null) {
-  const clean = query.trim().slice(0, 300);
-  if (!clean) return null;
-  const wanted = normalizeSources(sources);
-  if (provider === "auto") return searchWebFallback(clean, wanted);
-  const rest = Object.keys(SEARCH_PROVIDER_FNS).filter((name2) => name2 !== provider).map((name2) => SEARCH_PROVIDER_FNS[name2]);
-  const primary = SEARCH_PROVIDER_FNS[provider];
-  const ordered = [
-    (q) => primary(q, wanted),
-    ...rest
-  ];
-  for (const fn of ordered) {
-    const outcome = await fn(clean);
-    if (!outcome) continue;
-    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
-    if (filtered.results.length > 0) return filtered;
-  }
-  return null;
-}
-function formatSearchResults(outcome) {
-  const lines = outcome.results.map(
-    (result, index) => `[${index + 1}] ${result.title}
-${result.url}
-${result.snippet}`
-  );
-  return `Web results (via ${outcome.provider}):
-${lines.join("\n\n")}`;
-}
-function isBlockedFetchUrl(raw) {
-  try {
-    const url2 = new URL(raw);
-    if (url2.protocol !== "http:" && url2.protocol !== "https:") return true;
-    if (url2.username || url2.password) return true;
-    const host = url2.hostname.toLowerCase();
-    if (host === "localhost" || host.endsWith(".localhost")) return true;
-    const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-    if (v4) {
-      const octets = v4.slice(1, 5).map(Number);
-      if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
-      const [a, b] = octets;
-      if (a === 10 || a === 127 || a === 0 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 169 && b === 254) return true;
-      return false;
-    }
-    if (/^[\dxabcdef.:]+$/i.test(host)) return true;
-    if (host.includes(":")) return true;
-    return false;
-  } catch {
-    return true;
-  }
-}
-var FETCH_MAX_BYTES = 32768;
-var FETCH_MAX_HOPS = 3;
-function ipv4OctetsBlocked(octets) {
-  const [a, b] = octets;
-  return a === 10 || a === 127 || a === 0 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 169 && b === 254;
-}
-async function resolvesToBlockedIp(raw) {
-  try {
-    const host = new URL(raw).hostname.toLowerCase();
-    if (/^[\dxabcdef.:]+$/i.test(host)) return false;
-    const addresses = await dns.resolve4(host);
-    return addresses.some((ip) => {
-      const octets = ip.split(".").map(Number);
-      return octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255) || ipv4OctetsBlocked(octets);
-    });
-  } catch {
-    return false;
-  }
-}
-async function fetchUrlText(rawUrl) {
-  if (isBlockedFetchUrl(rawUrl)) return null;
-  if (await resolvesToBlockedIp(rawUrl)) return null;
-  try {
-    let current = rawUrl;
-    let response = null;
-    for (let hop = 0; hop <= FETCH_MAX_HOPS; hop += 1) {
-      const attempt = await fetch(current, {
-        headers: { Accept: "text/html,text/plain", "User-Agent": "RoboticsInterviewDashboard/1.0" },
-        redirect: "manual",
-        signal: AbortSignal.timeout(1e4)
-      });
-      if (attempt.status >= 300 && attempt.status < 400) {
-        const location2 = attempt.headers.get("location");
-        await attempt.body?.cancel().catch(() => void 0);
-        if (!location2) return null;
-        const next = new URL(location2, current).toString();
-        if (isBlockedFetchUrl(next)) return null;
-        current = next;
-        continue;
-      }
-      response = attempt;
-      break;
-    }
-    if (!response || !okStatus(response.status)) {
-      await response?.body?.cancel().catch(() => void 0);
-      return null;
-    }
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!/text|html|json/i.test(contentType)) {
-      await response.body?.cancel().catch(() => void 0);
-      return null;
-    }
-    const reader = response.body?.getReader();
-    if (!reader) return null;
-    const chunks = [];
-    let received = 0;
-    for (; ; ) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > FETCH_MAX_BYTES) {
-        await reader.cancel().catch(() => void 0);
-        break;
-      }
-      chunks.push(value);
-    }
-    const total = chunks.reduce((sum2, chunk) => sum2 + chunk.byteLength, 0);
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const text2 = cleanSnippet(new TextDecoder().decode(merged).slice(0, 8e3));
-    return text2 || null;
-  } catch {
-    return null;
-  }
-}
-
-// src/lib/python.ts
-import { spawn } from "node:child_process";
-import { randomUUID as randomUUID4 } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path2 from "node:path";
-var DOCKER_TIMEOUT_MS = 3e4;
-var DOCKER_INNER_TIMEOUT_S = 25;
-var RESTRICTED_TIMEOUT_MS = 1e4;
-var MAX_CODE_CHARS = 4e3;
-var MAX_OUTPUT_CHARS = 6e3;
-var DOCKER_IMAGE = process.env.PYTHON_SANDBOX_IMAGE || "python:3.12-slim";
-var ALLOWED_MODULES = /* @__PURE__ */ new Set([
-  "math",
-  "statistics",
-  "datetime",
-  "json",
-  "re",
-  "collections",
-  "itertools",
-  "functools",
-  "decimal",
-  "fractions",
-  "string",
-  "operator",
-  "heapq",
-  "bisect",
-  "csv",
-  "pprint",
-  "textwrap",
-  "copy",
-  "dataclasses",
-  "enum",
-  "typing",
-  "unicodedata",
-  "keyword",
-  "reprlib",
-  "numbers"
-]);
-var RESTRICTED_PREAMBLE = `import json as _json
-import sys as _sys
-import builtins as _builtins
-import resource as _resource
-try:
-    applicants = _json.loads(_sys.argv[1])
-except Exception:
-    applicants = []
-try:
-    _resource.setrlimit(_resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-except Exception:
-    pass
-_allowed_modules = ${JSON.stringify([...ALLOWED_MODULES])}
-_scrub_names = {"os", "posix", "nt", "subprocess", "socket", "ssl", "shutil", "pathlib", "tempfile", "runpy", "pkgutil", "pydoc", "webbrowser", "ctypes", "mmap", "signal", "fcntl", "select", "selectors", "asyncio", "concurrent", "multiprocessing", "sqlite3", "dbm", "gdbm", "shelve", "pickle", "_pickle", "marshal", "resource", "pwd", "grp", "crypt", "syslog", "urllib", "http", "ftplib", "smtplib", "poplib", "imaplib", "telnetlib", "xmlrpc", "wsgiref", "cgi", "cgitb", "venv", "ensurepip", "zipapp", "pdb", "bdb", "code", "codeop", "pty", "tty", "termios", "readline", "rlcompleter", "turtle"}
-def _scrub_modules(_sys=_sys, _scrub_names=_scrub_names):
-    for _name in list(_sys.modules.keys()):
-        if _name.split(".")[0] in _scrub_names:
-            del _sys.modules[_name]
-_real_import = _builtins.__import__
-_getframe = _sys._getframe
-_snippet_file = __file__
-def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0, _getframe=_getframe, _snippet=_snippet_file, _real=_real_import, _allowed=_allowed_modules, _scrub=_scrub_modules):
-    top = name.split(".")[0] if isinstance(name, str) else ""
-    try:
-        _frame = _getframe(1)
-    except Exception:
-        _frame = None
-    direct = False
-    if _frame is not None:
-        try:
-            _g = _frame.f_globals
-            _is_main = isinstance(_g, dict) and _g.get("__name__") == "__main__"
-            _dyn = _frame.f_code.co_filename in ("<string>", "<stdin>", "<unknown>")
-            direct = bool(_is_main or _dyn)
-        except Exception:
-            direct = True
-    if (not direct) or (top in _allowed):
-        # NOTE: no sys.modules scrubbing here \u2014 deleting entries mid-flight
-        # breaks the import machinery (KeyError inside _bootstrap). The
-        # preamble scrubs once at startup; later arrivals (e.g. os via
-        # statistics\u2192random) are unreachable without imports, which stay guarded.
-        return _real(name, globals, locals, fromlist, level)
-    raise ImportError("module '%s' is not available in the restricted sandbox (Docker unavailable on this host)" % (name,))
-_builtins.__import__ = _guarded_import
-_builtins.open = None
-_scrub_modules()
-del _json, _sys, _builtins, _resource, _real_import, _getframe, _snippet_file, _scrub_modules, _guarded_import
-`;
-var DOCKER_PREAMBLE = `import json as _json
-import sys as _sys
-try:
-    applicants = _json.loads(_sys.argv[1])
-except Exception:
-    applicants = []
-`;
-var dockerState = "unknown";
-async function runLocal(command, args, input, timeoutMs) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { timeout: timeoutMs, killSignal: "SIGKILL" });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (chunk) => {
-      stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk.toString("utf8").slice(0, 2e3);
-    });
-    child.on("error", (error40) => resolve({ stdout, stderr: String(error40), code: -1, signal: null }));
-    child.on("close", (exitCode, exitSignal) => resolve({ stdout, stderr, code: exitCode, signal: exitSignal }));
-    if (input !== null && child.stdin) {
-      child.stdin.on("error", () => void 0);
-      child.stdin.write(input);
-      child.stdin.end();
-    }
-  });
-}
-async function dockerUsable() {
-  if (process.env.PYTHON_SANDBOX === "restricted") return false;
-  if (process.env.PYTHON_SANDBOX === "docker") return true;
-  if (dockerState !== "unknown") return dockerState === "yes";
-  try {
-    const probe = await new Promise((resolve) => {
-      const child = spawn("docker", ["info", "--format", "{{.ServerVersion}}"], { timeout: 8e3 });
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
-    });
-    if (!probe) {
-      dockerState = "no";
-      return false;
-    }
-    const inspect = await runLocal("docker", ["image", "inspect", DOCKER_IMAGE, "--format", "{{.Id}}"], null, 15e3);
-    dockerState = inspect.code === 0 ? "yes" : "no";
-    return dockerState === "yes";
-  } catch {
-    dockerState = "no";
-    return false;
-  }
-}
-function dockerFailed(stderr) {
-  return /^(docker:|Error response|Cannot connect|unable to|no such image|permission denied)/im.test(stderr.trim());
-}
-async function runDocker(code, applicantsJson) {
-  const name2 = `assistant-py-${randomUUID4().slice(0, 8)}`;
-  const script = `${DOCKER_PREAMBLE}
-${code}
-`;
-  const args = [
-    "run",
-    "--rm",
-    "-i",
-    "--name",
-    name2,
-    "--network",
-    "none",
-    "--memory",
-    "512m",
-    "--memory-swap",
-    "512m",
-    "--cpus",
-    "1",
-    "--pids-limit",
-    "64",
-    "--read-only",
-    "--tmpfs",
-    "/tmp:rw,noexec,nosuid,size=64m",
-    "--user",
-    "65534:65534",
-    "--cap-drop",
-    "ALL",
-    "--security-opt",
-    "no-new-privileges=true",
-    "-e",
-    "HOME=/tmp",
-    "-e",
-    "PYTHONDONTWRITEBYTECODE=1",
-    "-e",
-    "PYTHONNOUSERSITE=1",
-    DOCKER_IMAGE,
-    "timeout",
-    "-s",
-    "KILL",
-    String(DOCKER_INNER_TIMEOUT_S),
-    "python",
-    "-I",
-    "-",
-    applicantsJson.slice(0, 2e5)
-  ];
-  const child = spawn("docker", args, { timeout: DOCKER_TIMEOUT_MS, killSignal: "SIGKILL" });
-  let stdout = "";
-  let stderr = "";
-  child.stdout?.on("data", (chunk) => {
-    stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
-  });
-  child.stderr?.on("data", (chunk) => {
-    stderr += chunk.toString("utf8").slice(0, 2e3);
-  });
-  if (child.stdin) {
-    child.stdin.on("error", () => void 0);
-    child.stdin.write(script);
-    child.stdin.end();
-  }
-  const finished = await new Promise((resolve) => {
-    child.on("error", () => resolve({ code: -1, signal: null }));
-    child.on("close", (exitCode, exitSignal) => resolve({ code: exitCode, signal: exitSignal }));
-  });
-  if (finished.signal) {
-    runLocal("docker", ["rm", "-f", name2], null, 1e4).catch(() => void 0);
-    return { ok: false, output: `Python timed out after ${DOCKER_INNER_TIMEOUT_S}s.`, sandbox: "docker" };
-  }
-  if (finished.code !== 0) {
-    if (dockerFailed(stderr)) return null;
-    if (finished.code === 137 && !stderr.trim() && !stdout.trim()) {
-      return { ok: false, output: `Python timed out after ${DOCKER_INNER_TIMEOUT_S}s.`, sandbox: "docker" };
-    }
-    const detail = stdout.trim();
-    return { ok: false, output: `Python failed (${stderr.trim().slice(0, 500)}).${detail ? ` Partial output:
-${detail}` : ""}`.slice(0, MAX_OUTPUT_CHARS), sandbox: "docker" };
-  }
-  const text2 = stdout.trim();
-  return { ok: true, output: (text2 || "(no output)").slice(0, MAX_OUTPUT_CHARS), sandbox: "docker" };
-}
-var prlimitState = "unknown";
-async function prlimitAvailable() {
-  if (prlimitState !== "unknown") return prlimitState === "yes";
-  try {
-    const ok = await new Promise((resolve) => {
-      const child = spawn("prlimit", ["--version"], { timeout: 8e3 });
-      child.on("error", () => resolve(false));
-      child.on("close", (code) => resolve(code === 0));
-    });
-    prlimitState = ok ? "yes" : "no";
-  } catch {
-    prlimitState = "no";
-  }
-  return prlimitState === "yes";
-}
-async function runRestricted(code, applicantsJson) {
-  const trimmed = code.trim().slice(0, MAX_CODE_CHARS);
-  if (!trimmed) return { ok: false, output: "No code to run.", sandbox: "restricted" };
-  let dir = "";
-  try {
-    dir = await mkdtemp(path2.join(tmpdir(), "assistant-py-"));
-    const scriptPath = path2.join(dir, "snippet.py");
-    await writeFile(scriptPath, `${RESTRICTED_PREAMBLE}
-${trimmed}
-`, "utf8");
-    const usePrlimit = await prlimitAvailable();
-    const command = usePrlimit ? "prlimit" : "python3";
-    const args = usePrlimit ? ["--nproc=64:64", "--as=536870912:536870912", "--", "python3", "-I", scriptPath, applicantsJson.slice(0, 2e5)] : ["-I", scriptPath, applicantsJson.slice(0, 2e5)];
-    const output = await new Promise((resolve) => {
-      let settled = false;
-      const done = (value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(value);
-      };
-      const child = spawn(command, args, {
-        cwd: dir,
-        detached: true,
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LANG: "C.UTF-8", PYTHONNOUSERSITE: "1" }
-      });
-      const timer = setTimeout(() => {
-        try {
-          if (child.pid !== void 0) process.kill(-child.pid, "SIGKILL");
-        } catch {
-        }
-        done({ stdout, stderr, code: null, signal: "SIGKILL" });
-      }, RESTRICTED_TIMEOUT_MS);
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk) => {
-        stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
-      });
-      child.stderr?.on("data", (chunk) => {
-        stderr += chunk.toString("utf8").slice(0, 2e3);
-      });
-      child.on("error", () => done({ stdout, stderr: "Python is not available on this server.", code: -1, signal: null }));
-      child.on("close", (exitCode, exitSignal) => done({ stdout, stderr, code: exitCode, signal: exitSignal }));
-    });
-    if (output.code !== 0) {
-      const reason = output.signal ? `timed out after ${RESTRICTED_TIMEOUT_MS / 1e3}s` : output.stderr.trim() || ` exited with code ${output.code}`;
-      const detail = output.stdout.trim();
-      return { ok: false, output: `Python failed (${reason}).${detail ? ` Partial output:
-${detail}` : ""}`.slice(0, MAX_OUTPUT_CHARS), sandbox: "restricted" };
-    }
-    const text2 = output.stdout.trim();
-    return { ok: true, output: (text2 || "(no output)").slice(0, MAX_OUTPUT_CHARS), sandbox: "restricted" };
-  } catch (error40) {
-    return { ok: false, output: `Python could not run: ${error40 instanceof Error ? error40.message : String(error40)}`, sandbox: "restricted" };
-  } finally {
-    if (dir) await rm(dir, { recursive: true, force: true });
-  }
-}
-async function runPythonCode(code, applicantsJson) {
-  const trimmed = code.trim().slice(0, MAX_CODE_CHARS);
-  if (!trimmed) return { ok: false, output: "No code to run.", sandbox: "restricted" };
-  if (await dockerUsable()) {
-    const outcome = await runDocker(trimmed, applicantsJson);
-    if (outcome) return outcome;
-  }
-  return runRestricted(trimmed, applicantsJson);
-}
-
-// ../../lib/integrations-openai-ai-server/src/audio/client.ts
-import { Buffer as Buffer2 } from "node:buffer";
-var openai3 = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "anonymous",
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.kilo.ai/api/gateway"
-});
-async function textToSpeech(text2, voice = "alloy", format = "wav") {
-  const response = await openai3.chat.completions.create({
-    model: "gpt-audio",
-    modalities: ["text", "audio"],
-    audio: { voice, format },
-    messages: [
-      { role: "system", content: "You are an assistant that performs text-to-speech." },
-      { role: "user", content: `Repeat the following text verbatim: ${text2}` }
-    ]
-  });
-  const audioData = response.choices[0]?.message?.audio?.data ?? "";
-  return Buffer2.from(audioData, "base64");
-}
-
-// src/routes/robotics.ts
-init_drizzle_orm();
-init_presence2();
-
-// src/lib/objectStorage.ts
-import { randomUUID as randomUUID5 } from "crypto";
-
 // ../../node_modules/.pnpm/@supabase+supabase-js@2.116.0/node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
 __export(dist_exports, {
@@ -94615,7 +93190,1546 @@ function shouldShowDeprecationWarning() {
 }
 if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 22 or later. For more information, visit: https://github.com/orgs/supabase/discussions/45715");
 
+// src/lib/realtime.ts
+var WATCHED_TABLES = [
+  "applicants",
+  "interview_queue",
+  "display_settings",
+  "interview_chat_messages",
+  "broadcasts",
+  "seating_settings",
+  "dashboard_charts"
+];
+var listeners = /* @__PURE__ */ new Set();
+var supabase = null;
+var started = false;
+function addRealtimeListener(listener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function broadcast(hint) {
+  for (const listener of listeners) {
+    try {
+      listener(hint);
+    } catch (error40) {
+      logger.error({ err: error40 }, "Realtime listener failed");
+    }
+  }
+}
+function pushRealtimeHint(table, event = "UPDATE") {
+  broadcast({ table, event });
+}
+function initRealtime() {
+  if (started) return;
+  started = true;
+  const url2 = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url2 || !key) {
+    logger.warn(
+      "Supabase realtime relay disabled: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing. Live pages fall back to polling."
+    );
+    return;
+  }
+  try {
+    supabase = createClient(url2, key, {
+      realtime: { params: { eventsPerSecond: 20 } }
+    });
+    const channel = supabase.channel("dashboard-changes");
+    for (const table of WATCHED_TABLES) {
+      channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        (payload) => broadcast({ table, event: payload.eventType })
+      );
+    }
+    channel.subscribe((status, error40) => {
+      if (error40) {
+        logger.error({ err: error40 }, "Supabase realtime subscription error");
+        return;
+      }
+      logger.info({ status }, "Supabase realtime status");
+    });
+  } catch (error40) {
+    logger.error({ err: error40 }, "Failed to start Supabase realtime relay");
+    supabase = null;
+  }
+}
+var sseClients = /* @__PURE__ */ new Set();
+function addSseClient(res) {
+  sseClients.add(res);
+  const removeListener = addRealtimeListener((hint) => {
+    try {
+      res.write(`data: ${JSON.stringify(hint)}
+
+`);
+    } catch {
+    }
+  });
+  return () => {
+    removeListener();
+    sseClients.delete(res);
+  };
+}
+
+// src/lib/snapshots.ts
+init_drizzle_orm();
+init_src();
+import { randomUUID as randomUUID3 } from "node:crypto";
+
+// src/lib/roboticsData.ts
+init_drizzle_orm();
+init_src();
+import { randomUUID as randomUUID2 } from "node:crypto";
+var demoApplicants = [
+  ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
+  ["58054974-c229-4c14-9563-ed15b4e8969a", "Tester", "6th", 85, "Strong Yes", "Experience with mBot and Elegoo kits, including basic coding and physical assembly", "Yes", "Yes"],
+  ["8e0cb896-6b25-4e0f-a493-bdd8a920320d", "Demo Applicant", "6th", -1, "No", "None provided; responses were nonsensical or antagonistic", "No", "Unclear"],
+  ["d4ff3cbd-2cfe-4a68-b5af-6e90b32e9bf7", "Anonymous", "7th", 15, "No", "None", "No", "Yes"],
+  ["4e3280c8-738e-47a8-a775-7c4229bd9d19", "hi", "7th", 5, "No", "None", "Unclear", "Unclear"],
+  ["9b40960b-4edb-41dd-94db-d79dd8a246d5", "Demo Candidate", "6th", 15, "No", "Unknown; applicant refused to answer", "Unclear", "Unclear"],
+  ["039cd7ed-0e18-46c4-9ded-ed276de59a53", "a", "7th", 20, "No", "No known experience", "Unclear", "Unclear"],
+  ["3dfcf6f2-c91b-4d28-9035-3ee3acc619e7", "Demo Student", "7th", 95, "Strong Yes", "2 years of LEGO Mindstorms and VEX IQ with a focus on chassis and mechanical structures", "Yes", "Yes"]
+];
+var demoChecked = false;
+async function ensureDemoData() {
+  if (demoChecked || process.env.DISABLE_DEMO_SEED === "true") return;
+  const existing = await db.select({ id: applicantsTable.id }).from(applicantsTable).limit(1);
+  if (existing.length === 0) {
+    await db.insert(applicantsTable).values(
+      demoApplicants.map(([id, name2, grade, aiScore, aiRecommendation, roboticsExperience, commit10Hours, parentVolunteer], index) => ({
+        id,
+        name: name2,
+        grade,
+        aiScore,
+        aiRecommendation,
+        aiSummary: aiRecommendation === "Strong Yes" ? "A promising candidate with a clear learning mindset and evidence of practical robotics work." : "Review the application carefully during the coordinator interview.",
+        aiStrengths: aiRecommendation === "Strong Yes" ? "hands-on building; problem-solving; commitment" : "Application review required",
+        aiConcerns: aiScore < 0 ? "Invalid or bug score" : aiScore < 50 ? "Needs interview follow-up" : "",
+        roboticsExperience,
+        commit10Hours,
+        parentVolunteer,
+        category: aiRecommendation === "Strong Yes" ? "advance" : "hold",
+        rank: index + 1,
+        notes: "",
+        queuePosition: index,
+        interviewStatus: "queued",
+        interviewer: "",
+        interviewDecision: "Undecided",
+        callbackRequested: false,
+        transcript: null,
+        email: null,
+        attachments: null
+      }))
+    ).onConflictDoNothing();
+  }
+  demoChecked = true;
+}
+async function getApplicants(filters) {
+  await ensureDemoData();
+  const all = await db.select().from(applicantsTable).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
+  const filtered = all.filter((applicant) => {
+    const query = filters?.search?.trim().toLowerCase();
+    if (query && !`${applicant.name} ${applicant.id}`.toLowerCase().includes(query)) return false;
+    if (filters?.grade && filters.grade !== "all" && applicant.grade !== filters.grade) return false;
+    if (filters?.recommendation && filters.recommendation !== "all" && applicant.aiRecommendation !== filters.recommendation) return false;
+    if (filters?.interviewStatus && filters.interviewStatus !== "all" && applicant.interviewStatus !== filters.interviewStatus) return false;
+    if (filters?.category && filters.category !== "all" && applicant.category !== filters.category) return false;
+    if (filters?.invalidOnly && applicant.aiScore !== -1) return false;
+    return true;
+  });
+  const sort = filters?.sort ?? "queue";
+  const gradeValue = (grade) => {
+    const parsed = Number.parseInt(grade, 10);
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  };
+  return filtered.sort((a, b) => {
+    if (sort === "score") return b.aiScore - a.aiScore;
+    if (sort === "name") return a.name.localeCompare(b.name);
+    if (sort === "rank") return a.rank - b.rank;
+    if (sort === "newest") return b.createdAt.getTime() - a.createdAt.getTime();
+    if (sort === "oldest") return a.createdAt.getTime() - b.createdAt.getTime();
+    if (sort === "grade") return gradeValue(a.grade) - gradeValue(b.grade) || a.name.localeCompare(b.name);
+    return a.queuePosition - b.queuePosition;
+  });
+}
+function applicantResponse(applicant) {
+  return {
+    id: applicant.id,
+    name: applicant.name,
+    grade: applicant.grade,
+    email: applicant.email,
+    photoUrl: applicant.photoUrl,
+    transcript: applicant.transcript,
+    aiScore: applicant.aiScore,
+    aiRecommendation: applicant.aiRecommendation,
+    aiSummary: applicant.aiSummary,
+    aiStrengths: applicant.aiStrengths,
+    aiConcerns: applicant.aiConcerns,
+    roboticsExperience: applicant.roboticsExperience,
+    commit10Hours: applicant.commit10Hours,
+    parentVolunteer: applicant.parentVolunteer,
+    interviewStatus: applicant.interviewStatus,
+    interviewer: applicant.interviewer,
+    interviewDecision: applicant.interviewDecision,
+    callbackRequested: applicant.callbackRequested,
+    flagged: applicant.flagged,
+    attendance: applicant.attendance,
+    lateArrivalTime: applicant.lateArrivalTime ?? null,
+    makeupDate: applicant.makeupDate ?? null,
+    attendanceExcused: applicant.attendanceExcused ?? null,
+    seatRow: applicant.seatRow ?? null,
+    seatCol: applicant.seatCol ?? null,
+    category: applicant.category,
+    rank: applicant.rank,
+    notes: applicant.notes,
+    queuePosition: applicant.queuePosition
+  };
+}
+function queueApplicantResponse(applicant) {
+  return {
+    id: applicant.id,
+    name: applicant.name,
+    grade: applicant.grade,
+    aiScore: applicant.aiScore,
+    category: applicant.category,
+    queuePosition: applicant.queuePosition,
+    interviewer: applicant.interviewer,
+    notes: applicant.notes,
+    interviewDecision: applicant.interviewDecision,
+    callbackRequested: applicant.callbackRequested,
+    flagged: applicant.flagged,
+    attendance: applicant.attendance,
+    lateArrivalTime: applicant.lateArrivalTime ?? null,
+    makeupDate: applicant.makeupDate ?? null,
+    attendanceExcused: applicant.attendanceExcused ?? null
+  };
+}
+function balancedCurrentApplicants(applicants, labels) {
+  if (!labels.length) return applicants;
+  const counts = new Map(labels.map((label) => [label, 0]));
+  return applicants.map((applicant) => {
+    const preferred = labels.includes(applicant.interviewer) && (counts.get(applicant.interviewer) ?? 0) === 0 ? applicant.interviewer : [...counts.entries()].sort((a, b) => a[1] - b[1])[0][0];
+    counts.set(preferred, (counts.get(preferred) ?? 0) + 1);
+    return { ...applicant, interviewer: preferred };
+  });
+}
+function normalizedLetters(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function isNameVariant(a, b) {
+  const ka = normalizedLetters(a);
+  const kb = normalizedLetters(b);
+  if (!ka || !kb || ka === kb || ka.length < 3 || kb.length < 3) return false;
+  if (ka.split("").sort().join("") === kb.split("").sort().join("")) return true;
+  return editDistance(ka, kb) <= 2;
+}
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let curr = i;
+    let rowMin = curr;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const next = Math.min(prev[j] + 1, curr + 1, prev[j - 1] + cost);
+      prev[j - 1] = curr;
+      curr = next;
+      if (next < rowMin) rowMin = next;
+    }
+    prev[b.length] = curr;
+    if (rowMin > 2) return 3;
+  }
+  return prev[b.length];
+}
+async function transferInterviewers(fromRaw, toRaw, dryRun = false) {
+  const from = fromRaw.trim();
+  const to = toRaw.trim();
+  if (!from) {
+    return { ok: false, error: "A source interviewer is required." };
+  }
+  const labels = await getInterviewSettings();
+  const byLabelLower = new Map(labels.map((label) => [label.toLowerCase(), label]));
+  const applicants = await getApplicants({ sort: "queue" });
+  const storedValues = /* @__PURE__ */ new Map();
+  for (const applicant of applicants) {
+    const value = (applicant.interviewer || "").trim();
+    if (value && !storedValues.has(value.toLowerCase())) {
+      storedValues.set(value.toLowerCase(), value);
+    }
+  }
+  const matchAll = ["*", "all", "everyone", "everybody"].includes(from.toLowerCase());
+  const clearTo = ["", "unassigned", "none", "unassign", "clear", "cleared"].includes(to.toLowerCase());
+  if (!matchAll && from.toLowerCase() === to.toLowerCase()) {
+    return { ok: false, error: `"${from}" and "${to}" are the same interviewer \u2014 nothing to transfer.` };
+  }
+  const fromKey = from.toLowerCase();
+  const fromCanonical = matchAll ? "everyone" : byLabelLower.get(fromKey) ?? storedValues.get(fromKey) ?? from;
+  const toCanonical = clearTo ? "" : byLabelLower.get(to.toLowerCase());
+  if (toCanonical === void 0) {
+    const suggestions = labels.filter(
+      (label) => isNameVariant(label, to) || label.toLowerCase().startsWith(to.toLowerCase().slice(0, 3))
+    );
+    const hint = suggestions.length > 0 ? ` Did you mean "${suggestions[0]}"?` : "";
+    return { ok: false, error: `"${to}" is not a valid interviewer label (valid: ${labels.join(", ")}).${hint} Nothing was changed.` };
+  }
+  const toDisplay = clearTo ? "unassigned" : toCanonical;
+  const seen = /* @__PURE__ */ new Set();
+  const matched = [];
+  for (const applicant of applicants) {
+    const stored = (applicant.interviewer || "").trim();
+    if (!stored || seen.has(applicant.id)) continue;
+    const storedKey = stored.toLowerCase();
+    if (matchAll || storedKey === fromKey || isNameVariant(stored, from) || isNameVariant(byLabelLower.get(storedKey) ?? stored, from)) {
+      seen.add(applicant.id);
+      matched.push({ id: applicant.id, name: applicant.name, from: stored });
+    }
+  }
+  if (matched.length === 0) {
+    const known = [.../* @__PURE__ */ new Set([...labels, ...storedValues.values()])].join(", ");
+    const knownMatch = byLabelLower.has(fromKey) || storedValues.has(fromKey);
+    return {
+      ok: false,
+      error: knownMatch ? `Nobody is currently assigned to "${fromCanonical}" \u2014 nothing to transfer.` : `Nobody is assigned to "${from}". Known interviewer values: ${known || "none"}.`,
+      fromCanonical,
+      toCanonical,
+      matched: []
+    };
+  }
+  if (!dryRun) {
+    await db.transaction(async (tx) => {
+      for (const person of matched) {
+        await tx.update(applicantsTable).set({ interviewer: toCanonical, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, person.id));
+      }
+    });
+  }
+  return { ok: true, dryRun, from: fromCanonical, to: toDisplay, moved: matched };
+}
+function displayApplicantName(name2) {
+  const trimmed = name2.trim();
+  return !trimmed || trimmed.length > 48 || /https?:\/\//i.test(trimmed) || /@/.test(trimmed) ? "Applicant" : trimmed;
+}
+function buildAnnouncementText(applicants) {
+  const desk = (interviewer) => interviewer.trim().slice(0, 30) || "your interviewer";
+  const firstName = (name2) => displayApplicantName(name2).split(/\s+/)[0] || "Applicant";
+  const recalled = applicants.filter((applicant) => applicant.callbackRequested);
+  if (recalled.length) {
+    return recalled.map((a) => `${firstName(a.name)} please go back to ${desk(a.interviewer)}`).join(". ") + ".";
+  }
+  if (applicants.length) {
+    return applicants.map((a) => `${firstName(a.name)} please go to ${desk(a.interviewer)}`).join(". ") + ".";
+  }
+  return "The interview block is complete. Thank you for coming to the robotics tryouts.";
+}
+var DEFAULT_DISPLAY_SETTINGS = {
+  customHeadline: null,
+  customSubheadline: null,
+  showNames: true,
+  announce: true
+};
+async function getDisplaySettings() {
+  const [row] = await db.select().from(displaySettingsTable).limit(1);
+  if (!row) return { ...DEFAULT_DISPLAY_SETTINGS };
+  return {
+    customHeadline: row.customHeadline?.trim() ? row.customHeadline : null,
+    customSubheadline: row.customSubheadline?.trim() ? row.customSubheadline : null,
+    showNames: row.showNames,
+    announce: row.announce
+  };
+}
+function displaySettingsResponse(row) {
+  return {
+    headline: row.customHeadline,
+    subheadline: row.customSubheadline,
+    showNames: row.showNames,
+    announce: row.announce,
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+function resolveDisplaySpeech(autoHeadline, autoSubheadline, queueApplicants, settings) {
+  const headline = settings.customHeadline?.trim() || autoHeadline;
+  const subheadline = settings.customSubheadline?.trim() || autoSubheadline;
+  const custom2 = Boolean(settings.customHeadline?.trim() || settings.customSubheadline?.trim());
+  return {
+    headline,
+    subheadline,
+    announcement: custom2 ? `${headline}. ${subheadline}.` : buildAnnouncementText(queueApplicants)
+  };
+}
+function humanList(names) {
+  if (names.length > 2) return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  return names.join(" and ");
+}
+async function getDisplayView() {
+  const queue = await getQueueState();
+  const settings = await getDisplaySettings();
+  const mapped = queue.currentApplicants.map((applicant, index) => ({
+    id: applicant.id,
+    name: displayApplicantName(applicant.name),
+    grade: applicant.grade,
+    lane: applicant.interviewer || queue.interviewerLabels[index % queue.interviewerLabels.length] || "Your interviewer"
+  }));
+  const recalled = queue.currentApplicants.filter((applicant) => applicant.callbackRequested).map((applicant) => displayApplicantName(applicant.name));
+  const isCallback = recalled.length > 0;
+  const autoHeadline = isCallback ? "Please return to your interviewer" : mapped.length ? "Please come to your corresponding interviewer" : "Interview block complete";
+  const autoSubheadline = isCallback ? `${humanList(recalled)} \u2014 we aren't done with you yet, please come back` : mapped.length ? "Your Wolverines interview team is ready for you" : "Thank you for showing up and building boldly";
+  const speech = resolveDisplaySpeech(autoHeadline, autoSubheadline, queue.currentApplicants, settings);
+  return {
+    mode: isCallback ? "callback" : mapped.length ? "calling" : "complete",
+    headline: speech.headline,
+    subheadline: speech.subheadline,
+    announcement: speech.announcement,
+    currentApplicants: mapped,
+    updatedAt: queue.updatedAt
+  };
+}
+async function getSeatingSettings() {
+  const [row] = await db.select().from(seatingSettingsTable).limit(1);
+  return {
+    rows: Math.min(10, Math.max(1, row?.rows ?? 4)),
+    cols: Math.min(10, Math.max(1, row?.cols ?? 6))
+  };
+}
+function seatingSettingsResponse(row) {
+  return {
+    rows: row.rows,
+    cols: row.cols,
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+async function assignSeat(applicantId, row, col) {
+  if (row < 0 || col < 0) {
+    const [cleared] = await db.update(applicantsTable).set({ seatRow: null, seatCol: null, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, applicantId)).returning();
+    return cleared ?? null;
+  }
+  const [me] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, applicantId));
+  if (!me) return null;
+  const [occupant] = await db.select({ id: applicantsTable.id }).from(applicantsTable).where(and(eq(applicantsTable.seatRow, row), eq(applicantsTable.seatCol, col)));
+  if (occupant && occupant.id !== applicantId) {
+    await db.update(applicantsTable).set({ seatRow: me.seatRow, seatCol: me.seatCol, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, occupant.id));
+  }
+  const [updated] = await db.update(applicantsTable).set({ seatRow: row, seatCol: col, updatedAt: /* @__PURE__ */ new Date() }).where(eq(applicantsTable.id, applicantId)).returning();
+  return updated ?? null;
+}
+async function getInterviewSettings() {
+  let [settings] = await db.select().from(interviewQueueTable);
+  if (!settings) {
+    await db.insert(interviewQueueTable).values({ id: 1 }).onConflictDoNothing();
+    [settings] = await db.select().from(interviewQueueTable);
+  }
+  try {
+    const labels = JSON.parse(settings?.interviewerLabels ?? "[]");
+    if (Array.isArray(labels) && labels.every((label) => typeof label === "string") && labels.length > 0) {
+      return labels.map((label) => label.trim()).filter(Boolean);
+    }
+  } catch {
+  }
+  return ["Interviewer 1", "Interviewer 2"];
+}
+async function getQueueState() {
+  const applicants = await getApplicants({ sort: "queue" });
+  const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
+  const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
+  const interviewerLabels = await getInterviewSettings();
+  const slotCount = Math.max(1, interviewerLabels.length);
+  const nextApplicants = remaining.slice(slotCount, slotCount * 2);
+  const currentApplicants = balancedCurrentApplicants(remaining.slice(0, slotCount), interviewerLabels);
+  const storedById = new Map(remaining.map((applicant) => [applicant.id, applicant.interviewer]));
+  for (const applicant of currentApplicants) {
+    if (!storedById.get(applicant.id) && applicant.interviewer) {
+      await db.update(applicantsTable).set({
+        interviewer: applicant.interviewer,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq(applicantsTable.id, applicant.id));
+    }
+  }
+  const latestUpdatedAt = applicants.reduce(
+    (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
+    0
+  );
+  return {
+    currentApplicants: currentApplicants.map(queueApplicantResponse),
+    nextApplicants: nextApplicants.map(queueApplicantResponse),
+    interviewerLabels,
+    completedCount,
+    remainingCount: remaining.length,
+    updatedAt: new Date(latestUpdatedAt || Date.now()).toISOString()
+  };
+}
+function splitLogicalRecords(input) {
+  const records = [];
+  let record2 = "";
+  let quoted = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const char2 = input[index];
+    const next = input[index + 1];
+    if (char2 === '"') {
+      if (quoted && next === '"') {
+        record2 += '""';
+        index += 1;
+      } else {
+        quoted = !quoted;
+        record2 += char2;
+      }
+    } else if ((char2 === "\n" || char2 === "\r") && !quoted) {
+      if (char2 === "\r" && next === "\n") index += 1;
+      if (record2.trim() !== "") records.push(record2);
+      record2 = "";
+    } else {
+      record2 += char2;
+    }
+  }
+  if (record2.trim() !== "") records.push(record2);
+  return { records, unclosedQuote: quoted };
+}
+function parseRecord(record2, delimiter) {
+  const values = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < record2.length; index += 1) {
+    const char2 = record2[index];
+    const next = record2[index + 1];
+    if (char2 === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char2 === delimiter && !quoted) {
+      values.push(cell);
+      cell = "";
+    } else {
+      cell += char2;
+    }
+  }
+  values.push(cell);
+  return values;
+}
+function detectDelimiter(header) {
+  return [",", ";", "	"].map((delimiter) => ({ delimiter, count: parseRecord(header, delimiter).length })).sort((a, b) => b.count - a.count)[0]?.delimiter ?? ",";
+}
+function parseSemicolonCsv(input) {
+  const warnings = [];
+  const { records, unclosedQuote } = splitLogicalRecords(input);
+  if (unclosedQuote) warnings.push("The file ended with an open quote; the last row was recovered as best as possible.");
+  const headerRecord = records.shift() ?? "";
+  const delimiter = detectDelimiter(headerRecord);
+  const normalizeHeader = (header) => header.trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  const headers = parseRecord(headerRecord, delimiter).map(normalizeHeader);
+  const candidates = [delimiter, ",", ";", "	"].filter((value, index, array2) => array2.indexOf(value) === index);
+  const rows = records.flatMap((record2, index) => {
+    const parsed = candidates.map((candidate) => ({ candidate, values: parseRecord(record2, candidate) })).sort((a, b) => Number(b.values.length === headers.length) - Number(a.values.length === headers.length) || Math.abs(a.values.length - headers.length) - Math.abs(b.values.length - headers.length))[0];
+    if (!parsed || parsed.values.length !== headers.length) {
+      warnings.push(`Row ${index + 2} has ${parsed?.values.length ?? 0} fields; expected ${headers.length}.`);
+      return [];
+    }
+    return [parsed.values];
+  });
+  return { headers, rows, warnings, delimiter: delimiter === "	" ? "tab" : delimiter };
+}
+function importDiff(imported, existing) {
+  const existingById = new Map(existing.map((applicant) => [applicant.id, applicant]));
+  let added = 0;
+  let updated = 0;
+  let unchanged = 0;
+  for (const applicant of imported) {
+    const previous = existingById.get(applicant.id);
+    if (!previous) {
+      added += 1;
+      continue;
+    }
+    const fields = ["name", "grade", "email", "transcript", "aiScore", "aiRecommendation", "aiSummary", "aiStrengths", "aiConcerns", "roboticsExperience", "commit10Hours", "parentVolunteer"];
+    if (fields.some((field) => previous[field] !== applicant[field])) updated += 1;
+    else unchanged += 1;
+  }
+  return {
+    added,
+    updated,
+    unchanged,
+    missingFromUpload: existing.filter((applicant) => !imported.some((row) => row.id === applicant.id)).length
+  };
+}
+function normalizeAiScore(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value === -1) return -1;
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+  if (typeof value !== "string" || value.trim() === "") return -1;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return -1;
+  if (parsed === -1) return -1;
+  return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+function csvToApplicant(values, headers, queuePosition) {
+  const record2 = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+  return {
+    id: record2.id || randomUUID2(),
+    name: record2.name || "Unnamed applicant",
+    grade: record2.grade || "Unknown",
+    email: record2.email || null,
+    transcript: record2.transcript || null,
+    attachments: record2.attachments || null,
+    aiScore: normalizeAiScore(record2.ai_score),
+    aiRecommendation: record2.ai_recommendation || "Review",
+    aiSummary: record2.ai_summary || "",
+    aiStrengths: record2.ai_strengths || "",
+    aiConcerns: record2.ai_concerns || "",
+    roboticsExperience: record2.robotics_experience || "",
+    commit10Hours: record2.commit_10_hours || "Unclear",
+    parentVolunteer: record2.parent_volunteer || "Unclear",
+    interviewStatus: "queued",
+    interviewer: "",
+    interviewDecision: "Undecided",
+    callbackRequested: false,
+    attendance: ["unmarked", "here", "absent", "late"].includes((record2.attendance || "").trim().toLowerCase()) ? (record2.attendance || "").trim().toLowerCase() : "unmarked",
+    category: "unranked",
+    rank: queuePosition + 1,
+    notes: record2.notes || "",
+    queuePosition
+  };
+}
+
+// src/lib/snapshots.ts
+var MAX_SNAPSHOTS = 50;
+function serializeApplicants(rows) {
+  return rows.map((a) => ({
+    ...a,
+    createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString()
+  }));
+}
+function summarize(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    createdBy: row.createdBy,
+    applicantCount: row.applicantCount,
+    createdAt: row.createdAt.toISOString()
+  };
+}
+function parsePayload(raw) {
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object") throw new Error("Corrupt snapshot payload");
+  const payload = parsed;
+  if (payload.version !== 1 || !Array.isArray(payload.applicants) || !Array.isArray(payload.interviewLabels) || !Array.isArray(payload.charts)) {
+    throw new Error("Unsupported snapshot payload");
+  }
+  return payload;
+}
+async function enforceRetention() {
+  const rows = await db.select({ id: dataSnapshotsTable.id }).from(dataSnapshotsTable).orderBy(desc(dataSnapshotsTable.createdAt));
+  const overflow = rows.slice(MAX_SNAPSHOTS);
+  for (const row of overflow) {
+    await db.delete(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, row.id));
+  }
+}
+async function captureSnapshot(label, createdBy) {
+  const applicants = await db.select().from(applicantsTable);
+  const interviewLabels = await getInterviewSettings();
+  const charts = await db.select({
+    source: dashboardChartsTable.source,
+    chart: dashboardChartsTable.chart,
+    position: dashboardChartsTable.position
+  }).from(dashboardChartsTable).orderBy(asc(dashboardChartsTable.position));
+  const payload = {
+    version: 1,
+    applicants: serializeApplicants(applicants),
+    interviewLabels,
+    charts
+  };
+  const cleanLabel = label.trim().slice(0, 120) || "Snapshot";
+  const [row] = await db.insert(dataSnapshotsTable).values({
+    id: randomUUID3(),
+    label: cleanLabel,
+    createdBy: createdBy === "assistant" ? "assistant" : "coordinator",
+    applicantCount: applicants.length,
+    payload: JSON.stringify(payload)
+  }).returning();
+  await enforceRetention();
+  return summarize(row);
+}
+async function listSnapshots() {
+  const rows = await db.select().from(dataSnapshotsTable).orderBy(desc(dataSnapshotsTable.createdAt));
+  return rows.map(summarize);
+}
+async function diffSnapshot(id) {
+  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
+  if (!row) throw new Error("Snapshot not found");
+  const payload = parsePayload(row.payload);
+  const current = await db.select().from(applicantsTable);
+  const labelsNow = await getInterviewSettings();
+  const labelsBefore = payload.interviewLabels;
+  const chartsNow = (await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable)).length;
+  const before = new Map(payload.applicants.map((a) => [String(a.id), a]));
+  const now = new Map(current.map((a) => [a.id, a]));
+  const addedNames = [];
+  const removedNames = [];
+  let changed = 0;
+  let unchanged = 0;
+  for (const [aid, a] of now) {
+    const old = before.get(aid);
+    if (!old) {
+      if (removedNames.length < 5) removedNames.push(a.name);
+    } else {
+      const { updatedAt: _u1, ...restNow } = a;
+      const { updatedAt: _u2, ...restOld } = old;
+      const norm = (v) => v instanceof Date ? v.toISOString() : v;
+      const keys = /* @__PURE__ */ new Set([...Object.keys(restNow), ...Object.keys(restOld)]);
+      let same = true;
+      for (const key of keys) {
+        if (JSON.stringify(norm(restNow[key])) !== JSON.stringify(norm(restOld[key]))) {
+          same = false;
+          break;
+        }
+      }
+      if (same) unchanged += 1;
+      else changed += 1;
+    }
+  }
+  for (const [aid, a] of before) {
+    if (!now.has(aid)) {
+      const rec = a;
+      if (addedNames.length < 5) addedNames.push(String(rec.name ?? aid));
+    }
+  }
+  const addedIds = [...before.keys()].filter((k) => !now.has(k));
+  const removedIds = [...now.keys()].filter((k) => !before.has(k));
+  return {
+    summary: summarize(row),
+    diff: {
+      added: addedIds.length,
+      removed: removedIds.length,
+      changed,
+      unchanged,
+      addedNames,
+      removedNames,
+      labelsChanged: JSON.stringify([...labelsBefore].sort()) !== JSON.stringify([...labelsNow].sort()),
+      labelsBefore,
+      labelsNow,
+      chartsChanged: chartsNow !== payload.charts.length,
+      chartsBefore: payload.charts.length,
+      chartsNow
+    }
+  };
+}
+async function restoreSnapshot(id, actor) {
+  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
+  if (!row) throw new Error("Snapshot not found");
+  const payload = parsePayload(row.payload);
+  const pre = await captureSnapshot(`Before restoring "${row.label}"`, actor);
+  await db.transaction(async (tx) => {
+    await tx.delete(applicantsTable);
+    for (const raw of payload.applicants) {
+      const rec = raw;
+      await tx.insert(applicantsTable).values({
+        id: String(rec.id),
+        name: String(rec.name ?? "Unnamed applicant"),
+        grade: String(rec.grade ?? "Unknown"),
+        email: rec.email ?? null,
+        photoUrl: rec.photoUrl ?? null,
+        transcript: rec.transcript ?? null,
+        attachments: rec.attachments ?? null,
+        aiScore: typeof rec.aiScore === "number" ? rec.aiScore : -1,
+        aiRecommendation: String(rec.aiRecommendation ?? "Review"),
+        aiSummary: String(rec.aiSummary ?? ""),
+        aiStrengths: String(rec.aiStrengths ?? ""),
+        aiConcerns: String(rec.aiConcerns ?? ""),
+        roboticsExperience: String(rec.roboticsExperience ?? ""),
+        commit10Hours: String(rec.commit10Hours ?? "Unclear"),
+        parentVolunteer: String(rec.parentVolunteer ?? "Unclear"),
+        interviewStatus: String(rec.interviewStatus ?? "queued"),
+        interviewer: String(rec.interviewer ?? ""),
+        interviewDecision: String(rec.interviewDecision ?? "Undecided"),
+        callbackRequested: Boolean(rec.callbackRequested ?? false),
+        flagged: Boolean(rec.flagged ?? false),
+        category: String(rec.category ?? "unranked"),
+        rank: typeof rec.rank === "number" ? rec.rank : 0,
+        notes: String(rec.notes ?? ""),
+        queuePosition: typeof rec.queuePosition === "number" ? rec.queuePosition : 0,
+        createdAt: rec.createdAt ? new Date(String(rec.createdAt)) : /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date()
+      });
+    }
+    await tx.insert(interviewQueueTable).values({ id: 1, interviewerLabels: JSON.stringify(payload.interviewLabels) }).onConflictDoUpdate({
+      target: interviewQueueTable.id,
+      set: { interviewerLabels: JSON.stringify(payload.interviewLabels), updatedAt: /* @__PURE__ */ new Date() }
+    });
+    await tx.delete(dashboardChartsTable);
+    for (const chart of payload.charts) {
+      await tx.insert(dashboardChartsTable).values({
+        id: randomUUID3(),
+        source: chart.source,
+        chart: chart.chart,
+        position: chart.position
+      });
+    }
+  });
+  return { restoredId: id, preRestoreId: pre.id, applicantCount: payload.applicants.length };
+}
+
+// src/lib/websearch.ts
+import { promises as dns } from "node:dns";
+var FETCH_TIMEOUT_MS = 12e3;
+var MAX_SNIPPET = 300;
+function cleanSnippet(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_SNIPPET);
+}
+function normalizeSources(value) {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out = [];
+  for (const entry of value.slice(0, 5)) {
+    if (typeof entry !== "string") continue;
+    let host = entry.trim().toLowerCase();
+    if (!host) continue;
+    try {
+      const url2 = new URL(host.includes("://") ? host : `https://${host}`);
+      host = url2.hostname.toLowerCase();
+    } catch {
+      host = host.replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
+    }
+    host = host.replace(/^\.+/, "").replace(/\.+$/, "");
+    if (!host || !host.includes(".")) continue;
+    if (/[^a-z0-9.-]/.test(host) || host.includes("..")) continue;
+    out.push(host);
+  }
+  return out.length > 0 ? [...new Set(out)] : null;
+}
+function filterBySources(results, sources) {
+  if (!sources) return results;
+  return results.filter((r) => {
+    try {
+      const host = new URL(r.url).hostname.toLowerCase();
+      return sources.some((s) => host === s || host.endsWith(`.${s}`));
+    } catch {
+      return false;
+    }
+  });
+}
+async function postJson(url2, headers, body) {
+  return fetch(url2, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  });
+}
+function okStatus(status) {
+  return status >= 200 && status < 300;
+}
+async function searchFirecrawl(query) {
+  try {
+    const key = process.env.FIRECRAWL_API_KEY;
+    const response = await postJson(
+      "https://api.firecrawl.dev/v1/search",
+      key ? { Authorization: `Bearer ${key}` } : {},
+      { query, limit: 5 }
+    );
+    if (!okStatus(response.status)) return null;
+    const data = await response.json();
+    if (!data.success || !Array.isArray(data.data)) return null;
+    const results = data.data.filter((item) => item.url).slice(0, 5).map((item) => ({
+      title: item.title || item.url || "",
+      url: item.url || "",
+      snippet: cleanSnippet(item.description)
+    }));
+    return results.length > 0 ? { results, provider: "firecrawl" } : null;
+  } catch {
+    return null;
+  }
+}
+async function searchTavily(query, sources = null) {
+  try {
+    const key = process.env.TAVILY_API_KEY;
+    const body = { query, max_results: 5, include_answer: false };
+    if (sources) body.include_domains = sources;
+    const response = await postJson(
+      "https://api.tavily.com/search",
+      key ? { Authorization: `Bearer ${key}` } : { "X-Tavily-Access-Mode": "keyless" },
+      body
+    );
+    if (!okStatus(response.status)) return null;
+    const data = await response.json();
+    const results = (data.results ?? []).filter((item) => item.url).slice(0, 5).map((item) => ({
+      title: item.title || item.url || "",
+      url: item.url || "",
+      snippet: cleanSnippet(item.content)
+    }));
+    return results.length > 0 ? { results, provider: key ? "tavily" : "tavily-keyless" } : null;
+  } catch {
+    return null;
+  }
+}
+function parseMcpPayload(raw) {
+  const text2 = raw.trim();
+  if (!text2) return null;
+  try {
+    return JSON.parse(text2);
+  } catch {
+    const line2 = text2.split("\n").find((entry) => entry.startsWith("data:"));
+    if (!line2) return null;
+    try {
+      return JSON.parse(line2.slice(5).trim());
+    } catch {
+      return null;
+    }
+  }
+}
+var mcpSessions = /* @__PURE__ */ new Map();
+var MCP_SESSION_TTL_MS = 4 * 60 * 1e3;
+async function mcpInit(base, auth) {
+  const cached2 = mcpSessions.get(base);
+  if (cached2 && Date.now() - cached2.at < MCP_SESSION_TTL_MS) return cached2.session;
+  try {
+    const response = await fetch(base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...auth },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "robotics-interview", version: "1.0" } }
+      }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    if (!okStatus(response.status)) return null;
+    await response.text();
+    const session = response.headers.get("mcp-session-id");
+    if (!session) return null;
+    try {
+      await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Session-Id": session, ...auth },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+        signal: AbortSignal.timeout(15e3)
+      });
+    } catch {
+    }
+    mcpSessions.set(base, { session, at: Date.now() });
+    return session;
+  } catch {
+    return null;
+  }
+}
+async function mcpCall(base, auth, tool, args) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) mcpSessions.delete(base);
+    const session = await mcpInit(base, auth);
+    if (!session) return null;
+    try {
+      const response = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "Mcp-Session-Id": session, ...auth },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } }),
+        signal: AbortSignal.timeout(6e4)
+      });
+      if (response.status === 404 || response.status === 410) continue;
+      if (!okStatus(response.status)) return null;
+      const parsed = parseMcpPayload(await response.text());
+      if (!parsed || parsed.error || parsed.result?.isError) return null;
+      const content = parsed.result?.content ?? [];
+      return content.length > 0 ? content : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function parseExaText(text2) {
+  const results = [];
+  for (const block of text2.split(/\n(?=Title:\s)/)) {
+    const title = block.match(/Title:\s*(.+)/)?.[1]?.trim() ?? "";
+    const url2 = block.match(/URL:\s*(\S+)/)?.[1]?.trim() ?? "";
+    if (!url2) continue;
+    const highlights = block.split(/Highlights:\s*/)[1] ?? "";
+    results.push({ title: title || url2, url: url2, snippet: cleanSnippet(highlights) });
+    if (results.length >= 5) break;
+  }
+  return results;
+}
+async function searchExa(query, sources = null) {
+  const key = process.env.EXA_API_KEY;
+  const args = { query };
+  if (sources) args.includeDomains = sources;
+  const content = await mcpCall(
+    "https://mcp.exa.ai/mcp",
+    key ? { "x-api-key": key } : {},
+    "web_search_exa",
+    args
+  );
+  if (!content) return null;
+  const combined = content.map((item) => item.text ?? "").join("\n");
+  const results = parseExaText(combined);
+  return results.length > 0 ? { results, provider: key ? "exa" : "exa-keyless" } : null;
+}
+async function searchParallel(query, sources = null) {
+  const key = process.env.PARALLEL_API_KEY;
+  const args = { objective: query, search_queries: [query] };
+  if (sources) args.include_domains = sources;
+  const content = await mcpCall(
+    "https://search.parallel.ai/mcp",
+    key ? { Authorization: `Bearer ${key}` } : {},
+    "web_search",
+    args
+  );
+  if (!content) return null;
+  try {
+    const combined = content.map((item) => item.text ?? "").join("\n");
+    const data = JSON.parse(combined);
+    const results = (data.results ?? []).filter((item) => item.url).slice(0, 5).map((item) => ({
+      title: (item.title || item.url || "").trim().slice(0, 120),
+      url: item.url || "",
+      snippet: cleanSnippet((item.excerpts ?? []).join(" "))
+    }));
+    return results.length > 0 ? { results, provider: key ? "parallel" : "parallel-keyless" } : null;
+  } catch {
+    return null;
+  }
+}
+async function searchWikipedia(query) {
+  try {
+    const url2 = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=5&origin=*`;
+    const response = await fetch(url2, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!okStatus(response.status)) return null;
+    const data = await response.json();
+    const hits = data.query?.search ?? [];
+    const results = hits.slice(0, 5).map((hit) => ({
+      title: hit.title || "",
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent((hit.title || "").replace(/ /g, "_"))}`,
+      snippet: cleanSnippet(hit.snippet)
+    }));
+    return results.length > 0 ? { results, provider: "wikipedia" } : null;
+  } catch {
+    return null;
+  }
+}
+async function searchDuckDuckGo(query) {
+  try {
+    const url2 = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const response = await fetch(url2, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!okStatus(response.status)) return null;
+    const data = await response.json();
+    const results = [];
+    if (data.AbstractURL) {
+      results.push({
+        title: "Instant answer",
+        url: data.AbstractURL,
+        snippet: cleanSnippet(data.AbstractText)
+      });
+    }
+    for (const item of [...data.Results ?? [], ...data.RelatedTopics ?? []]) {
+      if (results.length >= 5) break;
+      if (item.FirstURL && item.Text) {
+        results.push({ title: item.Text.slice(0, 80), url: item.FirstURL, snippet: cleanSnippet(item.Text) });
+      }
+    }
+    return results.length > 0 ? { results, provider: "duckduckgo" } : null;
+  } catch {
+    return null;
+  }
+}
+async function searchWebFallback(query, sources = null) {
+  const clean = query.trim().slice(0, 300);
+  if (!clean) return null;
+  const wanted = normalizeSources(sources);
+  const chain = [
+    (q) => searchTavily(q, wanted),
+    (q) => searchFirecrawl(q),
+    (q) => searchExa(q, wanted),
+    (q) => searchParallel(q, wanted),
+    (q) => searchWikipedia(q),
+    (q) => searchDuckDuckGo(q)
+  ];
+  for (const provider of chain) {
+    const outcome = await provider(clean);
+    if (!outcome) continue;
+    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
+    if (filtered.results.length > 0) return filtered;
+  }
+  return null;
+}
+var SEARCH_PROVIDER_NAMES = [
+  "tavily",
+  "firecrawl",
+  "exa",
+  "parallel",
+  "wikipedia",
+  "duckduckgo"
+];
+var SEARCH_PROVIDER_FNS = {
+  tavily: searchTavily,
+  firecrawl: searchFirecrawl,
+  exa: searchExa,
+  parallel: searchParallel,
+  wikipedia: searchWikipedia,
+  duckduckgo: searchDuckDuckGo
+};
+function normalizeSearchProvider(value) {
+  if (typeof value !== "string") return "auto";
+  const name2 = value.trim().toLowerCase();
+  return SEARCH_PROVIDER_NAMES.includes(name2) ? name2 : "auto";
+}
+async function searchWeb(query, provider = "auto", sources = null) {
+  const clean = query.trim().slice(0, 300);
+  if (!clean) return null;
+  const wanted = normalizeSources(sources);
+  if (provider === "auto") return searchWebFallback(clean, wanted);
+  const rest = Object.keys(SEARCH_PROVIDER_FNS).filter((name2) => name2 !== provider).map((name2) => SEARCH_PROVIDER_FNS[name2]);
+  const primary = SEARCH_PROVIDER_FNS[provider];
+  const ordered = [
+    (q) => primary(q, wanted),
+    ...rest
+  ];
+  for (const fn of ordered) {
+    const outcome = await fn(clean);
+    if (!outcome) continue;
+    const filtered = wanted ? { ...outcome, results: filterBySources(outcome.results, wanted) } : outcome;
+    if (filtered.results.length > 0) return filtered;
+  }
+  return null;
+}
+function formatSearchResults(outcome) {
+  const lines = outcome.results.map(
+    (result, index) => `[${index + 1}] ${result.title}
+${result.url}
+${result.snippet}`
+  );
+  return `Web results (via ${outcome.provider}):
+${lines.join("\n\n")}`;
+}
+function isBlockedFetchUrl(raw) {
+  try {
+    const url2 = new URL(raw);
+    if (url2.protocol !== "http:" && url2.protocol !== "https:") return true;
+    if (url2.username || url2.password) return true;
+    const host = url2.hostname.toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost")) return true;
+    const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (v4) {
+      const octets = v4.slice(1, 5).map(Number);
+      if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+      const [a, b] = octets;
+      if (a === 10 || a === 127 || a === 0 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 169 && b === 254) return true;
+      return false;
+    }
+    if (/^[\dxabcdef.:]+$/i.test(host)) return true;
+    if (host.includes(":")) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+var FETCH_MAX_BYTES = 32768;
+var FETCH_MAX_HOPS = 3;
+function ipv4OctetsBlocked(octets) {
+  const [a, b] = octets;
+  return a === 10 || a === 127 || a === 0 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 169 && b === 254;
+}
+async function resolvesToBlockedIp(raw) {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    if (/^[\dxabcdef.:]+$/i.test(host)) return false;
+    const addresses = await dns.resolve4(host);
+    return addresses.some((ip) => {
+      const octets = ip.split(".").map(Number);
+      return octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255) || ipv4OctetsBlocked(octets);
+    });
+  } catch {
+    return false;
+  }
+}
+async function fetchUrlText(rawUrl) {
+  if (isBlockedFetchUrl(rawUrl)) return null;
+  if (await resolvesToBlockedIp(rawUrl)) return null;
+  try {
+    let current = rawUrl;
+    let response = null;
+    for (let hop = 0; hop <= FETCH_MAX_HOPS; hop += 1) {
+      const attempt = await fetch(current, {
+        headers: { Accept: "text/html,text/plain", "User-Agent": "RoboticsInterviewDashboard/1.0" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (attempt.status >= 300 && attempt.status < 400) {
+        const location2 = attempt.headers.get("location");
+        await attempt.body?.cancel().catch(() => void 0);
+        if (!location2) return null;
+        const next = new URL(location2, current).toString();
+        if (isBlockedFetchUrl(next)) return null;
+        current = next;
+        continue;
+      }
+      response = attempt;
+      break;
+    }
+    if (!response || !okStatus(response.status)) {
+      await response?.body?.cancel().catch(() => void 0);
+      return null;
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!/text|html|json/i.test(contentType)) {
+      await response.body?.cancel().catch(() => void 0);
+      return null;
+    }
+    const reader = response.body?.getReader();
+    if (!reader) return null;
+    const chunks = [];
+    let received = 0;
+    for (; ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > FETCH_MAX_BYTES) {
+        await reader.cancel().catch(() => void 0);
+        break;
+      }
+      chunks.push(value);
+    }
+    const total = chunks.reduce((sum2, chunk) => sum2 + chunk.byteLength, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const text2 = cleanSnippet(new TextDecoder().decode(merged).slice(0, 8e3));
+    return text2 || null;
+  } catch {
+    return null;
+  }
+}
+
+// src/lib/python.ts
+import { spawn } from "node:child_process";
+import { randomUUID as randomUUID4 } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path2 from "node:path";
+var DOCKER_TIMEOUT_MS = 3e4;
+var DOCKER_INNER_TIMEOUT_S = 25;
+var RESTRICTED_TIMEOUT_MS = 1e4;
+var MAX_CODE_CHARS = 4e3;
+var MAX_OUTPUT_CHARS = 6e3;
+var DOCKER_IMAGE = process.env.PYTHON_SANDBOX_IMAGE || "python:3.12-slim";
+var ALLOWED_MODULES = /* @__PURE__ */ new Set([
+  "math",
+  "statistics",
+  "datetime",
+  "json",
+  "re",
+  "collections",
+  "itertools",
+  "functools",
+  "decimal",
+  "fractions",
+  "string",
+  "operator",
+  "heapq",
+  "bisect",
+  "csv",
+  "pprint",
+  "textwrap",
+  "copy",
+  "dataclasses",
+  "enum",
+  "typing",
+  "unicodedata",
+  "keyword",
+  "reprlib",
+  "numbers"
+]);
+var RESTRICTED_PREAMBLE = `import json as _json
+import sys as _sys
+import builtins as _builtins
+import resource as _resource
+try:
+    applicants = _json.loads(_sys.argv[1])
+except Exception:
+    applicants = []
+try:
+    _resource.setrlimit(_resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+except Exception:
+    pass
+_allowed_modules = ${JSON.stringify([...ALLOWED_MODULES])}
+_scrub_names = {"os", "posix", "nt", "subprocess", "socket", "ssl", "shutil", "pathlib", "tempfile", "runpy", "pkgutil", "pydoc", "webbrowser", "ctypes", "mmap", "signal", "fcntl", "select", "selectors", "asyncio", "concurrent", "multiprocessing", "sqlite3", "dbm", "gdbm", "shelve", "pickle", "_pickle", "marshal", "resource", "pwd", "grp", "crypt", "syslog", "urllib", "http", "ftplib", "smtplib", "poplib", "imaplib", "telnetlib", "xmlrpc", "wsgiref", "cgi", "cgitb", "venv", "ensurepip", "zipapp", "pdb", "bdb", "code", "codeop", "pty", "tty", "termios", "readline", "rlcompleter", "turtle"}
+def _scrub_modules(_sys=_sys, _scrub_names=_scrub_names):
+    for _name in list(_sys.modules.keys()):
+        if _name.split(".")[0] in _scrub_names:
+            del _sys.modules[_name]
+_real_import = _builtins.__import__
+_getframe = _sys._getframe
+_snippet_file = __file__
+def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0, _getframe=_getframe, _snippet=_snippet_file, _real=_real_import, _allowed=_allowed_modules, _scrub=_scrub_modules):
+    top = name.split(".")[0] if isinstance(name, str) else ""
+    try:
+        _frame = _getframe(1)
+    except Exception:
+        _frame = None
+    direct = False
+    if _frame is not None:
+        try:
+            _g = _frame.f_globals
+            _is_main = isinstance(_g, dict) and _g.get("__name__") == "__main__"
+            _dyn = _frame.f_code.co_filename in ("<string>", "<stdin>", "<unknown>")
+            direct = bool(_is_main or _dyn)
+        except Exception:
+            direct = True
+    if (not direct) or (top in _allowed):
+        # NOTE: no sys.modules scrubbing here \u2014 deleting entries mid-flight
+        # breaks the import machinery (KeyError inside _bootstrap). The
+        # preamble scrubs once at startup; later arrivals (e.g. os via
+        # statistics\u2192random) are unreachable without imports, which stay guarded.
+        return _real(name, globals, locals, fromlist, level)
+    raise ImportError("module '%s' is not available in the restricted sandbox (Docker unavailable on this host)" % (name,))
+_builtins.__import__ = _guarded_import
+_builtins.open = None
+_scrub_modules()
+del _json, _sys, _builtins, _resource, _real_import, _getframe, _snippet_file, _scrub_modules, _guarded_import
+`;
+var DOCKER_PREAMBLE = `import json as _json
+import sys as _sys
+try:
+    applicants = _json.loads(_sys.argv[1])
+except Exception:
+    applicants = []
+`;
+var dockerState = "unknown";
+async function runLocal(command, args, input, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { timeout: timeoutMs, killSignal: "SIGKILL" });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString("utf8").slice(0, 2e3);
+    });
+    child.on("error", (error40) => resolve({ stdout, stderr: String(error40), code: -1, signal: null }));
+    child.on("close", (exitCode, exitSignal) => resolve({ stdout, stderr, code: exitCode, signal: exitSignal }));
+    if (input !== null && child.stdin) {
+      child.stdin.on("error", () => void 0);
+      child.stdin.write(input);
+      child.stdin.end();
+    }
+  });
+}
+async function dockerUsable() {
+  if (process.env.PYTHON_SANDBOX === "restricted") return false;
+  if (process.env.PYTHON_SANDBOX === "docker") return true;
+  if (dockerState !== "unknown") return dockerState === "yes";
+  try {
+    const probe = await new Promise((resolve) => {
+      const child = spawn("docker", ["info", "--format", "{{.ServerVersion}}"], { timeout: 8e3 });
+      child.on("error", () => resolve(false));
+      child.on("close", (code) => resolve(code === 0));
+    });
+    if (!probe) {
+      dockerState = "no";
+      return false;
+    }
+    const inspect = await runLocal("docker", ["image", "inspect", DOCKER_IMAGE, "--format", "{{.Id}}"], null, 15e3);
+    dockerState = inspect.code === 0 ? "yes" : "no";
+    return dockerState === "yes";
+  } catch {
+    dockerState = "no";
+    return false;
+  }
+}
+function dockerFailed(stderr) {
+  return /^(docker:|Error response|Cannot connect|unable to|no such image|permission denied)/im.test(stderr.trim());
+}
+async function runDocker(code, applicantsJson) {
+  const name2 = `assistant-py-${randomUUID4().slice(0, 8)}`;
+  const script = `${DOCKER_PREAMBLE}
+${code}
+`;
+  const args = [
+    "run",
+    "--rm",
+    "-i",
+    "--name",
+    name2,
+    "--network",
+    "none",
+    "--memory",
+    "512m",
+    "--memory-swap",
+    "512m",
+    "--cpus",
+    "1",
+    "--pids-limit",
+    "64",
+    "--read-only",
+    "--tmpfs",
+    "/tmp:rw,noexec,nosuid,size=64m",
+    "--user",
+    "65534:65534",
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges=true",
+    "-e",
+    "HOME=/tmp",
+    "-e",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "-e",
+    "PYTHONNOUSERSITE=1",
+    DOCKER_IMAGE,
+    "timeout",
+    "-s",
+    "KILL",
+    String(DOCKER_INNER_TIMEOUT_S),
+    "python",
+    "-I",
+    "-",
+    applicantsJson.slice(0, 2e5)
+  ];
+  const child = spawn("docker", args, { timeout: DOCKER_TIMEOUT_MS, killSignal: "SIGKILL" });
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.on("data", (chunk) => {
+    stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
+  });
+  child.stderr?.on("data", (chunk) => {
+    stderr += chunk.toString("utf8").slice(0, 2e3);
+  });
+  if (child.stdin) {
+    child.stdin.on("error", () => void 0);
+    child.stdin.write(script);
+    child.stdin.end();
+  }
+  const finished = await new Promise((resolve) => {
+    child.on("error", () => resolve({ code: -1, signal: null }));
+    child.on("close", (exitCode, exitSignal) => resolve({ code: exitCode, signal: exitSignal }));
+  });
+  if (finished.signal) {
+    runLocal("docker", ["rm", "-f", name2], null, 1e4).catch(() => void 0);
+    return { ok: false, output: `Python timed out after ${DOCKER_INNER_TIMEOUT_S}s.`, sandbox: "docker" };
+  }
+  if (finished.code !== 0) {
+    if (dockerFailed(stderr)) return null;
+    if (finished.code === 137 && !stderr.trim() && !stdout.trim()) {
+      return { ok: false, output: `Python timed out after ${DOCKER_INNER_TIMEOUT_S}s.`, sandbox: "docker" };
+    }
+    const detail = stdout.trim();
+    return { ok: false, output: `Python failed (${stderr.trim().slice(0, 500)}).${detail ? ` Partial output:
+${detail}` : ""}`.slice(0, MAX_OUTPUT_CHARS), sandbox: "docker" };
+  }
+  const text2 = stdout.trim();
+  return { ok: true, output: (text2 || "(no output)").slice(0, MAX_OUTPUT_CHARS), sandbox: "docker" };
+}
+var prlimitState = "unknown";
+async function prlimitAvailable() {
+  if (prlimitState !== "unknown") return prlimitState === "yes";
+  try {
+    const ok = await new Promise((resolve) => {
+      const child = spawn("prlimit", ["--version"], { timeout: 8e3 });
+      child.on("error", () => resolve(false));
+      child.on("close", (code) => resolve(code === 0));
+    });
+    prlimitState = ok ? "yes" : "no";
+  } catch {
+    prlimitState = "no";
+  }
+  return prlimitState === "yes";
+}
+async function runRestricted(code, applicantsJson) {
+  const trimmed = code.trim().slice(0, MAX_CODE_CHARS);
+  if (!trimmed) return { ok: false, output: "No code to run.", sandbox: "restricted" };
+  let dir = "";
+  try {
+    dir = await mkdtemp(path2.join(tmpdir(), "assistant-py-"));
+    const scriptPath = path2.join(dir, "snippet.py");
+    await writeFile(scriptPath, `${RESTRICTED_PREAMBLE}
+${trimmed}
+`, "utf8");
+    const usePrlimit = await prlimitAvailable();
+    const command = usePrlimit ? "prlimit" : "python3";
+    const args = usePrlimit ? ["--nproc=64:64", "--as=536870912:536870912", "--", "python3", "-I", scriptPath, applicantsJson.slice(0, 2e5)] : ["-I", scriptPath, applicantsJson.slice(0, 2e5)];
+    const output = await new Promise((resolve) => {
+      let settled = false;
+      const done = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const child = spawn(command, args, {
+        cwd: dir,
+        detached: true,
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LANG: "C.UTF-8", PYTHONNOUSERSITE: "1" }
+      });
+      const timer = setTimeout(() => {
+        try {
+          if (child.pid !== void 0) process.kill(-child.pid, "SIGKILL");
+        } catch {
+        }
+        done({ stdout, stderr, code: null, signal: "SIGKILL" });
+      }, RESTRICTED_TIMEOUT_MS);
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk) => {
+        stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT_CHARS);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += chunk.toString("utf8").slice(0, 2e3);
+      });
+      child.on("error", () => done({ stdout, stderr: "Python is not available on this server.", code: -1, signal: null }));
+      child.on("close", (exitCode, exitSignal) => done({ stdout, stderr, code: exitCode, signal: exitSignal }));
+    });
+    if (output.code !== 0) {
+      const reason = output.signal ? `timed out after ${RESTRICTED_TIMEOUT_MS / 1e3}s` : output.stderr.trim() || ` exited with code ${output.code}`;
+      const detail = output.stdout.trim();
+      return { ok: false, output: `Python failed (${reason}).${detail ? ` Partial output:
+${detail}` : ""}`.slice(0, MAX_OUTPUT_CHARS), sandbox: "restricted" };
+    }
+    const text2 = output.stdout.trim();
+    return { ok: true, output: (text2 || "(no output)").slice(0, MAX_OUTPUT_CHARS), sandbox: "restricted" };
+  } catch (error40) {
+    return { ok: false, output: `Python could not run: ${error40 instanceof Error ? error40.message : String(error40)}`, sandbox: "restricted" };
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+}
+async function runPythonCode(code, applicantsJson) {
+  const trimmed = code.trim().slice(0, MAX_CODE_CHARS);
+  if (!trimmed) return { ok: false, output: "No code to run.", sandbox: "restricted" };
+  if (await dockerUsable()) {
+    const outcome = await runDocker(trimmed, applicantsJson);
+    if (outcome) return outcome;
+  }
+  return runRestricted(trimmed, applicantsJson);
+}
+
+// ../../lib/integrations-openai-ai-server/src/audio/client.ts
+import { Buffer as Buffer2 } from "node:buffer";
+var openai3 = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "anonymous",
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.kilo.ai/api/gateway"
+});
+async function textToSpeech(text2, voice = "alloy", format = "wav") {
+  const response = await openai3.chat.completions.create({
+    model: "gpt-audio",
+    modalities: ["text", "audio"],
+    audio: { voice, format },
+    messages: [
+      { role: "system", content: "You are an assistant that performs text-to-speech." },
+      { role: "user", content: `Repeat the following text verbatim: ${text2}` }
+    ]
+  });
+  const audioData = response.choices[0]?.message?.audio?.data ?? "";
+  return Buffer2.from(audioData, "base64");
+}
+
+// src/routes/robotics.ts
+init_drizzle_orm();
+init_presence2();
+
 // src/lib/objectStorage.ts
+import { randomUUID as randomUUID5 } from "crypto";
 var ObjectNotFoundError = class _ObjectNotFoundError extends Error {
   constructor() {
     super("Object not found");
@@ -94645,7 +94759,7 @@ function storageBucket() {
   return process.env.SUPABASE_STORAGE_BUCKET || "app-uploads";
 }
 var client = null;
-function supabase() {
+function supabase2() {
   if (!client) {
     client = createClient(supabaseUrl(), serviceRoleKey(), {
       auth: { persistSession: false, autoRefreshToken: false }
@@ -94658,7 +94772,7 @@ function ensureBucket() {
   if (!ensuredBucket) {
     ensuredBucket = (async () => {
       const bucket = storageBucket();
-      const { error: error40 } = await supabase().storage.createBucket(bucket, { public: false });
+      const { error: error40 } = await supabase2().storage.createBucket(bucket, { public: false });
       if (error40 && !/already exists|duplicate/i.test(error40.message)) {
         throw new Error(`Could not create Supabase storage bucket "${bucket}": ${error40.message}`);
       }
@@ -94691,7 +94805,7 @@ var ObjectStorageService = class {
     const bucket = storageBucket();
     const id = randomUUID5();
     const storagePath = `uploads/${id}`;
-    const { data, error: error40 } = await supabase().storage.from(bucket).createSignedUploadUrl(storagePath, 900);
+    const { data, error: error40 } = await supabase2().storage.from(bucket).createSignedUploadUrl(storagePath, 900);
     if (error40 || !data?.signedUrl) {
       throw new Error(`Failed to mint upload URL: ${error40?.message ?? "unknown error"}`);
     }
@@ -94699,7 +94813,7 @@ var ObjectStorageService = class {
   }
   async listUploads(limit2 = 20) {
     await ensureBucket();
-    const { data, error: error40 } = await supabase().storage.from(storageBucket()).list("uploads", {
+    const { data, error: error40 } = await supabase2().storage.from(storageBucket()).list("uploads", {
       limit: limit2,
       sortBy: { column: "created_at", order: "desc" }
     });
@@ -94716,7 +94830,7 @@ var ObjectStorageService = class {
     await ensureBucket();
     const id = randomUUID5();
     const storagePath = `generated/${id}`;
-    const { error: error40 } = await supabase().storage.from(storageBucket()).upload(storagePath, data, { contentType, upsert: false });
+    const { error: error40 } = await supabase2().storage.from(storageBucket()).upload(storagePath, data, { contentType, upsert: false });
     if (error40) {
       throw new Error(`Failed to store generated image: ${error40.message}`);
     }
@@ -94725,7 +94839,7 @@ var ObjectStorageService = class {
   async deleteObject(objectPath) {
     await ensureBucket();
     const storagePath = toStoragePath(objectPath);
-    const { error: error40 } = await supabase().storage.from(storageBucket()).remove([storagePath]);
+    const { error: error40 } = await supabase2().storage.from(storageBucket()).remove([storagePath]);
     if (error40) {
       throw new Error(`Failed to delete object: ${error40.message}`);
     }
@@ -94733,7 +94847,7 @@ var ObjectStorageService = class {
   async downloadObject(objectPath) {
     await ensureBucket();
     const storagePath = toStoragePath(objectPath);
-    const { data, error: error40 } = await supabase().storage.from(storageBucket()).download(storagePath);
+    const { data, error: error40 } = await supabase2().storage.from(storageBucket()).download(storagePath);
     if (error40 || !data) {
       throw new ObjectNotFoundError();
     }
@@ -96620,6 +96734,32 @@ router4.post("/queue/settings", requireAdmin, async (req, res) => {
   });
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
+async function reactionsForMessages(messageIds) {
+  const grouped = /* @__PURE__ */ new Map();
+  if (!messageIds.length) return grouped;
+  const rows = await db.select().from(chatMessageReactionsTable).where(inArray(chatMessageReactionsTable.messageId, messageIds));
+  const byMessage = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    let byEmoji = byMessage.get(row.messageId);
+    if (!byEmoji) {
+      byEmoji = /* @__PURE__ */ new Map();
+      byMessage.set(row.messageId, byEmoji);
+    }
+    let authors = byEmoji.get(row.emoji);
+    if (!authors) {
+      authors = /* @__PURE__ */ new Set();
+      byEmoji.set(row.emoji, authors);
+    }
+    authors.add(row.author);
+  }
+  for (const [messageId, byEmoji] of byMessage) {
+    grouped.set(
+      messageId,
+      [...byEmoji.entries()].map(([emoji3, authors]) => ({ emoji: emoji3, count: authors.size, authors: [...authors] })).sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji))
+    );
+  }
+  return grouped;
+}
 function pageWindow(query) {
   const record2 = query ?? {};
   const limit2 = Math.min(100, Math.max(1, Math.floor(Number(record2.limit) || 30)));
@@ -96633,12 +96773,14 @@ function pageWindow(query) {
 router4.get("/queue/chat", requireAdmin, async (req, res) => {
   const { limit: limit2, before } = pageWindow(req.query);
   const messages = await db.select().from(interviewChatMessagesTable).where(before ? lt(interviewChatMessagesTable.createdAt, before) : void 0).orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit2);
+  const reactions = await reactionsForMessages(messages.map((message) => message.id));
   res.json(GetInterviewChatResponse.parse({
     items: messages.reverse().map((message) => ({
       id: message.id,
       author: message.author,
       message: message.message,
       activities: parseStoredActivities(message.activities),
+      reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString()
     }))
   }));
@@ -96663,6 +96805,34 @@ router4.post("/queue/chat", requireAdmin, async (req, res) => {
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString()
   }));
+});
+router4.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res) => {
+  const parsed = ToggleChatReactionBody.safeParse(req.body);
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  const emoji3 = parsed.success ? [...parsed.data.emoji.trim()].slice(0, 4).join("") : "";
+  const author = parsed.success ? parsed.data.author.trim().slice(0, 80) : "";
+  if (!parsed.success || !messageId || !emoji3 || !author) {
+    res.status(400).json({ error: "A message, emoji, and author are required." });
+    return;
+  }
+  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const [existing] = await db.select({ id: chatMessageReactionsTable.id }).from(chatMessageReactionsTable).where(and(
+    eq(chatMessageReactionsTable.messageId, messageId),
+    eq(chatMessageReactionsTable.emoji, emoji3),
+    eq(chatMessageReactionsTable.author, author)
+  )).limit(1);
+  if (existing) {
+    await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.id, existing.id));
+  } else {
+    await db.insert(chatMessageReactionsTable).values({ id: randomUUID6(), messageId, emoji: emoji3, author }).onConflictDoNothing();
+  }
+  const reactions = await reactionsForMessages([messageId]);
+  pushRealtimeHint("interview_chat_messages");
+  res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
 router4.post("/queue/reorder", requireAdmin, async (req, res) => {
   const parsed = ReorderQueueBody.safeParse(req.body);
@@ -97704,88 +97874,6 @@ var broadcasts_default = router6;
 
 // src/routes/events.ts
 var import_express7 = __toESM(require_express2(), 1);
-
-// src/lib/realtime.ts
-var WATCHED_TABLES = [
-  "applicants",
-  "interview_queue",
-  "display_settings",
-  "interview_chat_messages",
-  "broadcasts",
-  "seating_settings",
-  "dashboard_charts"
-];
-var listeners = /* @__PURE__ */ new Set();
-var supabase2 = null;
-var started = false;
-function addRealtimeListener(listener) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-function broadcast(hint) {
-  for (const listener of listeners) {
-    try {
-      listener(hint);
-    } catch (error40) {
-      logger.error({ err: error40 }, "Realtime listener failed");
-    }
-  }
-}
-function initRealtime() {
-  if (started) return;
-  started = true;
-  const url2 = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url2 || !key) {
-    logger.warn(
-      "Supabase realtime relay disabled: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing. Live pages fall back to polling."
-    );
-    return;
-  }
-  try {
-    supabase2 = createClient(url2, key, {
-      realtime: { params: { eventsPerSecond: 20 } }
-    });
-    const channel = supabase2.channel("dashboard-changes");
-    for (const table of WATCHED_TABLES) {
-      channel.on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        (payload) => broadcast({ table, event: payload.eventType })
-      );
-    }
-    channel.subscribe((status, error40) => {
-      if (error40) {
-        logger.error({ err: error40 }, "Supabase realtime subscription error");
-        return;
-      }
-      logger.info({ status }, "Supabase realtime status");
-    });
-  } catch (error40) {
-    logger.error({ err: error40 }, "Failed to start Supabase realtime relay");
-    supabase2 = null;
-  }
-}
-var sseClients = /* @__PURE__ */ new Set();
-function addSseClient(res) {
-  sseClients.add(res);
-  const removeListener = addRealtimeListener((hint) => {
-    try {
-      res.write(`data: ${JSON.stringify(hint)}
-
-`);
-    } catch {
-    }
-  });
-  return () => {
-    removeListener();
-    sseClients.delete(res);
-  };
-}
-
-// src/routes/events.ts
 var router7 = (0, import_express7.Router)();
 router7.get("/events", requireAdmin, (req, res) => {
   res.writeHead(200, {
@@ -97941,7 +98029,9 @@ init_src();
 initRealtime();
 async function ensureSchema() {
   const statements = [
-    `alter table "applicants" add column if not exists "flagged" boolean not null default false`
+    `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`
   ];
   for (const sql2 of statements) {
     try {

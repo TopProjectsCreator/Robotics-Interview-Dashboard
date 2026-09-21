@@ -16,7 +16,7 @@ import {
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
-  useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue,
+  useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
@@ -1860,6 +1860,7 @@ async function prepareChatImage(file: File): Promise<{ blob: Blob; name: string;
     bitmap.close();
   }
 }
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "✅"];
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
@@ -1877,6 +1878,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   chatItemsRef.current = chatItems;
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
+  const toggleReaction = useToggleChatReaction();
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const qc = useQueryClient();
   const chatImageUpload = useRequestUploadUrl();
   const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number }[]>([]);
@@ -1959,6 +1962,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   useEffect(() => {
     if (chat.data && olderChat.length === 0 && chat.data.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
   }, [chat.data, olderChat.length]);
+  const react = (messageId: string, emoji: string) => {
+    const author = selectedInterviewer || "Interviewer";
+    setPickerFor(null);
+    toggleReaction.mutate({ messageId, data: { emoji, author } }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); },
+    });
+  };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim() && !chatFiles.length) return;
@@ -2028,7 +2038,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   };
   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
-    <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+    <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /><div className="mt-2 flex flex-wrap items-center gap-1">{(item.reactions ?? []).map(r => { const mine = r.authors.includes(selectedInterviewer || "Interviewer"); return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>; })}<button onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} title="Add reaction" aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[#cbd9da] text-[#7c8c91] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /></button></div>{pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}</div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
     <form onSubmit={submitChat} className="mt-3 space-y-2">{chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><img src={f.previewUrl} alt={f.name} className="h-14 w-14 shrink-0 rounded-lg border border-[#dce9e8] object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{formatUploadSize(f.size)} · will upload on send</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
   </section>;
 }

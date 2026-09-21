@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssistantActivity } from './assistantActivity';
+import type { ChatReaction } from './chatReaction';
 export interface InterviewChatMessage {
     id: string;
     author: string;
     message: string;
     activities?: AssistantActivity[];
+    reactions?: ChatReaction[];
     createdAt: string;
 }
 //# sourceMappingURL=interviewChatMessage.d.ts.map

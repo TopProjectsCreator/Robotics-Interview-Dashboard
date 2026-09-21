@@ -1,5 +1,5 @@
 import type { QueryKey, UseMutationOptions, UseMutationResult, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
-import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, SystemUsage, UploadInput, UploadResponse } from './api.schemas';
+import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, ChatReactionInput, ChatReactionList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, SystemUsage, UploadInput, UploadResponse } from './api.schemas';
 import { customFetch } from '../custom-fetch';
 import type { ErrorType, BodyType } from '../custom-fetch';
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -719,6 +719,37 @@ export declare const useSendInterviewChat: <TError = ErrorType<unknown>, TContex
     request?: SecondParameter<typeof customFetch>;
 }) => UseMutationResult<Awaited<ReturnType<typeof sendInterviewChat>>, TError, {
     data: BodyType<InterviewChatInput>;
+}, TContext>;
+export declare const getToggleChatReactionUrl: (messageId: string) => string;
+/**
+ * @summary Toggle an emoji reaction on a chat message
+ */
+export declare const toggleChatReaction: (messageId: string, chatReactionInput: ChatReactionInput, options?: Parameters<typeof customFetch>[1]) => Promise<ChatReactionList>;
+export declare const getToggleChatReactionMutationOptions: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError, {
+        messageId: string;
+        data: BodyType<ChatReactionInput>;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError, {
+    messageId: string;
+    data: BodyType<ChatReactionInput>;
+}, TContext>;
+export type ToggleChatReactionMutationResult = NonNullable<Awaited<ReturnType<typeof toggleChatReaction>>>;
+export type ToggleChatReactionMutationBody = BodyType<ChatReactionInput>;
+export type ToggleChatReactionMutationError = ErrorType<unknown>;
+/**
+* @summary Toggle an emoji reaction on a chat message
+*/
+export declare const useToggleChatReaction: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError, {
+        messageId: string;
+        data: BodyType<ChatReactionInput>;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationResult<Awaited<ReturnType<typeof toggleChatReaction>>, TError, {
+    messageId: string;
+    data: BodyType<ChatReactionInput>;
 }, TContext>;
 export declare const getReorderQueueUrl: () => string;
 /**

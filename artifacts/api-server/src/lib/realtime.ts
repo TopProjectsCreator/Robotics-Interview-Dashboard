@@ -44,6 +44,12 @@ function broadcast(hint: RealtimeHint): void {
   }
 }
 
+// Push a hint directly (e.g. after a local write) without waiting for the
+// Supabase round-trip. Used for tables not yet in the realtime publication.
+export function pushRealtimeHint(table: string, event = "UPDATE"): void {
+  broadcast({ table, event });
+}
+
 export function isRealtimeEnabled(): boolean {
   return started && supabase !== null;
 }

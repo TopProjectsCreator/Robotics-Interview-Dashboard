@@ -739,6 +739,11 @@ export const GetInterviewChatResponse = zod.object({
   "tool": zod.string(),
   "detail": zod.string()
 })).optional(),
+  "reactions": zod.array(zod.object({
+  "emoji": zod.string(),
+  "count": zod.number().int(),
+  "authors": zod.array(zod.string())
+})).optional(),
   "createdAt": zod.string()
 }))
 })
@@ -764,7 +769,33 @@ export const SendInterviewChatResponse = zod.object({
   "tool": zod.string(),
   "detail": zod.string()
 })).optional(),
+  "reactions": zod.array(zod.object({
+  "emoji": zod.string(),
+  "count": zod.number().int(),
+  "authors": zod.array(zod.string())
+})).optional(),
   "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Toggle an emoji reaction on a chat message
+ */
+export const ToggleChatReactionParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const ToggleChatReactionBody = zod.object({
+  "emoji": zod.string().describe('Single emoji character'),
+  "author": zod.string().describe('Interviewer label reacting')
+})
+
+export const ToggleChatReactionResponse = zod.object({
+  "reactions": zod.array(zod.object({
+  "emoji": zod.string(),
+  "count": zod.number().int(),
+  "authors": zod.array(zod.string())
+}))
 })
 
 

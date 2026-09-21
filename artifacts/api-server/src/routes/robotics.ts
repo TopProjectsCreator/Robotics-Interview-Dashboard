@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -54,6 +54,8 @@ import {
   ReorderQueueBody,
   SendInterviewChatBody,
   SendInterviewChatResponse,
+  ToggleChatReactionBody,
+  ToggleChatReactionResponse,
   UpdateQueueSettingsBody,
   ReorderQueueResponse,
   UpdateApplicantBody,
@@ -63,12 +65,13 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
+import { pushRealtimeHint } from "../lib/realtime";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
-import { and, asc, desc, eq, gt, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { requestAdminSession, requireAdmin } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getIpStats } from "../lib/presence";
@@ -2295,8 +2298,38 @@ router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => 
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
-function pageWindow(query: unknown): { limit: number; before?: Date } {
-  const record = (query ?? {}) as Record<string, unknown>;
+type ReactionGroup = { emoji: string; count: number; authors: string[] };
+
+async function reactionsForMessages(messageIds: string[]): Promise<Map<string, ReactionGroup[]>> {
+  const grouped = new Map<string, ReactionGroup[]>();
+  if (!messageIds.length) return grouped;
+  const rows = await db.select().from(chatMessageReactionsTable).where(inArray(chatMessageReactionsTable.messageId, messageIds));
+  const byMessage = new Map<string, Map<string, Set<string>>>();
+  for (const row of rows) {
+    let byEmoji = byMessage.get(row.messageId);
+    if (!byEmoji) {
+      byEmoji = new Map();
+      byMessage.set(row.messageId, byEmoji);
+    }
+    let authors = byEmoji.get(row.emoji);
+    if (!authors) {
+      authors = new Set();
+      byEmoji.set(row.emoji, authors);
+    }
+    authors.add(row.author);
+  }
+  for (const [messageId, byEmoji] of byMessage) {
+    grouped.set(
+      messageId,
+      [...byEmoji.entries()]
+        .map(([emoji, authors]) => ({ emoji, count: authors.size, authors: [...authors] }))
+        .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji)),
+    );
+  }
+  return grouped;
+}
+
+function pageWindow(query: unknown): { limit: number; before?: Date } {  const record = (query ?? {}) as Record<string, unknown>;
   const limit = Math.min(100, Math.max(1, Math.floor(Number(record.limit) || 30)));
   let before: Date | undefined;
   if (typeof record.before === "string" && record.before) {
@@ -2311,12 +2344,14 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const messages = await db.select().from(interviewChatMessagesTable)
     .where(before ? lt(interviewChatMessagesTable.createdAt, before) : undefined)
     .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
+  const reactions = await reactionsForMessages(messages.map((message) => message.id));
   res.json(GetInterviewChatResponse.parse({
     items: messages.reverse().map((message) => ({
       id: message.id,
       author: message.author,
       message: message.message,
       activities: parseStoredActivities(message.activities),
+      reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString(),
     })),
   }));
@@ -2349,6 +2384,35 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString(),
   }));
+});
+
+router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = ToggleChatReactionBody.safeParse(req.body);
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  const emoji = parsed.success ? [...parsed.data.emoji.trim()].slice(0, 4).join("") : "";
+  const author = parsed.success ? parsed.data.author.trim().slice(0, 80) : "";
+  if (!parsed.success || !messageId || !emoji || !author) {
+    res.status(400).json({ error: "A message, emoji, and author are required." });
+    return;
+  }
+  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const [existing] = await db.select({ id: chatMessageReactionsTable.id }).from(chatMessageReactionsTable).where(and(
+    eq(chatMessageReactionsTable.messageId, messageId),
+    eq(chatMessageReactionsTable.emoji, emoji),
+    eq(chatMessageReactionsTable.author, author),
+  )).limit(1);
+  if (existing) {
+    await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.id, existing.id));
+  } else {
+    await db.insert(chatMessageReactionsTable).values({ id: randomUUID(), messageId, emoji, author }).onConflictDoNothing();
+  }
+  const reactions = await reactionsForMessages([messageId]);
+  pushRealtimeHint("interview_chat_messages");
+  res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
 
 router.post("/queue/reorder", requireAdmin, async (req, res): Promise<void> => {

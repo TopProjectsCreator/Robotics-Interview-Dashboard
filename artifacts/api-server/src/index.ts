@@ -10,6 +10,8 @@ initRealtime();
 async function ensureSchema(): Promise<void> {
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
   ];
   for (const sql of statements) {
     try {

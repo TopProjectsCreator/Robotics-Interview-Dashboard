@@ -2159,6 +2159,19 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
             tool: string;
             detail: string;
         }>, "many">>;
+        reactions: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
+            emoji: zod.ZodString;
+            count: zod.ZodNumber;
+            authors: zod.ZodArray<zod.ZodString, "many">;
+        }, "strip", zod.ZodTypeAny, {
+            emoji: string;
+            count: number;
+            authors: string[];
+        }, {
+            emoji: string;
+            count: number;
+            authors: string[];
+        }>, "many">>;
         createdAt: zod.ZodString;
     }, "strip", zod.ZodTypeAny, {
         message: string;
@@ -2169,6 +2182,11 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
             tool: string;
             detail: string;
         }[] | undefined;
+        reactions?: {
+            emoji: string;
+            count: number;
+            authors: string[];
+        }[] | undefined;
     }, {
         message: string;
         id: string;
@@ -2177,6 +2195,11 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         activities?: {
             tool: string;
             detail: string;
+        }[] | undefined;
+        reactions?: {
+            emoji: string;
+            count: number;
+            authors: string[];
         }[] | undefined;
     }>, "many">;
 }, "strip", zod.ZodTypeAny, {
@@ -2189,6 +2212,11 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
             tool: string;
             detail: string;
         }[] | undefined;
+        reactions?: {
+            emoji: string;
+            count: number;
+            authors: string[];
+        }[] | undefined;
     }[];
 }, {
     items: {
@@ -2199,6 +2227,11 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         activities?: {
             tool: string;
             detail: string;
+        }[] | undefined;
+        reactions?: {
+            emoji: string;
+            count: number;
+            authors: string[];
         }[] | undefined;
     }[];
 }>;
@@ -2247,6 +2280,19 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
         tool: string;
         detail: string;
     }>, "many">>;
+    reactions: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
+        emoji: zod.ZodString;
+        count: zod.ZodNumber;
+        authors: zod.ZodArray<zod.ZodString, "many">;
+    }, "strip", zod.ZodTypeAny, {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }, {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }>, "many">>;
     createdAt: zod.ZodString;
 }, "strip", zod.ZodTypeAny, {
     message: string;
@@ -2257,6 +2303,11 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
         tool: string;
         detail: string;
     }[] | undefined;
+    reactions?: {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }[] | undefined;
 }, {
     message: string;
     id: string;
@@ -2266,6 +2317,58 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
         tool: string;
         detail: string;
     }[] | undefined;
+    reactions?: {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }[] | undefined;
+}>;
+/**
+ * @summary Toggle an emoji reaction on a chat message
+ */
+export declare const ToggleChatReactionParams: zod.ZodObject<{
+    messageId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    messageId: string;
+}, {
+    messageId: string;
+}>;
+export declare const ToggleChatReactionBody: zod.ZodObject<{
+    emoji: zod.ZodString;
+    author: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    author: string;
+    emoji: string;
+}, {
+    author: string;
+    emoji: string;
+}>;
+export declare const ToggleChatReactionResponse: zod.ZodObject<{
+    reactions: zod.ZodArray<zod.ZodObject<{
+        emoji: zod.ZodString;
+        count: zod.ZodNumber;
+        authors: zod.ZodArray<zod.ZodString, "many">;
+    }, "strip", zod.ZodTypeAny, {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }, {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }>, "many">;
+}, "strip", zod.ZodTypeAny, {
+    reactions: {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }[];
+}, {
+    reactions: {
+        emoji: string;
+        count: number;
+        authors: string[];
+    }[];
 }>;
 /**
  * @summary Save the interview order

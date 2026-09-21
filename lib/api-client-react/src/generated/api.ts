@@ -37,6 +37,8 @@ import type {
   BroadcastAck,
   BroadcastInput,
   BroadcastList,
+  ChatReactionInput,
+  ChatReactionList,
   DashboardChart,
   DashboardChartInput,
   DashboardChartList,
@@ -2270,6 +2272,78 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getToggleChatReactionUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}/reactions`
+}
+
+/**
+ * @summary Toggle an emoji reaction on a chat message
+ */
+export const toggleChatReaction = async (messageId: string,
+    chatReactionInput: ChatReactionInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatReactionList> => {
+
+  return customFetch<ChatReactionList>(getToggleChatReactionUrl(messageId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatReactionInput)
+  }
+);}
+
+
+
+
+
+export const getToggleChatReactionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError,{messageId: string;data: BodyType<ChatReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError,{messageId: string;data: BodyType<ChatReactionInput>}, TContext> => {
+
+const mutationKey = ['toggleChatReaction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof toggleChatReaction>>, {messageId: string;data: BodyType<ChatReactionInput>}> = (props) => {
+          const {messageId,data} = props ?? {};
+
+          return  toggleChatReaction(messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ToggleChatReactionMutationResult = NonNullable<Awaited<ReturnType<typeof toggleChatReaction>>>
+    export type ToggleChatReactionMutationBody = BodyType<ChatReactionInput>
+    export type ToggleChatReactionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Toggle an emoji reaction on a chat message
+ */
+export const useToggleChatReaction = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleChatReaction>>, TError,{messageId: string;data: BodyType<ChatReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof toggleChatReaction>>,
+        TError,
+        {messageId: string;data: BodyType<ChatReactionInput>},
+        TContext
+      > => {
+      return useMutation(getToggleChatReactionMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

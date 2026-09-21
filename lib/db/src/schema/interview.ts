@@ -19,6 +19,16 @@ export const interviewChatMessagesTable = pgTable("interview_chat_messages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id")
+    .notNull()
+    .references(() => interviewChatMessagesTable.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull(),
+  author: text("author").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const importsTable = pgTable("application_imports", {
   id: text("id").primaryKey(),
   objectPath: text("object_path").notNull(),
