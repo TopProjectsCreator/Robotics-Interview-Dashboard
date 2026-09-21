@@ -18,6 +18,34 @@ export declare const HealthCheckResponse: zod.ZodObject<{
     status: string;
 }>;
 /**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+export declare const GetSystemUsageResponse: zod.ZodObject<{
+    databaseBytes: zod.ZodNumber;
+    databaseQuotaBytes: zod.ZodNumber;
+    storageBytes: zod.ZodNullable<zod.ZodNumber>;
+    storageQuotaBytes: zod.ZodNumber;
+    authUsers: zod.ZodOptional<zod.ZodNullable<zod.ZodNumber>>;
+    authUsersQuota: zod.ZodOptional<zod.ZodNumber>;
+    applicantCount: zod.ZodNumber;
+}, "strip", zod.ZodTypeAny, {
+    databaseBytes: number;
+    databaseQuotaBytes: number;
+    storageBytes: number | null;
+    storageQuotaBytes: number;
+    applicantCount: number;
+    authUsers?: number | null | undefined;
+    authUsersQuota?: number | undefined;
+}, {
+    databaseBytes: number;
+    databaseQuotaBytes: number;
+    storageBytes: number | null;
+    storageQuotaBytes: number;
+    applicantCount: number;
+    authUsers?: number | null | undefined;
+    authUsersQuota?: number | undefined;
+}>;
+/**
  * @summary Start an admin session
  */
 export declare const LoginBody: zod.ZodObject<{
@@ -3138,33 +3166,33 @@ export declare const ListSnapshotsResponse: zod.ZodObject<{
         applicantCount: zod.ZodNumber;
         createdAt: zod.ZodString;
     }, "strip", zod.ZodTypeAny, {
+        applicantCount: number;
         label: string;
         id: string;
         createdAt: string;
         createdBy: string;
-        applicantCount: number;
     }, {
+        applicantCount: number;
         label: string;
         id: string;
         createdAt: string;
         createdBy: string;
-        applicantCount: number;
     }>, "many">;
 }, "strip", zod.ZodTypeAny, {
     items: {
+        applicantCount: number;
         label: string;
         id: string;
         createdAt: string;
         createdBy: string;
-        applicantCount: number;
     }[];
 }, {
     items: {
+        applicantCount: number;
         label: string;
         id: string;
         createdAt: string;
         createdBy: string;
-        applicantCount: number;
     }[];
 }>;
 /**
@@ -3184,17 +3212,17 @@ export declare const CreateSnapshotResponse: zod.ZodObject<{
     applicantCount: zod.ZodNumber;
     createdAt: zod.ZodString;
 }, "strip", zod.ZodTypeAny, {
+    applicantCount: number;
     label: string;
     id: string;
     createdAt: string;
     createdBy: string;
-    applicantCount: number;
 }, {
+    applicantCount: number;
     label: string;
     id: string;
     createdAt: string;
     createdBy: string;
-    applicantCount: number;
 }>;
 /**
  * @summary Restore a snapshot (current state is saved first as a new snapshot)

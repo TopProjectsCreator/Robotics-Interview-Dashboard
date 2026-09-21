@@ -87,6 +87,7 @@ export * from './snapshotRestoreInput';
 export * from './snapshotRestoreResult';
 export * from './snapshotRestoreResultPreview';
 export * from './sortParameter';
+export * from './systemUsage';
 export * from './uploadInput';
 export * from './uploadResponse';
 export * from './uploadResponseMetadata';

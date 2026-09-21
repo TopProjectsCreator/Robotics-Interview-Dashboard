@@ -80,6 +80,7 @@ import type {
   SnapshotList,
   SnapshotRestoreInput,
   SnapshotRestoreResult,
+  SystemUsage,
   UploadInput,
   UploadResponse
 } from './api.schemas';
@@ -177,6 +178,83 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSystemUsageUrl = () => {
+
+
+
+
+  return `/api/system/usage`
+}
+
+/**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+export const getSystemUsage = async ( options?: Parameters<typeof customFetch>[1]): Promise<SystemUsage> => {
+
+  return customFetch<SystemUsage>(getGetSystemUsageUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSystemUsageQueryKey = () => {
+    return [
+    `/api/system/usage`
+    ] as const;
+    }
+
+
+export const getGetSystemUsageQueryOptions = <TData = Awaited<ReturnType<typeof getSystemUsage>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSystemUsageQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSystemUsage>>> = ({ signal }) => getSystemUsage({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSystemUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getSystemUsage>>>
+export type GetSystemUsageQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+
+export function useGetSystemUsage<TData = Awaited<ReturnType<typeof getSystemUsage>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSystemUsageQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

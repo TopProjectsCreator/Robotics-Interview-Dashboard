@@ -9,6 +9,28 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface SystemUsage {
+  /** Current database size in bytes (pg_database_size) */
+  databaseBytes: number;
+  /** Plan database quota in bytes (SUPABASE_DB_QUOTA_MB, default 500) */
+  databaseQuotaBytes: number;
+  /**
+     * Bytes in the uploads bucket, null when unreadable
+     * @nullable
+     */
+  storageBytes: number | null;
+  /** Plan storage quota in bytes (SUPABASE_STORAGE_QUOTA_MB, default 1024) */
+  storageQuotaBytes: number;
+  /**
+     * Auth user count, null when unreadable
+     * @nullable
+     */
+  authUsers?: number | null;
+  /** Plan MAU quota (SUPABASE_MAU_QUOTA, default 50000) */
+  authUsersQuota?: number;
+  applicantCount: number;
+}
+
 export interface ErrorResponse {
   error: string;
 }

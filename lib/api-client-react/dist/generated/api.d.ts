@@ -1,5 +1,5 @@
 import type { QueryKey, UseMutationOptions, UseMutationResult, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
-import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, UploadInput, UploadResponse } from './api.schemas';
+import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, SystemUsage, UploadInput, UploadResponse } from './api.schemas';
 import { customFetch } from '../custom-fetch';
 import type { ErrorType, BodyType } from '../custom-fetch';
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -25,6 +25,29 @@ export type HealthCheckQueryError = ErrorType<unknown>;
  */
 export declare function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, TError = ErrorType<unknown>>(options?: {
     query?: UseQueryOptions<Awaited<ReturnType<typeof healthCheck>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+};
+export declare const getGetSystemUsageUrl: () => string;
+/**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+export declare const getSystemUsage: (options?: Parameters<typeof customFetch>[1]) => Promise<SystemUsage>;
+export declare const getGetSystemUsageQueryKey: () => readonly ["/api/system/usage"];
+export declare const getGetSystemUsageQueryOptions: <TData = Awaited<ReturnType<typeof getSystemUsage>>, TError = ErrorType<unknown>>(options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData> & {
+    queryKey: QueryKey;
+};
+export type GetSystemUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getSystemUsage>>>;
+export type GetSystemUsageQueryError = ErrorType<unknown>;
+/**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+export declare function useGetSystemUsage<TData = Awaited<ReturnType<typeof getSystemUsage>>, TError = ErrorType<unknown>>(options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getSystemUsage>>, TError, TData>;
     request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

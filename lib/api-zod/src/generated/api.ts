@@ -18,6 +18,20 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Supabase usage measured from the database vs plan quotas
+ */
+export const GetSystemUsageResponse = zod.object({
+  "databaseBytes": zod.number().int().describe('Current database size in bytes (pg_database_size)'),
+  "databaseQuotaBytes": zod.number().int().describe('Plan database quota in bytes (SUPABASE_DB_QUOTA_MB, default 500)'),
+  "storageBytes": zod.number().int().nullable().describe('Bytes in the uploads bucket, null when unreadable'),
+  "storageQuotaBytes": zod.number().int().describe('Plan storage quota in bytes (SUPABASE_STORAGE_QUOTA_MB, default 1024)'),
+  "authUsers": zod.number().int().nullish().describe('Auth user count, null when unreadable'),
+  "authUsersQuota": zod.number().int().optional().describe('Plan MAU quota (SUPABASE_MAU_QUOTA, default 50000)'),
+  "applicantCount": zod.number().int()
+})
+
+
+/**
  * @summary Start an admin session
  */
 

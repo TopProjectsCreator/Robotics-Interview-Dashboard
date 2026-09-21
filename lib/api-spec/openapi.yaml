@@ -24,6 +24,8 @@ tags:
     description: Big-screen display state
   - name: assistant
     description: AI-assisted analysis
+  - name: system
+    description: Service and usage info
 paths:
   /healthz:
     get:
@@ -38,6 +40,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /system/usage:
+    get:
+      operationId: getSystemUsage
+      tags: [system]
+      summary: Supabase usage measured from the database vs plan quotas
+      responses:
+        "200":
+          description: Usage numbers with quota limits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemUsage"
   /auth/login:
     post:
       operationId: login
@@ -939,6 +953,30 @@ components:
           type: string
       required:
         - status
+    SystemUsage:
+      type: object
+      required: [databaseBytes, databaseQuotaBytes, storageBytes, storageQuotaBytes, applicantCount]
+      properties:
+        databaseBytes:
+          type: integer
+          description: "Current database size in bytes (pg_database_size)"
+        databaseQuotaBytes:
+          type: integer
+          description: "Plan database quota in bytes (SUPABASE_DB_QUOTA_MB, default 500)"
+        storageBytes:
+          type: ["integer", "null"]
+          description: "Bytes in the uploads bucket, null when unreadable"
+        storageQuotaBytes:
+          type: integer
+          description: "Plan storage quota in bytes (SUPABASE_STORAGE_QUOTA_MB, default 1024)"
+        authUsers:
+          type: ["integer", "null"]
+          description: "Auth user count, null when unreadable"
+        authUsersQuota:
+          type: integer
+          description: "Plan MAU quota (SUPABASE_MAU_QUOTA, default 50000)"
+        applicantCount:
+          type: integer
     ErrorResponse:
       type: object
       required: [error]
