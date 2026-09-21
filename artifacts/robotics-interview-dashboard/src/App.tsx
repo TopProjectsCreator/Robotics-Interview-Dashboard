@@ -1828,6 +1828,38 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
   </section>;
 }
 
+async function prepareChatImage(file: File): Promise<{ blob: Blob; name: string; type: string }> {
+  const MAX_DIM = 1600;
+  const MAX_BYTES = 3.5 * 1024 * 1024;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error("unreadable");
+  }
+  try {
+    const keepOriginal =
+      file.type === "image/gif" ||
+      ((file.type === "image/png" || file.type === "image/jpeg" || file.type === "image/webp") &&
+        file.size <= MAX_BYTES &&
+        bitmap.width <= MAX_DIM &&
+        bitmap.height <= MAX_DIM);
+    if (keepOriginal) return { blob: file, name: file.name, type: file.type || "image/jpeg" };
+    const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("encode");
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob) throw new Error("encode");
+    const base = file.name.replace(/\.[a-z0-9]+$/i, "") || "photo";
+    return { blob, name: `${base}.jpg`, type: "image/jpeg" };
+  } finally {
+    bitmap.close();
+  }
+}
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
@@ -1847,12 +1879,35 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const ask = useAskAssistant();
   const qc = useQueryClient();
   const chatImageUpload = useRequestUploadUrl();
-  const [chatImages, setChatImages] = useState<{ fileName: string; url: string }[]>([]);
+  const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number }[]>([]);
+  const chatFilesRef = useRef(chatFiles);
+  chatFilesRef.current = chatFiles;
+  useEffect(() => () => { for (const f of chatFilesRef.current) URL.revokeObjectURL(f.previewUrl); }, []);
   const [chatImageError, setChatImageError] = useState("");
   const [chatUploading, setChatUploading] = useState(false);
   const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
+  const attachChatImages = (files: FileList | File[]) => {
+    setChatImageError("");
+    const picked = Array.from(files);
+    if (!picked.length) return;
+    if (chatFiles.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
+    const next: { id: string; file: File; previewUrl: string; name: string; size: number }[] = [];
+    for (const file of picked) {
+      if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
+      if (file.size > 20 * 1024 * 1024) { setChatImageError(`"${file.name}" is too big (max 20 MB).`); return; }
+      next.push({ id: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file), name: file.name, size: file.size });
+    }
+    setChatFiles(current => [...current, ...next].slice(0, 3));
+  };
+  const removeChatFile = (id: string) => {
+    setChatFiles(current => {
+      const target = current.find(f => f.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return current.filter(f => f.id !== id);
+    });
+  };
   const loadOlderChat = useCallback(async () => {
     if (chatLoadGuardRef.current) return;
     const items = chatItemsRef.current;
@@ -1904,47 +1959,46 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   useEffect(() => {
     if (chat.data && olderChat.length === 0 && chat.data.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
   }, [chat.data, olderChat.length]);
-  const attachChatImages = async (files: FileList | File[]) => {
-    setChatImageError("");
-    const picked = Array.from(files);
-    if (!picked.length) return;
-    if (chatImages.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
-    for (const file of picked) {
-      if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
-      if (file.size > 5 * 1024 * 1024) { setChatImageError(`"${file.name}" must be under 5 MB.`); return; }
-    }
-    setChatUploading(true);
-    try {
-      for (const file of picked) {
-        const requested = await chatImageUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
-        const putUrl = requested.uploadURL;
-        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
-        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
-        if (!response.ok) throw new Error("Upload failed");
-        const url = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
-        setChatImages(current => current.length < 3 ? [...current, { fileName: file.name, url }] : current);
-      }
-    } catch {
-      setChatImageError("Image upload failed. Try again.");
-    } finally {
-      setChatUploading(false);
-    }
-  };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!message.trim() && !chatImages.length) return;
-    const embeds = chatImages.map(image => `![${image.fileName}](${image.url})`).join("\n");
-    const submitted = [message.trim(), embeds].filter(Boolean).join("\n");
-    if (submitted.length > 950) { setChatError("Message with images is too long — shorten the text or remove an image."); return; }
-    setMessage("");
-    setChatImages([]);
+    if (!message.trim() && !chatFiles.length) return;
+    if (message.trim().length > 900) { setChatError("Message is too long — shorten the text."); return; }
+    const draft = message.trim();
     setChatError("");
     chatStickRef.current = true;
     const author = selectedInterviewer || "Interviewer";
+    const uploadedIds: string[] = [];
+    let userPosted = false;
+    const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
+    const prepareOrFail = async (file: File, displayName: string): Promise<{ blob: Blob; name: string; type: string }> => {
+      try {
+        return await prepareChatImage(file);
+      } catch (error) {
+        throw new Error(
+          "USER:" +
+            (error instanceof Error && error.message === "unreadable"
+              ? `"${displayName}" can't be read in this browser. On iPhone use Settings → Camera → Formats → Most Compatible, or send a screenshot instead.`
+              : "Couldn't prepare images. Try again."),
+        );
+      }
+    };
+    setChatUploading(true);
     try {
-      // Persist the original @ai request first so every interviewer sees the
-      // same prompt in the shared chat history.
+      const embeds: string[] = [];
+      for (const f of chatFiles) {
+        const prepared = await prepareOrFail(f.file, f.name);
+        const requested = await chatImageUpload.mutateAsync({ data: { name: prepared.name, size: prepared.blob.size, contentType: prepared.type } });
+        const putUrl = requested.uploadURL;
+        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
+        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": prepared.type }, body: prepared.blob, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+        if (!response.ok) fail("Upload failed. Try again.");
+        const objectId = requested.objectPath.replace(/^\/objects\//, "");
+        uploadedIds.push(objectId);
+        embeds.push(`![${prepared.name}](/api/storage/objects/${objectId})`);
+      }
+      const submitted = [draft, embeds.join("\n")].filter(Boolean).join("\n");
       await sendChat.mutateAsync({ data: { author, message: submitted } });
+      userPosted = true;
       if (/@ai\b/i.test(submitted)) {
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
         const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
@@ -1952,16 +2006,30 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } });
       }
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+      for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
+      setChatFiles([]);
+      setMessage("");
       setChatError("");
-    } catch {
-      // The persisted prompt remains visible if the AI request fails.
-      setChatError("The AI answer failed. Your message was saved — try again.");
+    } catch (error) {
+      if (!userPosted) {
+        for (const id of uploadedIds) {
+          try { await fetch(`${import.meta.env.BASE_URL}api/storage/objects/${id}`, { method: "DELETE", credentials: "include" }); } catch { /* best-effort cleanup */ }
+        }
+      }
+      const message = !userPosted && error instanceof Error && error.message.startsWith("USER:")
+        ? error.message.slice(5)
+        : userPosted
+          ? "The AI answer failed. Your message was saved — try again."
+          : "Couldn't send — nothing was posted. Try again.";
+      setChatError(message);
+    } finally {
+      setChatUploading(false);
     }
   };
   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
     <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-    <form onSubmit={submitChat} className="mt-3 space-y-2">{chatImages.length > 0 && <div className="flex flex-wrap gap-2">{chatImages.map(image => <span key={image.url} className="relative inline-block" data-testid={`chat-image-${image.url}`}><img src={image.url} alt={image.fileName} className="h-16 w-16 rounded-lg border border-[#dce9e8] object-cover" /><button type="button" onClick={() => setChatImages(current => current.filter(x => x.url !== image.url))} aria-label={`Remove ${image.fileName}`} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={11} /></button></span>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatImages.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
+    <form onSubmit={submitChat} className="mt-3 space-y-2">{chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><img src={f.previewUrl} alt={f.name} className="h-14 w-14 shrink-0 rounded-lg border border-[#dce9e8] object-cover" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{formatUploadSize(f.size)} · will upload on send</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
   </section>;
 }
 function Queue() {
