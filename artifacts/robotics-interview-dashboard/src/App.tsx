@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, Res
 import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
-  FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, Monitor, Moon, PhoneCall, Printer,
+  FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Pencil, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -965,7 +965,7 @@ function Shell({ children }: { children: ReactNode }) {
   }, [broadcasts.data, dismissedBroadcasts]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Login />;
-  const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/attendance", label: "Attendance", icon: ClipboardCheck }, { href: "/big-screen", label: "Big screen", icon: MonitorCheck }, { href: "/assistant", label: "AI assistant", icon: Bot }];
+  const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/chat", label: "Chat", icon: MessageSquare }, { href: "/attendance", label: "Attendance", icon: ClipboardCheck }, { href: "/big-screen", label: "Big screen", icon: MonitorCheck }, { href: "/assistant", label: "AI assistant", icon: Bot }];
   return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><ThemeToggle /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><AccountMenu onOpenSettings={() => setSettingsOpen(true)} /></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}{children}</main>{pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}</div></div>;
 }
 
@@ -1828,10 +1828,9 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
   </section>;
 }
 
-function Queue() {
+function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: refreshMs } });
   const chatParams = useMemo(() => ({ limit: CHAT_PAGE_SIZE }), []);
   const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
@@ -1844,14 +1843,6 @@ function Queue() {
   const chatItems = useMemo(() => mergeChatItems(olderChat, chat.data?.items ?? []), [olderChat, chat.data]);
   const chatItemsRef = useRef<InterviewChatMessage[]>([]);
   chatItemsRef.current = chatItems;
-  const advance = useAdvanceQueue();
-  const callback = useCallbackQueue();
-  const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
-  const finished = useListApplicants(finishedParams, { query: { queryKey: getListApplicantsQueryKey(finishedParams) } });
-  const reorder = useReorderQueue();
-  const updateApplicant = useUpdateApplicant();
-  const updateSettings = useUpdateQueueSettings();
-  const resetQueue = useResetQueue();
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
   const qc = useQueryClient();
@@ -1859,13 +1850,6 @@ function Queue() {
   const [chatImages, setChatImages] = useState<{ fileName: string; url: string }[]>([]);
   const [chatImageError, setChatImageError] = useState("");
   const [chatUploading, setChatUploading] = useState(false);
-  const [board, setBoard] = useState<Applicant[]>([]);
-  const [drag, setDrag] = useState<string | null>(null);
-  const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
-  const [labels, setLabels] = useState<string[]>([]);
-  const labelsDirty = useRef(false);
-  const boardDirty = useRef(false);
   const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
@@ -1920,6 +1904,87 @@ function Queue() {
   useEffect(() => {
     if (chat.data && olderChat.length === 0 && chat.data.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
   }, [chat.data, olderChat.length]);
+  const attachChatImages = async (files: FileList | File[]) => {
+    setChatImageError("");
+    const picked = Array.from(files);
+    if (!picked.length) return;
+    if (chatImages.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
+    for (const file of picked) {
+      if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
+      if (file.size > 5 * 1024 * 1024) { setChatImageError(`"${file.name}" must be under 5 MB.`); return; }
+    }
+    setChatUploading(true);
+    try {
+      for (const file of picked) {
+        const requested = await chatImageUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
+        const putUrl = requested.uploadURL;
+        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
+        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+        if (!response.ok) throw new Error("Upload failed");
+        const url = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
+        setChatImages(current => current.length < 3 ? [...current, { fileName: file.name, url }] : current);
+      }
+    } catch {
+      setChatImageError("Image upload failed. Try again.");
+    } finally {
+      setChatUploading(false);
+    }
+  };
+  const submitChat = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!message.trim() && !chatImages.length) return;
+    const embeds = chatImages.map(image => `![${image.fileName}](${image.url})`).join("\n");
+    const submitted = [message.trim(), embeds].filter(Boolean).join("\n");
+    if (submitted.length > 950) { setChatError("Message with images is too long — shorten the text or remove an image."); return; }
+    setMessage("");
+    setChatImages([]);
+    setChatError("");
+    chatStickRef.current = true;
+    const author = selectedInterviewer || "Interviewer";
+    try {
+      // Persist the original @ai request first so every interviewer sees the
+      // same prompt in the shared chat history.
+      await sendChat.mutateAsync({ data: { author, message: submitted } });
+      if (/@ai\b/i.test(submitted)) {
+        const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
+        const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
+        const response = await ask.mutateAsync({ data: { question, applicantIds, chatContext } });
+        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } });
+      }
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+      setChatError("");
+    } catch {
+      // The persisted prompt remains visible if the AI request fails.
+      setChatError("The AI answer failed. Your message was saved — try again.");
+    }
+  };
+  return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
+    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+    <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+    <form onSubmit={submitChat} className="mt-3 space-y-2">{chatImages.length > 0 && <div className="flex flex-wrap gap-2">{chatImages.map(image => <span key={image.url} className="relative inline-block" data-testid={`chat-image-${image.url}`}><img src={image.url} alt={image.fileName} className="h-16 w-16 rounded-lg border border-[#dce9e8] object-cover" /><button type="button" onClick={() => setChatImages(current => current.filter(x => x.url !== image.url))} aria-label={`Remove ${image.fileName}`} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={11} /></button></span>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatImages.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
+  </section>;
+}
+function Queue() {
+  const { settings } = useWorkspaceSettings();
+  const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: refreshMs } });
+  const advance = useAdvanceQueue();
+  const callback = useCallbackQueue();
+  const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
+  const finished = useListApplicants(finishedParams, { query: { queryKey: getListApplicantsQueryKey(finishedParams) } });
+  const reorder = useReorderQueue();
+  const updateApplicant = useUpdateApplicant();
+  const updateSettings = useUpdateQueueSettings();
+  const resetQueue = useResetQueue();
+  const qc = useQueryClient();
+  const [board, setBoard] = useState<Applicant[]>([]);
+  const [drag, setDrag] = useState<string | null>(null);
+  const boardParams = useMemo(() => ({ sort: "queue" }), []);
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
+  const [labels, setLabels] = useState<string[]>([]);
+  const labelsDirty = useRef(false);
+  const boardDirty = useRef(false);
+  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   useEffect(() => {
@@ -2037,60 +2102,6 @@ function Queue() {
     setResetOpen(false);
     resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
-  const attachChatImages = async (files: FileList | File[]) => {
-    setChatImageError("");
-    const picked = Array.from(files);
-    if (!picked.length) return;
-    if (chatImages.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
-    for (const file of picked) {
-      if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
-      if (file.size > 5 * 1024 * 1024) { setChatImageError(`"${file.name}" must be under 5 MB.`); return; }
-    }
-    setChatUploading(true);
-    try {
-      for (const file of picked) {
-        const requested = await chatImageUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
-        const putUrl = requested.uploadURL;
-        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
-        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
-        if (!response.ok) throw new Error("Upload failed");
-        const url = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
-        setChatImages(current => current.length < 3 ? [...current, { fileName: file.name, url }] : current);
-      }
-    } catch {
-      setChatImageError("Image upload failed. Try again.");
-    } finally {
-      setChatUploading(false);
-    }
-  };
-  const submitChat = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!message.trim() && !chatImages.length) return;
-    const embeds = chatImages.map(image => `![${image.fileName}](${image.url})`).join("\n");
-    const submitted = [message.trim(), embeds].filter(Boolean).join("\n");
-    if (submitted.length > 950) { setChatError("Message with images is too long — shorten the text or remove an image."); return; }
-    setMessage("");
-    setChatImages([]);
-    setChatError("");
-    chatStickRef.current = true;
-    const author = selectedInterviewer || "Interviewer";
-    try {
-      // Persist the original @ai request first so every interviewer sees the
-      // same prompt in the shared chat history.
-      await sendChat.mutateAsync({ data: { author, message: submitted } });
-      if (/@ai\b/i.test(submitted)) {
-        const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-        const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
-        const response = await ask.mutateAsync({ data: { question, applicantIds: visibleApplicants.map(applicant => applicant.id), chatContext } });
-        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } });
-      }
-      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
-      setChatError("");
-    } catch {
-      // The persisted prompt remains visible if the AI request fails.
-      setChatError("The AI answer failed. Your message was saved — try again.");
-    }
-  };
   return <div className="fade-up">
     <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
@@ -2107,11 +2118,7 @@ function Queue() {
           </div>
         </div>
       </section>
-      <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-        <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
-        <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className="mt-4 h-[330px] space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3">{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /></div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-        <form onSubmit={submitChat} className="mt-3 space-y-2">{chatImages.length > 0 && <div className="flex flex-wrap gap-2">{chatImages.map(image => <span key={image.url} className="relative inline-block" data-testid={`chat-image-${image.url}`}><img src={image.url} alt={image.fileName} className="h-16 w-16 rounded-lg border border-[#dce9e8] object-cover" /><button type="button" onClick={() => setChatImages(current => current.filter(x => x.url !== image.url))} aria-label={`Remove ${image.fileName}`} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={11} /></button></span>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><label className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach images"><ImageIcon size={16} /><input type="file" accept="image/*" multiple className="hidden" data-testid="input-chat-image" onChange={event => { const files = event.target.files; event.target.value = ""; if (files) void attachChatImages(files); }} /></label><button disabled={(!message.trim() && !chatImages.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
-      </section>
+      <InterviewChatPanel applicantIds={visibleApplicants.map(applicant => applicant.id)} />
     </div>
     <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
       <Section title="Queue progress" kicker="Applicants advance independently">
@@ -2938,6 +2945,11 @@ function ErrorCodeRoute({ params }: { params: { code?: string } }) {
   return <ErrorPage code={code} target={`/${code}`} />;
 }
 
-function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function ChatPage() {
+  const list = useListApplicants({ sort: "queue" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "queue" }) } });
+  const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
+  return <div className="fade-up"><PageHeading eyebrow="Interviewer channel / full page" title="Team chat." detail="The same shared interviewer channel from the queue, full height. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
+}
+function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export default App;
