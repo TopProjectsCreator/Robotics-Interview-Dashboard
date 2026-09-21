@@ -2415,6 +2415,18 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
 
+router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  if (!messageId) {
+    res.status(400).json({ error: "Message id required" });
+    return;
+  }
+  await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.messageId, messageId));
+  await db.delete(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId));
+  pushRealtimeHint("interview_chat_messages");
+  res.status(204).end();
+});
+
 router.post("/queue/reorder", requireAdmin, async (req, res): Promise<void> => {
   const parsed = ReorderQueueBody.safeParse(req.body);
   if (!parsed.success) {

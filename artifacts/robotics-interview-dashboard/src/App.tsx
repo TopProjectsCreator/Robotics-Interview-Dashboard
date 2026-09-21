@@ -434,7 +434,7 @@ function MarkdownContent({ source, className = "" }: { source: string; className
   if (svgCursor < capped.length) renderTextSegment(capped.slice(svgCursor));
   flush();
 
-  return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 ${className}`}>{blocks}</div>;
+  return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 dark:prose-invert ${className}`}>{blocks}</div>;
 }
 
 type TranscriptTurn = {
@@ -1881,7 +1881,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const toggleReaction = useToggleChatReaction();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const qc = useQueryClient();
-  const chatImageUpload = useRequestUploadUrl();
   const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number }[]>([]);
   const chatFilesRef = useRef(chatFiles);
   chatFilesRef.current = chatFiles;
@@ -1997,12 +1996,29 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       const embeds: string[] = [];
       for (const f of chatFiles) {
         const prepared = await prepareOrFail(f.file, f.name);
-        const requested = await chatImageUpload.mutateAsync({ data: { name: prepared.name, size: prepared.blob.size, contentType: prepared.type } });
-        const putUrl = requested.uploadURL;
-        const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
-        const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": prepared.type }, body: prepared.blob, ...(sameOrigin ? { credentials: "include" as const } : {}) });
-        if (!response.ok) fail("Upload failed. Try again.");
-        const objectId = requested.objectPath.replace(/^\/objects\//, "");
+        let objectId = "";
+        try {
+          const response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
+            method: "POST",
+            headers: { "Content-Type": prepared.type },
+            body: prepared.blob,
+            credentials: "include",
+          });
+          if (!response.ok) {
+            let detail = "";
+            try {
+              const parsed = await response.json() as { error?: unknown };
+              if (typeof parsed?.error === "string" && parsed.error) detail = `: ${parsed.error}`;
+            } catch { /* ignore parse errors */ }
+            fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
+          }
+          const parsed = await response.json() as { objectPath?: unknown };
+          objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
+          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith("USER:")) throw error;
+          fail("Upload failed (network). Try again.");
+        }
         uploadedIds.push(objectId);
         embeds.push(`![${prepared.name}](/api/storage/objects/${objectId})`);
       }

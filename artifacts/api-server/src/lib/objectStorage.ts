@@ -113,8 +113,7 @@ export class ObjectStorageService {
       }));
   }
 
-  async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {
-    await ensureBucket();
+  async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {    await ensureBucket();
     const id = randomUUID();
     const storagePath = `generated/${id}`;
     const { error } = await supabase()
@@ -124,6 +123,19 @@ export class ObjectStorageService {
       throw new Error(`Failed to store generated image: ${error.message}`);
     }
     return `/objects/generated/${id}`;
+  }
+
+  async uploadChatImage(data: Buffer, contentType: string): Promise<string> {
+    await ensureBucket();
+    const id = randomUUID();
+    const storagePath = `uploads/${id}`;
+    const { error } = await supabase()
+      .storage.from(storageBucket())
+      .upload(storagePath, data, { contentType, upsert: false });
+    if (error) {
+      throw new Error(`Failed to store chat image: ${error.message}`);
+    }
+    return `/objects/${id}`;
   }
 
   async deleteObject(objectPath: string): Promise<void> {

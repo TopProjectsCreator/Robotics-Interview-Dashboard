@@ -2371,6 +2371,17 @@ export declare const ToggleChatReactionResponse: zod.ZodObject<{
     }[];
 }>;
 /**
+ * @summary Delete a chat message and its reactions
+ */
+export declare const DeleteChatMessageParams: zod.ZodObject<{
+    messageId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    messageId: string;
+}, {
+    messageId: string;
+}>;
+export declare const DeleteChatMessageResponse: zod.ZodVoid;
+/**
  * @summary Save the interview order
  */
 export declare const ReorderQueueBody: zod.ZodObject<{

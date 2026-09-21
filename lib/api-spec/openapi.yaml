@@ -514,6 +514,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatReactionList"
+  /queue/chat/{messageId}:
+    delete:
+      operationId: deleteChatMessage
+      tags: [queue]
+      summary: Delete a chat message and its reactions
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Message deleted
   /queue/reorder:
     post:
       operationId: reorderQueue

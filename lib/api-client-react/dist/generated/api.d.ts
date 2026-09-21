@@ -751,6 +751,32 @@ export declare const useToggleChatReaction: <TError = ErrorType<unknown>, TConte
     messageId: string;
     data: BodyType<ChatReactionInput>;
 }, TContext>;
+export declare const getDeleteChatMessageUrl: (messageId: string) => string;
+/**
+ * @summary Delete a chat message and its reactions
+ */
+export declare const deleteChatMessage: (messageId: string, options?: Parameters<typeof customFetch>[1]) => Promise<void>;
+export declare const getDeleteChatMessageMutationOptions: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof deleteChatMessage>>, TError, {
+        messageId: string;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationOptions<Awaited<ReturnType<typeof deleteChatMessage>>, TError, {
+    messageId: string;
+}, TContext>;
+export type DeleteChatMessageMutationResult = NonNullable<Awaited<ReturnType<typeof deleteChatMessage>>>;
+export type DeleteChatMessageMutationError = ErrorType<unknown>;
+/**
+* @summary Delete a chat message and its reactions
+*/
+export declare const useDeleteChatMessage: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof deleteChatMessage>>, TError, {
+        messageId: string;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationResult<Awaited<ReturnType<typeof deleteChatMessage>>, TError, {
+    messageId: string;
+}, TContext>;
 export declare const getReorderQueueUrl: () => string;
 /**
  * @summary Save the interview order

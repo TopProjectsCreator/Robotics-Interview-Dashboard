@@ -73326,6 +73326,10 @@ var ToggleChatReactionResponse = objectType({
     "authors": arrayType(stringType())
   }))
 });
+var DeleteChatMessageParams = objectType({
+  "messageId": coerce.string()
+});
+var DeleteChatMessageResponse = voidType();
 var ReorderQueueBody = objectType({
   "applicantIds": arrayType(stringType())
 });
@@ -94836,6 +94840,16 @@ var ObjectStorageService = class {
     }
     return `/objects/generated/${id}`;
   }
+  async uploadChatImage(data, contentType) {
+    await ensureBucket();
+    const id = randomUUID5();
+    const storagePath = `uploads/${id}`;
+    const { error: error40 } = await supabase2().storage.from(storageBucket()).upload(storagePath, data, { contentType, upsert: false });
+    if (error40) {
+      throw new Error(`Failed to store chat image: ${error40.message}`);
+    }
+    return `/objects/${id}`;
+  }
   async deleteObject(objectPath) {
     await ensureBucket();
     const storagePath = toStoragePath(objectPath);
@@ -96834,6 +96848,17 @@ router4.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res) 
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
+router4.delete("/queue/chat/:messageId", requireAdmin, async (req, res) => {
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  if (!messageId) {
+    res.status(400).json({ error: "Message id required" });
+    return;
+  }
+  await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.messageId, messageId));
+  await db.delete(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId));
+  pushRealtimeHint("interview_chat_messages");
+  res.status(204).end();
+});
 router4.post("/queue/reorder", requireAdmin, async (req, res) => {
   const parsed = ReorderQueueBody.safeParse(req.body);
   if (!parsed.success) {
@@ -97692,6 +97717,34 @@ router5.post(
     } catch (error40) {
       req.log.error({ err: error40 }, "Error generating upload URL");
       res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  }
+);
+router5.post(
+  "/storage/uploads",
+  import_express5.default.raw({ type: ["image/*"], limit: "20mb" }),
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const data = req.body;
+      const contentType = req.get("content-type")?.split(";")[0]?.trim() ?? "";
+      if (!data || !Buffer.isBuffer(data) || data.length === 0) {
+        res.status(400).json({ error: "No image data received" });
+        return;
+      }
+      if (!contentType.startsWith("image/")) {
+        res.status(400).json({ error: "Only images can be uploaded" });
+        return;
+      }
+      if (data.length > 20 * 1024 * 1024) {
+        res.status(413).json({ error: "Image too big (max 20 MB)" });
+        return;
+      }
+      const objectPath = await objectStorageService2.uploadChatImage(data, contentType);
+      res.status(201).json({ objectPath });
+    } catch (error40) {
+      req.log.error({ err: error40 }, "Error storing uploaded image");
+      res.status(500).json({ error: "Upload failed on the server" });
     }
   }
 );

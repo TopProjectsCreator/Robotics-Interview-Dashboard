@@ -2,7 +2,7 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
-import { Router, type IRouter, type Request, type Response } from 'express';
+import express, { Router, type IRouter, type Request, type Response } from 'express';
 
 import {
   ObjectNotFoundError,
@@ -65,6 +65,44 @@ router.post(
     } catch (error) {
       req.log.error({ err: error }, 'Error generating upload URL');
       res.status(500).json({ error: 'Failed to generate upload URL' });
+    }
+  },
+);
+
+/**
+ * POST /storage/uploads
+ *
+ * Upload an image through the API server (same-origin), which stores it in
+ * Supabase Storage with the service key and returns the object path. Used
+ * by chat attachments so browsers never PUT directly to Supabase — some
+ * networks/firewalls block those cross-origin uploads. Requires auth.
+ * Body is raw image bytes (Content-Type: image/*, max 20 MB).
+ */
+router.post(
+  '/storage/uploads',
+  express.raw({ type: ['image/*'], limit: '20mb' }),
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const data = req.body as Buffer | undefined;
+      const contentType = req.get('content-type')?.split(';')[0]?.trim() ?? '';
+      if (!data || !Buffer.isBuffer(data) || data.length === 0) {
+        res.status(400).json({ error: 'No image data received' });
+        return;
+      }
+      if (!contentType.startsWith('image/')) {
+        res.status(400).json({ error: 'Only images can be uploaded' });
+        return;
+      }
+      if (data.length > 20 * 1024 * 1024) {
+        res.status(413).json({ error: 'Image too big (max 20 MB)' });
+        return;
+      }
+      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
+      res.status(201).json({ objectPath });
+    } catch (error) {
+      req.log.error({ err: error }, 'Error storing uploaded image');
+      res.status(500).json({ error: 'Upload failed on the server' });
     }
   },
 );

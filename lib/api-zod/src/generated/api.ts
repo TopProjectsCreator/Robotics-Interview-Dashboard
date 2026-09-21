@@ -800,6 +800,16 @@ export const ToggleChatReactionResponse = zod.object({
 
 
 /**
+ * @summary Delete a chat message and its reactions
+ */
+export const DeleteChatMessageParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const DeleteChatMessageResponse = zod.void()
+
+
+/**
  * @summary Save the interview order
  */
 export const ReorderQueueBody = zod.object({
