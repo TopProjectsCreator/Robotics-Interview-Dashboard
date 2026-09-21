@@ -1152,6 +1152,15 @@ export const ClearAssistantHistoryResponse = zod.void()
 
 
 /**
+ * @summary Get AI assistant model configuration
+ */
+export const GetAssistantConfigResponse = zod.object({
+  "textModel": zod.string().describe('Chat model answering assistant questions'),
+  "visionModel": zod.string().describe('Vision model used for image input')
+})
+
+
+/**
  * @summary List saved assistant conversations
  */
 export const ListAssistantConversationsResponse = zod.object({

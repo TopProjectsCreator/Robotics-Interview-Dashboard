@@ -1,5 +1,5 @@
 import type { QueryKey, UseMutationOptions, UseMutationResult, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
-import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, UploadInput, UploadResponse } from './api.schemas';
+import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, UploadInput, UploadResponse } from './api.schemas';
 import { customFetch } from '../custom-fetch';
 import type { ErrorType, BodyType } from '../custom-fetch';
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -1184,6 +1184,29 @@ export declare const useClearAssistantHistory: <TError = ErrorType<unknown>, TCo
     mutation?: UseMutationOptions<Awaited<ReturnType<typeof clearAssistantHistory>>, TError, void, TContext>;
     request?: SecondParameter<typeof customFetch>;
 }) => UseMutationResult<Awaited<ReturnType<typeof clearAssistantHistory>>, TError, void, TContext>;
+export declare const getGetAssistantConfigUrl: () => string;
+/**
+ * @summary Get AI assistant model configuration
+ */
+export declare const getAssistantConfig: (options?: Parameters<typeof customFetch>[1]) => Promise<AssistantConfig>;
+export declare const getGetAssistantConfigQueryKey: () => readonly ["/api/assistant/config"];
+export declare const getGetAssistantConfigQueryOptions: <TData = Awaited<ReturnType<typeof getAssistantConfig>>, TError = ErrorType<unknown>>(options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData> & {
+    queryKey: QueryKey;
+};
+export type GetAssistantConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantConfig>>>;
+export type GetAssistantConfigQueryError = ErrorType<unknown>;
+/**
+ * @summary Get AI assistant model configuration
+ */
+export declare function useGetAssistantConfig<TData = Awaited<ReturnType<typeof getAssistantConfig>>, TError = ErrorType<unknown>>(options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+};
 export declare const getListAssistantConversationsUrl: () => string;
 /**
  * @summary List saved assistant conversations

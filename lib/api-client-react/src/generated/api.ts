@@ -24,6 +24,7 @@ import type {
   Applicant,
   ApplicantList,
   ApplicantUpdate,
+  AssistantConfig,
   AssistantConversation,
   AssistantConversationInput,
   AssistantConversationList,
@@ -3579,6 +3580,83 @@ export const useClearAssistantHistory = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getClearAssistantHistoryMutationOptions(options));
     }
+
+export const getGetAssistantConfigUrl = () => {
+
+
+
+
+  return `/api/assistant/config`
+}
+
+/**
+ * @summary Get AI assistant model configuration
+ */
+export const getAssistantConfig = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantConfig> => {
+
+  return customFetch<AssistantConfig>(getGetAssistantConfigUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantConfigQueryKey = () => {
+    return [
+    `/api/assistant/config`
+    ] as const;
+    }
+
+
+export const getGetAssistantConfigQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantConfig>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantConfigQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantConfig>>> = ({ signal }) => getAssistantConfig({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantConfig>>>
+export type GetAssistantConfigQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get AI assistant model configuration
+ */
+
+export function useGetAssistantConfig<TData = Awaited<ReturnType<typeof getAssistantConfig>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantConfigQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAssistantConversationsUrl = () => {
 

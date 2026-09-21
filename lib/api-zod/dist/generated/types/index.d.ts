@@ -10,6 +10,7 @@ export * from './applicant';
 export * from './applicantList';
 export * from './applicantUpdate';
 export * from './assistantActivity';
+export * from './assistantConfig';
 export * from './assistantConversation';
 export * from './assistantConversationInput';
 export * from './assistantConversationList';

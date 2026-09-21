@@ -41,6 +41,7 @@ import {
   GetAssistantConversationMessagesResponse,
   CreateAssistantConversationBody,
   CreateAssistantConversationResponse,
+  GetAssistantConfigResponse,
   ListAssistantConversationsResponse,
   RenameAssistantConversationBody,
   RenameAssistantConversationParams,
@@ -3063,6 +3064,10 @@ router.post("/assistant/images", requireAdmin, async (req, res): Promise<void> =
     req.log.warn({ err: error }, "Generated image persist failed, using direct URL");
   }
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
+});
+
+router.get("/assistant/config", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
 });
 
 router.get("/assistant/conversations", requireAdmin, async (_req, res): Promise<void> => {

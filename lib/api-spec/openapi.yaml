@@ -786,6 +786,18 @@ paths:
       responses:
         "204":
           description: Assistant conversation cleared
+  /assistant/config:
+    get:
+      operationId: getAssistantConfig
+      tags: [assistant]
+      summary: Get AI assistant model configuration
+      responses:
+        "200":
+          description: Model names used by the assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConfig"
   /assistant/conversations:
     get:
       operationId: listAssistantConversations
@@ -1875,6 +1887,16 @@ components:
       properties:
         title:
           type: string
+    AssistantConfig:
+      type: object
+      required: [textModel, visionModel]
+      properties:
+        textModel:
+          type: string
+          description: "Chat model answering assistant questions"
+        visionModel:
+          type: string
+          description: "Vision model used for image input"
     AssistantHistory:
       type: object
       required: [items]

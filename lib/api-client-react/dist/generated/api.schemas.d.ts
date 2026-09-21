@@ -511,6 +511,12 @@ export interface AssistantConversationInput {
 export interface AssistantConversationUpdate {
     title: string;
 }
+export interface AssistantConfig {
+    /** Chat model answering assistant questions */
+    textModel: string;
+    /** Vision model used for image input */
+    visionModel: string;
+}
 export type AssistantHistoryItemsItem = {
     id: string;
     question: string;

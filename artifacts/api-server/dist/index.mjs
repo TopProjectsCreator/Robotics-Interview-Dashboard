@@ -73570,6 +73570,10 @@ var GetAssistantHistoryResponse = objectType({
   }))
 });
 var ClearAssistantHistoryResponse = voidType();
+var GetAssistantConfigResponse = objectType({
+  "textModel": stringType().describe("Chat model answering assistant questions"),
+  "visionModel": stringType().describe("Vision model used for image input")
+});
 var ListAssistantConversationsResponse = objectType({
   "items": arrayType(objectType({
     "id": stringType(),
@@ -97364,6 +97368,9 @@ router4.post("/assistant/images", requireAdmin, async (req, res) => {
     req.log.warn({ err: error40 }, "Generated image persist failed, using direct URL");
   }
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
+});
+router4.get("/assistant/config", requireAdmin, async (_req, res) => {
+  res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
 });
 router4.get("/assistant/conversations", requireAdmin, async (_req, res) => {
   await getOrCreateAssistantConversation();

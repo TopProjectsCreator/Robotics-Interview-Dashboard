@@ -12,8 +12,8 @@ import { useTheme } from "next-themes";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
   getListAssistantConversationsQueryKey,
-  getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey,
-  useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConversationMessages, useGetDashboardSummary,
+  getGetInterviewChatQueryKey, getGetQueueQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
+  useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue,
@@ -2422,6 +2422,7 @@ function ConversationAssistant() {
   const streamAbort = useRef<AbortController | null>(null);
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
+  const assistantConfig = useGetAssistantConfig({ query: { queryKey: getGetAssistantConfigQueryKey() } });
   const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
   const activeMessages = useGetAssistantConversationMessages(activeConversationId, undefined, {
     query: {
@@ -2645,7 +2646,7 @@ function ConversationAssistant() {
   const activeConversation = conversations.data?.items.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge>} />
+    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<div className="flex flex-wrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge><Badge tone="neutral"><Bot size={12} className="mr-1" /> Model: {assistantConfig.data?.textModel ?? "…"}</Badge></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

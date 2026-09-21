@@ -3295,6 +3295,19 @@ export declare const GetAssistantHistoryResponse: zod.ZodObject<{
  */
 export declare const ClearAssistantHistoryResponse: zod.ZodVoid;
 /**
+ * @summary Get AI assistant model configuration
+ */
+export declare const GetAssistantConfigResponse: zod.ZodObject<{
+    textModel: zod.ZodString;
+    visionModel: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    textModel: string;
+    visionModel: string;
+}, {
+    textModel: string;
+    visionModel: string;
+}>;
+/**
  * @summary List saved assistant conversations
  */
 export declare const ListAssistantConversationsResponse: zod.ZodObject<{
