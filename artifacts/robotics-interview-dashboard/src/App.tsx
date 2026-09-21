@@ -44,6 +44,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 
@@ -2914,6 +2915,14 @@ function BigScreenPage() {
   </div>;
 }
 
-function Router() { return <ErrorBoundary><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function ErrorCodeRoute({ params }: { params: { code?: string } }) {
+  const code = Number(params.code);
+  if (!Number.isInteger(code) || !isErrorPageCode(code)) {
+    return <NotFound />;
+  }
+  return <ErrorPage code={code} target={`/${code}`} />;
+}
+
+function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export default App;

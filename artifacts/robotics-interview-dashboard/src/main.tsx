@@ -3,6 +3,7 @@ import { ThemeProvider } from 'next-themes';
 
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { CrashFallback } from '@/pages/error-pages';
 import { getStoredAuthToken } from './authSession';
 import { setAuthTokenGetter } from '@workspace/api-client-react';
 
@@ -16,7 +17,7 @@ createRoot(document.getElementById('root')!, {
     console.error(error, errorInfo.componentStack);
   },
 }).render(
-  <ErrorBoundary>
+  <ErrorBoundary FallbackComponent={CrashFallback}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
       <App />
     </ThemeProvider>
