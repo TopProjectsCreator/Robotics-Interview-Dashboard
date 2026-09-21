@@ -97973,6 +97973,23 @@ async function queryInt(sql2, params = []) {
   }
 }
 var router8 = (0, import_express8.Router)();
+var diagHits = /* @__PURE__ */ new Map();
+router8.post("/diagnostics", requireAdmin, (req, res) => {
+  const ip = req.ip ?? "unknown";
+  const now = Date.now();
+  const recent = (diagHits.get(ip) ?? []).filter((at) => now - at < 6e4);
+  if (recent.length >= 30) {
+    res.status(429).json({ error: "Slow down" });
+    return;
+  }
+  recent.push(now);
+  diagHits.set(ip, recent);
+  const body = req.body ?? {};
+  const message = typeof body.message === "string" ? body.message.slice(0, 500) : "n/a";
+  const context = typeof body.context === "string" ? body.context.slice(0, 500) : "";
+  req.log.warn({ diag: true, message, context }, "Client diagnostic");
+  res.status(202).json({ ok: true });
+});
 router8.get("/system/usage", requireAdmin, async (_req, res) => {
   const bucket = process.env.SUPABASE_STORAGE_BUCKET ?? "app-uploads";
   const [databaseBytes, storageBytes, authUsers, applicantCount] = await Promise.all([

@@ -1860,6 +1860,19 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, stage: string): P
     if (timer !== undefined) clearTimeout(timer);
   }
 }
+let diagCount = 0;
+function reportDiag(message: string, context: string) {
+  if (diagCount >= 10) return;
+  diagCount += 1;
+  try {
+    fetch(`${import.meta.env.BASE_URL}api/diagnostics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ message: message.slice(0, 500), context: context.slice(0, 500) }),
+    }).catch(() => undefined);
+  } catch { /* diagnostics must never break the app */ }
+}
 function isHeicFile(file: File): boolean {
   return file.type === "image/heic" || file.type === "image/heif" || /\.hei[cf]$/i.test(file.name);
 }
@@ -1909,7 +1922,17 @@ async function prepareChatImage(file: File): Promise<{ blob: Blob; name: string;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    const blob = await withTimeout(
+      new Promise<Blob | null>((resolve) => {
+        try {
+          canvas.toBlob(resolve, "image/jpeg", 0.85);
+        } catch {
+          resolve(null);
+        }
+      }),
+      20000,
+      "encode",
+    );
     if (!blob) throw new Error("encode");
     const base = outName.replace(/\.[a-z0-9]+$/i, "") || "photo";
     return { blob, name: `${base}.jpg`, type: "image/jpeg" };
@@ -1937,6 +1960,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => {
+      reportDiag(`window.onerror: ${event.message}`, `${event.filename}:${event.lineno}`);
+    };
+    window.addEventListener("error", onError);
+    return () => window.removeEventListener("error", onError);
+  }, []);
   const qc = useQueryClient();
   const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number }[]>([]);
   const [fileStatus, setFileStatus] = useState<Record<string, string>>({});
@@ -2076,6 +2106,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const author = selectedInterviewer || "Interviewer";
     const uploadedIds: string[] = [];
     let userPosted = false;
+    let stage = "start";
+    const fileInfo = chatFiles.map(f => `${f.name}|${f.file.type || "notype"}|${Math.round(f.size / 1024)}kb`).join(";");
+    const diagContext = () => `files:[${fileInfo}] ua:${navigator.userAgent.slice(0, 160)}`;
     const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
     const prepareOrFail = async (file: File, displayName: string): Promise<{ blob: Blob; name: string; type: string }> => {
       try {
@@ -2087,8 +2120,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               ? `"${displayName}" can't be read in this browser. Send a screenshot instead.`
               : error instanceof Error && error.message === "unreadable-heic"
                 ? `Couldn't convert "${displayName}" (iPhone photo). Send a screenshot instead.`
-                : error instanceof Error && error.message === "timeout"
-                  ? `Reading "${displayName}" timed out. Try a smaller image.`
+                : error instanceof Error && error.message.startsWith("timeout:")
+                  ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
                   : "Couldn't prepare images. Try again."),
         );
       }
@@ -2097,8 +2130,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     try {
       const embeds: string[] = [];
       for (const f of chatFiles) {
+        stage = `prepare:${f.name}`;
         setFileStatus(current => ({ ...current, [f.id]: "Reading photo…" }));
         const prepared = await prepareOrFail(f.file, f.name);
+        stage = `upload:${f.name}`;
         setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
         let objectId = "";
         try {
@@ -2138,13 +2173,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         embeds.push(`![${prepared.name}](/api/storage/objects/${objectId})`);
       }
       const submitted = [draft, embeds.join("\n")].filter(Boolean).join("\n");
-      await sendChat.mutateAsync({ data: { author, message: submitted } });
+      stage = "send";
+      await withTimeout(sendChat.mutateAsync({ data: { author, message: submitted } }), 30000, "send");
       userPosted = true;
       if (/@ai\b/i.test(submitted)) {
+        stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
         const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
-        const response = await ask.mutateAsync({ data: { question, applicantIds, chatContext } });
-        await sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } });
+        const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
+        await withTimeout(sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } }), 30000, "send-ai");
       }
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
       for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
@@ -2153,6 +2190,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setMessage("");
       setChatError("");
     } catch (error) {
+      reportDiag(`chat-send failed at ${stage}`, diagContext());
       if (!userPosted) {
         for (const id of uploadedIds) {
           try { await fetch(`${import.meta.env.BASE_URL}api/storage/objects/${id}`, { method: "DELETE", credentials: "include" }); } catch { /* best-effort cleanup */ }
@@ -2160,9 +2198,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       }
       const message = !userPosted && error instanceof Error && error.message.startsWith("USER:")
         ? error.message.slice(5)
-        : userPosted
-          ? "The AI answer failed. Your message was saved — try again."
-          : "Couldn't send — nothing was posted. Try again.";
+        : error instanceof Error && error.message.startsWith("timeout:")
+          ? `Timed out (${error.message.slice(8)}). Try again.`
+          : userPosted
+            ? "The AI answer failed. Your message was saved — try again."
+            : "Couldn't send — nothing was posted. Try again.";
       setChatError(message);
     } finally {
       setChatUploading(false);

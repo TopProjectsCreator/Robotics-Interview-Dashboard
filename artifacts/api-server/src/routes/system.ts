@@ -22,6 +22,28 @@ async function queryInt(sql: string, params: unknown[] = []): Promise<number | n
 
 const router: IRouter = Router();
 
+const diagHits = new Map<string, number[]>();
+
+// Client-side failure reports (admin-only, rate-limited). The chat client
+// posts these when an operation fails so the exact failing stage lands in
+// the server logs without anyone opening devtools.
+router.post("/diagnostics", requireAdmin, (req, res): void => {
+  const ip = req.ip ?? "unknown";
+  const now = Date.now();
+  const recent = (diagHits.get(ip) ?? []).filter((at) => now - at < 60000);
+  if (recent.length >= 30) {
+    res.status(429).json({ error: "Slow down" });
+    return;
+  }
+  recent.push(now);
+  diagHits.set(ip, recent);
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const message = typeof body.message === "string" ? body.message.slice(0, 500) : "n/a";
+  const context = typeof body.context === "string" ? body.context.slice(0, 500) : "";
+  req.log.warn({ diag: true, message, context }, "Client diagnostic");
+  res.status(202).json({ ok: true });
+});
+
 // Supabase usage measured straight from the database, compared against the
 // plan quotas configured in env (Free-tier defaults). Storage and auth
 // reads return null when the role cannot see those schemas.
