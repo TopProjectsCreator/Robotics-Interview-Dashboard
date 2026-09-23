@@ -1,1 +1,0 @@
-{"version":3,"file":"uploadResponse.d.ts","sourceRoot":"","sources":["../../../src/generated/types/uploadResponse.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,EAAE,sBAAsB,EAAE,MAAM,0BAA0B,CAAC;AAEvE,MAAM,WAAW,cAAc;IAC7B,SAAS,EAAE,MAAM,CAAC;IAClB,UAAU,EAAE,MAAM,CAAC;IACnB,QAAQ,EAAE,sBAAsB,CAAC;CAClC"}

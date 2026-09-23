@@ -1,1 +1,0 @@
-{"version":3,"file":"getOfflineSnapshot200.d.ts","sourceRoot":"","sources":["../../../src/generated/types/getOfflineSnapshot200.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,aAAa,CAAC;AAC7C,OAAO,KAAK,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC;AAE/C,MAAM,MAAM,qBAAqB,GAAG;IAClC,UAAU,EAAE,SAAS,EAAE,CAAC;IACxB,KAAK,EAAE,UAAU,CAAC;CACnB,CAAC"}
