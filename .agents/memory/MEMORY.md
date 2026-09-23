@@ -2,3 +2,4 @@
 - [Embedded authentication](embedded-authentication.md) — iframe login needs included credentials and secure SameSite=None cookies when served over HTTPS.
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
 - [External database ownership](external-database-ownership.md) — verify DATABASE_URL's host before treating Replit's managed database as the app's active data store.
+- [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
