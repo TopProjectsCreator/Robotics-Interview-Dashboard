@@ -150,7 +150,11 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Interviewer and password are required" });
+    res.status(400).json({ error: "Event passcode, interviewer, and password are required" });
+    return;
+  }
+  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
   const ip = req.ip ?? "unknown";

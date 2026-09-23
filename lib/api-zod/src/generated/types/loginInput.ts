@@ -9,5 +9,7 @@
 export interface LoginInput {
   interviewerId: string;
   /** @minLength 1 */
+  eventPassword: string;
+  /** @minLength 1 */
   password: string;
 }

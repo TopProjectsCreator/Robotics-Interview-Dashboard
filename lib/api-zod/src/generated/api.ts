@@ -37,8 +37,10 @@ export const GetSystemUsageResponse = zod.object({
 
 
 
+
 export const LoginBody = zod.object({
   "interviewerId": zod.string(),
+  "eventPassword": zod.string().min(1),
   "password": zod.string().min(1)
 })
 

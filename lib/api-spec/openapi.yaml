@@ -1133,10 +1133,13 @@ components:
           type: string
     LoginInput:
       type: object
-      required: [interviewerId, password]
+      required: [interviewerId, eventPassword, password]
       properties:
         interviewerId:
           type: string
+        eventPassword:
+          type: string
+          minLength: 1
         password:
           type: string
           minLength: 1
