@@ -262,6 +262,8 @@ export function WhiteboardWorkspaceModal(props: {
     }
   };
 
+  if (!props.open) return null;
+
   const headerActions = isView ? (
     <div className="flex items-center gap-2">
       {showSharing && <button type="button" onClick={share} disabled={!currentBoard} data-testid="button-whiteboard-share" className="flex items-center gap-1.5 rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-40"><Send size={13} /> Share to chat</button>}
@@ -336,6 +338,8 @@ export function WhiteboardLibraryModal(props: {
       // Surface nothing extra; the row simply stays until next load.
     }
   };
+
+  if (!props.open) return null;
 
   return (
     <ModalShell onClose={props.onClose} title="Shared whiteboards">
