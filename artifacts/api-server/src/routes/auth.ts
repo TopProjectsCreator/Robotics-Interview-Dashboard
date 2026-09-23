@@ -56,7 +56,7 @@ function passwordsMatch(provided: string, expected: string): boolean {
 
 function eventPasswordMatches(value: string): boolean {
   const expected = process.env.ADMIN_PASSWORD;
-  return Boolean(expected && passwordsMatch(value, expected));
+  return Boolean(expected && passwordsMatch(value.trim(), expected.trim()));
 }
 
 function hashPassword(password: string): string {

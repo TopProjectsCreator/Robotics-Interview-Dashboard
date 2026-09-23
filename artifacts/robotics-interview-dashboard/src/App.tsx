@@ -1032,10 +1032,12 @@ function Login() {
   const continueFromEvent = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
-    if (!eventPassword.trim()) {
+    const normalizedEventPassword = eventPassword.trim();
+    if (!normalizedEventPassword) {
       setError("Enter the event passcode to continue.");
       return;
     }
+    setEventPassword(normalizedEventPassword);
     setStep("interviewer");
   };
 
@@ -1060,7 +1062,7 @@ function Login() {
               { onSuccess: finishLogin, onError: () => setError("Password setup succeeded, but sign-in failed. Try again.") },
             );
           },
-          onError: () => setError("That event passcode could not set up this interviewer."),
+          onError: () => setError("The event passcode was rejected. Go back and re-enter it exactly, then continue."),
         },
       );
       return;
