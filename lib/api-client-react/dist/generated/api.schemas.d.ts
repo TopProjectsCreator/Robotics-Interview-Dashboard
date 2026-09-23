@@ -205,6 +205,17 @@ export interface ApplicantList {
     items: Applicant[];
     total: number;
 }
+export interface ApplicantSearchAiInput {
+    /**
+       * @minLength 1
+       * @maxLength 500
+       */
+    prompt: string;
+}
+export interface ApplicantSearchAiResponse {
+    search: string;
+    explanation: string;
+}
 export interface ApplicantUpdate {
     name?: string;
     grade?: string;
@@ -593,7 +604,7 @@ export interface AssistantHistory {
     items: AssistantHistoryItemsItem[];
 }
 /**
- * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+ * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
 export type SearchParameter = string;
 export type GradeParameter = string;
@@ -615,7 +626,7 @@ export type GetPresenceStatsParams = {
 };
 export type ListApplicantsParams = {
     /**
-     * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+     * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
      */
     search?: SearchParameter;
     grade?: GradeParameter;

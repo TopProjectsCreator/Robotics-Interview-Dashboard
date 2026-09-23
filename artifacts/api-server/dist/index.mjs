@@ -72858,7 +72858,7 @@ var AckBroadcastResponse = objectType({
   "acked": booleanType()
 });
 var ListApplicantsQueryParams = objectType({
-  "search": coerce.string().optional().describe("GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text."),
+  "search": coerce.string().optional().describe("GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text."),
   "grade": coerce.string().optional(),
   "recommendation": coerce.string().optional(),
   "interviewStatus": coerce.string().optional(),
@@ -72901,6 +72901,14 @@ var ListApplicantsResponse = objectType({
     "queuePosition": numberType().int()
   })),
   "total": numberType().int()
+});
+var interpretApplicantSearchBodyPromptMax = 500;
+var InterpretApplicantSearchBody = objectType({
+  "prompt": stringType().min(1).max(interpretApplicantSearchBodyPromptMax)
+});
+var InterpretApplicantSearchResponse = objectType({
+  "search": stringType(),
+  "explanation": stringType()
 });
 var GetApplicantParams = objectType({
   "id": coerce.string()
@@ -93318,7 +93326,22 @@ init_src();
 import { randomUUID as randomUUID2 } from "node:crypto";
 
 // src/lib/applicantSearch.ts
-var QUALIFIERS = /* @__PURE__ */ new Set(["name", "age", "gender", "grade"]);
+var QUALIFIER_ALIASES = {
+  name: "name",
+  age: "age",
+  gender: "gender",
+  grade: "grade",
+  skill: "skill",
+  recommendation: "recommendation",
+  recommend: "recommendation",
+  category: "category",
+  status: "status",
+  interviewstatus: "status",
+  "interview-status": "status",
+  invalid: "invalid",
+  "invalid-score": "invalid",
+  score: "invalid"
+};
 var GENDER_ALIASES = {
   f: "female",
   female: "female",
@@ -93329,20 +93352,20 @@ var GENDER_ALIASES = {
   man: "male",
   boy: "male"
 };
+var SKILL_ALIASES = {
+  build: "build",
+  builder: "build",
+  building: "build",
+  code: "code",
+  coding: "code",
+  programmer: "code",
+  programming: "code",
+  cad: "cad",
+  design: "cad",
+  "3d": "cad"
+};
 function emptyQuery() {
-  return { name: [], age: [], gender: [], grade: [], terms: [], invalid: [] };
-}
-function readValue(query, start) {
-  let cursor = start;
-  while (/\s/.test(query[cursor] ?? "")) cursor += 1;
-  if (query[cursor] === '"') {
-    const end2 = query.indexOf('"', cursor + 1);
-    if (end2 === -1) return { value: query.slice(cursor + 1), next: query.length, malformed: true };
-    return { value: query.slice(cursor + 1, end2), next: end2 + 1, malformed: false };
-  }
-  const end = query.slice(cursor).search(/\s/);
-  if (end === -1) return { value: query.slice(cursor), next: query.length, malformed: false };
-  return { value: query.slice(cursor, cursor + end), next: cursor + end, malformed: false };
+  return { expression: null, invalid: [] };
 }
 function normalizeGender(value) {
   const normalized = value.trim().toLowerCase();
@@ -93356,6 +93379,9 @@ function normalizeApplicantGrade(value) {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
   const match = /^(?:grade\s*)?(\d+)(?:st|nd|rd|th)?$/.exec(normalized);
   return match ? match[1] : normalized;
+}
+function normalizeLabel(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 function parseAge(value) {
   const normalized = value.trim();
@@ -93373,49 +93399,41 @@ function parseAge(value) {
   }
   return null;
 }
-function parseApplicantSearchQuery(input) {
-  const query = emptyQuery();
+function tokenize(input) {
+  const tokens = [];
   let cursor = 0;
   while (cursor < input.length) {
     while (/\s/.test(input[cursor] ?? "")) cursor += 1;
     if (cursor >= input.length) break;
-    const tokenStart = cursor;
-    while (cursor < input.length && !/[\s:]/.test(input[cursor])) cursor += 1;
-    const key = input.slice(tokenStart, cursor).toLowerCase();
-    if (input[cursor] === ":" && QUALIFIERS.has(key)) {
-      const value2 = readValue(input, cursor + 1);
-      cursor = value2.next;
-      const trimmed = value2.value.trim();
-      if (value2.malformed || !trimmed) {
-        query.invalid.push(`${key}:`);
-        continue;
-      }
-      if (key === "name") query.name.push(trimmed.toLowerCase());
-      else if (key === "gender") query.gender.push(normalizeGender(trimmed));
-      else if (key === "grade") query.grade.push(normalizeApplicantGrade(trimmed));
-      else {
-        const age = parseAge(trimmed);
-        if (age) query.age.push(age);
-        else query.invalid.push(`age:${trimmed}`);
-      }
+    if (input[cursor] === "(" || input[cursor] === ")") {
+      tokens.push(input[cursor]);
+      cursor += 1;
       continue;
     }
-    cursor = tokenStart;
-    const value = readValue(input, cursor);
-    cursor = value.next;
-    if (value.value.trim()) query.terms.push(value.value.trim().toLowerCase());
-    if (value.malformed) query.invalid.push(`"${value.value}`);
+    const start = cursor;
+    let quoted = false;
+    while (cursor < input.length) {
+      const character = input[cursor];
+      if (character === '"') {
+        quoted = !quoted;
+        cursor += 1;
+        continue;
+      }
+      if (!quoted && (/\s/.test(character) || character === "(" || character === ")")) break;
+      cursor += 1;
+    }
+    tokens.push(input.slice(start, cursor));
   }
-  return query;
+  return tokens;
 }
-function matchesAge(age, filter) {
-  if (age === null) return false;
-  if (filter.kind === "exact") return age === filter.value;
-  if (filter.kind === "range") return age >= filter.min && age <= filter.max;
-  if (filter.operator === ">") return age > filter.value;
-  if (filter.operator === ">=") return age >= filter.value;
-  if (filter.operator === "<") return age < filter.value;
-  return age <= filter.value;
+function isOperator(token, operator) {
+  return typeof token === "string" && token.toLowerCase() === operator;
+}
+function readTokenValue(raw) {
+  const value = raw.trim();
+  if (!value.startsWith('"')) return { value, malformed: false };
+  if (!value.endsWith('"') || value.length === 1) return { value: value.slice(1), malformed: true };
+  return { value: value.slice(1, -1), malformed: false };
 }
 function searchableText(applicant) {
   return [
@@ -93429,17 +93447,219 @@ function searchableText(applicant) {
     applicant.notes
   ].filter(Boolean).join(" ").toLowerCase();
 }
+var BUILD_RES = [
+  /\b(vex(\s+iq)?|fll\b|first\s+lego\s+league|lego\s+league|ftc\b|frc\b|first\s+(robotics|tech\s+challenge))\b/g,
+  /\b(mindstorms|spike(\s+prime)?|ev3|nxt|tetrix|rev\s+robotics|andymark|gobilda|actobotics|mbot|elegoo)\b/g,
+  /\b(build|built|building|builder|builds|assembl\w*|chassis|drivetrain|gearbox|mechanic\w*|fabricat\w*|construct\w*)\b/g,
+  /\b(wiring|wired|solder\w*|power\s?tools?|drill\w*|dremel|bandsaw|lego\s+technic|robot\s+build)\b/g,
+  /\brobots?\b/g,
+  /\brobotics?\b/g
+];
+var CODE_RES = [
+  /\b(cod\w*|programming|programmers?|programmed|python|javascript|typescript|c\+\+|scratch|robotc|micropython|software|algorithms?|debugg\w*|block\s+(coding|programming|code)|code\.org)\b/g
+];
+var CAD_RES = [
+  /\b(cad|onshape|fusion\s?360|tinkercad|solidworks|autodesk(\s+inventor)?|inventor|freecad|sketchup)\b/g,
+  /\b(3d\s+(model\w*|design\w*|print\w*|cad))\b/g,
+  /\bdesigned?\s+(a\s+|the\s+)?(robot|chassis|part|bracket|mount|intake|arm|claw)\b/g
+];
+var NEGATION_RE = /^\W*(none|n\/?a|unknown|nothing|never|no\s+(known\s+|robotics\s+|prior\s+|previous\s+)?(experience|background|idea)|not\s+(much|any|really)|nope|no\s+idea|didn'?t\s+do|haven'?t\s+done)/;
+function informative(value) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length < 120 && NEGATION_RE.test(trimmed.toLowerCase())) return null;
+  return trimmed.toLowerCase();
+}
+function countMatches(text2, patterns) {
+  return patterns.reduce((total, pattern) => {
+    pattern.lastIndex = 0;
+    const count2 = text2.match(pattern)?.length ?? 0;
+    pattern.lastIndex = 0;
+    return total + count2;
+  }, 0);
+}
+function applicantSkill(applicant) {
+  const fields = [
+    applicant.roboticsExperience,
+    applicant.transcript,
+    applicant.aiSummary,
+    applicant.aiStrengths,
+    applicant.aiConcerns,
+    applicant.notes
+  ].map(informative).filter((value) => value !== null);
+  let build = 0;
+  let code = 0;
+  let cad = 0;
+  for (const field of fields) {
+    build += countMatches(field, BUILD_RES);
+    code += countMatches(field, CODE_RES);
+    cad += countMatches(field, CAD_RES);
+  }
+  const best = Math.max(build, code, cad);
+  if (best === 0) return null;
+  return code === best ? "code" : cad === best ? "cad" : "build";
+}
+var SearchParser = class {
+  constructor(tokens, invalid) {
+    this.tokens = tokens;
+    this.invalid = invalid;
+  }
+  cursor = 0;
+  parse() {
+    if (!this.tokens.length) return null;
+    const expression = this.parseIf();
+    while (this.cursor < this.tokens.length) {
+      this.invalid.push(String(this.tokens[this.cursor]));
+      this.cursor += 1;
+    }
+    return expression;
+  }
+  parseIf() {
+    if (!isOperator(this.tokens[this.cursor], "if")) return this.parseOr();
+    this.cursor += 1;
+    const condition = this.parseOr();
+    if (!condition || !isOperator(this.tokens[this.cursor], "then")) {
+      this.invalid.push("IF requires THEN");
+      return condition;
+    }
+    this.cursor += 1;
+    const consequence = this.parseOr();
+    if (!consequence) this.invalid.push("IF requires a consequence");
+    return consequence ? { kind: "if", condition, consequence } : condition;
+  }
+  parseOr() {
+    let expression = this.parseAnd();
+    while (isOperator(this.tokens[this.cursor], "or")) {
+      this.cursor += 1;
+      const right = this.parseAnd();
+      if (!right) {
+        this.invalid.push("OR requires a condition");
+        break;
+      }
+      expression = expression ? { kind: "or", left: expression, right } : right;
+    }
+    return expression;
+  }
+  parseAnd() {
+    let expression = this.parseUnary();
+    while (this.cursor < this.tokens.length) {
+      if (isOperator(this.tokens[this.cursor], "and")) {
+        this.cursor += 1;
+        const right2 = this.parseUnary();
+        if (!right2) {
+          this.invalid.push("AND requires a condition");
+          break;
+        }
+        expression = expression ? { kind: "and", left: expression, right: right2 } : right2;
+        continue;
+      }
+      if (isOperator(this.tokens[this.cursor], "or") || isOperator(this.tokens[this.cursor], "then") || this.tokens[this.cursor] === ")") break;
+      const right = this.parseUnary();
+      if (!right) break;
+      expression = expression ? { kind: "and", left: expression, right } : right;
+    }
+    return expression;
+  }
+  parseUnary() {
+    if (isOperator(this.tokens[this.cursor], "not")) {
+      this.cursor += 1;
+      const expression = this.parseUnary();
+      if (!expression) {
+        this.invalid.push("NOT requires a condition");
+        return null;
+      }
+      return { kind: "not", expression };
+    }
+    if (this.tokens[this.cursor] === "(") {
+      this.cursor += 1;
+      const expression = this.parseIf();
+      if (this.tokens[this.cursor] !== ")") this.invalid.push("Missing closing parenthesis");
+      else this.cursor += 1;
+      return expression;
+    }
+    const token = this.tokens[this.cursor];
+    if (!token || token === ")") return null;
+    this.cursor += 1;
+    return this.parsePredicate(token);
+  }
+  parsePredicate(raw) {
+    const separator = raw.indexOf(":");
+    if (separator <= 0) {
+      const value2 = readTokenValue(raw);
+      if (value2.malformed || !value2.value.trim()) {
+        this.invalid.push(raw);
+        return null;
+      }
+      return { kind: "predicate", predicate: { field: "text", value: value2.value.toLowerCase() } };
+    }
+    const field = QUALIFIER_ALIASES[raw.slice(0, separator).toLowerCase()];
+    const parsed = readTokenValue(raw.slice(separator + 1));
+    if (!field || parsed.malformed || !parsed.value.trim()) {
+      this.invalid.push(raw);
+      return null;
+    }
+    const value = parsed.value.trim();
+    if (field === "age") {
+      const age = parseAge(value);
+      if (!age) {
+        this.invalid.push(raw);
+        return null;
+      }
+      return { kind: "predicate", predicate: { field, value, age } };
+    }
+    if (field === "invalid") {
+      const normalized = value.toLowerCase();
+      if (!["true", "yes", "only", "invalid", "score"].includes(normalized)) {
+        this.invalid.push(raw);
+        return null;
+      }
+    }
+    return {
+      kind: "predicate",
+      predicate: {
+        field,
+        value: field === "gender" ? normalizeGender(value) : field === "skill" ? SKILL_ALIASES[value.toLowerCase()] ?? value.toLowerCase() : field === "grade" ? normalizeApplicantGrade(value) : normalizeLabel(value)
+      }
+    };
+  }
+};
+function parseApplicantSearchQuery(input) {
+  const query = emptyQuery();
+  const parser = new SearchParser(tokenize(input), query.invalid);
+  query.expression = parser.parse();
+  return query;
+}
+function matchesAge(age, filter) {
+  if (age === null) return false;
+  if (filter.kind === "exact") return age === filter.value;
+  if (filter.kind === "range") return age >= filter.min && age <= filter.max;
+  if (filter.operator === ">") return age > filter.value;
+  if (filter.operator === ">=") return age >= filter.value;
+  if (filter.operator === "<") return age < filter.value;
+  return age <= filter.value;
+}
+function matchesPredicate(applicant, predicate) {
+  if (predicate.field === "text") return searchableText(applicant).includes(predicate.value);
+  if (predicate.field === "name") return applicant.name.toLowerCase().includes(predicate.value);
+  if (predicate.field === "age") return Boolean(predicate.age && matchesAge(applicant.age, predicate.age));
+  if (predicate.field === "gender") return normalizeGender(applicant.gender ?? "") === predicate.value;
+  if (predicate.field === "grade") return normalizeApplicantGrade(applicant.grade) === predicate.value;
+  if (predicate.field === "skill") return applicantSkill(applicant) === predicate.value;
+  if (predicate.field === "recommendation") return normalizeLabel(applicant.aiRecommendation) === predicate.value;
+  if (predicate.field === "category") return normalizeLabel(applicant.category) === predicate.value;
+  if (predicate.field === "status") return normalizeLabel(applicant.interviewStatus) === predicate.value;
+  return applicant.aiScore === -1;
+}
+function matchesExpression(applicant, expression) {
+  if (expression.kind === "predicate") return matchesPredicate(applicant, expression.predicate);
+  if (expression.kind === "and") return matchesExpression(applicant, expression.left) && matchesExpression(applicant, expression.right);
+  if (expression.kind === "or") return matchesExpression(applicant, expression.left) || matchesExpression(applicant, expression.right);
+  if (expression.kind === "not") return !matchesExpression(applicant, expression.expression);
+  return !matchesExpression(applicant, expression.condition) || matchesExpression(applicant, expression.consequence);
+}
 function matchesApplicantSearch(applicant, query) {
   if (query.invalid.length > 0) return false;
-  const name2 = applicant.name.toLowerCase();
-  const gender = normalizeGender(applicant.gender ?? "");
-  const grade = normalizeApplicantGrade(applicant.grade);
-  if (!query.name.every((value) => name2.includes(value))) return false;
-  if (!query.age.every((filter) => matchesAge(applicant.age, filter))) return false;
-  if (!query.gender.every((value) => gender === value)) return false;
-  if (!query.grade.every((value) => grade === value)) return false;
-  const text2 = searchableText(applicant);
-  return query.terms.every((term) => text2.includes(term));
+  return query.expression ? matchesExpression(applicant, query.expression) : true;
 }
 
 // src/lib/roboticsData.ts
@@ -96572,6 +96792,61 @@ router4.get("/applicants", requireAdmin, async (req, res) => {
     items: applicants.map(applicantResponse),
     total: applicants.length
   }));
+});
+router4.post("/applicants/search/ai", requireAdmin, async (req, res) => {
+  const parsed = InterpretApplicantSearchBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  try {
+    const completion = await openai.chat.completions.create({
+      model: TEXT_MODEL,
+      temperature: 0,
+      max_tokens: 240,
+      messages: [
+        {
+          role: "system",
+          content: `You convert coordinator requests into a compact applicant roster search query.
+Return ONLY a JSON object with exactly two string properties: "search" and "explanation".
+The search language supports:
+- name:value, age:number, age:>=number, age:number..number, gender:female or gender:f, grade:number
+- skill:build, skill:code, skill:cad
+- recommendation:"Strong Yes", category:advance, status:completed, invalid:true
+- free text terms
+- boolean operators AND, OR, NOT, parentheses
+- conditional syntax IF <condition> THEN <condition>, meaning applicants matching the condition must also match the consequence
+Whitespace between conditions means AND. Use quoted values when they contain spaces.
+Use only these fields and values from the request. Do not invent applicant names or facts.
+Examples:
+{"search":"skill:code AND NOT skill:cad","explanation":"Applicants whose derived strongest signal is Code, excluding CAD."}
+{"search":"gender:female AND (skill:code OR skill:cad)","explanation":"Female applicants with either a Code or CAD signal."}
+If the request is vague, create the narrowest useful query and explain it briefly.`
+        },
+        { role: "user", content: parsed.data.prompt.trim() }
+      ]
+    });
+    const raw = completion.choices[0]?.message?.content?.trim() ?? "";
+    const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] ?? raw;
+    let result;
+    try {
+      result = JSON.parse(jsonText);
+    } catch {
+      res.status(502).json({ error: "The assistant returned an unreadable search." });
+      return;
+    }
+    const search = typeof result.search === "string" ? result.search.trim() : "";
+    const validation = parseApplicantSearchQuery(search);
+    if (!search || validation.invalid.length > 0 || !validation.expression) {
+      res.status(502).json({ error: "The assistant returned an unsupported search. Try describing the filters more directly." });
+      return;
+    }
+    const explanation = typeof result.explanation === "string" && result.explanation.trim() ? result.explanation.trim() : `Searching for ${search}.`;
+    res.json(InterpretApplicantSearchResponse.parse({ search, explanation }));
+  } catch (error40) {
+    req.log.warn({ err: error40 }, "Applicant search interpretation failed");
+    res.status(503).json({ error: "The assistant could not build that search. Try again." });
+  }
 });
 router4.get("/applicants/:id", requireAdmin, async (req, res) => {
   const params = GetApplicantParams.safeParse(req.params);

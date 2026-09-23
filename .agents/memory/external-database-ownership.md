@@ -7,4 +7,4 @@ The running app's `DATABASE_URL` must be checked by hostname before database cle
 
 **Why:** The project retained an active Replit development database after moving application storage to Supabase, which made the Database pane show old records and storage unrelated to the current app.
 
-**How to apply:** Confirm the connection hostname and target database before destructive operations. Treat Replit development database cleanup and Supabase data cleanup as separate, explicitly authorized actions.
+**How to apply:** Confirm the connection hostname and target database before destructive operations or schema pushes. The API workflow sources `.env`, while a bare database CLI command may use Replit's injected development URL; treat those databases as separate until verified.

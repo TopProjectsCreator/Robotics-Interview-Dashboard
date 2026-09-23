@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 /**
- * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+ * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
 export type SearchParameter = string;
 //# sourceMappingURL=searchParameter.d.ts.map

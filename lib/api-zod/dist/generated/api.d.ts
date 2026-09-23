@@ -712,6 +712,27 @@ export declare const ListApplicantsResponse: zod.ZodObject<{
     }[];
 }>;
 /**
+ * @summary Convert a natural-language request into applicant search syntax
+ */
+export declare const interpretApplicantSearchBodyPromptMax = 500;
+export declare const InterpretApplicantSearchBody: zod.ZodObject<{
+    prompt: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    prompt: string;
+}, {
+    prompt: string;
+}>;
+export declare const InterpretApplicantSearchResponse: zod.ZodObject<{
+    search: zod.ZodString;
+    explanation: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    search: string;
+    explanation: string;
+}, {
+    search: string;
+    explanation: string;
+}>;
+/**
  * @summary Get an applicant with transcript and notes
  */
 export declare const GetApplicantParams: zod.ZodObject<{

@@ -5,16 +5,53 @@ type AgeFilter =
   | { kind: "comparison"; operator: ">" | ">=" | "<" | "<="; value: number }
   | { kind: "range"; min: number; max: number };
 
+type SearchField =
+  | "name"
+  | "age"
+  | "gender"
+  | "grade"
+  | "skill"
+  | "recommendation"
+  | "category"
+  | "status"
+  | "invalid"
+  | "text";
+
+type SearchPredicate = {
+  field: SearchField;
+  value: string;
+  age?: AgeFilter;
+};
+
+type SearchExpression =
+  | { kind: "predicate"; predicate: SearchPredicate }
+  | { kind: "and"; left: SearchExpression; right: SearchExpression }
+  | { kind: "or"; left: SearchExpression; right: SearchExpression }
+  | { kind: "not"; expression: SearchExpression }
+  | { kind: "if"; condition: SearchExpression; consequence: SearchExpression };
+
 export interface ApplicantSearchQuery {
-  name: string[];
-  age: AgeFilter[];
-  gender: string[];
-  grade: string[];
-  terms: string[];
+  expression: SearchExpression | null;
   invalid: string[];
 }
 
-const QUALIFIERS = new Set(["name", "age", "gender", "grade"]);
+const QUALIFIER_ALIASES: Record<string, SearchField> = {
+  name: "name",
+  age: "age",
+  gender: "gender",
+  grade: "grade",
+  skill: "skill",
+  recommendation: "recommendation",
+  recommend: "recommendation",
+  category: "category",
+  status: "status",
+  interviewstatus: "status",
+  "interview-status": "status",
+  invalid: "invalid",
+  "invalid-score": "invalid",
+  score: "invalid",
+};
+
 const GENDER_ALIASES: Record<string, string> = {
   f: "female",
   female: "female",
@@ -26,21 +63,21 @@ const GENDER_ALIASES: Record<string, string> = {
   boy: "male",
 };
 
-function emptyQuery(): ApplicantSearchQuery {
-  return { name: [], age: [], gender: [], grade: [], terms: [], invalid: [] };
-}
+const SKILL_ALIASES: Record<string, string> = {
+  build: "build",
+  builder: "build",
+  building: "build",
+  code: "code",
+  coding: "code",
+  programmer: "code",
+  programming: "code",
+  cad: "cad",
+  design: "cad",
+  "3d": "cad",
+};
 
-function readValue(query: string, start: number): { value: string; next: number; malformed: boolean } {
-  let cursor = start;
-  while (/\s/.test(query[cursor] ?? "")) cursor += 1;
-  if (query[cursor] === '"') {
-    const end = query.indexOf('"', cursor + 1);
-    if (end === -1) return { value: query.slice(cursor + 1), next: query.length, malformed: true };
-    return { value: query.slice(cursor + 1, end), next: end + 1, malformed: false };
-  }
-  const end = query.slice(cursor).search(/\s/);
-  if (end === -1) return { value: query.slice(cursor), next: query.length, malformed: false };
-  return { value: query.slice(cursor, cursor + end), next: cursor + end, malformed: false };
+function emptyQuery(): ApplicantSearchQuery {
+  return { expression: null, invalid: [] };
 }
 
 function normalizeGender(value: string): string {
@@ -57,6 +94,10 @@ export function normalizeApplicantGrade(value: string): string {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
   const match = /^(?:grade\s*)?(\d+)(?:st|nd|rd|th)?$/.exec(normalized);
   return match ? match[1] : normalized;
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function parseAge(value: string): AgeFilter | null {
@@ -76,52 +117,46 @@ function parseAge(value: string): AgeFilter | null {
   return null;
 }
 
-export function parseApplicantSearchQuery(input: string): ApplicantSearchQuery {
-  const query = emptyQuery();
+type QueryToken = string | "(" | ")";
+
+function tokenize(input: string): QueryToken[] {
+  const tokens: QueryToken[] = [];
   let cursor = 0;
   while (cursor < input.length) {
     while (/\s/.test(input[cursor] ?? "")) cursor += 1;
     if (cursor >= input.length) break;
-
-    const tokenStart = cursor;
-    while (cursor < input.length && !/[\s:]/.test(input[cursor])) cursor += 1;
-    const key = input.slice(tokenStart, cursor).toLowerCase();
-    if (input[cursor] === ":" && QUALIFIERS.has(key)) {
-      const value = readValue(input, cursor + 1);
-      cursor = value.next;
-      const trimmed = value.value.trim();
-      if (value.malformed || !trimmed) {
-        query.invalid.push(`${key}:`);
-        continue;
-      }
-      if (key === "name") query.name.push(trimmed.toLowerCase());
-      else if (key === "gender") query.gender.push(normalizeGender(trimmed));
-      else if (key === "grade") query.grade.push(normalizeApplicantGrade(trimmed));
-      else {
-        const age = parseAge(trimmed);
-        if (age) query.age.push(age);
-        else query.invalid.push(`age:${trimmed}`);
-      }
+    if (input[cursor] === "(" || input[cursor] === ")") {
+      tokens.push(input[cursor] as "(" | ")");
+      cursor += 1;
       continue;
     }
 
-    cursor = tokenStart;
-    const value = readValue(input, cursor);
-    cursor = value.next;
-    if (value.value.trim()) query.terms.push(value.value.trim().toLowerCase());
-    if (value.malformed) query.invalid.push(`"${value.value}`);
+    const start = cursor;
+    let quoted = false;
+    while (cursor < input.length) {
+      const character = input[cursor];
+      if (character === '"') {
+        quoted = !quoted;
+        cursor += 1;
+        continue;
+      }
+      if (!quoted && (/\s/.test(character) || character === "(" || character === ")")) break;
+      cursor += 1;
+    }
+    tokens.push(input.slice(start, cursor));
   }
-  return query;
+  return tokens;
 }
 
-function matchesAge(age: number | null, filter: AgeFilter): boolean {
-  if (age === null) return false;
-  if (filter.kind === "exact") return age === filter.value;
-  if (filter.kind === "range") return age >= filter.min && age <= filter.max;
-  if (filter.operator === ">") return age > filter.value;
-  if (filter.operator === ">=") return age >= filter.value;
-  if (filter.operator === "<") return age < filter.value;
-  return age <= filter.value;
+function isOperator(token: QueryToken | undefined, operator: string): boolean {
+  return typeof token === "string" && token.toLowerCase() === operator;
+}
+
+function readTokenValue(raw: string): { value: string; malformed: boolean } {
+  const value = raw.trim();
+  if (!value.startsWith('"')) return { value, malformed: false };
+  if (!value.endsWith('"') || value.length === 1) return { value: value.slice(1), malformed: true };
+  return { value: value.slice(1, -1), malformed: false };
 }
 
 function searchableText(applicant: Applicant): string {
@@ -140,15 +175,234 @@ function searchableText(applicant: Applicant): string {
     .toLowerCase();
 }
 
+const BUILD_RES = [
+  /\b(vex(\s+iq)?|fll\b|first\s+lego\s+league|lego\s+league|ftc\b|frc\b|first\s+(robotics|tech\s+challenge))\b/g,
+  /\b(mindstorms|spike(\s+prime)?|ev3|nxt|tetrix|rev\s+robotics|andymark|gobilda|actobotics|mbot|elegoo)\b/g,
+  /\b(build|built|building|builder|builds|assembl\w*|chassis|drivetrain|gearbox|mechanic\w*|fabricat\w*|construct\w*)\b/g,
+  /\b(wiring|wired|solder\w*|power\s?tools?|drill\w*|dremel|bandsaw|lego\s+technic|robot\s+build)\b/g,
+  /\brobots?\b/g,
+  /\brobotics?\b/g,
+];
+const CODE_RES = [
+  /\b(cod\w*|programming|programmers?|programmed|python|javascript|typescript|c\+\+|scratch|robotc|micropython|software|algorithms?|debugg\w*|block\s+(coding|programming|code)|code\.org)\b/g,
+];
+const CAD_RES = [
+  /\b(cad|onshape|fusion\s?360|tinkercad|solidworks|autodesk(\s+inventor)?|inventor|freecad|sketchup)\b/g,
+  /\b(3d\s+(model\w*|design\w*|print\w*|cad))\b/g,
+  /\bdesigned?\s+(a\s+|the\s+)?(robot|chassis|part|bracket|mount|intake|arm|claw)\b/g,
+];
+const NEGATION_RE =
+  /^\W*(none|n\/?a|unknown|nothing|never|no\s+(known\s+|robotics\s+|prior\s+|previous\s+)?(experience|background|idea)|not\s+(much|any|really)|nope|no\s+idea|didn'?t\s+do|haven'?t\s+done)/;
+
+function informative(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || (trimmed.length < 120 && NEGATION_RE.test(trimmed.toLowerCase()))) return null;
+  return trimmed.toLowerCase();
+}
+
+function countMatches(text: string, patterns: RegExp[]): number {
+  return patterns.reduce((total, pattern) => {
+    pattern.lastIndex = 0;
+    const count = text.match(pattern)?.length ?? 0;
+    pattern.lastIndex = 0;
+    return total + count;
+  }, 0);
+}
+
+function applicantSkill(applicant: Applicant): string | null {
+  const fields = [
+    applicant.roboticsExperience,
+    applicant.transcript,
+    applicant.aiSummary,
+    applicant.aiStrengths,
+    applicant.aiConcerns,
+    applicant.notes,
+  ]
+    .map(informative)
+    .filter((value): value is string => value !== null);
+  let build = 0;
+  let code = 0;
+  let cad = 0;
+  for (const field of fields) {
+    build += countMatches(field, BUILD_RES);
+    code += countMatches(field, CODE_RES);
+    cad += countMatches(field, CAD_RES);
+  }
+  const best = Math.max(build, code, cad);
+  if (best === 0) return null;
+  return code === best ? "code" : cad === best ? "cad" : "build";
+}
+
+class SearchParser {
+  private cursor = 0;
+
+  constructor(private readonly tokens: QueryToken[], private readonly invalid: string[]) {}
+
+  parse(): SearchExpression | null {
+    if (!this.tokens.length) return null;
+    const expression = this.parseIf();
+    while (this.cursor < this.tokens.length) {
+      this.invalid.push(String(this.tokens[this.cursor]));
+      this.cursor += 1;
+    }
+    return expression;
+  }
+
+  private parseIf(): SearchExpression | null {
+    if (!isOperator(this.tokens[this.cursor], "if")) return this.parseOr();
+    this.cursor += 1;
+    const condition = this.parseOr();
+    if (!condition || !isOperator(this.tokens[this.cursor], "then")) {
+      this.invalid.push("IF requires THEN");
+      return condition;
+    }
+    this.cursor += 1;
+    const consequence = this.parseOr();
+    if (!consequence) this.invalid.push("IF requires a consequence");
+    return consequence ? { kind: "if", condition, consequence } : condition;
+  }
+
+  private parseOr(): SearchExpression | null {
+    let expression = this.parseAnd();
+    while (isOperator(this.tokens[this.cursor], "or")) {
+      this.cursor += 1;
+      const right = this.parseAnd();
+      if (!right) {
+        this.invalid.push("OR requires a condition");
+        break;
+      }
+      expression = expression ? { kind: "or", left: expression, right } : right;
+    }
+    return expression;
+  }
+
+  private parseAnd(): SearchExpression | null {
+    let expression = this.parseUnary();
+    while (this.cursor < this.tokens.length) {
+      if (isOperator(this.tokens[this.cursor], "and")) {
+        this.cursor += 1;
+        const right = this.parseUnary();
+        if (!right) {
+          this.invalid.push("AND requires a condition");
+          break;
+        }
+        expression = expression ? { kind: "and", left: expression, right } : right;
+        continue;
+      }
+      if (isOperator(this.tokens[this.cursor], "or") || isOperator(this.tokens[this.cursor], "then") || this.tokens[this.cursor] === ")") break;
+      const right = this.parseUnary();
+      if (!right) break;
+      expression = expression ? { kind: "and", left: expression, right } : right;
+    }
+    return expression;
+  }
+
+  private parseUnary(): SearchExpression | null {
+    if (isOperator(this.tokens[this.cursor], "not")) {
+      this.cursor += 1;
+      const expression = this.parseUnary();
+      if (!expression) {
+        this.invalid.push("NOT requires a condition");
+        return null;
+      }
+      return { kind: "not", expression };
+    }
+    if (this.tokens[this.cursor] === "(") {
+      this.cursor += 1;
+      const expression = this.parseIf();
+      if (this.tokens[this.cursor] !== ")") this.invalid.push("Missing closing parenthesis");
+      else this.cursor += 1;
+      return expression;
+    }
+    const token = this.tokens[this.cursor];
+    if (!token || token === ")") return null;
+    this.cursor += 1;
+    return this.parsePredicate(token);
+  }
+
+  private parsePredicate(raw: string): SearchExpression | null {
+    const separator = raw.indexOf(":");
+    if (separator <= 0) {
+      const value = readTokenValue(raw);
+      if (value.malformed || !value.value.trim()) {
+        this.invalid.push(raw);
+        return null;
+      }
+      return { kind: "predicate", predicate: { field: "text", value: value.value.toLowerCase() } };
+    }
+
+    const field = QUALIFIER_ALIASES[raw.slice(0, separator).toLowerCase()];
+    const parsed = readTokenValue(raw.slice(separator + 1));
+    if (!field || parsed.malformed || !parsed.value.trim()) {
+      this.invalid.push(raw);
+      return null;
+    }
+    const value = parsed.value.trim();
+    if (field === "age") {
+      const age = parseAge(value);
+      if (!age) {
+        this.invalid.push(raw);
+        return null;
+      }
+      return { kind: "predicate", predicate: { field, value, age } };
+    }
+    if (field === "invalid") {
+      const normalized = value.toLowerCase();
+      if (!["true", "yes", "only", "invalid", "score"].includes(normalized)) {
+        this.invalid.push(raw);
+        return null;
+      }
+    }
+    return {
+      kind: "predicate",
+      predicate: {
+        field,
+        value: field === "gender" ? normalizeGender(value) : field === "skill" ? (SKILL_ALIASES[value.toLowerCase()] ?? value.toLowerCase()) : field === "grade" ? normalizeApplicantGrade(value) : normalizeLabel(value),
+      },
+    };
+  }
+}
+
+export function parseApplicantSearchQuery(input: string): ApplicantSearchQuery {
+  const query = emptyQuery();
+  const parser = new SearchParser(tokenize(input), query.invalid);
+  query.expression = parser.parse();
+  return query;
+}
+
+function matchesAge(age: number | null, filter: AgeFilter): boolean {
+  if (age === null) return false;
+  if (filter.kind === "exact") return age === filter.value;
+  if (filter.kind === "range") return age >= filter.min && age <= filter.max;
+  if (filter.operator === ">") return age > filter.value;
+  if (filter.operator === ">=") return age >= filter.value;
+  if (filter.operator === "<") return age < filter.value;
+  return age <= filter.value;
+}
+
+function matchesPredicate(applicant: Applicant, predicate: SearchPredicate): boolean {
+  if (predicate.field === "text") return searchableText(applicant).includes(predicate.value);
+  if (predicate.field === "name") return applicant.name.toLowerCase().includes(predicate.value);
+  if (predicate.field === "age") return Boolean(predicate.age && matchesAge(applicant.age, predicate.age));
+  if (predicate.field === "gender") return normalizeGender(applicant.gender ?? "") === predicate.value;
+  if (predicate.field === "grade") return normalizeApplicantGrade(applicant.grade) === predicate.value;
+  if (predicate.field === "skill") return applicantSkill(applicant) === predicate.value;
+  if (predicate.field === "recommendation") return normalizeLabel(applicant.aiRecommendation) === predicate.value;
+  if (predicate.field === "category") return normalizeLabel(applicant.category) === predicate.value;
+  if (predicate.field === "status") return normalizeLabel(applicant.interviewStatus) === predicate.value;
+  return applicant.aiScore === -1;
+}
+
+function matchesExpression(applicant: Applicant, expression: SearchExpression): boolean {
+  if (expression.kind === "predicate") return matchesPredicate(applicant, expression.predicate);
+  if (expression.kind === "and") return matchesExpression(applicant, expression.left) && matchesExpression(applicant, expression.right);
+  if (expression.kind === "or") return matchesExpression(applicant, expression.left) || matchesExpression(applicant, expression.right);
+  if (expression.kind === "not") return !matchesExpression(applicant, expression.expression);
+  return !matchesExpression(applicant, expression.condition) || matchesExpression(applicant, expression.consequence);
+}
+
 export function matchesApplicantSearch(applicant: Applicant, query: ApplicantSearchQuery): boolean {
   if (query.invalid.length > 0) return false;
-  const name = applicant.name.toLowerCase();
-  const gender = normalizeGender(applicant.gender ?? "");
-  const grade = normalizeApplicantGrade(applicant.grade);
-  if (!query.name.every((value) => name.includes(value))) return false;
-  if (!query.age.every((filter) => matchesAge(applicant.age, filter))) return false;
-  if (!query.gender.every((value) => gender === value)) return false;
-  if (!query.grade.every((value) => grade === value)) return false;
-  const text = searchableText(applicant);
-  return query.terms.every((term) => text.includes(term));
+  return query.expression ? matchesExpression(applicant, query.expression) : true;
 }

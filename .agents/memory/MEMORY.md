@@ -3,3 +3,4 @@
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
 - [External database ownership](external-database-ownership.md) — verify DATABASE_URL's host before treating Replit's managed database as the app's active data store.
 - [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
+- [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.

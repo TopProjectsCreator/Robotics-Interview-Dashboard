@@ -4,6 +4,8 @@ import { assistantConversationsTable, assistantMessagesTable, chatMessageReactio
 import {
   AskAssistantBody,
   AskAssistantResponse,
+  InterpretApplicantSearchBody,
+  InterpretApplicantSearchResponse,
   AdvanceQueueBody,
   CallbackQueueBody,
   CommitImportBody,
@@ -95,7 +97,7 @@ import {
   queueApplicantResponse,
   transferInterviewers,
 } from "../lib/roboticsData";
-import { normalizeApplicantGender } from "../lib/applicantSearch";
+import { normalizeApplicantGender, parseApplicantSearchQuery } from "../lib/applicantSearch";
 import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
@@ -1886,6 +1888,65 @@ router.get("/applicants", requireAdmin, async (req, res): Promise<void> => {
     items: applicants.map(applicantResponse),
     total: applicants.length,
   }));
+});
+
+router.post("/applicants/search/ai", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = InterpretApplicantSearchBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: TEXT_MODEL,
+      temperature: 0,
+      max_tokens: 240,
+      messages: [
+        {
+          role: "system",
+          content: `You convert coordinator requests into a compact applicant roster search query.
+Return ONLY a JSON object with exactly two string properties: "search" and "explanation".
+The search language supports:
+- name:value, age:number, age:>=number, age:number..number, gender:female or gender:f, grade:number
+- skill:build, skill:code, skill:cad
+- recommendation:"Strong Yes", category:advance, status:completed, invalid:true
+- free text terms
+- boolean operators AND, OR, NOT, parentheses
+- conditional syntax IF <condition> THEN <condition>, meaning applicants matching the condition must also match the consequence
+Whitespace between conditions means AND. Use quoted values when they contain spaces.
+Use only these fields and values from the request. Do not invent applicant names or facts.
+Examples:
+{"search":"skill:code AND NOT skill:cad","explanation":"Applicants whose derived strongest signal is Code, excluding CAD."}
+{"search":"gender:female AND (skill:code OR skill:cad)","explanation":"Female applicants with either a Code or CAD signal."}
+If the request is vague, create the narrowest useful query and explain it briefly.`,
+        },
+        { role: "user", content: parsed.data.prompt.trim() },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content?.trim() ?? "";
+    const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] ?? raw;
+    let result: { search?: unknown; explanation?: unknown };
+    try {
+      result = JSON.parse(jsonText) as { search?: unknown; explanation?: unknown };
+    } catch {
+      res.status(502).json({ error: "The assistant returned an unreadable search." });
+      return;
+    }
+    const search = typeof result.search === "string" ? result.search.trim() : "";
+    const validation = parseApplicantSearchQuery(search);
+    if (!search || validation.invalid.length > 0 || !validation.expression) {
+      res.status(502).json({ error: "The assistant returned an unsupported search. Try describing the filters more directly." });
+      return;
+    }
+    const explanation = typeof result.explanation === "string" && result.explanation.trim()
+      ? result.explanation.trim()
+      : `Searching for ${search}.`;
+    res.json(InterpretApplicantSearchResponse.parse({ search, explanation }));
+  } catch (error) {
+    req.log.warn({ err: error }, "Applicant search interpretation failed");
+    res.status(503).json({ error: "The assistant could not build that search. Try again." });
+  }
 });
 
 router.get("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {

@@ -232,7 +232,7 @@ export const AckBroadcastResponse = zod.object({
  * @summary List applicants with filters and sorting
  */
 export const ListApplicantsQueryParams = zod.object({
-  "search": zod.coerce.string().optional().describe('GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.'),
+  "search": zod.coerce.string().optional().describe('GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.'),
   "grade": zod.coerce.string().optional(),
   "recommendation": zod.coerce.string().optional(),
   "interviewStatus": zod.coerce.string().optional(),
@@ -276,6 +276,23 @@ export const ListApplicantsResponse = zod.object({
   "queuePosition": zod.number().int()
 })),
   "total": zod.number().int()
+})
+
+
+/**
+ * @summary Convert a natural-language request into applicant search syntax
+ */
+export const interpretApplicantSearchBodyPromptMax = 500;
+
+
+
+export const InterpretApplicantSearchBody = zod.object({
+  "prompt": zod.string().min(1).max(interpretApplicantSearchBodyPromptMax)
+})
+
+export const InterpretApplicantSearchResponse = zod.object({
+  "search": zod.string(),
+  "explanation": zod.string()
 })
 
 

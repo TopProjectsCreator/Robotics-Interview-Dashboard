@@ -29,6 +29,7 @@ import {
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
   useUpdateApplicant,
+  useInterpretApplicantSearch,
   useGetSystemUsage,
   getInterviewChat,
   getAssistantConversationMessages,
@@ -1191,6 +1192,9 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
 function Applicants() {
   const { settings } = useWorkspaceSettings();
   const [search, setSearch] = useState("");
+  const [aiSearchOpen, setAiSearchOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiSearchNote, setAiSearchNote] = useState<{ search: string; explanation: string } | null>(null);
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
   const [sort, setSort] = useState(settings.defaultSort);
@@ -1214,6 +1218,7 @@ function Applicants() {
     return [...rows].sort(sort === "skill" ? bySkill : byGender);
   }, [list.data, sort]);
   const update = useUpdateApplicant();
+  const interpretSearch = useInterpretApplicantSearch();
   const qc = useQueryClient();
   const [dragId, setDragId] = useState<string | null>(null);
   const onDrop = (cat: string) => {
@@ -1290,13 +1295,14 @@ function Applicants() {
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => setSearch(e.target.value)} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-3 text-sm outline-none focus:border-[#16869a]" /></div>
+         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
         <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
-        </div>
-        <p className="mt-2 text-[11px] text-[#7c8c91]" data-testid="applicant-search-help">Qualifiers: <code className="font-mono text-[#526d75]">name:</code> <code className="font-mono text-[#526d75]">age:14</code>, <code className="font-mono text-[#526d75]">age:&gt;=14</code>, <code className="font-mono text-[#526d75]">age:13..15</code>, <code className="font-mono text-[#526d75]">gender:female</code>, <code className="font-mono text-[#526d75]">grade:8</code>. Quote values with spaces.</p>
+         </div>
+         {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="mt-2 text-xs leading-5 text-[#48656b]">Using <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
+         <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]" data-testid="applicant-search-help">Qualifiers: <code className="font-mono text-[#526d75]">name:</code>, <code className="font-mono text-[#526d75]">age:</code>, <code className="font-mono text-[#526d75]">gender:</code>, <code className="font-mono text-[#526d75]">grade:</code>, <code className="font-mono text-[#526d75]">skill:</code>, <code className="font-mono text-[#526d75]">recommendation:</code>, <code className="font-mono text-[#526d75]">category:</code>, <code className="font-mono text-[#526d75]">status:</code>, <code className="font-mono text-[#526d75]">invalid:true</code>. Combine with <code className="font-mono text-[#526d75]">AND</code>, <code className="font-mono text-[#526d75]">OR</code>, <code className="font-mono text-[#526d75]">NOT</code>, parentheses, or <code className="font-mono text-[#526d75]">IF … THEN …</code>. Quote values with spaces.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">

@@ -258,6 +258,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApplicantList"
+  /applicants/search/ai:
+    post:
+      operationId: interpretApplicantSearch
+      tags: [applicants]
+      summary: Convert a natural-language request into applicant search syntax
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicantSearchAiInput"
+      responses:
+        "200":
+          description: Interpreted applicant search
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicantSearchAiResponse"
   /applicants/{id}:
     get:
       operationId: getApplicant
@@ -957,7 +975,7 @@ components:
     Search:
       name: search
       in: query
-      description: 'GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.'
+      description: 'GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.'
       schema:
         type: string
     Grade:
@@ -1395,6 +1413,22 @@ components:
             $ref: "#/components/schemas/Applicant"
         total:
           type: integer
+    ApplicantSearchAiInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ApplicantSearchAiResponse:
+      type: object
+      required: [search, explanation]
+      properties:
+        search:
+          type: string
+        explanation:
+          type: string
     ApplicantUpdate:
       type: object
       properties:

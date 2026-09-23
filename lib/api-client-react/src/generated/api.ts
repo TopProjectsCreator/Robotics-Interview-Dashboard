@@ -23,6 +23,8 @@ import type {
   AdvanceQueueInput,
   Applicant,
   ApplicantList,
+  ApplicantSearchAiInput,
+  ApplicantSearchAiResponse,
   ApplicantUpdate,
   AssistantConfig,
   AssistantConversation,
@@ -1248,6 +1250,77 @@ export function useListApplicants<TData = Awaited<ReturnType<typeof listApplican
 
 
 
+
+export const getInterpretApplicantSearchUrl = () => {
+
+
+
+
+  return `/api/applicants/search/ai`
+}
+
+/**
+ * @summary Convert a natural-language request into applicant search syntax
+ */
+export const interpretApplicantSearch = async (applicantSearchAiInput: ApplicantSearchAiInput, options?: Parameters<typeof customFetch>[1]): Promise<ApplicantSearchAiResponse> => {
+
+  return customFetch<ApplicantSearchAiResponse>(getInterpretApplicantSearchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(applicantSearchAiInput)
+  }
+);}
+
+
+
+
+
+export const getInterpretApplicantSearchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof interpretApplicantSearch>>, TError,{data: BodyType<ApplicantSearchAiInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof interpretApplicantSearch>>, TError,{data: BodyType<ApplicantSearchAiInput>}, TContext> => {
+
+const mutationKey = ['interpretApplicantSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof interpretApplicantSearch>>, {data: BodyType<ApplicantSearchAiInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  interpretApplicantSearch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InterpretApplicantSearchMutationResult = NonNullable<Awaited<ReturnType<typeof interpretApplicantSearch>>>
+    export type InterpretApplicantSearchMutationBody = BodyType<ApplicantSearchAiInput>
+    export type InterpretApplicantSearchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Convert a natural-language request into applicant search syntax
+ */
+export const useInterpretApplicantSearch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof interpretApplicantSearch>>, TError,{data: BodyType<ApplicantSearchAiInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof interpretApplicantSearch>>,
+        TError,
+        {data: BodyType<ApplicantSearchAiInput>},
+        TContext
+      > => {
+      return useMutation(getInterpretApplicantSearchMutationOptions(options));
+    }
 
 export const getGetApplicantUrl = (id: string,) => {
 
