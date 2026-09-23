@@ -40,6 +40,7 @@ export interface MessageResponse {
 }
 
 export interface LoginInput {
+  interviewerId: string;
   /** @minLength 1 */
   password: string;
 }
@@ -47,8 +48,36 @@ export interface LoginInput {
 export interface AuthSession {
   authenticated: boolean;
   label?: string;
+  interviewerId?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
+}
+
+export interface InterviewerAccount {
+  id: string;
+  displayName: string;
+  hasPassword: boolean;
+}
+
+export interface InterviewerAccountList {
+  items: InterviewerAccount[];
+}
+
+export interface SetupInterviewerPasswordInput {
+  interviewerId: string;
+  /** @minLength 1 */
+  eventPassword: string;
+  /** @minLength 1 */
+  password: string;
+}
+
+export interface CreateInterviewerInput {
+  /** @minLength 1 */
+  displayName: string;
+  /** @minLength 1 */
+  eventPassword: string;
+  /** @minLength 1 */
+  password: string;
 }
 
 export interface DashboardCount {

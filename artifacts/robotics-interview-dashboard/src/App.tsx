@@ -18,6 +18,7 @@ import {
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
+  useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -126,6 +127,7 @@ function SettingRow({ title, detail, children }: { title: string; detail?: strin
 }
 function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { settings } = useWorkspaceSettings();
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const [, setLocation] = useLocation();
   const logout = useLogout();
   const [open, setOpen] = useState(false);
@@ -138,11 +140,11 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("pointerdown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open ]);
-  const name = settings.displayName.trim() || "Coordinator";
+  const name = session.data?.label || settings.displayName.trim() || "Interviewer";
   return <div ref={ref} className="relative">
     <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95">{avatarInitials(settings)}</button>
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-2xl">
-      <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Coordinator</p></div>
+      <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
       <div className="p-2">
         <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>
         <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
@@ -928,11 +930,19 @@ function FullscreenButton({ active, onClick, dark = false }: { active: boolean; 
 
 function Login() {
   const [password, setPassword] = useState("");
+  const [eventPassword, setEventPassword] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [creating, setCreating] = useState(false);
   const [location, setLocation] = useLocation();
   const qc = useQueryClient();
   const passwordRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const interviewers = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
   const login = useLogin();
+  const setup = useSetupInterviewerPassword();
+  const create = useCreateInterviewer();
   useEffect(() => { if (session.data?.authenticated && (location === "/" || location === "/auth")) setLocation("/dashboard"); }, [session.data, location, setLocation]);
   useEffect(() => {
     // Browsers may ignore autoFocus in an iframe until the document has
@@ -940,12 +950,45 @@ function Login() {
     const frame = window.requestAnimationFrame(() => passwordRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, []);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); login.mutate({ data: { password } }, { onSuccess: response => { storeAuthToken(response.token); qc.invalidateQueries({ queryKey: getGetSessionQueryKey() }); setLocation("/dashboard"); } }); };
+  useEffect(() => {
+    if (!selectedId && interviewers.data?.items[0]) setSelectedId(interviewers.data.items[0].id);
+  }, [interviewers.data, selectedId]);
+  const finishLogin = (response: { token?: string }) => { storeAuthToken(response.token); qc.invalidateQueries({ queryKey: getGetSessionQueryKey() }); setLocation("/dashboard"); };
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const selected = interviewers.data?.items.find(item => item.id === selectedId);
+    if (!selected) return;
+    if (!selected.hasPassword) {
+      setup.mutate({ data: { interviewerId: selected.id, eventPassword, password } }, {
+        onSuccess: () => {
+          login.mutate({ data: { interviewerId: selected.id, password } }, { onSuccess: finishLogin });
+        },
+      });
+      return;
+    }
+    login.mutate({ data: { interviewerId: selected.id, password } }, { onSuccess: finishLogin });
+  };
+  const submitCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    create.mutate({ data: { displayName: newName, eventPassword, password: newPassword } }, {
+      onSuccess: account => {
+        setCreating(false);
+        setPassword(newPassword);
+        setNewPassword("");
+        setSelectedId(account.id);
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+        login.mutate({ data: { interviewerId: account.id, password: newPassword } }, { onSuccess: finishLogin });
+      },
+    });
+  };
+  const selected = interviewers.data?.items.find(item => item.id === selectedId);
+  const busy = login.isPending || setup.isPending || create.isPending;
+  const errorMessage = login.isError ? "That password was not recognized." : setup.isError ? "Could not set that password. Check the event passcode." : create.isError ? "Could not create that interviewer. Check the event passcode." : "";
   return <main className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white">
     <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" /><div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
     <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">
       <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20"><Logo dark /><div><p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines / Team 23442</p><h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">Build the<br /><span className="text-[#f8c84a]">next team.</span></h1><p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">A quiet control room for sharp eyes, honest signals, and the people ready to build.</p></div><div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]"><span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Coordinator access</span></div></section>
-      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Coordinator access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">Welcome back.</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">Enter the event passcode to open the tryout control room.</p><form onSubmit={submit} className="mt-9 space-y-5"><input name="username" autoComplete="username" tabIndex={-1} aria-label="Coordinator" className="sr-only" value="coordinator" readOnly /><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input ref={passwordRef} id="event-passcode" name="password" autoFocus autoComplete="current-password" inputMode="text" enterKeyHint="done" type="password" value={password} onChange={(e) => setPassword(e.target.value)} data-testid="input-password" aria-label="Event passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{login.isError && <p className="text-sm text-[#b34a42]" data-testid="login-error">Passcode not recognized. Check with the event lead.</p>}<button disabled={login.isPending || !password} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{login.isPending ? "Unlocking control room..." : <>Enter control room <ArrowRight size={17} /></>}</button></form><div className="mt-10 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Private session. This workspace is only for the two event coordinators.</div></div></section>
+      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Interviewer access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{creating ? "Add interviewer." : "Welcome back."}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{creating ? "Use the event passcode to add a named interviewer." : "Choose your interviewer and enter their password."}</p>{creating ? <form onSubmit={submitCreate} className="mt-8 space-y-4"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer name</span><input autoFocus autoComplete="name" value={newName} onChange={e => setNewName(e.target.value)} data-testid="input-new-interviewer-name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={eventPassword} onChange={e => setEventPassword(e.target.value)} data-testid="input-event-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} data-testid="input-new-interviewer-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><button disabled={busy || !newName || !eventPassword || !newPassword} data-testid="button-create-interviewer" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{create.isPending ? "Creating..." : <>Create and enter <ArrowRight size={17} /></>}</button><button type="button" onClick={() => setCreating(false)} className="w-full py-2 text-sm font-semibold text-[#527079]">Back to sign in</button></form> : <form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer</span><select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPassword(""); setEventPassword(""); }} data-testid="select-interviewer" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-base outline-none focus:border-[#16869a]"><option value="" disabled>{interviewers.isLoading ? "Loading interviewers..." : "Select interviewer"}</option>{interviewers.data?.items.map(item => <option key={item.id} value={item.id}>{item.displayName}{item.hasPassword ? "" : " · setup needed"}</option>)}</select></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">{selected?.hasPassword ? "Personal password" : "Event passcode"}</span><input ref={passwordRef} id="interviewer-password" name="password" autoComplete="current-password" type="password" value={selected?.hasPassword ? password : eventPassword} onChange={e => selected?.hasPassword ? setPassword(e.target.value) : setEventPassword(e.target.value)} data-testid="input-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{!selected?.hasPassword && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Choose personal password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} data-testid="input-setup-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a]" /></label>}{errorMessage && <p className="text-sm text-[#b34a42]" data-testid="login-error">{errorMessage}</p>}<button disabled={busy || !selected || (selected.hasPassword ? !password : (!eventPassword || !password))} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room..." : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Set password and enter <ArrowRight size={17} /></>}</button></form>}<button type="button" onClick={() => { setCreating(v => !v); setEventPassword(""); }} className="mt-6 w-full text-sm font-semibold text-[#16869a]" data-testid="button-new-interviewer">{creating ? "" : "+ New interviewer"}</button><div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Each interviewer has an individual password. Account creation requires the event passcode.</div></div></section>
     </div>
   </main>;
 }
@@ -2127,10 +2170,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const interviewerLabels = queue.data?.interviewerLabels ?? [];
-  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [conversationPeer, setConversationPeer] = useState<string | null>(null);
-  const activeInterviewer = interviewerLabels.find(label => label.toLowerCase() === selectedInterviewer.trim().toLowerCase()) ?? interviewerLabels[0] ?? (selectedInterviewer || "Interviewer");
+  const activeInterviewer = session.data?.label ?? "Interviewer";
   const conversationScope = conversationPeer ? "direct" : "shared";
   const conversationId = `${conversationScope}:${activeInterviewer}:${conversationPeer ?? ""}`;
   const chatParams = useMemo(() => ({
@@ -2654,15 +2697,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
      <div className="mt-4 rounded-2xl border border-[#dce9e8] bg-[#f7faf9] p-3">
        <div className="flex flex-wrap items-center gap-2">
-         <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Chat as</span>
-         {interviewerLabels.map(label => <button key={`identity-${label}`} type="button" onClick={() => { setSelectedInterviewer(label); setConversationPeer(peer => peer?.toLowerCase() === label.toLowerCase() ? null : peer); try { window.localStorage.setItem("selected-interviewer", label); } catch { /* ignore storage errors */ } }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeInterviewer.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-identity-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}
+         <span className="rounded-lg border border-[#16869a] bg-[#e3f4f2] px-2.5 py-1.5 text-xs font-semibold text-[#12737d]">Signed in as {activeInterviewer}</span>
        </div>
        <div className="mt-3 flex flex-wrap items-center gap-2">
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
          <button type="button" onClick={() => setConversationPeer(null)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
          {directTargets.map(label => <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`}>To {label}</button>)}
        </div>
-       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Recipients are configured interviewer labels. This uses the shared coordinator session; it does not add private per-user authentication.</p>
+       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
      </div>
      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form onSubmit={submitChat} className="mt-3 space-y-2">
@@ -2703,6 +2745,7 @@ function Queue() {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: refreshMs } });
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
   const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
@@ -2719,7 +2762,6 @@ function Queue() {
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
   const boardDirty = useRef(false);
-  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   useEffect(() => {
@@ -2741,8 +2783,8 @@ function Queue() {
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
   if (queue.isError || !queue.data) return <ErrorState onRetry={() => queue.refetch()} />;
   const q = queue.data;
-  const visibleApplicants = selectedInterviewer
-    ? q.currentApplicants.filter(applicant => applicant.interviewer === selectedInterviewer)
+  const visibleApplicants = session.data?.label
+    ? q.currentApplicants.filter(applicant => applicant.interviewer === session.data?.label)
     : [];
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
   const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: board.filter(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: board.filter(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
@@ -2819,10 +2861,6 @@ function Queue() {
       onSuccess: response => {
         labelsDirty.current = false;
         setLabels(response.interviewerLabels);
-        if (selectedInterviewer && !response.interviewerLabels.includes(selectedInterviewer)) {
-          setSelectedInterviewer("");
-          try { window.localStorage.removeItem("selected-interviewer"); } catch { /* ignore */ }
-        }
         qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
         qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
       },
@@ -2838,10 +2876,9 @@ function Queue() {
     resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail="Choose your interviewer identity, review the complete applicant file, and keep the other interviewer in the loop." action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
+    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail={`Showing applicants assigned to ${session.data?.label ?? "your interviewer account"}.`} action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
-      <div><p className="text-sm font-semibold">I am working as</p><p className="mt-1 text-xs text-[#7c8c91]">This controls which assigned applicant files you see and labels your chat messages.</p></div>
-      <div className="flex flex-wrap items-center gap-2">{q.interviewerLabels.map(label => <button key={label} onClick={() => { setSelectedInterviewer(label); window.localStorage.setItem("selected-interviewer", label); }} className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${selectedInterviewer === label ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-select-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}<a href="#interviewer-settings" className="rounded-xl border border-dashed border-[#b8cbcc] px-3 py-2 text-xs font-semibold text-[#527079] hover:border-[#16869a] hover:text-[#16869a]">+ Add interviewer</a></div>
+      <div className="flex items-center gap-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] px-3 py-2 text-xs text-[#527079]"><ShieldCheck size={15} className="text-[#16869a]" />Signed in as <strong>{session.data?.label ?? "interviewer"}</strong></div>
     </section>
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="relative overflow-hidden rounded-3xl bg-[#172a3a] p-7 text-white">
@@ -2849,7 +2886,7 @@ function Queue() {
         <div className="relative">
           <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]">{visibleApplicants.length} assigned to you / {q.currentApplicants.length} active</span></div>
           <div className={`mt-8 grid gap-4 ${visibleApplicants.length > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } })} />) : <div className="py-10 text-[#acc2c7]"><p>{selectedInterviewer ? `No applicant is assigned to ${selectedInterviewer} right now.` : "Select your interviewer identity to see your applicant."}</p>{selectedInterviewer && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, selectedInterviewer)} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
+            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } })} />) : <div className="py-10 text-[#acc2c7]"><p>No applicant is assigned to your interviewer account right now.</p>{session.data?.label && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, session.data?.label ?? "")} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
           </div>
         </div>
       </section>

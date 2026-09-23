@@ -75,7 +75,8 @@ import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResu
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { requestAdminSession, requireAdmin } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requestAdminSession, requireAdmin } from "../middlewares/adminAuth";
+import { accountById } from "../lib/interviewerAccounts";
 import { presenceSessionHash } from "./presence";
 import { getIpStats } from "../lib/presence";
 import {
@@ -1778,12 +1779,18 @@ router.post("/snapshots/:snapshotId/restore", requireAdmin, async (req, res): Pr
   }
 });
 
-router.get("/dashboard/charts", requireAdmin, async (_req, res): Promise<void> => {
-  const charts = await db.select().from(dashboardChartsTable).orderBy(asc(dashboardChartsTable.position), asc(dashboardChartsTable.createdAt));
+router.get("/dashboard/charts", requireAdmin, async (req, res): Promise<void> => {
+  const ownerId = authenticatedInterviewerId(req);
+  if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
+  const charts = await db.select().from(dashboardChartsTable)
+    .where(eq(dashboardChartsTable.ownerId, ownerId))
+    .orderBy(asc(dashboardChartsTable.position), asc(dashboardChartsTable.createdAt));
   res.json(ListDashboardChartsResponse.parse({ items: charts.map(dashboardChartResponse) }));
 });
 
 router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> => {
+  const ownerId = authenticatedInterviewerId(req);
+  if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateDashboardChartBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -1795,10 +1802,12 @@ router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =
     res.status(400).json({ error: "Unknown chart source or type." });
     return;
   }
-  const siblings = await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable);
+  const siblings = await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable)
+    .where(eq(dashboardChartsTable.ownerId, ownerId));
   const position = siblings.reduce((max, row) => Math.max(max, row.position), -1) + 1;
   const [created] = await db.insert(dashboardChartsTable).values({
     id: randomUUID(),
+    ownerId,
     source: xAxis,
     chart: parsed.data.chart,
     xAxis,
@@ -1809,6 +1818,8 @@ router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =
 });
 
 router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promise<void> => {
+  const ownerId = authenticatedInterviewerId(req);
+  if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = DeleteDashboardChartParams.safeParse(req.params);
   const body = UpdateDashboardChartBody.safeParse(req.body);
   if (!params.success || !body.success) {
@@ -1840,7 +1851,10 @@ router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promi
     patch.chart = body.data.chart;
   }
   if (body.data.position !== undefined) patch.position = body.data.position;
-  const [updated] = await db.update(dashboardChartsTable).set(patch).where(eq(dashboardChartsTable.id, params.data.chartId)).returning();
+  const [updated] = await db.update(dashboardChartsTable).set(patch).where(and(
+    eq(dashboardChartsTable.id, params.data.chartId),
+    eq(dashboardChartsTable.ownerId, ownerId),
+  )).returning();
   if (!updated) {
     res.status(404).json({ error: "Chart not found." });
     return;
@@ -1849,12 +1863,17 @@ router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promi
 });
 
 router.delete("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promise<void> => {
+  const ownerId = authenticatedInterviewerId(req);
+  if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = DeleteDashboardChartParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid chart id." });
     return;
   }
-  const [deleted] = await db.delete(dashboardChartsTable).where(eq(dashboardChartsTable.id, params.data.chartId)).returning({ id: dashboardChartsTable.id });
+  const [deleted] = await db.delete(dashboardChartsTable).where(and(
+    eq(dashboardChartsTable.id, params.data.chartId),
+    eq(dashboardChartsTable.ownerId, ownerId),
+  )).returning({ id: dashboardChartsTable.id });
   if (!deleted) {
     res.status(404).json({ error: "Chart not found." });
     return;
@@ -2428,8 +2447,8 @@ function canonicalInterviewerPair(left: string, right: string): string {
 
 async function resolveChatConversation(
   scopeValue: unknown,
-  authorValue: unknown,
   peerValue: unknown,
+  author: string,
 ): Promise<ChatConversation | { error: string }> {
   const scope = scopeValue === undefined || scopeValue === "" ? "shared" : scopeValue;
   if (scope !== "shared" && scope !== "direct") {
@@ -2442,9 +2461,7 @@ async function resolveChatConversation(
     return { scope: "shared", peer: null, key: null };
   }
   const labels = await getInterviewSettings();
-  const author = canonicalInterviewerLabel(labels, authorValue);
   const peer = canonicalInterviewerLabel(labels, peerValue);
-  if (!author) return { error: "Direct chat requires a configured interviewer label as the author." };
   if (!peer) return { error: "That direct-message recipient is not a configured interviewer label." };
   if (author.toLowerCase() === peer.toLowerCase()) {
     return { error: "You cannot start a direct conversation with yourself." };
@@ -2519,7 +2536,10 @@ function pageWindow(query: unknown): { limit: number; before?: Date } {  const r
 }
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
-  const conversation = await resolveChatConversation(req.query.scope, req.query.author, req.query.peer);
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName);
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
     return;
@@ -2543,6 +2563,9 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 });
 
 router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = SendInterviewChatBody.safeParse(req.body);
   if (!parsed.success || !parsed.data.message.trim()) {
     res.status(400).json({ error: "A chat message is required." });
@@ -2550,8 +2573,8 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }
   const conversation = await resolveChatConversation(
     parsed.data.scope,
-    parsed.data.conversationAuthor ?? parsed.data.author,
     parsed.data.recipient,
+    account.displayName,
   );
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
@@ -2580,9 +2603,14 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
           typeof (a as { detail?: unknown }).detail === "string")
         .slice(0, 10)
     : [];
+  const isAssistantMessage = parsed.data.author.trim() === "AI assistant";
+  if (isAssistantMessage && parsed.data.conversationAuthor?.trim().toLocaleLowerCase() !== account.displayName.toLocaleLowerCase()) {
+    res.status(403).json({ error: "Assistant messages must be tied to the signed-in interviewer." });
+    return;
+  }
   const [message] = await db.insert(interviewChatMessagesTable).values({
     id: randomUUID(),
-    author: parsed.data.author.trim().slice(0, 80) || "Interviewer",
+    author: isAssistantMessage ? "AI assistant" : account.displayName,
     message: parsed.data.message.trim().slice(0, 1000),
     conversationScope: conversation.scope,
     conversationPeer: conversation.key,
@@ -2595,10 +2623,13 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 });
 
 router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = ToggleChatReactionBody.safeParse(req.body);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   const emoji = parsed.success ? [...parsed.data.emoji.trim()].slice(0, 4).join("") : "";
-  const author = parsed.success ? parsed.data.author.trim().slice(0, 80) : "";
+  const author = account.displayName;
   if (!parsed.success || !messageId || !emoji || !author) {
     res.status(400).json({ error: "A message, emoji, and author are required." });
     return;

@@ -7,6 +7,7 @@
  */
 
 export interface LoginInput {
+  interviewerId: string;
   /** @minLength 1 */
   password: string;
 }

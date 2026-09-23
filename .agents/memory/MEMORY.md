@@ -4,3 +4,4 @@
 - [External database ownership](external-database-ownership.md) — verify DATABASE_URL's host before treating Replit's managed database as the app's active data store.
 - [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
+- [Interviewer session ownership](interviewer-session-ownership.md) — derive chat authors, queue views, and chart ownership from the signed interviewer session, never browser-selected identity.

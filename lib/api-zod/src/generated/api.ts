@@ -32,18 +32,20 @@ export const GetSystemUsageResponse = zod.object({
 
 
 /**
- * @summary Start an admin session
+ * @summary Start an interviewer session
  */
 
 
 
 export const LoginBody = zod.object({
+  "interviewerId": zod.string(),
   "password": zod.string().min(1)
 })
 
 export const LoginResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -54,7 +56,61 @@ export const LoginResponse = zod.object({
 export const GetSessionResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
+})
+
+
+/**
+ * @summary List interviewer accounts and password setup state
+ */
+export const ListInterviewersResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Create an interviewer account using the event passcode
+ */
+
+
+
+
+
+export const CreateInterviewerBody = zod.object({
+  "displayName": zod.string().min(1),
+  "eventPassword": zod.string().min(1),
+  "password": zod.string().min(1)
+})
+
+export const CreateInterviewerResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean()
+})
+
+
+/**
+ * @summary Set the password for a legacy interviewer account using the event passcode
+ */
+
+
+
+
+export const SetupInterviewerPasswordBody = zod.object({
+  "interviewerId": zod.string(),
+  "eventPassword": zod.string().min(1),
+  "password": zod.string().min(1)
+})
+
+export const SetupInterviewerPasswordResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean()
 })
 
 

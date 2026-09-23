@@ -56,7 +56,7 @@ paths:
     post:
       operationId: login
       tags: [auth]
-      summary: Start an admin session
+      summary: Start an interviewer session
       requestBody:
         required: true
         content:
@@ -88,6 +88,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/interviewers:
+    get:
+      operationId: listInterviewers
+      tags: [auth]
+      summary: List interviewer accounts and password setup state
+      responses:
+        "200":
+          description: Interviewer accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccountList"
+    post:
+      operationId: createInterviewer
+      tags: [auth]
+      summary: Create an interviewer account using the event passcode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInterviewerInput"
+      responses:
+        "201":
+          description: Created interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+  /auth/interviewers/setup:
+    post:
+      operationId: setupInterviewerPassword
+      tags: [auth]
+      summary: Set the password for a legacy interviewer account using the event passcode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupInterviewerPasswordInput"
+      responses:
+        "200":
+          description: Updated interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
   /auth/logout:
     post:
       operationId: logout
@@ -1086,8 +1133,10 @@ components:
           type: string
     LoginInput:
       type: object
-      required: [password]
+      required: [interviewerId, password]
       properties:
+        interviewerId:
+          type: string
         password:
           type: string
           minLength: 1
@@ -1099,9 +1148,54 @@ components:
           type: boolean
         label:
           type: string
+        interviewerId:
+          type: string
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
+    InterviewerAccount:
+      type: object
+      required: [id, displayName, hasPassword]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        hasPassword:
+          type: boolean
+    InterviewerAccountList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterviewerAccount"
+    SetupInterviewerPasswordInput:
+      type: object
+      required: [interviewerId, eventPassword, password]
+      properties:
+        interviewerId:
+          type: string
+        eventPassword:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+    CreateInterviewerInput:
+      type: object
+      required: [displayName, eventPassword, password]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+        eventPassword:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
     DashboardCount:
       type: object
       required: [label, value]

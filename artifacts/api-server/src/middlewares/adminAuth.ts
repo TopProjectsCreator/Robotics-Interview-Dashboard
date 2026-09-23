@@ -40,15 +40,19 @@ export async function isRevokedAdminSession(session: string | undefined): Promis
 }
 
 export function createAdminSession(): string {
-  const payload = `${Date.now()}.${randomBytes(24).toString("hex")}`;
+  return createInterviewerSession("legacy");
+}
+
+export function createInterviewerSession(interviewerId: string): string {
+  const payload = `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}`;
   return `${payload}.${sessionDigest(payload)}`;
 }
 
 export function isValidAdminSession(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const parts = value.split(".");
-  if (parts.length !== 3) return false;
-  const [timestamp, nonce, digest] = parts;
+  if (parts.length !== 4) return false;
+  const [timestamp, nonce, interviewerId, digest] = parts;
   const createdAt = Number(timestamp);
   if (!Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS) {
     return false;
@@ -56,14 +60,24 @@ export function isValidAdminSession(value: unknown): boolean {
   if (createdAt > Date.now() + 60000) {
     return false;
   }
-  if (!nonce || !digest) return false;
-  const expected = sessionDigest(`${timestamp}.${nonce}`);
+  if (!nonce || !interviewerId || !digest) return false;
+  const expected = sessionDigest(`${timestamp}.${nonce}.${interviewerId}`);
   const actualBuffer = Buffer.from(digest);
   const expectedBuffer = Buffer.from(expected);
   return (
     actualBuffer.length === expectedBuffer.length &&
     timingSafeEqual(actualBuffer, expectedBuffer)
   );
+}
+
+export function interviewerIdFromSession(value: unknown): string | undefined {
+  if (!isValidAdminSession(value)) return undefined;
+  const parts = (value as string).split(".");
+  return parts.length === 4 ? parts[2] : undefined;
+}
+
+export function authenticatedInterviewerId(req: Request): string | undefined {
+  return interviewerIdFromSession(requestAdminSession(req));
 }
 
 function bearerSession(req: Request): string | undefined {
@@ -84,8 +98,12 @@ export function attachAdminSession(
   next: NextFunction,
 ): void {
   const session = requestAdminSession(req);
-  (req as Request & { isAuthenticated?: () => boolean }).isAuthenticated =
-    () => isValidAdminSession(session);
+  const enriched = req as Request & {
+    isAuthenticated?: () => boolean;
+    interviewerId?: string;
+  };
+  enriched.isAuthenticated = () => isValidAdminSession(session);
+  enriched.interviewerId = interviewerIdFromSession(session);
   next();
 }
 
@@ -104,6 +122,12 @@ export function requireAdmin(
       res.status(401).json({ error: "Session revoked" });
       return;
     }
+    const interviewerId = interviewerIdFromSession(session);
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    (req as Request & { interviewerId?: string }).interviewerId = interviewerId;
     next();
   }).catch((error) => {
     req.log.error({ err: error }, "Session revocation check failed");

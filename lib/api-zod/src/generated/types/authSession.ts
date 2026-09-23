@@ -9,6 +9,7 @@
 export interface AuthSession {
   authenticated: boolean;
   label?: string;
+  interviewerId?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }

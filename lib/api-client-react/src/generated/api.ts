@@ -42,6 +42,7 @@ import type {
   ChatMessagePin,
   ChatReactionInput,
   ChatReactionList,
+  CreateInterviewerInput,
   DashboardChart,
   DashboardChartInput,
   DashboardChartList,
@@ -64,6 +65,8 @@ import type {
   InterviewChat,
   InterviewChatInput,
   InterviewChatMessage,
+  InterviewerAccount,
+  InterviewerAccountList,
   ListApplicantsParams,
   LoginInput,
   MessageResponse,
@@ -80,6 +83,7 @@ import type {
   SeatingAssignInput,
   SeatingSettings,
   SeatingSettingsInput,
+  SetupInterviewerPasswordInput,
   Snapshot,
   SnapshotInput,
   SnapshotList,
@@ -281,7 +285,7 @@ export const getLoginUrl = () => {
 }
 
 /**
- * @summary Start an admin session
+ * @summary Start an interviewer session
  */
 export const login = async (loginInput: LoginInput, options?: Parameters<typeof customFetch>[1]): Promise<AuthSession> => {
 
@@ -330,7 +334,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type LoginMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Start an admin session
+ * @summary Start an interviewer session
  */
 export const useLogin = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof login>>, TError,{data: BodyType<LoginInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -419,6 +423,225 @@ export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TE
 
 
 
+
+export const getListInterviewersUrl = () => {
+
+
+
+
+  return `/api/auth/interviewers`
+}
+
+/**
+ * @summary List interviewer accounts and password setup state
+ */
+export const listInterviewers = async ( options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccountList> => {
+
+  return customFetch<InterviewerAccountList>(getListInterviewersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListInterviewersQueryKey = () => {
+    return [
+    `/api/auth/interviewers`
+    ] as const;
+    }
+
+
+export const getListInterviewersQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInterviewersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInterviewers>>> = ({ signal }) => listInterviewers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListInterviewersQueryResult = NonNullable<Awaited<ReturnType<typeof listInterviewers>>>
+export type ListInterviewersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List interviewer accounts and password setup state
+ */
+
+export function useListInterviewers<TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListInterviewersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateInterviewerUrl = () => {
+
+
+
+
+  return `/api/auth/interviewers`
+}
+
+/**
+ * @summary Create an interviewer account using the event passcode
+ */
+export const createInterviewer = async (createInterviewerInput: CreateInterviewerInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getCreateInterviewerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createInterviewerInput)
+  }
+);}
+
+
+
+
+
+export const getCreateInterviewerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext> => {
+
+const mutationKey = ['createInterviewer'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInterviewer>>, {data: BodyType<CreateInterviewerInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createInterviewer(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInterviewerMutationResult = NonNullable<Awaited<ReturnType<typeof createInterviewer>>>
+    export type CreateInterviewerMutationBody = BodyType<CreateInterviewerInput>
+    export type CreateInterviewerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create an interviewer account using the event passcode
+ */
+export const useCreateInterviewer = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createInterviewer>>,
+        TError,
+        {data: BodyType<CreateInterviewerInput>},
+        TContext
+      > => {
+      return useMutation(getCreateInterviewerMutationOptions(options));
+    }
+
+export const getSetupInterviewerPasswordUrl = () => {
+
+
+
+
+  return `/api/auth/interviewers/setup`
+}
+
+/**
+ * @summary Set the password for a legacy interviewer account using the event passcode
+ */
+export const setupInterviewerPassword = async (setupInterviewerPasswordInput: SetupInterviewerPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getSetupInterviewerPasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setupInterviewerPasswordInput)
+  }
+);}
+
+
+
+
+
+export const getSetupInterviewerPasswordMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext> => {
+
+const mutationKey = ['setupInterviewerPassword'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setupInterviewerPassword>>, {data: BodyType<SetupInterviewerPasswordInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setupInterviewerPassword(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetupInterviewerPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof setupInterviewerPassword>>>
+    export type SetupInterviewerPasswordMutationBody = BodyType<SetupInterviewerPasswordInput>
+    export type SetupInterviewerPasswordMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the password for a legacy interviewer account using the event passcode
+ */
+export const useSetupInterviewerPassword = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setupInterviewerPassword>>,
+        TError,
+        {data: BodyType<SetupInterviewerPasswordInput>},
+        TContext
+      > => {
+      return useMutation(getSetupInterviewerPasswordMutationOptions(options));
+    }
 
 export const getLogoutUrl = () => {
 

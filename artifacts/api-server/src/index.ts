@@ -1,7 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
-import { pool } from "@workspace/db";
+import { pool, db, interviewQueueTable } from "@workspace/db";
+import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 
 initRealtime();
 
@@ -19,6 +20,8 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
+    `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "dashboard_charts" add column if not exists "owner_id" text`,
   ];
   for (const sql of statements) {
     try {
@@ -27,6 +30,13 @@ async function ensureSchema(): Promise<void> {
       logger.error({ err, sql }, "Schema migration failed");
       throw err;
     }
+  }
+  const [queue] = await db.select().from(interviewQueueTable).limit(1);
+  try {
+    const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
+    if (Array.isArray(labels)) await syncInterviewerAccounts(labels.filter((label): label is string => typeof label === "string"));
+  } catch {
+    await syncInterviewerAccounts(["Interviewer 1", "Interviewer 2"]);
   }
   logger.info("Schema check passed");
 }

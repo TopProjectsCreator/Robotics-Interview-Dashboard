@@ -33,6 +33,7 @@ export type SeatingSettings = typeof seatingSettingsTable.$inferSelect;
 
 export const dashboardChartsTable = pgTable("dashboard_charts", {
   id: text("id").primaryKey(),
+  ownerId: text("owner_id"),
   source: text("source").notNull(),
   chart: text("chart").notNull(),
   xAxis: text("x_axis"),
