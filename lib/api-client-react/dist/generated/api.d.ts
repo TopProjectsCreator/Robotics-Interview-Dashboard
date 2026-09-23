@@ -1,5 +1,5 @@
 import type { QueryKey, UseMutationOptions, UseMutationResult, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
-import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, ChatReactionInput, ChatReactionList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, SystemUsage, UploadInput, UploadResponse } from './api.schemas';
+import type { AdvanceQueueInput, Applicant, ApplicantList, ApplicantUpdate, AssistantConfig, AssistantConversation, AssistantConversationInput, AssistantConversationList, AssistantConversationUpdate, AssistantHistory, AssistantInput, AssistantResponse, AuthSession, Broadcast, BroadcastAck, BroadcastInput, BroadcastList, ChatMessagePin, ChatReactionInput, ChatReactionList, DashboardChart, DashboardChartInput, DashboardChartList, DashboardChartUpdate, DashboardSummary, DisplaySettings, DisplaySettingsInput, DisplayState, ErrorResponse, GenerateImageInput, GenerateImageResult, GetAssistantConversationMessagesParams, GetInterviewChatParams, GetPresenceStatsParams, HealthStatus, ImportHistory, ImportInput, ImportPreview, ImportResult, InterviewChat, InterviewChatInput, InterviewChatMessage, ListApplicantsParams, LoginInput, MessageResponse, PresenceHeartbeat, PresenceHeartbeatInput, PresenceIpStats, PresenceKickInput, PresenceKickResult, PresenceList, QueueCallbackInput, QueueSettingsInput, QueueState, ReorderQueueInput, SeatingAssignInput, SeatingSettings, SeatingSettingsInput, Snapshot, SnapshotInput, SnapshotList, SnapshotRestoreInput, SnapshotRestoreResult, SystemUsage, UploadInput, UploadResponse } from './api.schemas';
 import { customFetch } from '../custom-fetch';
 import type { ErrorType, BodyType } from '../custom-fetch';
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -750,6 +750,32 @@ export declare const useToggleChatReaction: <TError = ErrorType<unknown>, TConte
 }) => UseMutationResult<Awaited<ReturnType<typeof toggleChatReaction>>, TError, {
     messageId: string;
     data: BodyType<ChatReactionInput>;
+}, TContext>;
+export declare const getToggleChatMessagePinUrl: (messageId: string) => string;
+/**
+ * @summary Toggle the pinned state of a chat message
+ */
+export declare const toggleChatMessagePin: (messageId: string, options?: Parameters<typeof customFetch>[1]) => Promise<ChatMessagePin>;
+export declare const getToggleChatMessagePinMutationOptions: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError, {
+        messageId: string;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError, {
+    messageId: string;
+}, TContext>;
+export type ToggleChatMessagePinMutationResult = NonNullable<Awaited<ReturnType<typeof toggleChatMessagePin>>>;
+export type ToggleChatMessagePinMutationError = ErrorType<unknown>;
+/**
+* @summary Toggle the pinned state of a chat message
+*/
+export declare const useToggleChatMessagePin: <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError, {
+        messageId: string;
+    }, TContext>;
+    request?: SecondParameter<typeof customFetch>;
+}) => UseMutationResult<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError, {
+    messageId: string;
 }, TContext>;
 export declare const getDeleteChatMessageUrl: (messageId: string) => string;
 /**

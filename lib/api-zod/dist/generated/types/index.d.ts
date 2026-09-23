@@ -29,6 +29,7 @@ export * from './broadcastInput';
 export * from './broadcastList';
 export * from './categoryParameter';
 export * from './chatLimitParameter';
+export * from './chatMessagePin';
 export * from './chatReaction';
 export * from './chatReactionInput';
 export * from './chatReactionList';

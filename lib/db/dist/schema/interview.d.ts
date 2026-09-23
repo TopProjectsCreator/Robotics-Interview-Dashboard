@@ -146,6 +146,23 @@ export declare const interviewChatMessagesTable: import("drizzle-orm/pg-core").P
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        pinnedAt: import("drizzle-orm/pg-core").PgColumn<{
+            name: "pinned_at";
+            tableName: "interview_chat_messages";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         createdAt: import("drizzle-orm/pg-core").PgColumn<{
             name: "created_at";
             tableName: "interview_chat_messages";
@@ -464,6 +481,7 @@ export declare const insertInterviewChatMessageSchema: z.ZodObject<{
     message: z.ZodString;
     activities: z.ZodOptional<z.ZodString>;
     parentMessageId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    pinnedAt: z.ZodOptional<z.ZodNullable<z.ZodDate>>;
 }, {
     out: {};
     in: {};

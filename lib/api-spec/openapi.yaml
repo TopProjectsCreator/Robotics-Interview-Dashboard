@@ -514,6 +514,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatReactionList"
+  /queue/chat/{messageId}/pin:
+    post:
+      operationId: toggleChatMessagePin
+      tags: [queue]
+      summary: Toggle the pinned state of a chat message
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated pinned state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessagePin"
   /queue/chat/{messageId}:
     delete:
       operationId: deleteChatMessage
@@ -1635,6 +1653,10 @@ components:
         parentMessageId:
           type: string
           nullable: true
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
         activities:
           type: array
           items:
@@ -1651,6 +1673,10 @@ components:
           type: string
         parentMessageId:
           type: string
+          nullable: true
+        pinnedAt:
+          type: string
+          format: date-time
           nullable: true
         activities:
           type: array
@@ -1692,6 +1718,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatReaction"
+    ChatMessagePin:
+      type: object
+      required: [messageId, pinnedAt]
+      properties:
+        messageId:
+          type: string
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
     InterviewChat:
       type: object
       required: [items]

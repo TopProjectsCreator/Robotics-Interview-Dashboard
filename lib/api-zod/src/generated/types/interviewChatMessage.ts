@@ -13,6 +13,7 @@ export interface InterviewChatMessage {
   author: string;
   message: string;
   parentMessageId?: string | null;
+  pinnedAt?: Date | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
   createdAt: string;

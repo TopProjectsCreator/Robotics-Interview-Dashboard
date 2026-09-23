@@ -736,6 +736,7 @@ export const GetInterviewChatResponse = zod.object({
   "author": zod.string(),
   "message": zod.string(),
   "parentMessageId": zod.string().nullish(),
+  "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -757,6 +758,7 @@ export const SendInterviewChatBody = zod.object({
   "author": zod.string(),
   "message": zod.string(),
   "parentMessageId": zod.string().nullish(),
+  "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -768,6 +770,7 @@ export const SendInterviewChatResponse = zod.object({
   "author": zod.string(),
   "message": zod.string(),
   "parentMessageId": zod.string().nullish(),
+  "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -799,6 +802,19 @@ export const ToggleChatReactionResponse = zod.object({
   "count": zod.number().int(),
   "authors": zod.array(zod.string())
 }))
+})
+
+
+/**
+ * @summary Toggle the pinned state of a chat message
+ */
+export const ToggleChatMessagePinParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const ToggleChatMessagePinResponse = zod.object({
+  "messageId": zod.string(),
+  "pinnedAt": zod.coerce.date().nullable()
 })
 
 

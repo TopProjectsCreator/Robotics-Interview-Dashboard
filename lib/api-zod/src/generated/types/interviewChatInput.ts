@@ -11,5 +11,6 @@ export interface InterviewChatInput {
   author: string;
   message: string;
   parentMessageId?: string | null;
+  pinnedAt?: Date | null;
   activities?: AssistantActivity[];
 }

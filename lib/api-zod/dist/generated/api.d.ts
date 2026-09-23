@@ -2150,6 +2150,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         author: zod.ZodString;
         message: zod.ZodString;
         parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
+        pinnedAt: zod.ZodOptional<zod.ZodNullable<zod.ZodDate>>;
         activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
             tool: zod.ZodString;
             detail: zod.ZodString;
@@ -2180,6 +2181,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         createdAt: string;
         author: string;
         parentMessageId?: string | null | undefined;
+        pinnedAt?: Date | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2195,6 +2197,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         createdAt: string;
         author: string;
         parentMessageId?: string | null | undefined;
+        pinnedAt?: Date | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2212,6 +2215,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         createdAt: string;
         author: string;
         parentMessageId?: string | null | undefined;
+        pinnedAt?: Date | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2229,6 +2233,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         createdAt: string;
         author: string;
         parentMessageId?: string | null | undefined;
+        pinnedAt?: Date | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2247,6 +2252,7 @@ export declare const SendInterviewChatBody: zod.ZodObject<{
     author: zod.ZodString;
     message: zod.ZodString;
     parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
+    pinnedAt: zod.ZodOptional<zod.ZodNullable<zod.ZodDate>>;
     activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
         tool: zod.ZodString;
         detail: zod.ZodString;
@@ -2261,6 +2267,7 @@ export declare const SendInterviewChatBody: zod.ZodObject<{
     message: string;
     author: string;
     parentMessageId?: string | null | undefined;
+    pinnedAt?: Date | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2269,6 +2276,7 @@ export declare const SendInterviewChatBody: zod.ZodObject<{
     message: string;
     author: string;
     parentMessageId?: string | null | undefined;
+    pinnedAt?: Date | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2279,6 +2287,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     author: zod.ZodString;
     message: zod.ZodString;
     parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
+    pinnedAt: zod.ZodOptional<zod.ZodNullable<zod.ZodDate>>;
     activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
         tool: zod.ZodString;
         detail: zod.ZodString;
@@ -2309,6 +2318,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     createdAt: string;
     author: string;
     parentMessageId?: string | null | undefined;
+    pinnedAt?: Date | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2324,6 +2334,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     createdAt: string;
     author: string;
     parentMessageId?: string | null | undefined;
+    pinnedAt?: Date | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2380,6 +2391,26 @@ export declare const ToggleChatReactionResponse: zod.ZodObject<{
         count: number;
         authors: string[];
     }[];
+}>;
+/**
+ * @summary Toggle the pinned state of a chat message
+ */
+export declare const ToggleChatMessagePinParams: zod.ZodObject<{
+    messageId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    messageId: string;
+}, {
+    messageId: string;
+}>;
+export declare const ToggleChatMessagePinResponse: zod.ZodObject<{
+    messageId: zod.ZodString;
+    pinnedAt: zod.ZodNullable<zod.ZodDate>;
+}, "strip", zod.ZodTypeAny, {
+    pinnedAt: Date | null;
+    messageId: string;
+}, {
+    pinnedAt: Date | null;
+    messageId: string;
 }>;
 /**
  * @summary Delete a chat message and its reactions

@@ -389,6 +389,7 @@ export interface InterviewChatInput {
   author: string;
   message: string;
   parentMessageId?: string | null;
+  pinnedAt?: string | null;
   activities?: AssistantActivity[];
 }
 
@@ -403,6 +404,7 @@ export interface InterviewChatMessage {
   author: string;
   message: string;
   parentMessageId?: string | null;
+  pinnedAt?: string | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
   createdAt: string;
@@ -417,6 +419,11 @@ export interface ChatReactionInput {
 
 export interface ChatReactionList {
   reactions: ChatReaction[];
+}
+
+export interface ChatMessagePin {
+  messageId: string;
+  pinnedAt: string | null;
 }
 
 export interface InterviewChat {

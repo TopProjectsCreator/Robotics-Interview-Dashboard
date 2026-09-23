@@ -37,6 +37,7 @@ import type {
   BroadcastAck,
   BroadcastInput,
   BroadcastList,
+  ChatMessagePin,
   ChatReactionInput,
   ChatReactionList,
   DashboardChart,
@@ -2344,6 +2345,77 @@ export const useToggleChatReaction = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getToggleChatReactionMutationOptions(options));
+    }
+
+export const getToggleChatMessagePinUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}/pin`
+}
+
+/**
+ * @summary Toggle the pinned state of a chat message
+ */
+export const toggleChatMessagePin = async (messageId: string, options?: Parameters<typeof customFetch>[1]): Promise<ChatMessagePin> => {
+
+  return customFetch<ChatMessagePin>(getToggleChatMessagePinUrl(messageId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getToggleChatMessagePinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError,{messageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError,{messageId: string}, TContext> => {
+
+const mutationKey = ['toggleChatMessagePin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof toggleChatMessagePin>>, {messageId: string}> = (props) => {
+          const {messageId} = props ?? {};
+
+          return  toggleChatMessagePin(messageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ToggleChatMessagePinMutationResult = NonNullable<Awaited<ReturnType<typeof toggleChatMessagePin>>>
+
+    export type ToggleChatMessagePinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Toggle the pinned state of a chat message
+ */
+export const useToggleChatMessagePin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleChatMessagePin>>, TError,{messageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof toggleChatMessagePin>>,
+        TError,
+        {messageId: string},
+        TContext
+      > => {
+      return useMutation(getToggleChatMessagePinMutationOptions(options));
     }
 
 export const getDeleteChatMessageUrl = (messageId: string,) => {
