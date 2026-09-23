@@ -64,6 +64,19 @@ const officialDisplayImages = [
   "https://pinelakeroboticsteam.lovable.app/assets/arya-CgvuUuOT.jpg",
   "https://pinelakeroboticsteam.lovable.app/assets/page-3-C4L_XZ_M.jpg",
 ];
+type BrowserSpeechResult = { 0?: { transcript?: string } };
+type BrowserSpeechEvent = { results: ArrayLike<BrowserSpeechResult> };
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: BrowserSpeechEvent) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 function Logo({ dark = false }: { dark?: boolean }) {
   return <div className="flex items-center gap-2.5" data-testid="brand-robotics">
@@ -2034,6 +2047,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
+  const dictationRef = useRef<BrowserSpeechRecognition | null>(null);
+  const dictationBaseRef = useRef("");
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
@@ -2077,6 +2092,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
+  const [isDictating, setIsDictating] = useState(false);
   const mentionPeople = useMemo(() => {
     const labels = queue.data?.interviewerLabels ?? [];
     const people = [
@@ -2143,6 +2160,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setMentionQuery(match?.[1] ?? "");
     setEmojiOpen(false);
     setComposerMenuOpen(false);
+    setVoiceMenuOpen(false);
   };
   const insertAtCursor = (value: string) => {
     const input = chatMessageInputRef.current;
@@ -2222,7 +2240,62 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const stopVoiceRecording = () => {
     voiceRecorderRef.current?.stop();
   };
+  const startDictation = () => {
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+      webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    };
+    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setChatError("Dictation is not supported in this browser. Try Chrome or Edge, or use Record audio.");
+      setVoiceMenuOpen(false);
+      return;
+    }
+    try {
+      const recognition = new SpeechRecognition();
+      dictationBaseRef.current = message;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || "en-US";
+      recognition.onresult = event => {
+        let transcript = "";
+        for (let index = 0; index < event.results.length; index += 1) {
+          transcript += event.results[index]?.[0]?.transcript ?? "";
+        }
+        const base = dictationBaseRef.current;
+        setMessage(`${base}${base && transcript ? " " : ""}${transcript}`);
+        setMentionOpen(false);
+      };
+      recognition.onerror = event => {
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setChatError("Microphone access was blocked. Allow microphone access and try dictation again.");
+        } else if (event.error) {
+          setChatError(`Dictation stopped: ${event.error}.`);
+        }
+        setIsDictating(false);
+        dictationRef.current = null;
+      };
+      recognition.onend = () => {
+        setIsDictating(false);
+        dictationRef.current = null;
+      };
+      dictationRef.current = recognition;
+      recognition.start();
+      setChatError("");
+      setVoiceMenuOpen(false);
+      setIsDictating(true);
+      requestAnimationFrame(() => chatMessageInputRef.current?.focus());
+    } catch {
+      setChatError("Dictation could not start. Check microphone permissions and try again.");
+      setIsDictating(false);
+      dictationRef.current = null;
+    }
+  };
+  const stopDictation = () => {
+    dictationRef.current?.stop();
+  };
   useEffect(() => () => {
+    dictationRef.current?.stop();
     voiceRecorderRef.current?.stop();
     voiceStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
@@ -2389,6 +2462,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setMentionQuery("");
       setEmojiOpen(false);
       setComposerMenuOpen(false);
+      setVoiceMenuOpen(false);
       setReplyingTo(null);
       setChatError("");
     } catch (error) {
@@ -2452,6 +2526,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
          </div>}
          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-56 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button></div>}
          {emojiOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="emoji-picker"><p className="mb-2 text-xs font-semibold text-[#52666e]">Emoji</p><div className="grid grid-cols-6 gap-1">{["😀", "😂", "😍", "👍", "🙏", "🎉", "🔥", "✅", "😮", "😢", "❤️", "🤖"].map(emoji => <button key={emoji} type="button" onClick={() => insertAtCursor(emoji)} aria-label={`Insert ${emoji}`} className="rounded-lg p-2 text-xl transition hover:bg-[#edf4f3]">{emoji}</button>)}</div></div>}
+          {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-dictation"><Type size={16} className="text-[#16869a]" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-[#8a999d]">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-audio-recording"><Mic size={16} className="text-[#16869a]" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-[#8a999d]">Send your voice as an audio file</span></span></button></div>}
          <div className="rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
            <div className="flex items-end gap-1.5">
              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen} data-testid="button-chat-more" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
@@ -2463,9 +2538,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
                <button type="button" onClick={() => { setEmojiOpen(open => !open); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
                <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
-               <button type="button" onClick={() => isRecording ? stopVoiceRecording() : void startVoiceRecording()} aria-label={isRecording ? "Stop recording" : "Record voice message"} data-testid="button-chat-mic" className={`flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
+              <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
              </div>
-             <button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording} type="submit" aria-label="Send message" data-testid="button-send-interviewer-chat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-white transition hover:bg-[#106d7a] disabled:opacity-40">{chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label="Send message" data-testid="button-send-interviewer-chat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-white transition hover:bg-[#106d7a] disabled:opacity-40">{chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
