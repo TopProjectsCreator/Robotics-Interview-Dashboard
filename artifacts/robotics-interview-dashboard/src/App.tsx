@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -2024,11 +2024,16 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const chatParams = useMemo(() => ({ limit: CHAT_PAGE_SIZE }), []);
   const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [chatHasMore, setChatHasMore] = useState(true);
   const [chatLoadingMore, setChatLoadingMore] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const chatMessageInputRef = useRef<HTMLTextAreaElement>(null);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
@@ -2066,6 +2071,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [formattingOpen, setFormattingOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mentionPeople = useMemo(() => {
+    const labels = queue.data?.interviewerLabels ?? [];
+    const people = [
+      { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗" },
+      ...labels.map(label => ({ token: label, label, detail: "Interviewer", initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?" })),
+      { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI" },
+    ];
+    return people.filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index);
+  }, [queue.data?.interviewerLabels]);
+  const filteredMentionPeople = useMemo(() => {
+    const query = mentionQuery.trim().toLowerCase();
+    return mentionPeople.filter(person => !query || `${person.label} ${person.token}`.toLowerCase().includes(query)).slice(0, 6);
+  }, [mentionPeople, mentionQuery]);
   const attachChatFiles = (files: FileList | File[]) => {
     try {
       setChatImageError("");
@@ -2112,6 +2136,96 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       return current.filter(f => f.id !== id);
     });
   };
+  const updateMentionState = (value: string) => {
+    setMessage(value);
+    const match = value.match(/(?:^|\s)@([^\s@]*)$/);
+    setMentionOpen(Boolean(match));
+    setMentionQuery(match?.[1] ?? "");
+    setEmojiOpen(false);
+    setComposerMenuOpen(false);
+  };
+  const insertAtCursor = (value: string) => {
+    const input = chatMessageInputRef.current;
+    if (!input) {
+      setMessage(current => `${current}${value}`);
+      return;
+    }
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const next = `${message.slice(0, start)}${value}${message.slice(end)}`;
+    setMessage(next);
+    setMentionOpen(false);
+    requestAnimationFrame(() => {
+      input.focus();
+      const cursor = start + value.length;
+      input.setSelectionRange(cursor, cursor);
+    });
+  };
+  const selectMention = (person: { token: string }) => {
+    const match = message.match(/(?:^|\s)@([^\s@]*)$/);
+    if (!match || match.index === undefined) return;
+    const start = match.index + (match[0].startsWith(" ") ? 1 : 0);
+    const next = `${message.slice(0, start)}@${person.token} ${message.slice(message.length)}`;
+    setMessage(next);
+    setMentionOpen(false);
+    setMentionQuery("");
+    requestAnimationFrame(() => {
+      const input = chatMessageInputRef.current;
+      input?.focus();
+      input?.setSelectionRange(next.length, next.length);
+    });
+  };
+  const applyFormatting = (before: string, after = before) => {
+    const input = chatMessageInputRef.current;
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selected = message.slice(start, end);
+    const content = selected || "text";
+    const next = `${message.slice(0, start)}${before}${content}${after}${message.slice(end)}`;
+    setMessage(next);
+    requestAnimationFrame(() => {
+      input.focus();
+      const cursor = selected ? start + before.length + selected.length + after.length : start + before.length;
+      input.setSelectionRange(cursor, cursor);
+    });
+  };
+  const startVoiceRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setChatError("Voice messages are not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      voiceStreamRef.current = stream;
+      voiceRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = event => { if (event.data.size) voiceChunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(voiceChunksRef.current, { type: mimeType });
+        if (blob.size) attachChatFiles([new File([blob], `voice-message-${Date.now()}.webm`, { type: mimeType })]);
+        stream.getTracks().forEach(track => track.stop());
+        voiceStreamRef.current = null;
+        voiceRecorderRef.current = null;
+        voiceChunksRef.current = [];
+        setIsRecording(false);
+      };
+      recorder.start();
+      setChatError("");
+      setIsRecording(true);
+    } catch {
+      setChatError("Microphone access was blocked. Allow microphone access and try again.");
+    }
+  };
+  const stopVoiceRecording = () => {
+    voiceRecorderRef.current?.stop();
+  };
+  useEffect(() => () => {
+    voiceRecorderRef.current?.stop();
+    voiceStreamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
   const loadOlderChat = useCallback(async () => {
     if (chatLoadGuardRef.current) return;
     const items = chatItemsRef.current;
@@ -2271,6 +2385,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatFiles([]);
       setFileStatus({});
       setMessage("");
+      setMentionOpen(false);
+      setMentionQuery("");
+      setEmojiOpen(false);
+      setComposerMenuOpen(false);
       setReplyingTo(null);
       setChatError("");
     } catch (error) {
@@ -2324,7 +2442,37 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-    <form onSubmit={submitChat} className="mt-3 space-y-2">{replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}{chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder={replyingTo ? "Write a reply..." : "Message the other interviewer or type @ai..."} /><button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Paperclip size={16} /></button><input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} /><button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
+     <form onSubmit={submitChat} className="mt-3 space-y-2">
+       {replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}
+       {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
+       <div className="relative">
+         {mentionOpen && filteredMentionPeople.length > 0 && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
+           <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Mention someone in this space</p></div>
+           <div className="max-h-64 overflow-y-auto p-1.5">{filteredMentionPeople.map(person => <button key={person.token} type="button" onMouseDown={event => event.preventDefault()} onClick={() => selectMention(person)} className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[#edf4f3]" data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span></button>)}</div>
+         </div>}
+         {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-56 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button></div>}
+         {emojiOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="emoji-picker"><p className="mb-2 text-xs font-semibold text-[#52666e]">Emoji</p><div className="grid grid-cols-6 gap-1">{["😀", "😂", "😍", "👍", "🙏", "🎉", "🔥", "✅", "😮", "😢", "❤️", "🤖"].map(emoji => <button key={emoji} type="button" onClick={() => insertAtCursor(emoji)} aria-label={`Insert ${emoji}`} className="rounded-lg p-2 text-xl transition hover:bg-[#edf4f3]">{emoji}</button>)}</div></div>}
+         <div className="rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
+           <div className="flex items-end gap-1.5">
+             <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen} data-testid="button-chat-more" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+             <div className="min-w-0 flex-1">
+               <textarea ref={chatMessageInputRef} value={message} onChange={event => updateMentionState(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { setMentionOpen(false); setEmojiOpen(false); setComposerMenuOpen(false); } if (event.key === "Enter" && !event.shiftKey && !mentionOpen) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} data-testid="input-interviewer-chat" rows={1} className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]" placeholder={replyingTo ? "Write a reply..." : "Message the other interviewer or type @ to mention"} />
+               {formattingOpen && <div className="flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
+             </div>
+             <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
+               <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
+               <button type="button" onClick={() => { setEmojiOpen(open => !open); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+               <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
+               <button type="button" onClick={() => isRecording ? stopVoiceRecording() : void startVoiceRecording()} aria-label={isRecording ? "Stop recording" : "Record voice message"} data-testid="button-chat-mic" className={`flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
+             </div>
+             <button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording} type="submit" aria-label="Send message" data-testid="button-send-interviewer-chat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-white transition hover:bg-[#106d7a] disabled:opacity-40">{chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+           </div>
+         </div>
+       </div>
+       <input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+       {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
+       {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
+     </form>
   </section>;
 }
 function Queue() {
