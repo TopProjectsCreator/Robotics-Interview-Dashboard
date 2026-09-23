@@ -8,4 +8,5 @@
 
 export interface ApplicantSearchAiResponse {
   search: string;
+  explanation: string;
 }

@@ -12,6 +12,9 @@ async function ensureSchema(): Promise<void> {
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,
     `alter table "interview_chat_messages" add column if not exists "pinned_at" timestamptz`,
+    `alter table "interview_chat_messages" add column if not exists "conversation_scope" text not null default 'shared'`,
+    `alter table "interview_chat_messages" add column if not exists "conversation_peer" text`,
+    `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
   ];

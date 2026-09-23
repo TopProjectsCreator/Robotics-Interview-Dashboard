@@ -484,6 +484,26 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Before"
         - $ref: "#/components/parameters/ChatLimit"
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, direct]
+            default: shared
+          description: Conversation scope. Shared is the team channel; direct requires author and peer.
+        - name: author
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Configured interviewer label used to derive a direct conversation pair.
+        - name: peer
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Configured interviewer label for the direct conversation.
       responses:
         "200":
           description: Interviewer chat
@@ -1423,9 +1443,11 @@ components:
           maxLength: 500
     ApplicantSearchAiResponse:
       type: object
-      required: [search]
+      required: [search, explanation]
       properties:
         search:
+          type: string
+        explanation:
           type: string
     ApplicantUpdate:
       type: object
@@ -1696,8 +1718,21 @@ components:
       properties:
         author:
           type: string
+          description: Configured interviewer label for direct messages; shared messages retain the existing label behavior.
+        conversationAuthor:
+          type: string
+          nullable: true
+          description: Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant.
         message:
           type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+          default: shared
+        recipient:
+          type: string
+          nullable: true
+          description: Configured interviewer label receiving a direct message.
         parentMessageId:
           type: string
           nullable: true
@@ -1711,7 +1746,7 @@ components:
             $ref: "#/components/schemas/AssistantActivity"
     InterviewChatMessage:
       type: object
-      required: [id, author, message, createdAt]
+      required: [id, author, message, scope, peer, createdAt]
       properties:
         id:
           type: string
@@ -1719,6 +1754,12 @@ components:
           type: string
         message:
           type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
         parentMessageId:
           type: string
           nullable: true
@@ -1778,12 +1819,18 @@ components:
           nullable: true
     InterviewChat:
       type: object
-      required: [items]
+      required: [items, scope, peer]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/InterviewChatMessage"
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
     ReorderQueueInput:
       type: object
       required: [applicantIds]

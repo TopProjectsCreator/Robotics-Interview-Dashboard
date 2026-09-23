@@ -291,7 +291,8 @@ export const InterpretApplicantSearchBody = zod.object({
 })
 
 export const InterpretApplicantSearchResponse = zod.object({
-  "search": zod.string()
+  "search": zod.string(),
+  "explanation": zod.string()
 })
 
 
@@ -755,9 +756,14 @@ export const ResetQueueResponse = zod.object({
 /**
  * @summary Get persisted interviewer chat
  */
+export const getInterviewChatQueryScopeDefault = `shared`;
+
 export const GetInterviewChatQueryParams = zod.object({
   "before": zod.coerce.string().optional().describe('Return messages created before this ISO timestamp (older history page).'),
-  "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).')
+  "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).'),
+  "scope": zod.enum(['shared', 'direct']).default(getInterviewChatQueryScopeDefault).describe('Conversation scope. Shared is the team channel; direct requires author and peer.'),
+  "author": zod.coerce.string().optional().describe('Configured interviewer label used to derive a direct conversation pair.'),
+  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.')
 })
 
 export const GetInterviewChatResponse = zod.object({
@@ -765,6 +771,8 @@ export const GetInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
@@ -777,16 +785,23 @@ export const GetInterviewChatResponse = zod.object({
   "authors": zod.array(zod.string())
 })).optional(),
   "createdAt": zod.string()
-}))
+})),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable()
 })
 
 
 /**
  * @summary Send a message to the other interviewer
  */
+export const sendInterviewChatBodyScopeDefault = `shared`;
+
 export const SendInterviewChatBody = zod.object({
-  "author": zod.string(),
+  "author": zod.string().describe('Configured interviewer label for direct messages; shared messages retain the existing label behavior.'),
+  "conversationAuthor": zod.string().nullish().describe('Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant.'),
   "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']).default(sendInterviewChatBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label receiving a direct message.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
@@ -799,6 +814,8 @@ export const SendInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({

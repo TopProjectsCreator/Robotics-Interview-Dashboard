@@ -7,11 +7,14 @@
  */
 import type { AssistantActivity } from './assistantActivity';
 import type { ChatReaction } from './chatReaction';
+import type { InterviewChatMessageScope } from './interviewChatMessageScope';
 
 export interface InterviewChatMessage {
   id: string;
   author: string;
   message: string;
+  scope: InterviewChatMessageScope;
+  peer: string | null;
   parentMessageId?: string | null;
   pinnedAt?: Date | null;
   activities?: AssistantActivity[];

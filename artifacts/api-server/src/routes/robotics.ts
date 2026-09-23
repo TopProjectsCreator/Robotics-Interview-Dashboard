@@ -1905,8 +1905,8 @@ router.post("/applicants/search/ai", requireAdmin, async (req, res): Promise<voi
       messages: [
         {
           role: "system",
-           content: `You convert coordinator requests into one compact applicant roster search query.
-Do not answer conversationally. Return ONLY a JSON object with exactly one string property: "search".
+          content: `You convert coordinator requests into a compact applicant roster search query.
+Return ONLY a JSON object with exactly two string properties: "search" and "explanation".
 The search language supports:
 - name:value, age:number, age:>=number, age:number..number, gender:female or gender:f, grade:number
 - skill:build, skill:code, skill:cad
@@ -1917,18 +1917,18 @@ The search language supports:
 Whitespace between conditions means AND. Use quoted values when they contain spaces.
 Use only these fields and values from the request. Do not invent applicant names or facts.
 Examples:
-{"search":"skill:code AND NOT skill:cad"}
-{"search":"gender:female AND (skill:code OR skill:cad)"}
-If the request is vague, create the narrowest useful query.`,
+{"search":"skill:code AND NOT skill:cad","explanation":"Applicants whose derived strongest signal is Code, excluding CAD."}
+{"search":"gender:female AND (skill:code OR skill:cad)","explanation":"Female applicants with either a Code or CAD signal."}
+If the request is vague, create the narrowest useful query and explain it briefly.`,
         },
         { role: "user", content: parsed.data.prompt.trim() },
       ],
     });
     const raw = completion.choices[0]?.message?.content?.trim() ?? "";
     const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] ?? raw;
-    let result: { search?: unknown };
+    let result: { search?: unknown; explanation?: unknown };
     try {
-      result = JSON.parse(jsonText) as { search?: unknown };
+      result = JSON.parse(jsonText) as { search?: unknown; explanation?: unknown };
     } catch {
       res.status(502).json({ error: "The assistant returned an unreadable search." });
       return;
@@ -1939,7 +1939,10 @@ If the request is vague, create the narrowest useful query.`,
       res.status(502).json({ error: "The assistant returned an unsupported search. Try describing the filters more directly." });
       return;
     }
-    res.json(InterpretApplicantSearchResponse.parse({ search }));
+    const explanation = typeof result.explanation === "string" && result.explanation.trim()
+      ? result.explanation.trim()
+      : `Searching for ${search}.`;
+    res.json(InterpretApplicantSearchResponse.parse({ search, explanation }));
   } catch (error) {
     req.log.warn({ err: error }, "Applicant search interpretation failed");
     res.status(503).json({ error: "The assistant could not build that search. Try again." });
@@ -2380,6 +2383,77 @@ router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => 
 });
 
 type ReactionGroup = { emoji: string; count: number; authors: string[] };
+type ChatConversationScope = "shared" | "direct";
+type ChatConversation = {
+  scope: ChatConversationScope;
+  peer: string | null;
+  key: string | null;
+};
+
+function canonicalInterviewerLabel(labels: string[], value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return labels.find((label) => label.toLowerCase() === trimmed.toLowerCase()) ?? null;
+}
+
+function canonicalInterviewerPair(left: string, right: string): string {
+  return [left, right]
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b))
+    .join("\u001f");
+}
+
+async function resolveChatConversation(
+  scopeValue: unknown,
+  authorValue: unknown,
+  peerValue: unknown,
+): Promise<ChatConversation | { error: string }> {
+  const scope = scopeValue === undefined || scopeValue === "" ? "shared" : scopeValue;
+  if (scope !== "shared" && scope !== "direct") {
+    return { error: "Chat scope must be shared or direct." };
+  }
+  if (scope === "shared") {
+    if (typeof peerValue === "string" && peerValue.trim()) {
+      return { error: "A direct recipient requires the direct chat scope." };
+    }
+    return { scope: "shared", peer: null, key: null };
+  }
+  const labels = await getInterviewSettings();
+  const author = canonicalInterviewerLabel(labels, authorValue);
+  const peer = canonicalInterviewerLabel(labels, peerValue);
+  if (!author) return { error: "Direct chat requires a configured interviewer label as the author." };
+  if (!peer) return { error: "That direct-message recipient is not a configured interviewer label." };
+  if (author.toLowerCase() === peer.toLowerCase()) {
+    return { error: "You cannot start a direct conversation with yourself." };
+  }
+  return { scope: "direct", peer, key: canonicalInterviewerPair(author, peer) };
+}
+
+function chatResponse(
+  message: {
+    id: string;
+    author: string;
+    message: string;
+    parentMessageId: string | null;
+    pinnedAt: Date | null;
+    activities: string;
+    createdAt: Date;
+  },
+  conversation: ChatConversation,
+  reactions?: ReactionGroup[],
+) {
+  return {
+    id: message.id,
+    author: message.author,
+    message: message.message,
+    scope: conversation.scope,
+    peer: conversation.peer,
+    parentMessageId: message.parentMessageId,
+    pinnedAt: message.pinnedAt?.toISOString() ?? null,
+    activities: parseStoredActivities(message.activities),
+    reactions: reactions ?? [],
+    createdAt: message.createdAt.toISOString(),
+  };
+}
 
 async function reactionsForMessages(messageIds: string[]): Promise<Map<string, ReactionGroup[]>> {
   const grouped = new Map<string, ReactionGroup[]>();
@@ -2421,22 +2495,26 @@ function pageWindow(query: unknown): { limit: number; before?: Date } {  const r
 }
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
+  const conversation = await resolveChatConversation(req.query.scope, req.query.author, req.query.peer);
+  if ("error" in conversation) {
+    res.status(400).json({ error: conversation.error });
+    return;
+  }
   const { limit, before } = pageWindow(req.query);
+  const conversationFilters = [
+    eq(interviewChatMessagesTable.conversationScope, conversation.scope),
+    conversation.key === null
+      ? isNull(interviewChatMessagesTable.conversationPeer)
+      : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
+  ];
   const messages = await db.select().from(interviewChatMessagesTable)
-    .where(before ? lt(interviewChatMessagesTable.createdAt, before) : undefined)
+    .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
     .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
   const reactions = await reactionsForMessages(messages.map((message) => message.id));
   res.json(GetInterviewChatResponse.parse({
-    items: messages.reverse().map((message) => ({
-      id: message.id,
-      author: message.author,
-      message: message.message,
-      parentMessageId: message.parentMessageId,
-      pinnedAt: message.pinnedAt?.toISOString() ?? null,
-      activities: parseStoredActivities(message.activities),
-      reactions: reactions.get(message.id) ?? [],
-      createdAt: message.createdAt.toISOString(),
-    })),
+    items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [])),
+    scope: conversation.scope,
+    peer: conversation.peer,
   }));
 });
 
@@ -2446,13 +2524,26 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "A chat message is required." });
     return;
   }
+  const conversation = await resolveChatConversation(
+    parsed.data.scope,
+    parsed.data.conversationAuthor ?? parsed.data.author,
+    parsed.data.recipient,
+  );
+  if ("error" in conversation) {
+    res.status(400).json({ error: conversation.error });
+    return;
+  }
   const parentMessageId = parsed.data.parentMessageId?.trim() || null;
   if (parentMessageId) {
-    const [parent] = await db.select({ id: interviewChatMessagesTable.id })
+    const [parent] = await db.select({
+      id: interviewChatMessagesTable.id,
+      conversationScope: interviewChatMessagesTable.conversationScope,
+      conversationPeer: interviewChatMessagesTable.conversationPeer,
+    })
       .from(interviewChatMessagesTable)
       .where(eq(interviewChatMessagesTable.id, parentMessageId))
       .limit(1);
-    if (!parent) {
+    if (!parent || parent.conversationScope !== conversation.scope || parent.conversationPeer !== conversation.key) {
       res.status(400).json({ error: "The message being replied to was not found." });
       return;
     }
@@ -2469,17 +2560,13 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     id: randomUUID(),
     author: parsed.data.author.trim().slice(0, 80) || "Interviewer",
     message: parsed.data.message.trim().slice(0, 1000),
+    conversationScope: conversation.scope,
+    conversationPeer: conversation.key,
     parentMessageId,
     activities: JSON.stringify(activities),
   }).returning();
   res.status(201).json(SendInterviewChatResponse.parse({
-    id: message.id,
-    author: message.author,
-    message: message.message,
-    parentMessageId: message.parentMessageId,
-    pinnedAt: message.pinnedAt?.toISOString() ?? null,
-    activities: parseStoredActivities(message.activities),
-    createdAt: message.createdAt.toISOString(),
+    ...chatResponse(message, conversation),
   }));
 });
 

@@ -1194,7 +1194,7 @@ function Applicants() {
   const [search, setSearch] = useState("");
   const [aiSearchOpen, setAiSearchOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
-  const [aiSearchNote, setAiSearchNote] = useState<{ search: string } | null>(null);
+  const [aiSearchNote, setAiSearchNote] = useState<{ search: string; explanation: string } | null>(null);
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
   const [sort, setSort] = useState(settings.defaultSort);
@@ -1295,13 +1295,13 @@ function Applicants() {
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="flex flex-wrap gap-2">
-         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Generate a search query" aria-label="Generate a search query" data-testid="button-ai-search" className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
+         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
         <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
          </div>
-          {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote({ search: result.search }); }, }); }} className="mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Describe the filters, e.g. “female applicants who code, but not CAD”" aria-label="Describe the applicant filters" data-testid="input-ai-search" className="h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Generating…" : "Generate query"}</button></div>{interpretSearch.isError && <p className="mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "Could not generate a valid search query. Try describing the filters more directly.")}</p>}{aiSearchNote && <p className="mt-2 text-xs leading-5 text-[#48656b]">Generated query: <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code></p>}</form>}
+         {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="mt-2 text-xs leading-5 text-[#48656b]">Using <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
          <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]" data-testid="applicant-search-help">Qualifiers: <code className="font-mono text-[#526d75]">name:</code>, <code className="font-mono text-[#526d75]">age:</code>, <code className="font-mono text-[#526d75]">gender:</code>, <code className="font-mono text-[#526d75]">grade:</code>, <code className="font-mono text-[#526d75]">skill:</code>, <code className="font-mono text-[#526d75]">recommendation:</code>, <code className="font-mono text-[#526d75]">category:</code>, <code className="font-mono text-[#526d75]">status:</code>, <code className="font-mono text-[#526d75]">invalid:true</code>. Combine with <code className="font-mono text-[#526d75]">AND</code>, <code className="font-mono text-[#526d75]">OR</code>, <code className="font-mono text-[#526d75]">NOT</code>, parentheses, or <code className="font-mono text-[#526d75]">IF … THEN …</code>. Quote values with spaces.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
@@ -2044,11 +2044,22 @@ const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const chatParams = useMemo(() => ({ limit: CHAT_PAGE_SIZE }), []);
-  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
-  const applicants = useListApplicants({ sort: "name" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "name" }) } });
+  const interviewerLabels = queue.data?.interviewerLabels ?? [];
+  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
+  const [conversationPeer, setConversationPeer] = useState<string | null>(null);
+  const activeInterviewer = interviewerLabels.find(label => label.toLowerCase() === selectedInterviewer.trim().toLowerCase()) ?? interviewerLabels[0] ?? (selectedInterviewer || "Interviewer");
+  const conversationScope = conversationPeer ? "direct" : "shared";
+  const conversationId = `${conversationScope}:${activeInterviewer}:${conversationPeer ?? ""}`;
+  const chatParams = useMemo(() => ({
+    limit: CHAT_PAGE_SIZE,
+    scope: conversationScope as "shared" | "direct",
+    author: activeInterviewer,
+    ...(conversationPeer ? { peer: conversationPeer } : {}),
+  }), [activeInterviewer, conversationPeer, conversationScope]);
+  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
+  const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
   const [chatHasMore, setChatHasMore] = useState(true);
   const [chatLoadingMore, setChatLoadingMore] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -2062,7 +2073,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
-  const chatItems = useMemo(() => mergeChatItems(olderChat, chat.data?.items ?? []), [olderChat, chat.data]);
+  const scopedChatItems = chat.data?.scope === conversationScope && chat.data.peer === (conversationPeer ?? null)
+    ? chat.data.items
+    : [];
+  const visibleOlderChat = olderChatConversationId === conversationId ? olderChat : [];
+  const chatItems = useMemo(() => mergeChatItems(visibleOlderChat, scopedChatItems), [scopedChatItems, visibleOlderChat]);
   const replyCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of chatItems) {
@@ -2093,7 +2108,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   useEffect(() => () => { for (const f of chatFilesRef.current) URL.revokeObjectURL(f.previewUrl); }, []);
   const [chatImageError, setChatImageError] = useState("");
   const [chatUploading, setChatUploading] = useState(false);
-  const [selectedInterviewer, setSelectedInterviewer] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("selected-interviewer") || "");
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -2105,15 +2119,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
   const mentionPeople = useMemo(() => {
-    const labels = queue.data?.interviewerLabels ?? [];
+    const labels = interviewerLabels;
     const people = [
-      { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗", kind: "group" },
-      ...labels.map(label => ({ token: label, label, detail: "Interviewer", initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?", kind: "interviewer" })),
-      ...(applicants.data?.items ?? []).map(applicant => ({ token: applicant.name, label: applicant.name, detail: `Applicant · Grade ${applicant.grade}`, initials: applicant.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?", kind: "applicant" })),
-      { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI", kind: "assistant" },
+      { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗" },
+      ...labels.map(label => ({ token: label, label, detail: "Interviewer", initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?" })),
+      { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI" },
     ];
     return people.filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index);
-  }, [applicants.data?.items, queue.data?.interviewerLabels]);
+  }, [interviewerLabels]);
   const filteredMentionPeople = useMemo(() => {
     const query = mentionQuery.trim().toLowerCase();
     return mentionPeople.filter(person => !query || `${person.label} ${person.token}`.toLowerCase().includes(query)).slice(0, 6);
@@ -2310,6 +2323,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     voiceRecorderRef.current?.stop();
     voiceStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
+  useEffect(() => {
+    if (conversationPeer && !interviewerLabels.some(label => label.toLowerCase() === conversationPeer.toLowerCase() && label.toLowerCase() !== activeInterviewer.toLowerCase())) {
+      setConversationPeer(null);
+    }
+  }, [activeInterviewer, conversationPeer, interviewerLabels]);
+  useEffect(() => {
+    setOlderChatConversationId(conversationId);
+    setOlderChat([]);
+    setChatHasMore(true);
+    setChatLoadingMore(false);
+    setReplyingTo(null);
+    setPickerFor(null);
+    chatLoadGuardRef.current = false;
+    chatAnchorRef.current = null;
+    chatOldestRef.current = "";
+    chatPrevLenRef.current = 0;
+    chatStickRef.current = true;
+    if (chatScrollRef.current) chatScrollRef.current.scrollTop = 0;
+  }, [conversationId]);
   const loadOlderChat = useCallback(async () => {
     if (chatLoadGuardRef.current) return;
     const items = chatItemsRef.current;
@@ -2317,7 +2349,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     chatLoadGuardRef.current = true;
     setChatLoadingMore(true);
     try {
-      const page = await getInterviewChat({ before: items[0].createdAt, limit: CHAT_PAGE_SIZE });
+      const page = await getInterviewChat({ ...chatParams, before: items[0].createdAt });
       const el = chatScrollRef.current;
       if (el) chatAnchorRef.current = { prevH: el.scrollHeight, prevTop: el.scrollTop };
       setOlderChat(current => {
@@ -2331,7 +2363,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       chatLoadGuardRef.current = false;
       setChatLoadingMore(false);
     }
-  }, []);
+  }, [chatParams]);
   useLayoutEffect(() => {
     const anchor = chatAnchorRef.current;
     const el = chatScrollRef.current;
@@ -2359,13 +2391,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     chatPrevLenRef.current = n;
   }, [chatItems]);
   useEffect(() => {
-    if (chat.data && olderChat.length === 0 && chat.data.items.length < CHAT_PAGE_SIZE) setChatHasMore(false);
-  }, [chat.data, olderChat.length]);
+    if (scopedChatItems.length < CHAT_PAGE_SIZE && olderChat.length === 0) setChatHasMore(false);
+  }, [olderChat.length, scopedChatItems.length]);
   const react = (messageId: string, emoji: string) => {
-    const author = selectedInterviewer || "Interviewer";
+    const author = activeInterviewer;
     setPickerFor(null);
     toggleReaction.mutate({ messageId, data: { emoji, author } }, {
-      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); },
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
   };
   const submitChat = async (event: React.FormEvent) => {
@@ -2375,7 +2407,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const draft = message.trim();
     setChatError("");
     chatStickRef.current = true;
-    const author = selectedInterviewer || "Interviewer";
+    const author = activeInterviewer;
     const uploadedIds: string[] = [];
     let userPosted = false;
     let stage = "start";
@@ -2453,6 +2485,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author,
           message: submitted,
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
           ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
         },
       }), 30000, "send");
@@ -2460,11 +2494,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-        const chatContext = [...(chat.data?.items ?? []), { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
+         const chatContext = [...chatItems, { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
         const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
-        await withTimeout(sendChat.mutateAsync({ data: { author: "AI assistant", message: response.answer, activities: response.activities ?? [] } }), 30000, "send-ai");
+        await withTimeout(sendChat.mutateAsync({
+          data: {
+            author: "AI assistant",
+            ...(conversationPeer ? { conversationAuthor: activeInterviewer } : {}),
+            message: response.answer,
+            scope: conversationScope,
+            ...(conversationPeer ? { recipient: conversationPeer } : {}),
+            activities: response.activities ?? [],
+          },
+        }), 30000, "send-ai");
       }
-      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
       for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
       setChatFiles([]);
       setFileStatus({});
@@ -2507,7 +2550,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
-          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
+          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
         </div>
       </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
@@ -2516,7 +2559,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {
-          const mine = r.authors.includes(selectedInterviewer || "Interviewer");
+           const mine = r.authors.includes(activeInterviewer);
           return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>;
         })}
         {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
@@ -2524,16 +2567,29 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       {pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}
     </div>;
   };
-  return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-    <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+   const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
+   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
+     <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+     <div className="mt-4 rounded-2xl border border-[#dce9e8] bg-[#f7faf9] p-3">
+       <div className="flex flex-wrap items-center gap-2">
+         <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Chat as</span>
+         {interviewerLabels.map(label => <button key={`identity-${label}`} type="button" onClick={() => { setSelectedInterviewer(label); setConversationPeer(peer => peer?.toLowerCase() === label.toLowerCase() ? null : peer); try { window.localStorage.setItem("selected-interviewer", label); } catch { /* ignore storage errors */ } }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeInterviewer.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-identity-${label.toLowerCase().replaceAll(" ", "-")}`}>{label}</button>)}
+       </div>
+       <div className="mt-3 flex flex-wrap items-center gap-2">
+         <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
+         <button type="button" onClick={() => setConversationPeer(null)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
+         {directTargets.map(label => <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`}>To {label}</button>)}
+       </div>
+       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Recipients are configured interviewer labels. This uses the shared coordinator session; it does not add private per-user authentication.</p>
+     </div>
      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-     <form onSubmit={submitChat} className="mt-3 space-y-2">
+      <form onSubmit={submitChat} className="mt-3 space-y-2">
        {replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
          {mentionOpen && filteredMentionPeople.length > 0 && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
-            <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">Mention someone</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Interviewers and applicants</p></div>
-            <div className="max-h-64 overflow-y-auto p-1.5">{filteredMentionPeople.map(person => <button key={`${person.kind}-${person.token}`} type="button" onMouseDown={event => event.preventDefault()} onClick={() => selectMention(person)} className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[#edf4f3]" data-testid={`mention-option-${person.kind}-${person.token.toLowerCase().replaceAll(" ", "-")}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span></button>)}</div>
+           <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Mention someone in this space</p></div>
+           <div className="max-h-64 overflow-y-auto p-1.5">{filteredMentionPeople.map(person => <button key={person.token} type="button" onMouseDown={event => event.preventDefault()} onClick={() => selectMention(person)} className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[#edf4f3]" data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span></button>)}</div>
          </div>}
          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-56 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button></div>}
          {emojiOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="emoji-picker"><p className="mb-2 text-xs font-semibold text-[#52666e]">Emoji</p><div className="grid grid-cols-6 gap-1">{["😀", "😂", "😍", "👍", "🙏", "🎉", "🔥", "✅", "😮", "😢", "❤️", "🤖"].map(emoji => <button key={emoji} type="button" onClick={() => insertAtCursor(emoji)} aria-label={`Insert ${emoji}`} className="rounded-lg p-2 text-xl transition hover:bg-[#edf4f3]">{emoji}</button>)}</div></div>}
@@ -2542,7 +2598,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            <div className="flex items-end gap-1.5">
              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen} data-testid="button-chat-more" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
              <div className="min-w-0 flex-1">
-               <textarea ref={chatMessageInputRef} value={message} onChange={event => updateMentionState(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { setMentionOpen(false); setEmojiOpen(false); setComposerMenuOpen(false); } if (event.key === "Enter" && !event.shiftKey && !mentionOpen) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} data-testid="input-interviewer-chat" rows={1} className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]" placeholder={replyingTo ? "Write a reply..." : "Message the other interviewer or type @ to mention"} />
+                <textarea ref={chatMessageInputRef} value={message} onChange={event => updateMentionState(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { setMentionOpen(false); setEmojiOpen(false); setComposerMenuOpen(false); } if (event.key === "Enter" && !event.shiftKey && !mentionOpen) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} data-testid="input-interviewer-chat" rows={1} className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]" placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"} />
                {formattingOpen && <div className="flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
              </div>
              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">

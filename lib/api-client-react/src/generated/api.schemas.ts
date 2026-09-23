@@ -238,6 +238,7 @@ export interface ApplicantSearchAiInput {
 
 export interface ApplicantSearchAiResponse {
   search: string;
+  explanation: string;
 }
 
 export interface ApplicantUpdate {
@@ -413,18 +414,40 @@ export interface QueueSettingsInput {
   interviewerLabels: string[];
 }
 
+export type InterviewChatInputScope = typeof InterviewChatInputScope[keyof typeof InterviewChatInputScope];
+
+
+export const InterviewChatInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
 export interface AssistantActivity {
   tool: string;
   detail: string;
 }
 
 export interface InterviewChatInput {
+  /** Configured interviewer label for direct messages; shared messages retain the existing label behavior. */
   author: string;
+  /** Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant. */
+  conversationAuthor?: string | null;
   message: string;
+  scope?: InterviewChatInputScope;
+  /** Configured interviewer label receiving a direct message. */
+  recipient?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: string | null;
   activities?: AssistantActivity[];
 }
+
+export type InterviewChatMessageScope = typeof InterviewChatMessageScope[keyof typeof InterviewChatMessageScope];
+
+
+export const InterviewChatMessageScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
 
 export interface ChatReaction {
   emoji: string;
@@ -436,6 +459,8 @@ export interface InterviewChatMessage {
   id: string;
   author: string;
   message: string;
+  scope: InterviewChatMessageScope;
+  peer: string | null;
   parentMessageId?: string | null;
   pinnedAt?: string | null;
   activities?: AssistantActivity[];
@@ -459,8 +484,18 @@ export interface ChatMessagePin {
   pinnedAt: string | null;
 }
 
+export type InterviewChatScope = typeof InterviewChatScope[keyof typeof InterviewChatScope];
+
+
+export const InterviewChatScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
 export interface InterviewChat {
   items: InterviewChatMessage[];
+  scope: InterviewChatScope;
+  peer: string | null;
 }
 
 export interface ReorderQueueInput {
@@ -732,7 +767,27 @@ before?: BeforeParameter;
  * Max messages per page (1-100, default 30).
  */
 limit?: ChatLimitParameter;
+/**
+ * Conversation scope. Shared is the team channel; direct requires author and peer.
+ */
+scope?: GetInterviewChatScope;
+/**
+ * Configured interviewer label used to derive a direct conversation pair.
+ */
+author?: string;
+/**
+ * Configured interviewer label for the direct conversation.
+ */
+peer?: string;
 };
+
+export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof GetInterviewChatScope];
+
+
+export const GetInterviewChatScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
 
 export type GetAssistantConversationMessagesParams = {
 /**

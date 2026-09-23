@@ -6,10 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssistantActivity } from './assistantActivity';
+import type { InterviewChatInputScope } from './interviewChatInputScope';
 
 export interface InterviewChatInput {
+  /** Configured interviewer label for direct messages; shared messages retain the existing label behavior. */
   author: string;
+  /** Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant. */
+  conversationAuthor?: string | null;
   message: string;
+  scope?: InterviewChatInputScope;
+  /** Configured interviewer label receiving a direct message. */
+  recipient?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: Date | null;
   activities?: AssistantActivity[];

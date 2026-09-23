@@ -7,6 +7,7 @@
  */
 import type { BeforeParameter } from './beforeParameter';
 import type { ChatLimitParameter } from './chatLimitParameter';
+import type { GetInterviewChatScope } from './getInterviewChatScope';
 
 export type GetInterviewChatParams = {
 /**
@@ -17,4 +18,16 @@ before?: BeforeParameter;
  * Max messages per page (1-100, default 30).
  */
 limit?: ChatLimitParameter;
+/**
+ * Conversation scope. Shared is the team channel; direct requires author and peer.
+ */
+scope?: GetInterviewChatScope;
+/**
+ * Configured interviewer label used to derive a direct conversation pair.
+ */
+author?: string;
+/**
+ * Configured interviewer label for the direct conversation.
+ */
+peer?: string;
 };

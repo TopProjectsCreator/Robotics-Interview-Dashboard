@@ -15,6 +15,9 @@ export const interviewChatMessagesTable = pgTable("interview_chat_messages", {
   id: text("id").primaryKey(),
   author: text("author").notNull(),
   message: text("message").notNull(),
+  conversationScope: text("conversation_scope").notNull().default("shared"),
+  // Shared messages use null. Direct messages store a stable, sorted label pair.
+  conversationPeer: text("conversation_peer"),
   activities: text("activities").notNull().default("[]"),
   parentMessageId: text("parent_message_id"),
   pinnedAt: timestamp("pinned_at", { withTimezone: true }),
