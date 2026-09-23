@@ -56,6 +56,7 @@ import {
   SendInterviewChatResponse,
   ToggleChatReactionBody,
   ToggleChatReactionResponse,
+  ToggleChatMessagePinResponse,
   UpdateQueueSettingsBody,
   ReorderQueueResponse,
   UpdateApplicantBody,
@@ -2351,6 +2352,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       author: message.author,
       message: message.message,
       parentMessageId: message.parentMessageId,
+      pinnedAt: message.pinnedAt?.toISOString() ?? null,
       activities: parseStoredActivities(message.activities),
       reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString(),
@@ -2395,6 +2397,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     author: message.author,
     message: message.message,
     parentMessageId: message.parentMessageId,
+    pinnedAt: message.pinnedAt?.toISOString() ?? null,
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString(),
   }));
@@ -2427,6 +2430,31 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
   const reactions = await reactionsForMessages([messageId]);
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
+});
+
+router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promise<void> => {
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  if (!messageId) {
+    res.status(400).json({ error: "Message id required" });
+    return;
+  }
+  const [existingMessage] = await db.select({
+    id: interviewChatMessagesTable.id,
+    pinnedAt: interviewChatMessagesTable.pinnedAt,
+  }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const pinnedAt = existingMessage.pinnedAt ? null : new Date();
+  await db.update(interviewChatMessagesTable)
+    .set({ pinnedAt })
+    .where(eq(interviewChatMessagesTable.id, messageId));
+  pushRealtimeHint("interview_chat_messages");
+  res.json(ToggleChatMessagePinResponse.parse({
+    messageId,
+    pinnedAt: pinnedAt?.toISOString() ?? null,
+  }));
 });
 
 router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {

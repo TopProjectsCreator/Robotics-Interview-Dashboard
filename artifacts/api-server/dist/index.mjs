@@ -54519,6 +54519,7 @@ var init_interview = __esm({
       message: text("message").notNull(),
       activities: text("activities").notNull().default("[]"),
       parentMessageId: text("parent_message_id"),
+      pinnedAt: timestamp("pinned_at", { withTimezone: true }),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
     });
     chatMessageReactionsTable = pgTable("chat_message_reactions", {
@@ -73279,6 +73280,7 @@ var GetInterviewChatResponse = objectType({
     "author": stringType(),
     "message": stringType(),
     "parentMessageId": stringType().nullish(),
+    "pinnedAt": coerce.date().nullish(),
     "activities": arrayType(objectType({
       "tool": stringType(),
       "detail": stringType()
@@ -73295,6 +73297,7 @@ var SendInterviewChatBody = objectType({
   "author": stringType(),
   "message": stringType(),
   "parentMessageId": stringType().nullish(),
+  "pinnedAt": coerce.date().nullish(),
   "activities": arrayType(objectType({
     "tool": stringType(),
     "detail": stringType()
@@ -73305,6 +73308,7 @@ var SendInterviewChatResponse = objectType({
   "author": stringType(),
   "message": stringType(),
   "parentMessageId": stringType().nullish(),
+  "pinnedAt": coerce.date().nullish(),
   "activities": arrayType(objectType({
     "tool": stringType(),
     "detail": stringType()
@@ -73329,6 +73333,13 @@ var ToggleChatReactionResponse = objectType({
     "count": numberType().int(),
     "authors": arrayType(stringType())
   }))
+});
+var ToggleChatMessagePinParams = objectType({
+  "messageId": coerce.string()
+});
+var ToggleChatMessagePinResponse = objectType({
+  "messageId": stringType(),
+  "pinnedAt": coerce.date().nullable()
 });
 var DeleteChatMessageParams = objectType({
   "messageId": coerce.string()
@@ -96798,6 +96809,7 @@ router4.get("/queue/chat", requireAdmin, async (req, res) => {
       author: message.author,
       message: message.message,
       parentMessageId: message.parentMessageId,
+      pinnedAt: message.pinnedAt?.toISOString() ?? null,
       activities: parseStoredActivities(message.activities),
       reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString()
@@ -96831,6 +96843,7 @@ router4.post("/queue/chat", requireAdmin, async (req, res) => {
     author: message.author,
     message: message.message,
     parentMessageId: message.parentMessageId,
+    pinnedAt: message.pinnedAt?.toISOString() ?? null,
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString()
   }));
@@ -96862,6 +96875,28 @@ router4.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res) 
   const reactions = await reactionsForMessages([messageId]);
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
+});
+router4.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res) => {
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  if (!messageId) {
+    res.status(400).json({ error: "Message id required" });
+    return;
+  }
+  const [existingMessage] = await db.select({
+    id: interviewChatMessagesTable.id,
+    pinnedAt: interviewChatMessagesTable.pinnedAt
+  }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const pinnedAt = existingMessage.pinnedAt ? null : /* @__PURE__ */ new Date();
+  await db.update(interviewChatMessagesTable).set({ pinnedAt }).where(eq(interviewChatMessagesTable.id, messageId));
+  pushRealtimeHint("interview_chat_messages");
+  res.json(ToggleChatMessagePinResponse.parse({
+    messageId,
+    pinnedAt: pinnedAt?.toISOString() ?? null
+  }));
 });
 router4.delete("/queue/chat/:messageId", requireAdmin, async (req, res) => {
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
@@ -98147,6 +98182,7 @@ async function ensureSchema() {
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,
+    `alter table "interview_chat_messages" add column if not exists "pinned_at" timestamptz`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`
   ];

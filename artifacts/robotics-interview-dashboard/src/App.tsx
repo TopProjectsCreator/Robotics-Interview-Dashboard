@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
+   Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -16,7 +16,7 @@ import {
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
-  useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction,
+   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
@@ -2045,6 +2045,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
+  const togglePin = useToggleChatMessagePin();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
   useEffect(() => {
@@ -2303,10 +2304,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
+          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
         </div>
       </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
-      <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}</div><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
       <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
