@@ -102,3 +102,52 @@ button { cursor: pointer; }
 .dark [class*="text-[#a14b43]"] { color: #e89890; }
 .dark [class*="border-[#486b77]"] { border-color: #41606d; }
 .dark [class*="border-[#e8d9b0]"], .dark [class*="border-[#e1e9e8]"], .dark [class*="border-[#e5c4c0]"], .dark [class*="border-[#bfe3d8]"], .dark [class*="border-[#d7b0ad]"], .dark [class*="border-[#b8cbcc]"], .dark [class*="border-[#edf1f1]"], .dark [class*="border-[#d7e4e3]"] { border-color: #2a3f52; }
+.dark .chat-composer-shell {
+  background-color: #10232d;
+  border-color: #355663;
+}
+.dark .chat-composer-shell textarea {
+  color: #e8eef2;
+}
+.dark .chat-composer-shell textarea::placeholder {
+  color: #8199a3;
+}
+.dark .chat-composer-shell .chat-composer-control {
+  color: #b9c9d1;
+}
+.dark .chat-composer-shell .chat-composer-control:hover,
+.dark .chat-composer-shell .chat-composer-control.is-active {
+  background-color: #1c3744;
+  color: #6fc3cf;
+}
+.dark .chat-composer-shell .chat-composer-formatting {
+  border-color: #2d4657;
+}
+.dark .ai-search-panel {
+  background-color: #112730;
+  border-color: #355663;
+}
+.dark .ai-search-input {
+  background-color: #16262f;
+  border-color: #355663;
+  color: #e8eef2;
+}
+.dark .ai-search-input::placeholder {
+  color: #8199a3;
+}
+.dark .ai-search-submit {
+  background-color: #2d8793;
+}
+.dark .ai-search-submit:hover {
+  background-color: #3a9aa5;
+}
+.dark .ai-search-error {
+  color: #e89890;
+}
+.dark .ai-search-result {
+  color: #b9c9d1;
+}
+.dark .ai-search-query {
+  background-color: #1c3744;
+  color: #c5e8e8;
+}
