@@ -1632,6 +1632,9 @@ components:
           type: string
         message:
           type: string
+        parentMessageId:
+          type: string
+          nullable: true
         activities:
           type: array
           items:
@@ -1646,6 +1649,9 @@ components:
           type: string
         message:
           type: string
+        parentMessageId:
+          type: string
+          nullable: true
         activities:
           type: array
           items:

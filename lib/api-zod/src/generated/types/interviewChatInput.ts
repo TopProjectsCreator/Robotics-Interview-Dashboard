@@ -10,5 +10,6 @@ import type { AssistantActivity } from './assistantActivity';
 export interface InterviewChatInput {
   author: string;
   message: string;
+  parentMessageId?: string | null;
   activities?: AssistantActivity[];
 }

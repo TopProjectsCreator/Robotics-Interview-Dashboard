@@ -735,6 +735,7 @@ export const GetInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "parentMessageId": zod.string().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -755,6 +756,7 @@ export const GetInterviewChatResponse = zod.object({
 export const SendInterviewChatBody = zod.object({
   "author": zod.string(),
   "message": zod.string(),
+  "parentMessageId": zod.string().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -765,6 +767,7 @@ export const SendInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
+  "parentMessageId": zod.string().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()

@@ -129,6 +129,23 @@ export declare const interviewChatMessagesTable: import("drizzle-orm/pg-core").P
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        parentMessageId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "parent_message_id";
+            tableName: "interview_chat_messages";
+            dataType: "string";
+            columnType: "PgText";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         createdAt: import("drizzle-orm/pg-core").PgColumn<{
             name: "created_at";
             tableName: "interview_chat_messages";
@@ -446,6 +463,7 @@ export declare const insertInterviewChatMessageSchema: z.ZodObject<{
     author: z.ZodString;
     message: z.ZodString;
     activities: z.ZodOptional<z.ZodString>;
+    parentMessageId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, {
     out: {};
     in: {};

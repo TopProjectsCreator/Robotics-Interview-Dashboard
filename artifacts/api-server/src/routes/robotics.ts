@@ -2350,6 +2350,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       id: message.id,
       author: message.author,
       message: message.message,
+      parentMessageId: message.parentMessageId,
       activities: parseStoredActivities(message.activities),
       reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString(),
@@ -2363,6 +2364,17 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "A chat message is required." });
     return;
   }
+  const parentMessageId = parsed.data.parentMessageId?.trim() || null;
+  if (parentMessageId) {
+    const [parent] = await db.select({ id: interviewChatMessagesTable.id })
+      .from(interviewChatMessagesTable)
+      .where(eq(interviewChatMessagesTable.id, parentMessageId))
+      .limit(1);
+    if (!parent) {
+      res.status(400).json({ error: "The message being replied to was not found." });
+      return;
+    }
+  }
   const activities = Array.isArray(parsed.data.activities)
     ? parsed.data.activities
         .filter((a): a is { tool: string; detail: string } =>
@@ -2375,12 +2387,14 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     id: randomUUID(),
     author: parsed.data.author.trim().slice(0, 80) || "Interviewer",
     message: parsed.data.message.trim().slice(0, 1000),
+    parentMessageId,
     activities: JSON.stringify(activities),
   }).returning();
   res.status(201).json(SendInterviewChatResponse.parse({
     id: message.id,
     author: message.author,
     message: message.message,
+    parentMessageId: message.parentMessageId,
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString(),
   }));

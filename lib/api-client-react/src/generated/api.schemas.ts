@@ -388,6 +388,7 @@ export interface AssistantActivity {
 export interface InterviewChatInput {
   author: string;
   message: string;
+  parentMessageId?: string | null;
   activities?: AssistantActivity[];
 }
 
@@ -401,6 +402,7 @@ export interface InterviewChatMessage {
   id: string;
   author: string;
   message: string;
+  parentMessageId?: string | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
   createdAt: string;

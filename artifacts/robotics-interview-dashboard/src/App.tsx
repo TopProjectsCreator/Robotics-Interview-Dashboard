@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
+   Pencil, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -2027,12 +2027,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
   const chatItems = useMemo(() => mergeChatItems(olderChat, chat.data?.items ?? []), [olderChat, chat.data]);
+  const replyCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of chatItems) {
+      if (item.parentMessageId) counts.set(item.parentMessageId, (counts.get(item.parentMessageId) ?? 0) + 1);
+    }
+    return counts;
+  }, [chatItems]);
   const chatItemsRef = useRef<InterviewChatMessage[]>([]);
   chatItemsRef.current = chatItems;
   const sendChat = useSendInterviewChat();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
       reportDiag(`window.onerror: ${event.message}`, `${event.filename}:${event.lineno}`);
@@ -2236,7 +2244,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       }
       const submitted = [draft, embeds.join("\n")].filter(Boolean).join("\n");
       stage = "send";
-      await withTimeout(sendChat.mutateAsync({ data: { author, message: submitted } }), 30000, "send");
+      await withTimeout(sendChat.mutateAsync({
+        data: {
+          author,
+          message: submitted,
+          ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
+        },
+      }), 30000, "send");
       userPosted = true;
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
@@ -2250,6 +2264,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatFiles([]);
       setFileStatus({});
       setMessage("");
+      setReplyingTo(null);
       setChatError("");
     } catch (error) {
       reportDiag(`chat-send failed at ${stage}`, diagContext());
@@ -2270,10 +2285,31 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatUploading(false);
     }
   };
+  const renderChatMessage = (item: InterviewChatMessage) => {
+    const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
+    const replyCount = replyCounts.get(item.id) ?? 0;
+    const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
+    return <div key={item.id} className={`rounded-xl border border-[#e1e9e8] bg-white p-3 ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
+      {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
+      <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />
+      <ActivityPills activities={item.activities ?? []} />
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        {(item.reactions ?? []).map(r => {
+          const mine = r.authors.includes(selectedInterviewer || "Interviewer");
+          return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>;
+        })}
+        <button onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} title="Add reaction" aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[#cbd9da] text-[#7c8c91] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /></button>
+        <button onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} title="Reply to message" aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition ${replyingTo?.id === item.id ? "border-[#16869a] bg-[#e3f4f2] text-[#106d7a]" : "border-[#dce9e8] bg-white text-[#527079] hover:border-[#16869a] hover:text-[#16869a]"}`}><Reply size={12} /> Reply</button>
+        {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
+      </div>
+      {pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}
+    </div>;
+  };
   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
     <div className="flex items-center justify-between"><div><h2 className="font-semibold">Interviewer chat</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
-    <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(item => <div key={item.id} className="rounded-xl border border-[#e1e9e8] bg-white p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div><MarkdownContent source={item.message} className="mt-1 text-[#52666e]" /><ActivityPills activities={item.activities ?? []} /><div className="mt-2 flex flex-wrap items-center gap-1">{(item.reactions ?? []).map(r => { const mine = r.authors.includes(selectedInterviewer || "Interviewer"); return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>; })}<button onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} title="Add reaction" aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[#cbd9da] text-[#7c8c91] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /></button></div>{pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}</div>) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-    <form onSubmit={submitChat} className="mt-3 space-y-2">{chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder="Message the other interviewer or type @ai..." /><button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Paperclip size={16} /></button><input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} /><button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
+     <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+    <form onSubmit={submitChat} className="mt-3 space-y-2">{replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}{chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}<div className="flex gap-2"><span className="flex h-10 w-32 items-center rounded-lg border border-[#d5e0e0] bg-[#f7faf9] px-3 text-xs font-semibold text-[#52666e]">{selectedInterviewer || "Choose role"}</span><input value={message} onChange={event => setMessage(event.target.value)} data-testid="input-interviewer-chat" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" placeholder={replyingTo ? "Write a reply..." : "Message the other interviewer or type @ai..."} /><button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#d5e0e0] text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Paperclip size={16} /></button><input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} /><button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading} data-testid="button-send-interviewer-chat" className="rounded-lg bg-[#183a4b] px-3 text-xs font-semibold text-white disabled:opacity-50">{chatUploading ? "Uploading..." : "Send"}</button></div>{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}{chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}</form>
   </section>;
 }
 function Queue() {

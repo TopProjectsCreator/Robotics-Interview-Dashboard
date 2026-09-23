@@ -2149,6 +2149,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         id: zod.ZodString;
         author: zod.ZodString;
         message: zod.ZodString;
+        parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
         activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
             tool: zod.ZodString;
             detail: zod.ZodString;
@@ -2178,6 +2179,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         id: string;
         createdAt: string;
         author: string;
+        parentMessageId?: string | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2192,6 +2194,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         id: string;
         createdAt: string;
         author: string;
+        parentMessageId?: string | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2208,6 +2211,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         id: string;
         createdAt: string;
         author: string;
+        parentMessageId?: string | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2224,6 +2228,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
         id: string;
         createdAt: string;
         author: string;
+        parentMessageId?: string | null | undefined;
         activities?: {
             tool: string;
             detail: string;
@@ -2241,6 +2246,7 @@ export declare const GetInterviewChatResponse: zod.ZodObject<{
 export declare const SendInterviewChatBody: zod.ZodObject<{
     author: zod.ZodString;
     message: zod.ZodString;
+    parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
         tool: zod.ZodString;
         detail: zod.ZodString;
@@ -2254,6 +2260,7 @@ export declare const SendInterviewChatBody: zod.ZodObject<{
 }, "strip", zod.ZodTypeAny, {
     message: string;
     author: string;
+    parentMessageId?: string | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2261,6 +2268,7 @@ export declare const SendInterviewChatBody: zod.ZodObject<{
 }, {
     message: string;
     author: string;
+    parentMessageId?: string | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2270,6 +2278,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     id: zod.ZodString;
     author: zod.ZodString;
     message: zod.ZodString;
+    parentMessageId: zod.ZodOptional<zod.ZodNullable<zod.ZodString>>;
     activities: zod.ZodOptional<zod.ZodArray<zod.ZodObject<{
         tool: zod.ZodString;
         detail: zod.ZodString;
@@ -2299,6 +2308,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     id: string;
     createdAt: string;
     author: string;
+    parentMessageId?: string | null | undefined;
     activities?: {
         tool: string;
         detail: string;
@@ -2313,6 +2323,7 @@ export declare const SendInterviewChatResponse: zod.ZodObject<{
     id: string;
     createdAt: string;
     author: string;
+    parentMessageId?: string | null | undefined;
     activities?: {
         tool: string;
         detail: string;

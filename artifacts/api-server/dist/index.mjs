@@ -54518,6 +54518,7 @@ var init_interview = __esm({
       author: text("author").notNull(),
       message: text("message").notNull(),
       activities: text("activities").notNull().default("[]"),
+      parentMessageId: text("parent_message_id"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
     });
     chatMessageReactionsTable = pgTable("chat_message_reactions", {
@@ -73277,6 +73278,7 @@ var GetInterviewChatResponse = objectType({
     "id": stringType(),
     "author": stringType(),
     "message": stringType(),
+    "parentMessageId": stringType().nullish(),
     "activities": arrayType(objectType({
       "tool": stringType(),
       "detail": stringType()
@@ -73292,6 +73294,7 @@ var GetInterviewChatResponse = objectType({
 var SendInterviewChatBody = objectType({
   "author": stringType(),
   "message": stringType(),
+  "parentMessageId": stringType().nullish(),
   "activities": arrayType(objectType({
     "tool": stringType(),
     "detail": stringType()
@@ -73301,6 +73304,7 @@ var SendInterviewChatResponse = objectType({
   "id": stringType(),
   "author": stringType(),
   "message": stringType(),
+  "parentMessageId": stringType().nullish(),
   "activities": arrayType(objectType({
     "tool": stringType(),
     "detail": stringType()
@@ -96793,6 +96797,7 @@ router4.get("/queue/chat", requireAdmin, async (req, res) => {
       id: message.id,
       author: message.author,
       message: message.message,
+      parentMessageId: message.parentMessageId,
       activities: parseStoredActivities(message.activities),
       reactions: reactions.get(message.id) ?? [],
       createdAt: message.createdAt.toISOString()
@@ -96805,17 +96810,27 @@ router4.post("/queue/chat", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "A chat message is required." });
     return;
   }
+  const parentMessageId = parsed.data.parentMessageId?.trim() || null;
+  if (parentMessageId) {
+    const [parent] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, parentMessageId)).limit(1);
+    if (!parent) {
+      res.status(400).json({ error: "The message being replied to was not found." });
+      return;
+    }
+  }
   const activities = Array.isArray(parsed.data.activities) ? parsed.data.activities.filter((a) => !!a && typeof a === "object" && typeof a.tool === "string" && typeof a.detail === "string").slice(0, 10) : [];
   const [message] = await db.insert(interviewChatMessagesTable).values({
     id: randomUUID6(),
     author: parsed.data.author.trim().slice(0, 80) || "Interviewer",
     message: parsed.data.message.trim().slice(0, 1e3),
+    parentMessageId,
     activities: JSON.stringify(activities)
   }).returning();
   res.status(201).json(SendInterviewChatResponse.parse({
     id: message.id,
     author: message.author,
     message: message.message,
+    parentMessageId: message.parentMessageId,
     activities: parseStoredActivities(message.activities),
     createdAt: message.createdAt.toISOString()
   }));
@@ -98131,6 +98146,7 @@ initRealtime();
 async function ensureSchema() {
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`
   ];
