@@ -291,8 +291,7 @@ export const InterpretApplicantSearchBody = zod.object({
 })
 
 export const InterpretApplicantSearchResponse = zod.object({
-  "search": zod.string(),
-  "explanation": zod.string()
+  "search": zod.string()
 })
 
 

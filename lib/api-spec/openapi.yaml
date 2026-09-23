@@ -1423,11 +1423,9 @@ components:
           maxLength: 500
     ApplicantSearchAiResponse:
       type: object
-      required: [search, explanation]
+      required: [search]
       properties:
         search:
-          type: string
-        explanation:
           type: string
     ApplicantUpdate:
       type: object

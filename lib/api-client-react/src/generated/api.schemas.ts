@@ -238,7 +238,6 @@ export interface ApplicantSearchAiInput {
 
 export interface ApplicantSearchAiResponse {
   search: string;
-  explanation: string;
 }
 
 export interface ApplicantUpdate {

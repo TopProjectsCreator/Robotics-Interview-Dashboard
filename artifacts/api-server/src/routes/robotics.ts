@@ -1905,8 +1905,8 @@ router.post("/applicants/search/ai", requireAdmin, async (req, res): Promise<voi
       messages: [
         {
           role: "system",
-          content: `You convert coordinator requests into a compact applicant roster search query.
-Return ONLY a JSON object with exactly two string properties: "search" and "explanation".
+           content: `You convert coordinator requests into one compact applicant roster search query.
+Do not answer conversationally. Return ONLY a JSON object with exactly one string property: "search".
 The search language supports:
 - name:value, age:number, age:>=number, age:number..number, gender:female or gender:f, grade:number
 - skill:build, skill:code, skill:cad
@@ -1917,18 +1917,18 @@ The search language supports:
 Whitespace between conditions means AND. Use quoted values when they contain spaces.
 Use only these fields and values from the request. Do not invent applicant names or facts.
 Examples:
-{"search":"skill:code AND NOT skill:cad","explanation":"Applicants whose derived strongest signal is Code, excluding CAD."}
-{"search":"gender:female AND (skill:code OR skill:cad)","explanation":"Female applicants with either a Code or CAD signal."}
-If the request is vague, create the narrowest useful query and explain it briefly.`,
+{"search":"skill:code AND NOT skill:cad"}
+{"search":"gender:female AND (skill:code OR skill:cad)"}
+If the request is vague, create the narrowest useful query.`,
         },
         { role: "user", content: parsed.data.prompt.trim() },
       ],
     });
     const raw = completion.choices[0]?.message?.content?.trim() ?? "";
     const jsonText = raw.match(/\{[\s\S]*\}/)?.[0] ?? raw;
-    let result: { search?: unknown; explanation?: unknown };
+    let result: { search?: unknown };
     try {
-      result = JSON.parse(jsonText) as { search?: unknown; explanation?: unknown };
+      result = JSON.parse(jsonText) as { search?: unknown };
     } catch {
       res.status(502).json({ error: "The assistant returned an unreadable search." });
       return;
@@ -1939,10 +1939,7 @@ If the request is vague, create the narrowest useful query and explain it briefl
       res.status(502).json({ error: "The assistant returned an unsupported search. Try describing the filters more directly." });
       return;
     }
-    const explanation = typeof result.explanation === "string" && result.explanation.trim()
-      ? result.explanation.trim()
-      : `Searching for ${search}.`;
-    res.json(InterpretApplicantSearchResponse.parse({ search, explanation }));
+    res.json(InterpretApplicantSearchResponse.parse({ search }));
   } catch (error) {
     req.log.warn({ err: error }, "Applicant search interpretation failed");
     res.status(503).json({ error: "The assistant could not build that search. Try again." });

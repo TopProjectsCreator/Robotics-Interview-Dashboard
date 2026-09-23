@@ -72907,8 +72907,7 @@ var InterpretApplicantSearchBody = objectType({
   "prompt": stringType().min(1).max(interpretApplicantSearchBodyPromptMax)
 });
 var InterpretApplicantSearchResponse = objectType({
-  "search": stringType(),
-  "explanation": stringType()
+  "search": stringType()
 });
 var GetApplicantParams = objectType({
   "id": coerce.string()
@@ -96807,8 +96806,8 @@ router4.post("/applicants/search/ai", requireAdmin, async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `You convert coordinator requests into a compact applicant roster search query.
-Return ONLY a JSON object with exactly two string properties: "search" and "explanation".
+          content: `You convert coordinator requests into one compact applicant roster search query.
+Do not answer conversationally. Return ONLY a JSON object with exactly one string property: "search".
 The search language supports:
 - name:value, age:number, age:>=number, age:number..number, gender:female or gender:f, grade:number
 - skill:build, skill:code, skill:cad
@@ -96819,9 +96818,9 @@ The search language supports:
 Whitespace between conditions means AND. Use quoted values when they contain spaces.
 Use only these fields and values from the request. Do not invent applicant names or facts.
 Examples:
-{"search":"skill:code AND NOT skill:cad","explanation":"Applicants whose derived strongest signal is Code, excluding CAD."}
-{"search":"gender:female AND (skill:code OR skill:cad)","explanation":"Female applicants with either a Code or CAD signal."}
-If the request is vague, create the narrowest useful query and explain it briefly.`
+{"search":"skill:code AND NOT skill:cad"}
+{"search":"gender:female AND (skill:code OR skill:cad)"}
+If the request is vague, create the narrowest useful query.`
         },
         { role: "user", content: parsed.data.prompt.trim() }
       ]
@@ -96841,8 +96840,7 @@ If the request is vague, create the narrowest useful query and explain it briefl
       res.status(502).json({ error: "The assistant returned an unsupported search. Try describing the filters more directly." });
       return;
     }
-    const explanation = typeof result.explanation === "string" && result.explanation.trim() ? result.explanation.trim() : `Searching for ${search}.`;
-    res.json(InterpretApplicantSearchResponse.parse({ search, explanation }));
+    res.json(InterpretApplicantSearchResponse.parse({ search }));
   } catch (error40) {
     req.log.warn({ err: error40 }, "Applicant search interpretation failed");
     res.status(503).json({ error: "The assistant could not build that search. Try again." });

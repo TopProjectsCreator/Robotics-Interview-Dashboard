@@ -724,13 +724,10 @@ export declare const InterpretApplicantSearchBody: zod.ZodObject<{
 }>;
 export declare const InterpretApplicantSearchResponse: zod.ZodObject<{
     search: zod.ZodString;
-    explanation: zod.ZodString;
 }, "strip", zod.ZodTypeAny, {
     search: string;
-    explanation: string;
 }, {
     search: string;
-    explanation: string;
 }>;
 /**
  * @summary Get an applicant with transcript and notes
