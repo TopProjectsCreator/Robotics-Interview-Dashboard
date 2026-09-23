@@ -54707,6 +54707,8 @@ var init_dashboard = __esm({
       id: text("id").primaryKey(),
       source: text("source").notNull(),
       chart: text("chart").notNull(),
+      xAxis: text("x_axis"),
+      yAxis: text("y_axis"),
       position: integer("position").notNull().default(0),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
       updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => /* @__PURE__ */ new Date())
@@ -73590,19 +73592,25 @@ var ListDashboardChartsResponse = objectType({
     "id": stringType(),
     "source": stringType(),
     "chart": stringType(),
+    "xAxis": stringType(),
+    "yAxis": stringType(),
     "position": numberType().int(),
     "createdAt": stringType(),
     "updatedAt": stringType()
   }))
 });
 var CreateDashboardChartBody = objectType({
-  "source": stringType(),
+  "source": stringType().optional().describe("Legacy source field; xAxis is preferred"),
+  "xAxis": stringType().optional(),
+  "yAxis": stringType().optional(),
   "chart": stringType()
 });
 var CreateDashboardChartResponse = objectType({
   "id": stringType(),
   "source": stringType(),
   "chart": stringType(),
+  "xAxis": stringType(),
+  "yAxis": stringType(),
   "position": numberType().int(),
   "createdAt": stringType(),
   "updatedAt": stringType()
@@ -73612,6 +73620,8 @@ var UpdateDashboardChartParams = objectType({
 });
 var UpdateDashboardChartBody = objectType({
   "source": stringType().optional(),
+  "xAxis": stringType().optional(),
+  "yAxis": stringType().optional(),
   "chart": stringType().optional(),
   "position": numberType().int().optional()
 });
@@ -73619,6 +73629,8 @@ var UpdateDashboardChartResponse = objectType({
   "id": stringType(),
   "source": stringType(),
   "chart": stringType(),
+  "xAxis": stringType(),
+  "yAxis": stringType(),
   "position": numberType().int(),
   "createdAt": stringType(),
   "updatedAt": stringType()
@@ -94251,6 +94263,8 @@ async function captureSnapshot(label, createdBy) {
   const charts = await db.select({
     source: dashboardChartsTable.source,
     chart: dashboardChartsTable.chart,
+    xAxis: dashboardChartsTable.xAxis,
+    yAxis: dashboardChartsTable.yAxis,
     position: dashboardChartsTable.position
   }).from(dashboardChartsTable).orderBy(asc(dashboardChartsTable.position));
   const payload = {
@@ -94382,6 +94396,8 @@ async function restoreSnapshot(id, actor) {
         id: randomUUID3(),
         source: chart.source,
         chart: chart.chart,
+        xAxis: chart.xAxis ?? null,
+        yAxis: chart.yAxis ?? null,
         position: chart.position
       });
     }
@@ -96643,13 +96659,17 @@ async function readImport(objectPath, fileName) {
   };
   return { parsedCsv, current, imported, importedFields, diff: importDiff(imported, current, importedFields) };
 }
-var DASHBOARD_CHART_SOURCES = ["score", "recommendations", "grades", "commitments", "categories", "statuses", "topscores"];
+var DASHBOARD_CHART_X_AXES = ["gender", "grade", "category", "status", "recommendation", "skill", "commitment"];
+var DASHBOARD_CHART_Y_AXES = ["count", "averageScore", "averageAge"];
 var DASHBOARD_CHART_TYPES = ["bars", "pie", "line"];
 function dashboardChartResponse(chart) {
+  const legacyXAxis = chart.source === "grades" ? "grade" : chart.source === "categories" ? "category" : chart.source === "statuses" ? "status" : chart.source === "recommendations" ? "recommendation" : chart.source === "commitments" ? "commitment" : chart.source === "score" || chart.source === "topscores" ? "grade" : "grade";
   return {
     id: chart.id,
     source: chart.source,
     chart: chart.chart,
+    xAxis: chart.xAxis ?? legacyXAxis,
+    yAxis: chart.yAxis ?? "count",
     position: chart.position,
     createdAt: chart.createdAt.toISOString(),
     updatedAt: chart.updatedAt.toISOString()
@@ -96706,7 +96726,9 @@ router4.post("/dashboard/charts", requireAdmin, async (req, res) => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  if (!DASHBOARD_CHART_SOURCES.includes(parsed.data.source) || !DASHBOARD_CHART_TYPES.includes(parsed.data.chart)) {
+  const xAxis = parsed.data.xAxis ?? (parsed.data.source && DASHBOARD_CHART_X_AXES.includes(parsed.data.source) ? parsed.data.source : void 0);
+  const yAxis = parsed.data.yAxis ?? "count";
+  if (!xAxis || !DASHBOARD_CHART_X_AXES.includes(xAxis) || !DASHBOARD_CHART_Y_AXES.includes(yAxis) || !DASHBOARD_CHART_TYPES.includes(parsed.data.chart)) {
     res.status(400).json({ error: "Unknown chart source or type." });
     return;
   }
@@ -96714,8 +96736,10 @@ router4.post("/dashboard/charts", requireAdmin, async (req, res) => {
   const position = siblings.reduce((max2, row) => Math.max(max2, row.position), -1) + 1;
   const [created] = await db.insert(dashboardChartsTable).values({
     id: randomUUID6(),
-    source: parsed.data.source,
+    source: xAxis,
     chart: parsed.data.chart,
+    xAxis,
+    yAxis,
     position
   }).returning();
   res.status(201).json(CreateDashboardChartResponse.parse(dashboardChartResponse(created)));
@@ -96728,12 +96752,21 @@ router4.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res) => {
     return;
   }
   const patch = { updatedAt: /* @__PURE__ */ new Date() };
-  if (body.data.source !== void 0) {
-    if (!DASHBOARD_CHART_SOURCES.includes(body.data.source)) {
+  const requestedXAxis = body.data.xAxis ?? body.data.source;
+  if (requestedXAxis !== void 0) {
+    if (!DASHBOARD_CHART_X_AXES.includes(requestedXAxis)) {
       res.status(400).json({ error: "Unknown chart source." });
       return;
     }
-    patch.source = body.data.source;
+    patch.source = requestedXAxis;
+    patch.xAxis = requestedXAxis;
+  }
+  if (body.data.yAxis !== void 0) {
+    if (!DASHBOARD_CHART_Y_AXES.includes(body.data.yAxis)) {
+      res.status(400).json({ error: "Unknown chart Y axis." });
+      return;
+    }
+    patch.yAxis = body.data.yAxis;
   }
   if (body.data.chart !== void 0) {
     if (!DASHBOARD_CHART_TYPES.includes(body.data.chart)) {
@@ -98712,6 +98745,8 @@ initRealtime();
 async function ensureSchema() {
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `alter table "dashboard_charts" add column if not exists "x_axis" text`,
+    `alter table "dashboard_charts" add column if not exists "y_axis" text`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,
     `alter table "interview_chat_messages" add column if not exists "pinned_at" timestamptz`,
     `alter table "interview_chat_messages" add column if not exists "conversation_scope" text not null default 'shared'`,

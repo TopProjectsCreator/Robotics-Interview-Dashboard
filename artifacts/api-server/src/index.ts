@@ -10,6 +10,8 @@ initRealtime();
 async function ensureSchema(): Promise<void> {
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `alter table "dashboard_charts" add column if not exists "x_axis" text`,
+    `alter table "dashboard_charts" add column if not exists "y_axis" text`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,
     `alter table "interview_chat_messages" add column if not exists "pinned_at" timestamptz`,
     `alter table "interview_chat_messages" add column if not exists "conversation_scope" text not null default 'shared'`,

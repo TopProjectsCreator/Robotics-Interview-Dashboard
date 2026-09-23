@@ -1142,6 +1142,8 @@ export const ListDashboardChartsResponse = zod.object({
   "id": zod.string(),
   "source": zod.string(),
   "chart": zod.string(),
+  "xAxis": zod.string(),
+  "yAxis": zod.string(),
   "position": zod.number().int(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1153,7 +1155,9 @@ export const ListDashboardChartsResponse = zod.object({
  * @summary Save a custom dashboard chart
  */
 export const CreateDashboardChartBody = zod.object({
-  "source": zod.string(),
+  "source": zod.string().optional().describe('Legacy source field; xAxis is preferred'),
+  "xAxis": zod.string().optional(),
+  "yAxis": zod.string().optional(),
   "chart": zod.string()
 })
 
@@ -1161,6 +1165,8 @@ export const CreateDashboardChartResponse = zod.object({
   "id": zod.string(),
   "source": zod.string(),
   "chart": zod.string(),
+  "xAxis": zod.string(),
+  "yAxis": zod.string(),
   "position": zod.number().int(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1176,6 +1182,8 @@ export const UpdateDashboardChartParams = zod.object({
 
 export const UpdateDashboardChartBody = zod.object({
   "source": zod.string().optional(),
+  "xAxis": zod.string().optional(),
+  "yAxis": zod.string().optional(),
   "chart": zod.string().optional(),
   "position": zod.number().int().optional()
 })
@@ -1184,6 +1192,8 @@ export const UpdateDashboardChartResponse = zod.object({
   "id": zod.string(),
   "source": zod.string(),
   "chart": zod.string(),
+  "xAxis": zod.string(),
+  "yAxis": zod.string(),
   "position": zod.number().int(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()

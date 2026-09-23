@@ -8,6 +8,8 @@
 
 export interface DashboardChartUpdate {
   source?: string;
+  xAxis?: string;
+  yAxis?: string;
   chart?: string;
   position?: number;
 }

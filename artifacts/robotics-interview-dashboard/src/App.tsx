@@ -999,17 +999,25 @@ function StatCard({ label, value, suffix, tone = "teal", note }: { label: string
 function Section({ title, kicker, children, className = "" }: { title: string; kicker?: string; children: ReactNode; className?: string }) { return <section className={`rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] ${className}`}><div className="mb-5 flex items-start justify-between"><div><h2 className="font-semibold">{title}</h2>{kicker && <p className="mt-1 text-xs text-[#7c8c91]">{kicker}</p>}</div></div>{children}</section>; }
 
 type CustomChartType = "bars" | "pie" | "line";
-type CustomChartSource = "score" | "recommendations" | "grades" | "commitments" | "categories" | "statuses" | "topscores";
-type CustomChartConfig = { id: string; source: CustomChartSource; chart: CustomChartType };
+type CustomChartXAxis = "gender" | "grade" | "score" | "name" | "category" | "status" | "recommendation" | "skill" | "commitment";
+type CustomChartYAxis = "count" | "averageScore" | "averageAge";
+type CustomChartConfig = { id: string; source?: string; xAxis: CustomChartXAxis; yAxis: CustomChartYAxis; chart: CustomChartType };
 
-const CUSTOM_CHART_SOURCES: { value: CustomChartSource; label: string }[] = [
-  { value: "score", label: "Score distribution" },
-  { value: "recommendations", label: "Recommendation signal" },
-  { value: "grades", label: "Grade mix" },
-  { value: "commitments", label: "Commitment signal" },
-  { value: "categories", label: "Decision lanes" },
-  { value: "statuses", label: "Interview status" },
-  { value: "topscores", label: "Top scores" },
+const CUSTOM_CHART_X_AXES: { value: CustomChartXAxis; label: string }[] = [
+  { value: "gender", label: "Gender" },
+  { value: "grade", label: "Grade" },
+  { value: "score", label: "AI score range" },
+  { value: "name", label: "Applicant name" },
+  { value: "category", label: "Decision lane" },
+  { value: "status", label: "Interview status" },
+  { value: "recommendation", label: "Recommendation" },
+  { value: "skill", label: "Strongest skill" },
+  { value: "commitment", label: "Commitment" },
+];
+const CUSTOM_CHART_Y_AXES: { value: CustomChartYAxis; label: string }[] = [
+  { value: "count", label: "Applicant count" },
+  { value: "averageScore", label: "Average AI score" },
+  { value: "averageAge", label: "Average age" },
 ];
 const CUSTOM_CHART_TYPES: { value: CustomChartType; label: string }[] = [
   { value: "bars", label: "Bars" },
@@ -1020,32 +1028,47 @@ const CHART_PALETTE = ["#16869a", "#edb52c", "#466896", "#3aa582", "#bd5047", "#
 const CUSTOM_CHART_BAR_COLORS = ["teal", "yellow", "blue", "green"] as const;
 const CUSTOM_CHARTS_KEY = "robotics-custom-charts-v1";
 
+function legacyChartXAxis(source: string): CustomChartXAxis {
+  if (source === "score") return "score";
+  if (source === "topscores") return "name";
+  if (source === "recommendations") return "recommendation";
+  if (source === "grades") return "grade";
+  if (source === "commitments") return "commitment";
+  if (source === "categories") return "category";
+  if (source === "statuses") return "status";
+  return "grade";
+}
+
 function loadCustomCharts(): CustomChartConfig[] {
   try {
     const raw = window.localStorage.getItem(CUSTOM_CHARTS_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is CustomChartConfig =>
-      !!item && typeof item === "object" &&
-      typeof (item as CustomChartConfig).id === "string" &&
-      CUSTOM_CHART_SOURCES.some(entry => entry.value === (item as CustomChartConfig).source) &&
-      CUSTOM_CHART_TYPES.some(entry => entry.value === (item as CustomChartConfig).chart));
+    return parsed.flatMap(item => {
+      if (!item || typeof item !== "object") return [];
+      const raw = item as Partial<CustomChartConfig>;
+      if (typeof raw.id !== "string" || typeof raw.chart !== "string" || !CUSTOM_CHART_TYPES.some(entry => entry.value === raw.chart)) return [];
+      const xAxis = typeof raw.xAxis === "string" && CUSTOM_CHART_X_AXES.some(entry => entry.value === raw.xAxis) ? raw.xAxis as CustomChartXAxis : legacyChartXAxis(String(raw.source ?? ""));
+      const yAxis = typeof raw.yAxis === "string" && CUSTOM_CHART_Y_AXES.some(entry => entry.value === raw.yAxis) ? raw.yAxis as CustomChartYAxis : "count";
+      return [{ id: raw.id, source: typeof raw.source === "string" ? raw.source : undefined, xAxis, yAxis, chart: raw.chart as CustomChartType }];
+    });
   } catch {
     return [];
   }
 }
 
-function CustomChartView({ data, chart, colorIndex }: { data: DashboardCount[]; chart: CustomChartType; colorIndex: number }) {
+function CustomChartView({ data, chart, colorIndex, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; chart: CustomChartType; colorIndex: number; xAxisLabel: string; yAxisLabel: string }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (!data.length || total <= 0) return <p className="text-sm text-[#7c8c91]">No signal yet.</p>;
-  if (chart === "pie") return <div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="label" innerRadius={55} outerRadius={85} paddingAngle={2} strokeWidth={0}>{data.map((entry, index) => <Cell key={`${entry.label}-${index}`} fill={CHART_PALETTE[index % CHART_PALETTE.length]} />)}</Pie><RechartsTooltip /></PieChart></ResponsiveContainer></div><div className="mt-3 space-y-1.5">{data.map((entry, index) => <div key={`${entry.label}-${index}`} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_PALETTE[index % CHART_PALETTE.length] }} /><span className="min-w-0 flex-1 truncate font-medium text-[#52666e]">{entry.label}</span><span className="mono text-[#7b8a8f]">{entry.value}</span></div>)}</div></div>;
-  if (chart === "line") return <div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 10, bottom: 28, left: -14 }}><CartesianGrid strokeDasharray="3 3" stroke="#e4eceb" /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7b8a8f" }} interval="preserveStart" angle={-25} dy={10} /><YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#7b8a8f" }} /><RechartsTooltip /><Line type="monotone" dataKey="value" stroke="#16869a" strokeWidth={2} dot={{ r: 3, fill: "#16869a" }} /></LineChart></ResponsiveContainer></div>;
-  return <Bars data={data} max={Math.max(...data.map(item => item.value), 1)} color={CUSTOM_CHART_BAR_COLORS[colorIndex % CUSTOM_CHART_BAR_COLORS.length]} />;
+  if (chart === "pie") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Measure · {yAxisLabel}</span><span>Grouped by · {xAxisLabel}</span></div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="label" innerRadius={55} outerRadius={85} paddingAngle={2} strokeWidth={0}>{data.map((entry, index) => <Cell key={`${entry.label}-${index}`} fill={CHART_PALETTE[index % CHART_PALETTE.length]} />)}</Pie><RechartsTooltip /></PieChart></ResponsiveContainer></div><div className="mt-3 space-y-1.5">{data.map((entry, index) => <div key={`${entry.label}-${index}`} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_PALETTE[index % CHART_PALETTE.length] }} /><span className="min-w-0 flex-1 truncate font-medium text-[#52666e]">{entry.label}</span><span className="mono text-[#7b8a8f]">{entry.value}</span></div>)}</div></div>;
+  if (chart === "line") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel}</span><span>X · {xAxisLabel}</span></div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 10, bottom: 28, left: -14 }}><CartesianGrid strokeDasharray="3 3" stroke="#e4eceb" /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7b8a8f" }} interval="preserveStart" angle={-25} dy={10} label={{ value: xAxisLabel, position: "insideBottom", offset: -18, fontSize: 10, fill: "#7b8a8f" }} /><YAxis allowDecimals={yAxisLabel !== "Applicant count"} tick={{ fontSize: 10, fill: "#7b8a8f" }} label={{ value: yAxisLabel, angle: -90, position: "insideLeft", fontSize: 10, fill: "#7b8a8f" }} /><RechartsTooltip /><Line type="monotone" dataKey="value" stroke="#16869a" strokeWidth={2} dot={{ r: 3, fill: "#16869a" }} /></LineChart></ResponsiveContainer></div></div>;
+  return <Bars data={data} max={Math.max(...data.map(item => item.value), 1)} color={CUSTOM_CHART_BAR_COLORS[colorIndex % CUSTOM_CHART_BAR_COLORS.length]} xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} />;
 }
 
-function CustomCharts({ summary }: { summary: DashboardSummary }) {
-  const [source, setSource] = useState<CustomChartSource>("grades");
+function CustomCharts() {
+  const [xAxis, setXAxis] = useState<CustomChartXAxis>("grade");
+  const [yAxis, setYAxis] = useState<CustomChartYAxis>("count");
   const [chart, setChart] = useState<CustomChartType>("pie");
   const queryClient = useQueryClient();
   const chartsQuery = useListDashboardCharts({ query: { queryKey: getListDashboardChartsQueryKey() } });
@@ -1063,7 +1086,7 @@ function CustomCharts({ summary }: { summary: DashboardSummary }) {
     void (async () => {
       for (const item of legacy) {
         try {
-          await createChart.mutateAsync({ data: { source: item.source, chart: item.chart } });
+          await createChart.mutateAsync({ data: { xAxis: item.xAxis, yAxis: item.yAxis, chart: item.chart } });
         } catch {
           // Keep going; failures surface on the next load.
         }
@@ -1078,28 +1101,51 @@ function CustomCharts({ summary }: { summary: DashboardSummary }) {
   }, [chartsQuery.data, chartsQuery.isLoading, createChart, queryClient]);
   const applicants = list.data?.items ?? [];
   const charts = chartsQuery.data?.items ?? [];
-  const dataFor = (key: string): DashboardCount[] => {
-    switch (key) {
-      case "score": return summary.scoreBuckets;
-      case "recommendations": return summary.recommendations;
-      case "grades": return summary.grades;
-      case "commitments": return summary.commitments;
-      case "categories": return categories.map(label => ({ label: label === "unranked" ? "Unranked" : label[0].toUpperCase() + label.slice(1), value: applicants.filter(a => (a.category || "unranked") === label).length }));
-      case "statuses": return statuses.map(status => ({ label: status === "in_progress" ? "In progress" : status[0].toUpperCase() + status.slice(1), value: applicants.filter(a => a.interviewStatus === status).length }));
-      case "topscores": return [...applicants].filter(a => a.aiScore >= 0).sort((x, y) => y.aiScore - x.aiScore).slice(0, 8).map(a => ({ label: a.name.length > 12 ? `${a.name.slice(0, 11)}…` : a.name, value: Math.round(a.aiScore * 10) / 10 }));
-      default: return [];
-    }
+  const xAxisOf = (value: string): CustomChartXAxis => CUSTOM_CHART_X_AXES.some(entry => entry.value === value) ? value as CustomChartXAxis : legacyChartXAxis(value);
+  const yAxisOf = (value: string): CustomChartYAxis => CUSTOM_CHART_Y_AXES.some(entry => entry.value === value) ? value as CustomChartYAxis : "count";
+  const axisLabel = (value: CustomChartXAxis | CustomChartYAxis) => [...CUSTOM_CHART_X_AXES, ...CUSTOM_CHART_Y_AXES].find(entry => entry.value === value)?.label ?? value;
+  const xValueFor = (applicant: Applicant, axis: CustomChartXAxis): string => {
+    const signals = getApplicantSignals(applicant);
+    if (axis === "gender") return signals.gender === "M" ? "Male" : signals.gender === "F" ? "Female" : "Unknown";
+    if (axis === "grade") return applicant.grade || "Unknown";
+    if (axis === "score") return applicant.aiScore < 0 ? "Invalid" : applicant.aiScore < 25 ? "0–24" : applicant.aiScore < 50 ? "25–49" : applicant.aiScore < 75 ? "50–74" : "75–100";
+    if (axis === "name") return applicant.name || "Unknown";
+    if (axis === "category") return applicant.category || "Unranked";
+    if (axis === "status") return applicant.interviewStatus === "in_progress" ? "In progress" : (applicant.interviewStatus || "Unknown");
+    if (axis === "recommendation") return applicant.aiRecommendation || "Unknown";
+    if (axis === "skill") return signals.skill || "Unknown";
+    return applicant.commit10Hours || "Unknown";
   };
-  const sourceLabel = (key: string) => CUSTOM_CHART_SOURCES.find(entry => entry.value === key)?.label ?? key;
+  const dataFor = (config: { xAxis: string; yAxis: string }): DashboardCount[] => {
+    const x = xAxisOf(config.xAxis);
+    const y = yAxisOf(config.yAxis);
+    const groups = new Map<string, { sum: number; count: number }>();
+    for (const applicant of applicants) {
+      const label = xValueFor(applicant, x);
+      const existing = groups.get(label) ?? { sum: 0, count: 0 };
+      if (y === "count") {
+        existing.sum += 1;
+        existing.count += 1;
+      } else if (y === "averageScore" && applicant.aiScore >= 0) {
+        existing.sum += applicant.aiScore;
+        existing.count += 1;
+      } else if (y === "averageAge" && applicant.age !== null && applicant.age !== undefined) {
+        existing.sum += applicant.age;
+        existing.count += 1;
+      }
+      groups.set(label, existing);
+    }
+    return [...groups.entries()].map(([label, group]) => ({ label, value: group.count ? Math.round((group.sum / group.count) * 10) / 10 : 0 })).filter(item => item.value > 0);
+  };
   const chartTypeOf = (value: string): CustomChartType => value === "pie" || value === "line" ? value : "bars";
   const addChart = () => {
     if (createChart.isPending) return;
-    createChart.mutate({ data: { source, chart } }, {
+    createChart.mutate({ data: { xAxis, yAxis, chart } }, {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() }),
     });
   };
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
-  return <Section title="Custom charts" kicker="Build your own views. Switch any chart between bars, pie, and line. Shared with your co-coordinator."><div className="flex flex-wrap items-center gap-2"><select value={source} onChange={event => setSource(event.target.value as CustomChartSource)} data-testid="select-chart-source" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">{CUSTOM_CHART_SOURCES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-center justify-between gap-2"><p className="min-w-0 flex-1 truncate text-sm font-semibold">{sourceLabel(config.source)}</p><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${sourceLabel(config.source)} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><CustomChartView data={dataFor(config.source)} chart={chartTypeOf(config.chart)} colorIndex={index} /></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Pick a metric and a style above, then add it here.</p>}</Section>;
+  return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with your co-coordinator."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
 function Dashboard() {
@@ -1135,9 +1181,9 @@ function Dashboard() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, coordinators." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts summary={d} /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" xAxisLabel="Resource" yAxisLabel="Usage %" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
 }
-function Bars({ data, max, color }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green" }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div>; }
+function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
 function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
   const snapshots = useListSnapshots({ query: { queryKey: getListSnapshotsQueryKey() } });

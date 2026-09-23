@@ -584,6 +584,8 @@ export interface DashboardChart {
   id: string;
   source: string;
   chart: string;
+  xAxis: string;
+  yAxis: string;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -594,12 +596,17 @@ export interface DashboardChartList {
 }
 
 export interface DashboardChartInput {
-  source: string;
+  /** Legacy source field; xAxis is preferred */
+  source?: string;
+  xAxis?: string;
+  yAxis?: string;
   chart: string;
 }
 
 export interface DashboardChartUpdate {
   source?: string;
+  xAxis?: string;
+  yAxis?: string;
   chart?: string;
   position?: number;
 }

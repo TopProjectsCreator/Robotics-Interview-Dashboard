@@ -35,6 +35,8 @@ export const dashboardChartsTable = pgTable("dashboard_charts", {
   id: text("id").primaryKey(),
   source: text("source").notNull(),
   chart: text("chart").notNull(),
+  xAxis: text("x_axis"),
+  yAxis: text("y_axis"),
   position: integer("position").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })

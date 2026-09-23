@@ -1945,13 +1945,17 @@ components:
           type: string
     DashboardChart:
       type: object
-      required: [id, source, chart, position, createdAt, updatedAt]
+      required: [id, source, chart, xAxis, yAxis, position, createdAt, updatedAt]
       properties:
         id:
           type: string
         source:
           type: string
         chart:
+          type: string
+        xAxis:
+          type: string
+        yAxis:
           type: string
         position:
           type: integer
@@ -1969,9 +1973,14 @@ components:
             $ref: "#/components/schemas/DashboardChart"
     DashboardChartInput:
       type: object
-      required: [source, chart]
+      required: [chart]
       properties:
         source:
+          type: string
+          description: "Legacy source field; xAxis is preferred"
+        xAxis:
+          type: string
+        yAxis:
           type: string
         chart:
           type: string
@@ -1979,6 +1988,10 @@ components:
       type: object
       properties:
         source:
+          type: string
+        xAxis:
+          type: string
+        yAxis:
           type: string
         chart:
           type: string

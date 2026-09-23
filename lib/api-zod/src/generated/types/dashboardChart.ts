@@ -10,6 +10,8 @@ export interface DashboardChart {
   id: string;
   source: string;
   chart: string;
+  xAxis: string;
+  yAxis: string;
   position: number;
   createdAt: string;
   updatedAt: string;

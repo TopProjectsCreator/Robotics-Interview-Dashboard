@@ -1710,13 +1710,24 @@ async function readImport(objectPath: string, fileName: string) {
 }
 
 const DASHBOARD_CHART_SOURCES = ["score", "recommendations", "grades", "commitments", "categories", "statuses", "topscores"] as const;
+const DASHBOARD_CHART_X_AXES = ["gender", "grade", "category", "status", "recommendation", "skill", "commitment"] as const;
+const DASHBOARD_CHART_Y_AXES = ["count", "averageScore", "averageAge"] as const;
 const DASHBOARD_CHART_TYPES = ["bars", "pie", "line"] as const;
 
 function dashboardChartResponse(chart: typeof dashboardChartsTable.$inferSelect) {
+  const legacyXAxis = chart.source === "grades" ? "grade"
+    : chart.source === "categories" ? "category"
+      : chart.source === "statuses" ? "status"
+        : chart.source === "recommendations" ? "recommendation"
+          : chart.source === "commitments" ? "commitment"
+            : chart.source === "score" || chart.source === "topscores" ? "grade"
+              : "grade";
   return {
     id: chart.id,
     source: chart.source,
     chart: chart.chart,
+    xAxis: chart.xAxis ?? legacyXAxis,
+    yAxis: chart.yAxis ?? "count",
     position: chart.position,
     createdAt: chart.createdAt.toISOString(),
     updatedAt: chart.updatedAt.toISOString(),
@@ -1778,7 +1789,9 @@ router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  if (!(DASHBOARD_CHART_SOURCES as readonly string[]).includes(parsed.data.source) || !(DASHBOARD_CHART_TYPES as readonly string[]).includes(parsed.data.chart)) {
+  const xAxis = parsed.data.xAxis ?? (parsed.data.source && (DASHBOARD_CHART_X_AXES as readonly string[]).includes(parsed.data.source) ? parsed.data.source : undefined);
+  const yAxis = parsed.data.yAxis ?? "count";
+  if (!xAxis || !(DASHBOARD_CHART_X_AXES as readonly string[]).includes(xAxis) || !(DASHBOARD_CHART_Y_AXES as readonly string[]).includes(yAxis) || !(DASHBOARD_CHART_TYPES as readonly string[]).includes(parsed.data.chart)) {
     res.status(400).json({ error: "Unknown chart source or type." });
     return;
   }
@@ -1786,8 +1799,10 @@ router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =
   const position = siblings.reduce((max, row) => Math.max(max, row.position), -1) + 1;
   const [created] = await db.insert(dashboardChartsTable).values({
     id: randomUUID(),
-    source: parsed.data.source,
+    source: xAxis,
     chart: parsed.data.chart,
+    xAxis,
+    yAxis,
     position,
   }).returning();
   res.status(201).json(CreateDashboardChartResponse.parse(dashboardChartResponse(created)));
@@ -1800,13 +1815,22 @@ router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promi
     res.status(400).json({ error: "Invalid chart update." });
     return;
   }
-  const patch: { source?: string; chart?: string; position?: number; updatedAt?: Date } = { updatedAt: new Date() };
-  if (body.data.source !== undefined) {
-    if (!(DASHBOARD_CHART_SOURCES as readonly string[]).includes(body.data.source)) {
+  const patch: { source?: string; chart?: string; xAxis?: string; yAxis?: string; position?: number; updatedAt?: Date } = { updatedAt: new Date() };
+  const requestedXAxis = body.data.xAxis ?? body.data.source;
+  if (requestedXAxis !== undefined) {
+    if (!(DASHBOARD_CHART_X_AXES as readonly string[]).includes(requestedXAxis)) {
       res.status(400).json({ error: "Unknown chart source." });
       return;
     }
-    patch.source = body.data.source;
+    patch.source = requestedXAxis;
+    patch.xAxis = requestedXAxis;
+  }
+  if (body.data.yAxis !== undefined) {
+    if (!(DASHBOARD_CHART_Y_AXES as readonly string[]).includes(body.data.yAxis)) {
+      res.status(400).json({ error: "Unknown chart Y axis." });
+      return;
+    }
+    patch.yAxis = body.data.yAxis;
   }
   if (body.data.chart !== undefined) {
     if (!(DASHBOARD_CHART_TYPES as readonly string[]).includes(body.data.chart)) {

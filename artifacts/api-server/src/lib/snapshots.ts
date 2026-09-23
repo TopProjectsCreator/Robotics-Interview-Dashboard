@@ -16,7 +16,7 @@ export type SnapshotPayload = {
   version: 1;
   applicants: Record<string, unknown>[];
   interviewLabels: string[];
-  charts: { source: string; chart: string; position: number }[];
+  charts: { source: string; chart: string; position: number; xAxis?: string | null; yAxis?: string | null }[];
 };
 
 export type SnapshotSummary = {
@@ -88,6 +88,8 @@ export async function captureSnapshot(label: string, createdBy: string): Promise
     .select({
       source: dashboardChartsTable.source,
       chart: dashboardChartsTable.chart,
+      xAxis: dashboardChartsTable.xAxis,
+      yAxis: dashboardChartsTable.yAxis,
       position: dashboardChartsTable.position,
     })
     .from(dashboardChartsTable)
@@ -245,6 +247,8 @@ export async function restoreSnapshot(
         id: randomUUID(),
         source: chart.source,
         chart: chart.chart,
+        xAxis: chart.xAxis ?? null,
+        yAxis: chart.yAxis ?? null,
         position: chart.position,
       });
     }

@@ -7,6 +7,9 @@
  */
 
 export interface DashboardChartInput {
-  source: string;
+  /** Legacy source field; xAxis is preferred */
+  source?: string;
+  xAxis?: string;
+  yAxis?: string;
   chart: string;
 }

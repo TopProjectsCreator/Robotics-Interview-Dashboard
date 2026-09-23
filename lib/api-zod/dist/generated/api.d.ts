@@ -3287,6 +3287,8 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
         id: zod.ZodString;
         source: zod.ZodString;
         chart: zod.ZodString;
+        xAxis: zod.ZodString;
+        yAxis: zod.ZodString;
         position: zod.ZodNumber;
         createdAt: zod.ZodString;
         updatedAt: zod.ZodString;
@@ -3296,6 +3298,8 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
         updatedAt: string;
         source: string;
         chart: string;
+        xAxis: string;
+        yAxis: string;
         position: number;
     }, {
         id: string;
@@ -3303,6 +3307,8 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
         updatedAt: string;
         source: string;
         chart: string;
+        xAxis: string;
+        yAxis: string;
         position: number;
     }>, "many">;
 }, "strip", zod.ZodTypeAny, {
@@ -3312,6 +3318,8 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
         updatedAt: string;
         source: string;
         chart: string;
+        xAxis: string;
+        yAxis: string;
         position: number;
     }[];
 }, {
@@ -3321,6 +3329,8 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
         updatedAt: string;
         source: string;
         chart: string;
+        xAxis: string;
+        yAxis: string;
         position: number;
     }[];
 }>;
@@ -3328,19 +3338,27 @@ export declare const ListDashboardChartsResponse: zod.ZodObject<{
  * @summary Save a custom dashboard chart
  */
 export declare const CreateDashboardChartBody: zod.ZodObject<{
-    source: zod.ZodString;
+    source: zod.ZodOptional<zod.ZodString>;
+    xAxis: zod.ZodOptional<zod.ZodString>;
+    yAxis: zod.ZodOptional<zod.ZodString>;
     chart: zod.ZodString;
 }, "strip", zod.ZodTypeAny, {
-    source: string;
     chart: string;
+    source?: string | undefined;
+    xAxis?: string | undefined;
+    yAxis?: string | undefined;
 }, {
-    source: string;
     chart: string;
+    source?: string | undefined;
+    xAxis?: string | undefined;
+    yAxis?: string | undefined;
 }>;
 export declare const CreateDashboardChartResponse: zod.ZodObject<{
     id: zod.ZodString;
     source: zod.ZodString;
     chart: zod.ZodString;
+    xAxis: zod.ZodString;
+    yAxis: zod.ZodString;
     position: zod.ZodNumber;
     createdAt: zod.ZodString;
     updatedAt: zod.ZodString;
@@ -3350,6 +3368,8 @@ export declare const CreateDashboardChartResponse: zod.ZodObject<{
     updatedAt: string;
     source: string;
     chart: string;
+    xAxis: string;
+    yAxis: string;
     position: number;
 }, {
     id: string;
@@ -3357,6 +3377,8 @@ export declare const CreateDashboardChartResponse: zod.ZodObject<{
     updatedAt: string;
     source: string;
     chart: string;
+    xAxis: string;
+    yAxis: string;
     position: number;
 }>;
 /**
@@ -3371,21 +3393,29 @@ export declare const UpdateDashboardChartParams: zod.ZodObject<{
 }>;
 export declare const UpdateDashboardChartBody: zod.ZodObject<{
     source: zod.ZodOptional<zod.ZodString>;
+    xAxis: zod.ZodOptional<zod.ZodString>;
+    yAxis: zod.ZodOptional<zod.ZodString>;
     chart: zod.ZodOptional<zod.ZodString>;
     position: zod.ZodOptional<zod.ZodNumber>;
 }, "strip", zod.ZodTypeAny, {
     source?: string | undefined;
     chart?: string | undefined;
+    xAxis?: string | undefined;
+    yAxis?: string | undefined;
     position?: number | undefined;
 }, {
     source?: string | undefined;
     chart?: string | undefined;
+    xAxis?: string | undefined;
+    yAxis?: string | undefined;
     position?: number | undefined;
 }>;
 export declare const UpdateDashboardChartResponse: zod.ZodObject<{
     id: zod.ZodString;
     source: zod.ZodString;
     chart: zod.ZodString;
+    xAxis: zod.ZodString;
+    yAxis: zod.ZodString;
     position: zod.ZodNumber;
     createdAt: zod.ZodString;
     updatedAt: zod.ZodString;
@@ -3395,6 +3425,8 @@ export declare const UpdateDashboardChartResponse: zod.ZodObject<{
     updatedAt: string;
     source: string;
     chart: string;
+    xAxis: string;
+    yAxis: string;
     position: number;
 }, {
     id: string;
@@ -3402,6 +3434,8 @@ export declare const UpdateDashboardChartResponse: zod.ZodObject<{
     updatedAt: string;
     source: string;
     chart: string;
+    xAxis: string;
+    yAxis: string;
     position: number;
 }>;
 /**
