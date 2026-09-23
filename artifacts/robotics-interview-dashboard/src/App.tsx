@@ -1876,6 +1876,21 @@ function reportDiag(message: string, context: string) {
 function isHeicFile(file: File): boolean {
   return file.type === "image/heic" || file.type === "image/heif" || /\.hei[cf]$/i.test(file.name);
 }
+function chatImageType(file: File): string {
+  if (file.type.startsWith("image/")) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return ({
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+    avif: "image/avif",
+    bmp: "image/bmp",
+    heic: "image/heic",
+    heif: "image/heif",
+  } as Record<string, string>)[extension ?? ""] ?? "";
+}
 async function convertHeicFile(file: File): Promise<File> {
   const { default: heic2any } = await import("heic2any");
   const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
@@ -1885,7 +1900,7 @@ async function convertHeicFile(file: File): Promise<File> {
 }
 async function prepareChatImage(file: File): Promise<{ blob: Blob; name: string; type: string }> {
   const MAX_DIM = 1600;
-  const MAX_BYTES = 3.5 * 1024 * 1024;
+  const MAX_BYTES = 20 * 1024 * 1024;
   let source = file;
   let outName = file.name;
   if (isHeicFile(file)) {
@@ -1897,6 +1912,14 @@ async function prepareChatImage(file: File): Promise<{ blob: Blob; name: string;
       if (error instanceof Error && error.message.startsWith("timeout:")) throw new Error("timeout");
       throw new Error("unreadable-heic");
     }
+  }
+  const sourceType = chatImageType(source);
+  // The chat upload endpoint can store ordinary image files directly. Do not
+  // force valid PNG/JPEG/WebP/GIF files through browser ImageBitmap decoding:
+  // some browsers reject perfectly valid photos at that step even though the
+  // file can be uploaded and displayed normally.
+  if (sourceType && !isHeicFile(source) && source.size <= MAX_BYTES) {
+    return { blob: source, name: outName, type: sourceType };
   }
   let bitmap: ImageBitmap;
   try {
@@ -2024,7 +2047,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (chatFiles.length + picked.length > 3) { setChatImageError("Up to 3 images per message."); return; }
       const next: { id: string; file: File; previewUrl: string; name: string; size: number }[] = [];
       for (const file of picked) {
-        if (!file.type.startsWith("image/")) { setChatImageError(`"${file.name}" is not an image.`); return; }
+        if (!chatImageType(file)) { setChatImageError(`"${file.name}" is not an image.`); return; }
         if (file.size > 20 * 1024 * 1024) { setChatImageError(`"${file.name}" is too big (max 20 MB).`); return; }
         let id: string;
         try {
