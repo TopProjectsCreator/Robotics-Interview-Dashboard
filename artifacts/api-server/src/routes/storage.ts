@@ -72,15 +72,40 @@ router.post(
 /**
  * POST /storage/uploads
  *
- * Upload an image through the API server (same-origin), which stores it in
- * Supabase Storage with the service key and returns the object path. Used
- * by chat attachments so browsers never PUT directly to Supabase — some
- * networks/firewalls block those cross-origin uploads. Requires auth.
- * Body is raw image bytes (Content-Type: image/*, max 20 MB).
+ * Upload a chat attachment through the API server (same-origin), which stores
+ * it in Supabase Storage with the service key and returns the object path.
+ * Used by chat attachments so browsers never PUT directly to Supabase —
+ * some networks/firewalls block those cross-origin uploads. Requires auth.
+ * Body is raw media/document bytes (max 100 MB).
  */
+const CHAT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+const CHAT_UPLOAD_CONTENT_TYPES = [
+  'image/*',
+  'video/*',
+  'audio/*',
+  'application/pdf',
+  'application/msword',
+  'application/rtf',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/csv',
+  'text/plain',
+  'text/tab-separated-values',
+];
+function isAllowedChatUploadType(contentType: string): boolean {
+  return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
+    allowed.endsWith('/*') ? contentType.startsWith(allowed.slice(0, -1)) : contentType === allowed,
+  );
+}
 router.post(
   '/storage/uploads',
-  express.raw({ type: ['image/*'], limit: '20mb' }),
+  express.raw({ type: CHAT_UPLOAD_CONTENT_TYPES, limit: '100mb' }),
   requireAdmin,
   async (req: Request, res: Response) => {
     try {
@@ -90,12 +115,12 @@ router.post(
         res.status(400).json({ error: 'No image data received' });
         return;
       }
-      if (!contentType.startsWith('image/')) {
-        res.status(400).json({ error: 'Only images can be uploaded' });
+      if (!isAllowedChatUploadType(contentType)) {
+        res.status(400).json({ error: 'This file type is not supported' });
         return;
       }
-      if (data.length > 20 * 1024 * 1024) {
-        res.status(413).json({ error: 'Image too big (max 20 MB)' });
+      if (data.length > CHAT_UPLOAD_MAX_BYTES) {
+        res.status(413).json({ error: 'File too big (max 100 MB)' });
         return;
       }
       const objectPath = await objectStorageService.uploadChatImage(data, contentType);
