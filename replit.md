@@ -17,8 +17,8 @@ Required runtime services and secrets:
 - `DATABASE_URL` — PostgreSQL connection
 - `ADMIN_PASSWORD` — shared coordinator passcode; server-only
 - `SESSION_SECRET` — session signing secret (required in production)
-- `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` — Replit-managed OpenAI integration
-- `AI_ASSISTANT_MODEL` — chat model override (default `gpt-4o-mini`)
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` — optional OpenAI-compatible provider overrides; the checked-in default is Kilo's keyless OpenRouter route with the `anonymous` key
+- `AI_ASSISTANT_MODEL` — chat model override (default `openrouter/free`)
 - `DISABLE_DEMO_SEED` — set `true` to stop sample applicants from seeding an empty roster
 - `ALLOWED_ORIGINS` — comma-separated origins allowed to call the API (default reflects any origin for iframe embedding; lock down in production)
 - `PYTHON_SANDBOX` — `auto` (default), `docker` (full stdlib, needs daemon + `python:3.12-slim` image), or `restricted`
@@ -33,7 +33,7 @@ Required runtime services and secrets:
 - PostgreSQL + Drizzle ORM
 - OpenAPI + Orval-generated React Query hooks and Zod schemas
 - Tailwind CSS, Space Grotesk, DM Mono, Lucide, Wouter
-- Replit-managed OpenAI integration for assistant answers and announcement audio
+- Kilo's OpenAI-compatible OpenRouter route for assistant answers; Pollinations for generated images
 - Supabase Storage (private bucket) for roster uploads and profile photos
 
 ## Where things live

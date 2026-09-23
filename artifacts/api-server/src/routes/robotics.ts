@@ -185,7 +185,7 @@ function pollinationsImage(prompt: string, size?: string): { url: string; seed: 
 // calling). Override with AI_ASSISTANT_MODEL. Vision requests always go to
 // VISION_MODEL below, never here.
 const TEXT_MODEL =
-  process.env.AI_ASSISTANT_MODEL || "stepfun/step-3.7-flash:free";
+  process.env.AI_ASSISTANT_MODEL || "openrouter/free";
 // Vision-capable free model (verified live: correctly describes generated
 // images). Override with AI_ASSISTANT_VISION_MODEL. Used only for the
 // follow-up turn after generate_image so the assistant SEES what it made.

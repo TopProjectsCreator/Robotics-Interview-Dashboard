@@ -28320,7 +28320,7 @@ var require_pino = __commonJS({
     function pinoBundlerAbsolutePath(p) {
       try {
         const path4 = __require("path");
-        const outputDir = "/workspaces/Robotics-Interview-Dashboard/artifacts/api-server/dist";
+        const outputDir = "/home/runner/workspace/artifacts/api-server/dist";
         return path4.resolve(outputDir, p.replace(/^\.\//, ""));
       } catch (e) {
         const f = new Function("p", "return new URL(p, import.meta.url).pathname");
@@ -84994,7 +84994,7 @@ function isUndiciDispatcherVersionMismatchError(error40) {
 // ../../lib/integrations-openai-ai-server/src/client.ts
 var openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "anonymous",
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.kilo.ai/api/gateway"
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.kilo.ai/api/openrouter"
 });
 
 // ../../lib/integrations-openai-ai-server/src/image/client.ts
@@ -94809,7 +94809,7 @@ var ObjectStorageService = class {
     const bucket = storageBucket();
     const id = randomUUID5();
     const storagePath = `uploads/${id}`;
-    const { data, error: error40 } = await supabase2().storage.from(bucket).createSignedUploadUrl(storagePath, 900);
+    const { data, error: error40 } = await supabase2().storage.from(bucket).createSignedUploadUrl(storagePath, { upsert: false });
     if (error40 || !data?.signedUrl) {
       throw new Error(`Failed to mint upload URL: ${error40?.message ?? "unknown error"}`);
     }
@@ -94935,7 +94935,7 @@ function pollinationsImage(prompt, size) {
   const url2 = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${dimension}&height=${dimension}&seed=${seed}&nologo=true&model=${encodeURIComponent(POLLINATIONS_IMAGE_MODEL)}&referrer=robotics-interview`;
   return { url: url2, seed };
 }
-var TEXT_MODEL = process.env.AI_ASSISTANT_MODEL || "stepfun/step-3.7-flash:free";
+var TEXT_MODEL = process.env.AI_ASSISTANT_MODEL || "openrouter/free";
 var VISION_MODEL = process.env.AI_ASSISTANT_VISION_MODEL || "inclusionai/ling-3.0-flash-vl:free";
 var VISION_MAX_IMAGE_BYTES = 800 * 1024;
 function visionUserMessage(images) {
@@ -96372,7 +96372,7 @@ router4.get("/applicants", requireAdmin, async (req, res) => {
     return;
   }
   const rawInvalidOnly = req.query.invalidOnly;
-  const invalidOnly = rawInvalidOnly === true || rawInvalidOnly === "true";
+  const invalidOnly = typeof rawInvalidOnly === "string" && rawInvalidOnly === "true";
   const applicants = await getApplicants({ ...parsed.data, invalidOnly });
   res.json(ListApplicantsResponse.parse({
     items: applicants.map(applicantResponse),
@@ -97112,10 +97112,13 @@ Coordinator question: ${parsed.data.question}${liveWebContext}${attachmentContex
     if (firstText.fromReasoning) req.log.info("Assistant answered via reasoning field");
     answer = firstText.text;
     const activities = [];
-    const toolCalls = (completion.choices[0]?.message.tool_calls ?? []).map((call) => ({
-      id: call.id,
-      function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" }
-    }));
+    const toolCalls = (completion.choices[0]?.message.tool_calls ?? []).flatMap((call) => {
+      if (!("function" in call)) return [];
+      return [{
+        id: call.id,
+        function: { name: call.function.name, arguments: call.function.arguments }
+      }];
+    });
     let pendingCalls = toolCalls;
     const previewedPaths = /* @__PURE__ */ new Set();
     const thread = [...baseMessages];
@@ -97176,10 +97179,13 @@ ${executed.imageMarkdown}`;
       if (process.env.DEBUG_ASSISTANT === "1") req.log.info(describeCompletion(`ask-followup-r${round}`, followup));
       const followupText = assistantText(followup.choices[0]?.message ?? {});
       if (followupText.text) answer = followupText.text;
-      pendingCalls = (followup.choices[0]?.message.tool_calls ?? []).map((call) => ({
-        id: call.id,
-        function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" }
-      }));
+      pendingCalls = (followup.choices[0]?.message.tool_calls ?? []).flatMap((call) => {
+        if (!("function" in call)) return [];
+        return [{
+          id: call.id,
+          function: { name: call.function.name, arguments: call.function.arguments }
+        }];
+      });
       if (pendingCalls.length === 0) break;
       answer = "";
     }
