@@ -1863,7 +1863,7 @@ router.get("/applicants", requireAdmin, async (req, res): Promise<void> => {
   // zod.coerce.boolean() turns even "?invalidOnly=false" into true; read the
   // raw value so "false" actually filters nothing out.
   const rawInvalidOnly = req.query.invalidOnly;
-  const invalidOnly = rawInvalidOnly === true || rawInvalidOnly === "true";
+  const invalidOnly = typeof rawInvalidOnly === "string" && rawInvalidOnly === "true";
   const applicants = await getApplicants({ ...parsed.data, invalidOnly });
   res.json(ListApplicantsResponse.parse({
     items: applicants.map(applicantResponse),
@@ -2702,10 +2702,13 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   if (firstText.fromReasoning) req.log.info("Assistant answered via reasoning field");
   answer = firstText.text;
   const activities: AssistantActivity[] = [];
-  const toolCalls = (completion.choices[0]?.message.tool_calls ?? []).map((call) => ({
-    id: call.id,
-    function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" },
-  }));
+  const toolCalls = (completion.choices[0]?.message.tool_calls ?? []).flatMap((call) => {
+    if (!("function" in call)) return [];
+    return [{
+      id: call.id,
+      function: { name: call.function.name, arguments: call.function.arguments },
+    }];
+  });
   // Multi-round tool loop: search results often feed a second action
   // (e.g. search_applicants -> reorder_queue). Keep tools available on
   // follow-ups so the model can act instead of hallucinating success.
@@ -2767,10 +2770,13 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     if (process.env.DEBUG_ASSISTANT === "1") req.log.info(describeCompletion(`ask-followup-r${round}`, followup));
     const followupText = assistantText(followup.choices[0]?.message ?? {});
     if (followupText.text) answer = followupText.text;
-    pendingCalls = (followup.choices[0]?.message.tool_calls ?? []).map((call) => ({
-      id: call.id,
-      function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" },
-    }));
+    pendingCalls = (followup.choices[0]?.message.tool_calls ?? []).flatMap((call) => {
+      if (!("function" in call)) return [];
+      return [{
+        id: call.id,
+        function: { name: call.function.name, arguments: call.function.arguments },
+      }];
+    });
     if (pendingCalls.length === 0) break;
     answer = "";
   }

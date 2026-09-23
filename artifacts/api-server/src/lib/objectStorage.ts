@@ -88,7 +88,7 @@ export class ObjectStorageService {
     const storagePath = `uploads/${id}`;
     const { data, error } = await supabase()
       .storage.from(bucket)
-      .createSignedUploadUrl(storagePath, 900);
+      .createSignedUploadUrl(storagePath, { upsert: false });
     if (error || !data?.signedUrl) {
       throw new Error(`Failed to mint upload URL: ${error?.message ?? 'unknown error'}`);
     }
