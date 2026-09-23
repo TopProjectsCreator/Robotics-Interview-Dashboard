@@ -222,7 +222,9 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     const tokenKey = `inline-${key++}`;
     const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/storage\/)[^)]+)\)$/);
     if (image) {
-      nodes.push(<img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
+      nodes.push(image[2].startsWith("/api/storage/")
+        ? <AuthenticatedChatImage key={tokenKey} src={image[2]} alt={image[1]} />
+        : <img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
       cursor = match.index + token.length;
       continue;
     }
@@ -241,6 +243,51 @@ function renderInlineMarkdown(text: string): ReactNode[] {
 
   if (cursor < text.length) nodes.push(text.slice(cursor));
   return nodes.length ? nodes : [text];
+}
+
+function appRelativeUrl(path: string): string {
+  if (/^https?:\/\//i.test(path) || !path.startsWith("/")) return path;
+  const base = String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
+  return `${base}${path}`;
+}
+
+function AuthenticatedChatImage({ src, alt }: { src: string; alt: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    const controller = new AbortController();
+    const token = getStoredAuthToken();
+    void fetch(appRelativeUrl(src), {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    })
+      .then(response => {
+        if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+        return response.blob();
+      })
+      .then(blob => {
+        if (!active) return;
+        createdUrl = URL.createObjectURL(blob);
+        setObjectUrl(createdUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src]);
+
+  if (failed) return <span className="my-2 block text-xs text-[#8a999d]">Image unavailable.</span>;
+  if (!objectUrl) return <span className="my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]" aria-label="Loading image" />;
+  return <img src={objectUrl} alt={alt} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />;
 }
 
 function sanitizeSvg(raw: string): string | null {
