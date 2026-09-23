@@ -10,6 +10,16 @@ export interface Applicant {
   id: string;
   name: string;
   grade: string;
+  /**
+     * Applicant age from an explicit roster value; null means unknown
+     * @nullable
+     */
+  age: number | null;
+  /**
+     * Applicant gender from an explicit roster value; null means unknown
+     * @nullable
+     */
+  gender: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */

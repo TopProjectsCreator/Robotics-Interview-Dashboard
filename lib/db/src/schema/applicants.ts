@@ -6,6 +6,8 @@ export const applicantsTable = pgTable("applicants", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   grade: text("grade").notNull().default("Unknown"),
+  age: integer("age"),
+  gender: text("gender"),
   email: text("email"),
   photoUrl: text("photo_url"),
   transcript: text("transcript"),

@@ -14,6 +14,9 @@ import type { SearchParameter } from './searchParameter';
 import type { SortParameter } from './sortParameter';
 
 export type ListApplicantsParams = {
+/**
+ * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+ */
 search?: SearchParameter;
 grade?: GradeParameter;
 recommendation?: RecommendationParameter;

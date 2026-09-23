@@ -95,6 +95,7 @@ import {
   queueApplicantResponse,
   transferInterviewers,
 } from "../lib/roboticsData";
+import { normalizeApplicantGender } from "../lib/applicantSearch";
 import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
@@ -363,6 +364,8 @@ const ASSISTANT_CREATE_APPLICANT_TOOL = {
       properties: {
         name: { type: "string" },
         grade: { type: "string" },
+        age: { type: "integer" },
+        gender: { type: "string" },
         email: { type: "string" },
         photoUrl: { type: "string" },
         transcript: { type: "string" },
@@ -399,6 +402,8 @@ const ASSISTANT_UPDATE_APPLICANT_TOOL = {
         id: { type: "string", description: "Applicant id to update" },
         name: { type: "string" },
         grade: { type: "string" },
+        age: { type: "integer", description: "Applicant age, or null to clear it" },
+        gender: { type: "string", description: "Applicant gender, or null to clear it" },
         email: { type: "string" },
         photoUrl: { type: "string" },
         transcript: { type: "string" },
@@ -1079,6 +1084,8 @@ async function runAssistantTools(
         id,
         name: nameVal,
         grade: typeof raw.grade === "string" && raw.grade.trim() ? String(raw.grade).trim() : "Unknown",
+        age: typeof raw.age === "number" && Number.isInteger(raw.age) && raw.age >= 0 ? raw.age : null,
+        gender: typeof raw.gender === "string" ? normalizeApplicantGender(String(raw.gender)) : null,
         email: typeof raw.email === "string" ? String(raw.email).trim() || null : null,
         photoUrl: typeof raw.photoUrl === "string" ? String(raw.photoUrl).trim() || null : null,
         transcript: typeof raw.transcript === "string" ? String(raw.transcript) : null,
@@ -1126,6 +1133,10 @@ async function runAssistantTools(
       };
       if (typeof raw.name === "string" && String(raw.name).trim()) patch.name = String(raw.name).trim();
       if (typeof raw.grade === "string") patch.grade = String(raw.grade).trim() || "Unknown";
+      if (raw.age === null) patch.age = null;
+      else if (typeof raw.age === "number" && Number.isInteger(raw.age) && raw.age >= 0) patch.age = raw.age;
+      if (raw.gender === null) patch.gender = null;
+      else if (typeof raw.gender === "string") patch.gender = normalizeApplicantGender(String(raw.gender));
       setNullableString("email", "email");
       setNullableString("photoUrl", "photoUrl");
       if (typeof raw.transcript === "string" || raw.transcript === null) patch.transcript = raw.transcript as string | null;
@@ -1688,7 +1699,12 @@ async function readImport(objectPath: string, fileName: string) {
   const imported = parsedCsv.rows.map((row, index) =>
     csvToApplicant(row, parsedCsv.headers, current.length + index),
   );
-  return { parsedCsv, current, imported, diff: importDiff(imported, current) };
+  const hasHeader = (names: string[]) => names.some((name) => parsedCsv.headers.includes(name));
+  const importedFields = {
+    age: hasHeader(["age", "applicant_age", "student_age", "age_years", "applicantage"]),
+    gender: hasHeader(["gender", "sex", "applicant_gender", "gender_identity", "genderidentity"]),
+  };
+  return { parsedCsv, current, imported, importedFields, diff: importDiff(imported, current, importedFields) };
 }
 
 const DASHBOARD_CHART_SOURCES = ["score", "recommendations", "grades", "commitments", "categories", "statuses", "topscores"] as const;
@@ -1897,6 +1913,9 @@ router.patch("/applicants/:id", requireAdmin, async (req, res): Promise<void> =>
   // Seats go through assignSeat (swap on conflict, bounds-checked) so two
   // applicants can never share a seat.
   const { seatRow, seatCol, ...rest } = body.data as Record<string, unknown>;
+  if (rest.gender !== undefined) {
+    rest.gender = rest.gender === null ? null : normalizeApplicantGender(String(rest.gender));
+  }
   const [updated] = await db.update(applicantsTable).set({
     ...rest,
     // The score column is an integer 0-100 (or -1 for invalid): normalize
@@ -2127,7 +2146,7 @@ async function commitImportFile(
   onlyNew: boolean,
   createdBy = "coordinator",
 ): Promise<ImportCommitResult> {
-  const { parsedCsv, imported: applicants, diff } = await readImport(objectPath, fileName);
+  const { parsedCsv, imported: applicants, importedFields, diff } = await readImport(objectPath, fileName);
   // Rows the parser dropped (malformed) surface as "Row N ..." warnings.
   const malformed = parsedCsv.warnings.filter((warning) => warning.startsWith("Row ")).length;
   // Continue past the highest taken slot so imports never collide with
@@ -2157,7 +2176,7 @@ async function commitImportFile(
       }
       // Re-import: refresh file-owned fields but never wipe notes (or
       // lanes, statuses, interviewers) a coordinator set by hand.
-      await tx.update(applicantsTable).set({
+      const rosterFields: Partial<typeof applicantsTable.$inferInsert> = {
         name: applicant.name,
         grade: applicant.grade,
         email: applicant.email,
@@ -2172,7 +2191,10 @@ async function commitImportFile(
         commit10Hours: applicant.commit10Hours,
         parentVolunteer: applicant.parentVolunteer,
         updatedAt: new Date(),
-      }).where(eq(applicantsTable.id, applicant.id));
+      };
+      if (importedFields.age) rosterFields.age = applicant.age;
+      if (importedFields.gender) rosterFields.gender = applicant.gender;
+      await tx.update(applicantsTable).set(rosterFields).where(eq(applicantsTable.id, applicant.id));
     }
     await tx.insert(importsTable).values({
       id: importId,

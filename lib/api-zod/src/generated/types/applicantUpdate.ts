@@ -9,6 +9,17 @@
 export interface ApplicantUpdate {
   name?: string;
   grade?: string;
+  /**
+     * Applicant age; null clears the value
+     * @minimum 0
+     * @nullable
+     */
+  age?: number | null;
+  /**
+     * Applicant gender; null clears the value
+     * @nullable
+     */
+  gender?: string | null;
   email?: string;
   /** @nullable */
   photoUrl?: string | null;

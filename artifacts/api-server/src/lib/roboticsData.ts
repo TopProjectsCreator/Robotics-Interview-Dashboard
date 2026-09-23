@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, type Applicant } from "@workspace/db";
+import { matchesApplicantSearch, normalizeApplicantGender, normalizeApplicantGrade, parseApplicantSearchQuery } from "./applicantSearch";
 
 export const demoApplicants = [
   ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
@@ -60,10 +61,10 @@ export async function getApplicants(filters?: {
 }): Promise<Applicant[]> {
   await ensureDemoData();
   const all = await db.select().from(applicantsTable).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
+  const searchQuery = parseApplicantSearchQuery(filters?.search?.trim() ?? "");
   const filtered = all.filter((applicant) => {
-    const query = filters?.search?.trim().toLowerCase();
-    if (query && !`${applicant.name} ${applicant.id}`.toLowerCase().includes(query)) return false;
-    if (filters?.grade && filters.grade !== "all" && applicant.grade !== filters.grade) return false;
+    if (!matchesApplicantSearch(applicant, searchQuery)) return false;
+    if (filters?.grade && filters.grade !== "all" && normalizeApplicantGrade(applicant.grade) !== normalizeApplicantGrade(filters.grade)) return false;
     if (filters?.recommendation && filters.recommendation !== "all" && applicant.aiRecommendation !== filters.recommendation) return false;
     if (filters?.interviewStatus && filters.interviewStatus !== "all" && applicant.interviewStatus !== filters.interviewStatus) return false;
     if (filters?.category && filters.category !== "all" && applicant.category !== filters.category) return false;
@@ -91,6 +92,8 @@ export function applicantResponse(applicant: Applicant) {
     id: applicant.id,
     name: applicant.name,
     grade: applicant.grade,
+    age: applicant.age ?? null,
+    gender: applicant.gender ?? null,
     email: applicant.email,
     photoUrl: applicant.photoUrl,
     transcript: applicant.transcript,
@@ -620,6 +623,7 @@ export function parseSemicolonCsv(input: string): { headers: string[]; rows: str
 export function importDiff(
   imported: ReturnType<typeof csvToApplicant>[],
   existing: Applicant[],
+  importedFields: { age: boolean; gender: boolean } = { age: true, gender: true },
 ): { added: number; updated: number; unchanged: number; missingFromUpload: number } {
   const existingById = new Map(existing.map((applicant) => [applicant.id, applicant]));
   let added = 0;
@@ -631,7 +635,22 @@ export function importDiff(
       added += 1;
       continue;
     }
-    const fields = ["name", "grade", "email", "transcript", "aiScore", "aiRecommendation", "aiSummary", "aiStrengths", "aiConcerns", "roboticsExperience", "commit10Hours", "parentVolunteer"] as const;
+    const fields = [
+      "name",
+      "grade",
+      ...(importedFields.age ? ["age" as const] : []),
+      ...(importedFields.gender ? ["gender" as const] : []),
+      "email",
+      "transcript",
+      "aiScore",
+      "aiRecommendation",
+      "aiSummary",
+      "aiStrengths",
+      "aiConcerns",
+      "roboticsExperience",
+      "commit10Hours",
+      "parentVolunteer",
+    ] as const;
     if (fields.some((field) => previous[field] !== applicant[field])) updated += 1;
     else unchanged += 1;
   }
@@ -657,10 +676,15 @@ export function normalizeAiScore(value: unknown): number {
 
 export function csvToApplicant(values: string[], headers: string[], queuePosition: number) {
   const record = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+  const ageValue = record.age || record.applicant_age || record.student_age || "";
+  const parsedAge = ageValue.trim() === "" ? null : Number.parseInt(ageValue.trim(), 10);
+  const genderValue = record.gender || record.sex || record.applicant_gender || record.gender_identity || "";
   return {
     id: record.id || randomUUID(),
     name: record.name || "Unnamed applicant",
     grade: record.grade || "Unknown",
+    age: parsedAge !== null && Number.isInteger(parsedAge) && parsedAge >= 0 ? parsedAge : null,
+    gender: normalizeApplicantGender(genderValue),
     email: record.email || null,
     transcript: record.transcript || null,
     attachments: record.attachments || null,

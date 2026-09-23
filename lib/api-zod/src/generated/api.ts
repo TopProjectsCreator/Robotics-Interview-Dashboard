@@ -232,7 +232,7 @@ export const AckBroadcastResponse = zod.object({
  * @summary List applicants with filters and sorting
  */
 export const ListApplicantsQueryParams = zod.object({
-  "search": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional().describe('GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.'),
   "grade": zod.coerce.string().optional(),
   "recommendation": zod.coerce.string().optional(),
   "interviewStatus": zod.coerce.string().optional(),
@@ -246,6 +246,8 @@ export const ListApplicantsResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
+  "age": zod.number().int().nullable().describe('Applicant age from an explicit roster value; null means unknown'),
+  "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
@@ -288,6 +290,8 @@ export const GetApplicantResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
+  "age": zod.number().int().nullable().describe('Applicant age from an explicit roster value; null means unknown'),
+  "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
@@ -324,9 +328,15 @@ export const UpdateApplicantParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const updateApplicantBodyAgeMin = 0;
+
+
+
 export const UpdateApplicantBody = zod.object({
   "name": zod.string().optional(),
   "grade": zod.string().optional(),
+  "age": zod.number().int().min(updateApplicantBodyAgeMin).nullish().describe('Applicant age; null clears the value'),
+  "gender": zod.string().nullish().describe('Applicant gender; null clears the value'),
   "email": zod.string().optional(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
@@ -360,6 +370,8 @@ export const UpdateApplicantResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
+  "age": zod.number().int().nullable().describe('Applicant age from an explicit roster value; null means unknown'),
+  "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
@@ -410,6 +422,8 @@ export const RegenerateApplicantResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
+  "age": zod.number().int().nullable().describe('Applicant age from an explicit roster value; null means unknown'),
+  "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),
@@ -1015,6 +1029,8 @@ export const AssignSeatResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "grade": zod.string(),
+  "age": zod.number().int().nullable().describe('Applicant age from an explicit roster value; null means unknown'),
+  "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
   "transcript": zod.string().nullish(),

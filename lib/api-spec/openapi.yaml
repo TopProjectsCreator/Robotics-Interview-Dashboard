@@ -957,6 +957,7 @@ components:
     Search:
       name: search
       in: query
+      description: 'GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.'
       schema:
         type: string
     Grade:
@@ -1293,6 +1294,8 @@ components:
         - id
         - name
         - grade
+        - age
+        - gender
         - aiScore
         - aiRecommendation
         - aiSummary
@@ -1318,6 +1321,12 @@ components:
           type: string
         grade:
           type: string
+        age:
+          type: ["integer", "null"]
+          description: "Applicant age from an explicit roster value; null means unknown"
+        gender:
+          type: ["string", "null"]
+          description: "Applicant gender from an explicit roster value; null means unknown"
         email:
           type: ["string", "null"]
         photoUrl:
@@ -1393,6 +1402,13 @@ components:
           type: string
         grade:
           type: string
+        age:
+          type: ["integer", "null"]
+          minimum: 0
+          description: "Applicant age; null clears the value"
+        gender:
+          type: ["string", "null"]
+          description: "Applicant gender; null clears the value"
         email:
           type: string
         photoUrl:

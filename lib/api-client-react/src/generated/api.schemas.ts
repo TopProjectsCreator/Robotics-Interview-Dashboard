@@ -161,6 +161,16 @@ export interface Applicant {
   id: string;
   name: string;
   grade: string;
+  /**
+     * Applicant age from an explicit roster value; null means unknown
+     * @nullable
+     */
+  age: number | null;
+  /**
+     * Applicant gender from an explicit roster value; null means unknown
+     * @nullable
+     */
+  gender: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */
@@ -221,6 +231,17 @@ export interface ApplicantList {
 export interface ApplicantUpdate {
   name?: string;
   grade?: string;
+  /**
+     * Applicant age; null clears the value
+     * @minimum 0
+     * @nullable
+     */
+  age?: number | null;
+  /**
+     * Applicant gender; null clears the value
+     * @nullable
+     */
+  gender?: string | null;
   email?: string;
   /** @nullable */
   photoUrl?: string | null;
@@ -646,6 +667,9 @@ export interface AssistantHistory {
   items: AssistantHistoryItemsItem[];
 }
 
+/**
+ * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+ */
 export type SearchParameter = string;
 
 export type GradeParameter = string;
@@ -675,6 +699,9 @@ ip: string;
 };
 
 export type ListApplicantsParams = {
+/**
+ * GitHub-style applicant search. Supports name:, age:, gender:, and grade: qualifiers, plus free text.
+ */
 search?: SearchParameter;
 grade?: GradeParameter;
 recommendation?: RecommendationParameter;
