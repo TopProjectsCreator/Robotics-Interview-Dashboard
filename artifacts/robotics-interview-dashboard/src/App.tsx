@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Pencil, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History,
+   Pencil, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Sparkles, Sun, Trash2, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -43,7 +43,7 @@ import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTING
 import { useRealtimeSync } from "./useRealtimeSync";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import "@/index.css";
@@ -81,6 +81,12 @@ function IconButton({ label, children, onClick, testId }: { label: string; child
 function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "teal" | "yellow" | "red" | "blue" }) {
   const colors = { neutral: "bg-[#edf1f3] text-[#4f626b]", teal: "bg-[#dff4f2] text-[#12737d]", yellow: "bg-[#fff3cf] text-[#805c08]", red: "bg-[#fbe4e2] text-[#9f3b33]", blue: "bg-[#e2ebfa] text-[#375e93]" };
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[.08em] ${colors[tone]}`}>{children}</span>;
+}
+function ChatActionTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return <Tooltip>
+    <TooltipTrigger asChild>{children}</TooltipTrigger>
+    <TooltipContent side="top" className="border-0 bg-[#183a4b] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg">{label}</TooltipContent>
+  </Tooltip>;
 }
 
 function Skeleton({ className = "" }: { className?: string }) { return <div className={`animate-pulse rounded-lg bg-[#dfe7ea] ${className}`} />; }
@@ -2289,7 +2295,16 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
     const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
-    return <div key={item.id} className={`rounded-xl border border-[#e1e9e8] bg-white p-3 ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
+    return <div key={item.id} className={`group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
+      <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+          {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
+        </div>
+        <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+          <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
+          <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
+        </div>
+      </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
       <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
       <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />
@@ -2299,8 +2314,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           const mine = r.authors.includes(selectedInterviewer || "Interviewer");
           return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>;
         })}
-        <button onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} title="Add reaction" aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-[#cbd9da] text-[#7c8c91] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /></button>
-        <button onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} title="Reply to message" aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold transition ${replyingTo?.id === item.id ? "border-[#16869a] bg-[#e3f4f2] text-[#106d7a]" : "border-[#dce9e8] bg-white text-[#527079] hover:border-[#16869a] hover:text-[#16869a]"}`}><Reply size={12} /> Reply</button>
         {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
       </div>
       {pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}
