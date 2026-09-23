@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "dompurify": "^3.4.15",
     "heic2any": "^0.0.4",
     "kitten-tts-webgpu": "^0.1.1",

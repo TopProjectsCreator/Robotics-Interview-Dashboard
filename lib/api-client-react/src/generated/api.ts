@@ -87,7 +87,10 @@ import type {
   SnapshotRestoreResult,
   SystemUsage,
   UploadInput,
-  UploadResponse
+  UploadResponse,
+  Whiteboard,
+  WhiteboardInput,
+  WhiteboardList
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -3799,6 +3802,374 @@ export const useRestoreSnapshot = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getRestoreSnapshotMutationOptions(options));
+    }
+
+export const getListWhiteboardsUrl = () => {
+
+
+
+
+  return `/api/whiteboards`
+}
+
+/**
+ * @summary List shared whiteboards (newest first, no scene data)
+ */
+export const listWhiteboards = async ( options?: Parameters<typeof customFetch>[1]): Promise<WhiteboardList> => {
+
+  return customFetch<WhiteboardList>(getListWhiteboardsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWhiteboardsQueryKey = () => {
+    return [
+    `/api/whiteboards`
+    ] as const;
+    }
+
+
+export const getListWhiteboardsQueryOptions = <TData = Awaited<ReturnType<typeof listWhiteboards>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWhiteboards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWhiteboardsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWhiteboards>>> = ({ signal }) => listWhiteboards({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWhiteboards>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWhiteboardsQueryResult = NonNullable<Awaited<ReturnType<typeof listWhiteboards>>>
+export type ListWhiteboardsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List shared whiteboards (newest first, no scene data)
+ */
+
+export function useListWhiteboards<TData = Awaited<ReturnType<typeof listWhiteboards>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWhiteboards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWhiteboardsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateWhiteboardUrl = () => {
+
+
+
+
+  return `/api/whiteboards`
+}
+
+/**
+ * @summary Create a whiteboard and share it with the coordinator team
+ */
+export const createWhiteboard = async (whiteboardInput: WhiteboardInput, options?: Parameters<typeof customFetch>[1]): Promise<Whiteboard> => {
+
+  return customFetch<Whiteboard>(getCreateWhiteboardUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(whiteboardInput)
+  }
+);}
+
+
+
+
+
+export const getCreateWhiteboardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWhiteboard>>, TError,{data: BodyType<WhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWhiteboard>>, TError,{data: BodyType<WhiteboardInput>}, TContext> => {
+
+const mutationKey = ['createWhiteboard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWhiteboard>>, {data: BodyType<WhiteboardInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWhiteboard(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWhiteboardMutationResult = NonNullable<Awaited<ReturnType<typeof createWhiteboard>>>
+    export type CreateWhiteboardMutationBody = BodyType<WhiteboardInput>
+    export type CreateWhiteboardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a whiteboard and share it with the coordinator team
+ */
+export const useCreateWhiteboard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWhiteboard>>, TError,{data: BodyType<WhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWhiteboard>>,
+        TError,
+        {data: BodyType<WhiteboardInput>},
+        TContext
+      > => {
+      return useMutation(getCreateWhiteboardMutationOptions(options));
+    }
+
+export const getGetWhiteboardUrl = (boardId: string,) => {
+
+
+
+
+  return `/api/whiteboards/${boardId}`
+}
+
+/**
+ * @summary Get a single shared whiteboard including its Excalidraw scene data
+ */
+export const getWhiteboard = async (boardId: string, options?: Parameters<typeof customFetch>[1]): Promise<Whiteboard> => {
+
+  return customFetch<Whiteboard>(getGetWhiteboardUrl(boardId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWhiteboardQueryKey = (boardId: string,) => {
+    return [
+    `/api/whiteboards/${boardId}`
+    ] as const;
+    }
+
+
+export const getGetWhiteboardQueryOptions = <TData = Awaited<ReturnType<typeof getWhiteboard>>, TError = ErrorType<ErrorResponse>>(boardId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWhiteboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWhiteboardQueryKey(boardId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWhiteboard>>> = ({ signal }) => getWhiteboard(boardId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: boardId !== null && boardId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWhiteboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWhiteboardQueryResult = NonNullable<Awaited<ReturnType<typeof getWhiteboard>>>
+export type GetWhiteboardQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a single shared whiteboard including its Excalidraw scene data
+ */
+
+export function useGetWhiteboard<TData = Awaited<ReturnType<typeof getWhiteboard>>, TError = ErrorType<ErrorResponse>>(
+ boardId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWhiteboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWhiteboardQueryOptions(boardId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateWhiteboardUrl = (boardId: string,) => {
+
+
+
+
+  return `/api/whiteboards/${boardId}`
+}
+
+/**
+ * @summary Update a shared whiteboard's title or scene data
+ */
+export const updateWhiteboard = async (boardId: string,
+    whiteboardInput: WhiteboardInput, options?: Parameters<typeof customFetch>[1]): Promise<Whiteboard> => {
+
+  return customFetch<Whiteboard>(getUpdateWhiteboardUrl(boardId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(whiteboardInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateWhiteboardMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWhiteboard>>, TError,{boardId: string;data: BodyType<WhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWhiteboard>>, TError,{boardId: string;data: BodyType<WhiteboardInput>}, TContext> => {
+
+const mutationKey = ['updateWhiteboard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWhiteboard>>, {boardId: string;data: BodyType<WhiteboardInput>}> = (props) => {
+          const {boardId,data} = props ?? {};
+
+          return  updateWhiteboard(boardId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWhiteboardMutationResult = NonNullable<Awaited<ReturnType<typeof updateWhiteboard>>>
+    export type UpdateWhiteboardMutationBody = BodyType<WhiteboardInput>
+    export type UpdateWhiteboardMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update a shared whiteboard's title or scene data
+ */
+export const useUpdateWhiteboard = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWhiteboard>>, TError,{boardId: string;data: BodyType<WhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWhiteboard>>,
+        TError,
+        {boardId: string;data: BodyType<WhiteboardInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateWhiteboardMutationOptions(options));
+    }
+
+export const getDeleteWhiteboardUrl = (boardId: string,) => {
+
+
+
+
+  return `/api/whiteboards/${boardId}`
+}
+
+/**
+ * @summary Delete a shared whiteboard
+ */
+export const deleteWhiteboard = async (boardId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteWhiteboardUrl(boardId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWhiteboardMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWhiteboard>>, TError,{boardId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWhiteboard>>, TError,{boardId: string}, TContext> => {
+
+const mutationKey = ['deleteWhiteboard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWhiteboard>>, {boardId: string}> = (props) => {
+          const {boardId} = props ?? {};
+
+          return  deleteWhiteboard(boardId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWhiteboardMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWhiteboard>>>
+
+    export type DeleteWhiteboardMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a shared whiteboard
+ */
+export const useDeleteWhiteboard = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWhiteboard>>, TError,{boardId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWhiteboard>>,
+        TError,
+        {boardId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteWhiteboardMutationOptions(options));
     }
 
 export const getGetAssistantHistoryUrl = () => {

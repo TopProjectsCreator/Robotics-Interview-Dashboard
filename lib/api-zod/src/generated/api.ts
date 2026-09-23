@@ -1252,6 +1252,93 @@ export const RestoreSnapshotResponse = zod.object({
 
 
 /**
+ * @summary List shared whiteboards (newest first, no scene data)
+ */
+export const ListWhiteboardsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "createdBy": zod.string(),
+  "updatedBy": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create a whiteboard and share it with the coordinator team
+ */
+export const CreateWhiteboardBody = zod.object({
+  "title": zod.string(),
+  "data": zod.string().describe('Serialized Excalidraw scene JSON'),
+  "createdBy": zod.string().optional().describe('Interviewer label creating or updating the board')
+})
+
+export const CreateWhiteboardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string().describe('Serialized Excalidraw scene JSON'),
+  "createdBy": zod.string(),
+  "updatedBy": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Get a single shared whiteboard including its Excalidraw scene data
+ */
+export const GetWhiteboardParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const GetWhiteboardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string().describe('Serialized Excalidraw scene JSON'),
+  "createdBy": zod.string(),
+  "updatedBy": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Update a shared whiteboard's title or scene data
+ */
+export const UpdateWhiteboardParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const UpdateWhiteboardBody = zod.object({
+  "title": zod.string(),
+  "data": zod.string().describe('Serialized Excalidraw scene JSON'),
+  "createdBy": zod.string().optional().describe('Interviewer label creating or updating the board')
+})
+
+export const UpdateWhiteboardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string().describe('Serialized Excalidraw scene JSON'),
+  "createdBy": zod.string(),
+  "updatedBy": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a shared whiteboard
+ */
+export const DeleteWhiteboardParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const DeleteWhiteboardResponse = zod.void()
+
+
+/**
  * @summary Get persisted assistant conversations
  */
 export const GetAssistantHistoryResponse = zod.object({

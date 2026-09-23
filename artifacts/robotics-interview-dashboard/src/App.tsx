@@ -6,13 +6,13 @@ import DOMPurify from "dompurify";
 import {
   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, Palette,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
   getListAssistantConversationsQueryKey,
-  getGetInterviewChatQueryKey, getGetQueueQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey,
+  getGetInterviewChatQueryKey, getGetQueueQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey, getListWhiteboardsQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
@@ -36,8 +36,16 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant, Whiteboard } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
+import {
+  WhiteboardChatCard,
+  WhiteboardLibraryModal,
+  WhiteboardWorkspaceModal,
+  extractWhiteboardEmbed,
+  stripWhiteboardEmbed,
+  whiteboardEmbedLine,
+} from "@/components/whiteboards";
 import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
@@ -2118,6 +2126,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [isRecording, setIsRecording] = useState(false);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
+  const [whiteboardModal, setWhiteboardModal] = useState<{ open: boolean; boardId: string | null; mode: "edit" | "view" }>({ open: false, boardId: null, mode: "edit" });
+  const [whiteboardLibraryOpen, setWhiteboardLibraryOpen] = useState(false);
   const mentionPeople = useMemo(() => {
     const labels = interviewerLabels;
     const people = [
@@ -2538,10 +2548,31 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatUploading(false);
     }
   };
+  const shareWhiteboardToChat = (board: Whiteboard) => {
+    setChatError("");
+    sendChat.mutate({
+      data: {
+        author: activeInterviewer,
+        message: `Shared a whiteboard: **${board.title}**\n${whiteboardEmbedLine(board)}`,
+        scope: conversationScope,
+        ...(conversationPeer ? { recipient: conversationPeer } : {}),
+      },
+    }, {
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+        setComposerMenuOpen(false);
+      },
+      onError: () => {
+        setChatError("Couldn't share the whiteboard to chat. Try again.");
+      },
+    });
+  };
   const renderChatMessage = (item: InterviewChatMessage) => {
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
     const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
+    const whiteboardEmbed = extractWhiteboardEmbed(item.message);
+    const messageBody = whiteboardEmbed ? stripWhiteboardEmbed(item.message) : item.message;
     return <div key={item.id} className={`group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
       <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
@@ -2555,7 +2586,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
       <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}</div><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
-      <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />
+      {whiteboardEmbed && <WhiteboardChatCard boardId={whiteboardEmbed.id} title={whiteboardEmbed.title} onOpen={boardId => setWhiteboardModal({ open: true, boardId, mode: "view" })} />}
+      <MarkdownContent source={messageBody || (whiteboardEmbed ? "Shared a whiteboard." : item.message)} className="mt-1 text-[#52666e]" />
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {
@@ -2569,7 +2601,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
    return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-     <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+     <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><div className="flex items-center gap-2"><button type="button" onClick={() => setWhiteboardLibraryOpen(true)} title="Shared whiteboards" aria-label="Shared whiteboards" data-testid="button-whiteboards" className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#dce5e5] bg-white text-[#436070] transition hover:border-[#16869a] hover:text-[#16869a]"><Palette size={17} /></button><Bot size={20} className="text-[#16869a]" /></div></div>
      <div className="mt-4 rounded-2xl border border-[#dce9e8] bg-[#f7faf9] p-3">
        <div className="flex flex-wrap items-center gap-2">
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Chat as</span>
@@ -2591,7 +2623,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Mention someone in this space</p></div>
            <div className="max-h-64 overflow-y-auto p-1.5">{filteredMentionPeople.map(person => <button key={person.token} type="button" onMouseDown={event => event.preventDefault()} onClick={() => selectMention(person)} className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[#edf4f3]" data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span></button>)}</div>
          </div>}
-         {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-56 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button></div>}
+         {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-56 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button><div className="mt-1 border-t border-[#edf1f1] px-3 pb-1 pt-2"><p className="mono text-[9px] font-semibold uppercase tracking-[.14em] text-[#8a999d]">Create</p></div><button type="button" onClick={() => { setComposerMenuOpen(false); setWhiteboardModal({ open: true, boardId: null, mode: "edit" }); }} data-testid="button-create-whiteboard" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]"><Palette size={16} className="text-[#16869a]" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-[#8a999d]">Sketch and share with Excalidraw</span></span></button></div>}
          {emojiOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="emoji-picker"><p className="mb-2 text-xs font-semibold text-[#52666e]">Emoji</p><div className="grid grid-cols-6 gap-1">{["😀", "😂", "😍", "👍", "🙏", "🎉", "🔥", "✅", "😮", "😢", "❤️", "🤖"].map(emoji => <button key={emoji} type="button" onClick={() => insertAtCursor(emoji)} aria-label={`Insert ${emoji}`} className="rounded-lg p-2 text-xl transition hover:bg-[#edf4f3]">{emoji}</button>)}</div></div>}
           {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-dictation"><Type size={16} className="text-[#16869a]" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-[#8a999d]">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-audio-recording"><Mic size={16} className="text-[#16869a]" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-[#8a999d]">Send your voice as an audio file</span></span></button></div>}
          <div className="rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
@@ -2612,11 +2644,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
          </div>
        </div>
        <input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
-       {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
-       {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
-     </form>
-  </section>;
-}
+{chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
+        {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
+      </form>
+      <WhiteboardWorkspaceModal
+        open={whiteboardModal.open}
+        boardId={whiteboardModal.boardId}
+        mode={whiteboardModal.mode}
+        onClose={() => setWhiteboardModal(current => ({ ...current, open: false }))}
+        onSaved={() => { void qc.invalidateQueries({ queryKey: getListWhiteboardsQueryKey() }); }}
+        onShare={shareWhiteboardToChat}
+      />
+      <WhiteboardLibraryModal
+        open={whiteboardLibraryOpen}
+        onClose={() => setWhiteboardLibraryOpen(false)}
+        onOpen={board => { setWhiteboardLibraryOpen(false); setWhiteboardModal({ open: true, boardId: board.id, mode: "view" }); }}
+        onCreate={() => { setWhiteboardLibraryOpen(false); setWhiteboardModal({ open: true, boardId: null, mode: "edit" }); }}
+      />
+   </section>;
+ }
 function Queue() {
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;

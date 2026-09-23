@@ -22,6 +22,8 @@ tags:
     description: Interview queue coordination
   - name: display
     description: Big-screen display state
+  - name: whiteboards
+    description: Shared Excalidraw whiteboards
   - name: assistant
     description: AI-assisted analysis
   - name: system
@@ -871,6 +873,95 @@ paths:
                 $ref: "#/components/schemas/SnapshotRestoreResult"
         "404":
           description: Snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /whiteboards:
+    get:
+      operationId: listWhiteboards
+      tags: [whiteboards]
+      summary: List shared whiteboards (newest first, no scene data)
+      responses:
+        "200":
+          description: Shared whiteboards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhiteboardList"
+    post:
+      operationId: createWhiteboard
+      tags: [whiteboards]
+      summary: Create a whiteboard and share it with the coordinator team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhiteboardInput"
+      responses:
+        "201":
+          description: Created whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Whiteboard"
+  /whiteboards/{boardId}:
+    parameters:
+      - name: boardId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getWhiteboard
+      tags: [whiteboards]
+      summary: Get a single shared whiteboard including its Excalidraw scene data
+      responses:
+        "200":
+          description: Whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Whiteboard"
+        "404":
+          description: Whiteboard not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateWhiteboard
+      tags: [whiteboards]
+      summary: Update a shared whiteboard's title or scene data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhiteboardInput"
+      responses:
+        "200":
+          description: Updated whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Whiteboard"
+        "404":
+          description: Whiteboard not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteWhiteboard
+      tags: [whiteboards]
+      summary: Delete a shared whiteboard
+      responses:
+        "204":
+          description: Whiteboard deleted
+        "404":
+          description: Whiteboard not found
           content:
             application/json:
               schema:
@@ -1984,6 +2075,61 @@ components:
           type: string
         position:
           type: integer
+    Whiteboard:
+      type: object
+      required: [id, title, data, createdBy, updatedBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        data:
+          type: string
+          description: Serialized Excalidraw scene JSON
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    WhiteboardSummary:
+      type: object
+      required: [id, title, createdBy, updatedBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    WhiteboardList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhiteboardSummary"
+    WhiteboardInput:
+      type: object
+      required: [title, data]
+      properties:
+        title:
+          type: string
+        data:
+          type: string
+          description: Serialized Excalidraw scene JSON
+        createdBy:
+          type: string
+          description: Interviewer label creating or updating the board
     Snapshot:
       type: object
       required: [id, label, createdBy, applicantCount, createdAt]

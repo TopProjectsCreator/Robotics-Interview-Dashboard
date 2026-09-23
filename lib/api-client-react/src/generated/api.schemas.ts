@@ -604,6 +604,38 @@ export interface DashboardChartUpdate {
   position?: number;
 }
 
+export interface Whiteboard {
+  id: string;
+  title: string;
+  /** Serialized Excalidraw scene JSON */
+  data: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhiteboardSummary {
+  id: string;
+  title: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhiteboardList {
+  items: WhiteboardSummary[];
+}
+
+export interface WhiteboardInput {
+  title: string;
+  /** Serialized Excalidraw scene JSON */
+  data: string;
+  /** Interviewer label creating or updating the board */
+  createdBy?: string;
+}
+
 export interface Snapshot {
   id: string;
   label: string;

@@ -3518,6 +3518,186 @@ export declare const RestoreSnapshotResponse: zod.ZodObject<{
     preview?: zod.objectInputType<{}, zod.ZodTypeAny, "passthrough"> | undefined;
 }>;
 /**
+ * @summary List shared whiteboards (newest first, no scene data)
+ */
+export declare const ListWhiteboardsResponse: zod.ZodObject<{
+    items: zod.ZodArray<zod.ZodObject<{
+        id: zod.ZodString;
+        title: zod.ZodString;
+        createdBy: zod.ZodString;
+        updatedBy: zod.ZodString;
+        createdAt: zod.ZodString;
+        updatedAt: zod.ZodString;
+    }, "strip", zod.ZodTypeAny, {
+        id: string;
+        createdAt: string;
+        updatedAt: string;
+        createdBy: string;
+        title: string;
+        updatedBy: string;
+    }, {
+        id: string;
+        createdAt: string;
+        updatedAt: string;
+        createdBy: string;
+        title: string;
+        updatedBy: string;
+    }>, "many">;
+}, "strip", zod.ZodTypeAny, {
+    items: {
+        id: string;
+        createdAt: string;
+        updatedAt: string;
+        createdBy: string;
+        title: string;
+        updatedBy: string;
+    }[];
+}, {
+    items: {
+        id: string;
+        createdAt: string;
+        updatedAt: string;
+        createdBy: string;
+        title: string;
+        updatedBy: string;
+    }[];
+}>;
+/**
+ * @summary Create a whiteboard and share it with the coordinator team
+ */
+export declare const CreateWhiteboardBody: zod.ZodObject<{
+    title: zod.ZodString;
+    data: zod.ZodString;
+    createdBy: zod.ZodOptional<zod.ZodString>;
+}, "strip", zod.ZodTypeAny, {
+    title: string;
+    data: string;
+    createdBy?: string | undefined;
+}, {
+    title: string;
+    data: string;
+    createdBy?: string | undefined;
+}>;
+export declare const CreateWhiteboardResponse: zod.ZodObject<{
+    id: zod.ZodString;
+    title: zod.ZodString;
+    data: zod.ZodString;
+    createdBy: zod.ZodString;
+    updatedBy: zod.ZodString;
+    createdAt: zod.ZodString;
+    updatedAt: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}>;
+/**
+ * @summary Get a single shared whiteboard including its Excalidraw scene data
+ */
+export declare const GetWhiteboardParams: zod.ZodObject<{
+    boardId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    boardId: string;
+}, {
+    boardId: string;
+}>;
+export declare const GetWhiteboardResponse: zod.ZodObject<{
+    id: zod.ZodString;
+    title: zod.ZodString;
+    data: zod.ZodString;
+    createdBy: zod.ZodString;
+    updatedBy: zod.ZodString;
+    createdAt: zod.ZodString;
+    updatedAt: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}>;
+/**
+ * @summary Update a shared whiteboard's title or scene data
+ */
+export declare const UpdateWhiteboardParams: zod.ZodObject<{
+    boardId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    boardId: string;
+}, {
+    boardId: string;
+}>;
+export declare const UpdateWhiteboardBody: zod.ZodObject<{
+    title: zod.ZodString;
+    data: zod.ZodString;
+    createdBy: zod.ZodOptional<zod.ZodString>;
+}, "strip", zod.ZodTypeAny, {
+    title: string;
+    data: string;
+    createdBy?: string | undefined;
+}, {
+    title: string;
+    data: string;
+    createdBy?: string | undefined;
+}>;
+export declare const UpdateWhiteboardResponse: zod.ZodObject<{
+    id: zod.ZodString;
+    title: zod.ZodString;
+    data: zod.ZodString;
+    createdBy: zod.ZodString;
+    updatedBy: zod.ZodString;
+    createdAt: zod.ZodString;
+    updatedAt: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    title: string;
+    updatedBy: string;
+    data: string;
+}>;
+/**
+ * @summary Delete a shared whiteboard
+ */
+export declare const DeleteWhiteboardParams: zod.ZodObject<{
+    boardId: zod.ZodString;
+}, "strip", zod.ZodTypeAny, {
+    boardId: string;
+}, {
+    boardId: string;
+}>;
+export declare const DeleteWhiteboardResponse: zod.ZodVoid;
+/**
  * @summary Get persisted assistant conversations
  */
 export declare const GetAssistantHistoryResponse: zod.ZodObject<{

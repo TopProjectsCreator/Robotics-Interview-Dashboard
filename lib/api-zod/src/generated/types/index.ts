@@ -102,3 +102,7 @@ export * from './systemUsage';
 export * from './uploadInput';
 export * from './uploadResponse';
 export * from './uploadResponseMetadata';
+export * from './whiteboard';
+export * from './whiteboardInput';
+export * from './whiteboardList';
+export * from './whiteboardSummary';

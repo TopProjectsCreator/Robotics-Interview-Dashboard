@@ -19,6 +19,7 @@
 
 export * from "./applicants";
 export * from "./interview";
+export * from "./whiteboards";
 export * from "./assistant";
 export * from "./broadcasts";
 export * from "./presence";

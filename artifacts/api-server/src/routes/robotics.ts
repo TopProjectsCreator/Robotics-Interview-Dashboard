@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, presenceHeartbeatsTable, seatingSettingsTable, whiteboardsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -65,6 +65,15 @@ import {
   UpdateApplicantParams,
   UpdateApplicantResponse,
   DeleteApplicantParams,
+  ListWhiteboardsResponse,
+  CreateWhiteboardBody,
+  CreateWhiteboardResponse,
+  GetWhiteboardParams,
+  GetWhiteboardResponse,
+  UpdateWhiteboardBody,
+  UpdateWhiteboardResponse,
+  UpdateWhiteboardParams,
+  DeleteWhiteboardParams,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
@@ -1835,6 +1844,101 @@ router.delete("/dashboard/charts/:chartId", requireAdmin, async (req, res): Prom
     res.status(404).json({ error: "Chart not found." });
     return;
   }
+  res.status(204).end();
+});
+
+function isValidWhiteboardPayload(payload: { title?: unknown; data?: unknown }) {
+  return typeof payload?.title === "string" && payload.title.trim().length > 0 &&
+    typeof payload?.data === "string" && payload.data.length > 0;
+}
+
+function whiteboardSummaryResponse(board: { id: string; title: string; createdBy: string; updatedBy: string; createdAt: Date; updatedAt: Date }) {
+  return {
+    id: board.id,
+    title: board.title,
+    createdBy: board.createdBy,
+    updatedBy: board.updatedBy,
+    createdAt: board.createdAt.toISOString(),
+    updatedAt: board.updatedAt.toISOString(),
+  };
+}
+
+function whiteboardResponse(board: { id: string; title: string; data: string; createdBy: string; updatedBy: string; createdAt: Date; updatedAt: Date }) {
+  return {
+    ...whiteboardSummaryResponse(board),
+    data: board.data,
+  };
+}
+
+router.get("/whiteboards", requireAdmin, async (_req, res): Promise<void> => {
+  const boards = await db.select().from(whiteboardsTable).orderBy(desc(whiteboardsTable.updatedAt));
+  res.json(ListWhiteboardsResponse.parse({ items: boards.map(whiteboardSummaryResponse) }));
+});
+
+router.post("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = CreateWhiteboardBody.safeParse(req.body);
+  if (!parsed.success || !isValidWhiteboardPayload(parsed.data)) {
+    res.status(400).json({ error: parsed.success ? "A title and scene data are required." : parsed.error.message });
+    return;
+  }
+  const [created] = await db.insert(whiteboardsTable).values({
+    id: randomUUID(),
+    title: parsed.data.title.trim().slice(0, 120) || "Untitled board",
+    data: parsed.data.data,
+    createdBy: parsed.data.createdBy?.trim().slice(0, 80) || "Interviewer",
+    updatedBy: parsed.data.createdBy?.trim().slice(0, 80) || "Interviewer",
+  }).returning();
+  pushRealtimeHint("whiteboards");
+  res.status(201).json(CreateWhiteboardResponse.parse(whiteboardResponse(created)));
+});
+
+router.get("/whiteboards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetWhiteboardParams.safeParse(req.params);
+  if (!params.success || !params.data.boardId) {
+    res.status(400).json({ error: "Invalid whiteboard id." });
+    return;
+  }
+  const [board] = await db.select().from(whiteboardsTable).where(eq(whiteboardsTable.id, params.data.boardId));
+  if (!board) {
+    res.status(404).json({ error: "Whiteboard not found." });
+    return;
+  }
+  res.json(GetWhiteboardResponse.parse(whiteboardResponse(board)));
+});
+
+router.put("/whiteboards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdateWhiteboardParams.safeParse(req.params);
+  const parsed = UpdateWhiteboardBody.safeParse(req.body);
+  if (!params.success || !params.data.boardId || !parsed.success || !isValidWhiteboardPayload(parsed.data)) {
+    res.status(400).json({ error: parsed.success ? "A title and scene data are required." : "Invalid whiteboard update." });
+    return;
+  }
+  const [updated] = await db.update(whiteboardsTable).set({
+    title: parsed.data.title.trim().slice(0, 120) || "Untitled board",
+    data: parsed.data.data,
+    updatedBy: parsed.data.createdBy?.trim().slice(0, 80) || whiteboardsTable.updatedBy,
+    updatedAt: new Date(),
+  }).where(eq(whiteboardsTable.id, params.data.boardId)).returning();
+  if (!updated) {
+    res.status(404).json({ error: "Whiteboard not found." });
+    return;
+  }
+  pushRealtimeHint("whiteboards");
+  res.json(UpdateWhiteboardResponse.parse(whiteboardResponse(updated)));
+});
+
+router.delete("/whiteboards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+  const params = DeleteWhiteboardParams.safeParse(req.params);
+  if (!params.success || !params.data.boardId) {
+    res.status(400).json({ error: "Invalid whiteboard id." });
+    return;
+  }
+  const [deleted] = await db.delete(whiteboardsTable).where(eq(whiteboardsTable.id, params.data.boardId)).returning({ id: whiteboardsTable.id });
+  if (!deleted) {
+    res.status(404).json({ error: "Whiteboard not found." });
+    return;
+  }
+  pushRealtimeHint("whiteboards");
   res.status(204).end();
 });
 

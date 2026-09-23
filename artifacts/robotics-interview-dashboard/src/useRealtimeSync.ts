@@ -6,6 +6,7 @@ import {
   getGetInterviewChatQueryKey,
   getGetQueueQueryKey,
   getListApplicantsQueryKey,
+  getListWhiteboardsQueryKey,
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
 
@@ -30,6 +31,7 @@ export function useRealtimeSync(authenticated: boolean) {
       qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
       qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
       qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+      qc.invalidateQueries({ queryKey: getListWhiteboardsQueryKey() });
     };
     source.onerror = () => {
       // EventSource reconnects on its own; polling covers any gap.
