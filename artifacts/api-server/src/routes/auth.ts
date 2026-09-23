@@ -12,6 +12,11 @@ import {
   ListInterviewersResponse,
   SetupInterviewerPasswordBody,
   SetupInterviewerPasswordResponse,
+  UpdateInterviewerPasswordBody,
+  UpdateInterviewerPasswordParams,
+  UpdateInterviewerPasswordResponse,
+  ResetAllInterviewerPasswordsResponse,
+  ResetAllInterviewerPasswordsBody,
 } from "@workspace/api-zod";
 import {
   clearAdminCookie,
@@ -19,6 +24,7 @@ import {
   interviewerIdFromSession,
   isValidAdminSession,
   requestAdminSession,
+  requireAdmin,
   revokeAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
@@ -145,6 +151,51 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
     return;
   }
   res.json(SetupInterviewerPasswordResponse.parse(publicAccount(updated)));
+});
+
+router.patch("/auth/interviewers/:interviewerId/password", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdateInterviewerPasswordParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Interviewer is required." });
+    return;
+  }
+  const parsed = UpdateInterviewerPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Event passcode and a password are required. Use null to reset the password." });
+    return;
+  }
+  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  const account = await accountById(params.data.interviewerId);
+  if (!account) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const [updated] = await db.update(interviewerAccountsTable)
+    .set({ passwordHash: parsed.data.password === null ? null : hashPassword(parsed.data.password), updatedAt: new Date() })
+    .where(eq(interviewerAccountsTable.id, account.id))
+    .returning();
+  if (!updated) {
+    res.status(500).json({ error: "Could not update interviewer password." });
+    return;
+  }
+  res.json(UpdateInterviewerPasswordResponse.parse(publicAccount(updated)));
+});
+
+router.post("/auth/interviewers/passwords/reset-all", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = ResetAllInterviewerPasswordsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "The event passcode is required." });
+    return;
+  }
+  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  await db.update(interviewerAccountsTable).set({ passwordHash: null, updatedAt: new Date() });
+  res.json(ResetAllInterviewerPasswordsResponse.parse({ message: "All interviewer passwords were reset. Each interviewer must set up a new password." }));
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {

@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
-import { db, revokedSessionsTable } from "@workspace/db";
+import { db, interviewerAccountsTable, revokedSessionsTable } from "@workspace/db";
 
 const SESSION_COOKIE = "robotics_admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -127,8 +127,22 @@ export function requireAdmin(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
-    (req as Request & { interviewerId?: string }).interviewerId = interviewerId;
-    next();
+    db.select({ passwordHash: interviewerAccountsTable.passwordHash })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1)
+      .then(([account]) => {
+        if (!account?.passwordHash) {
+          res.status(401).json({ error: "Password setup required" });
+          return;
+        }
+        (req as Request & { interviewerId?: string }).interviewerId = interviewerId;
+        next();
+      })
+      .catch((error) => {
+        req.log.error({ err: error }, "Interviewer account check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
   }).catch((error) => {
     req.log.error({ err: error }, "Session revocation check failed");
     res.status(503).json({ error: "Authentication unavailable" });

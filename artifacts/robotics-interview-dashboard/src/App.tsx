@@ -18,7 +18,7 @@ import {
   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer,
+  useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -157,13 +157,72 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
   const qc = useQueryClient();
+  const [, setLocation] = useLocation();
   const [notifyState, setNotifyState] = useState(() => browserNotifyPermission());
   const [refreshed, setRefreshed] = useState(false);
+  const [passwordAdminCode, setPasswordAdminCode] = useState("");
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
+  const [passwordNotice, setPasswordNotice] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
+  const updateInterviewerPassword = useUpdateInterviewerPassword();
+  const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const enableNotifications = async () => {
     try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ }
     setNotifyState(browserNotifyPermission());
   };
   const refreshAll = () => { qc.invalidateQueries(); setRefreshed(true); };
+  const finishPasswordAction = (message: string, resetSession = false) => {
+    setPasswordNotice(message);
+    setPasswordError("");
+    qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+    if (resetSession) {
+      clearStoredAuthToken();
+      qc.clear();
+      onClose();
+      setLocation("/");
+    }
+  };
+  const changeInterviewerPassword = (interviewerId: string, password: string | null) => {
+    setPasswordNotice("");
+    setPasswordError("");
+    if (!passwordAdminCode.trim()) {
+      setPasswordError("Enter the event passcode first.");
+      return;
+    }
+    if (password !== null && !password.trim()) {
+      setPasswordError("Enter a new password or use Reset.");
+      return;
+    }
+    updateInterviewerPassword.mutate(
+      { interviewerId, data: { eventPassword: passwordAdminCode.trim(), password: password === null ? null : password } },
+      {
+        onSuccess: () => finishPasswordAction(
+          password === null ? "Password removed. That interviewer must set one up at next sign-in." : "Password updated.",
+          password === null && session.data?.interviewerId === interviewerId,
+        ),
+        onError: () => setPasswordError("Could not update that password. Check the event passcode and try again."),
+      },
+    );
+  };
+  const resetEveryPassword = () => {
+    setPasswordNotice("");
+    setPasswordError("");
+    if (!passwordAdminCode.trim()) {
+      setPasswordError("Enter the event passcode first.");
+      return;
+    }
+    if (!window.confirm("Reset every interviewer password? Everyone will need to set up a new password before signing in again.")) return;
+    resetAllInterviewerPasswords.mutate(
+      { data: { eventPassword: passwordAdminCode.trim() } },
+      {
+        onSuccess: () => finishPasswordAction("All passwords were reset. Set up a new password to continue.", true),
+        onError: () => setPasswordError("Could not reset all passwords. Check the event passcode and try again."),
+      },
+    );
+  };
+  const passwordBusy = updateInterviewerPassword.isPending || resetAllInterviewerPasswords.isPending;
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" onClick={onClose} data-testid="settings-modal">
     <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
       <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91]">Saved on this device only — your co-coordinator keeps their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5]"><X size={16} /></button></div>
@@ -187,6 +246,20 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Notifications</p>
         <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts pop up even in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — turn on to catch broadcasts"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white">Enable</button>}</SettingRow>
+      </div>
+      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Interviewer passwords</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91]">Use the event passcode to set or remove a personal password. Removing one sends that interviewer through setup again.</p>
+        <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} data-testid="input-settings-event-passcode" className="h-10 w-full rounded-lg border border-[#dce5e5] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /></label>
+        <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa]">
+          {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91]">Loading interviewer accounts…</p>}
+          {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div>
+            <div className="flex flex-wrap gap-2"><input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="New password" data-testid={`input-settings-password-${account.id}`} className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs outline-none focus:border-[#16869a]" /><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? "")} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Set</button><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] disabled:opacity-50">Reset</button></div>
+          </div>)}
+        </div>
+        <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2.5 text-xs font-semibold text-[#a34d46] disabled:opacity-50"><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
+        {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63]" data-testid="settings-password-success">{passwordNotice}</p>}
+        {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42]" data-testid="settings-password-error">{passwordError}</p>}
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className="flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762]"><RefreshCw size={14} /> Reload</button></SettingRow>
