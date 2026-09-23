@@ -52,6 +52,7 @@ import type {
   DisplaySettingsInput,
   DisplayState,
   ErrorResponse,
+  EventPasswordInput,
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
@@ -67,6 +68,7 @@ import type {
   InterviewChatMessage,
   InterviewerAccount,
   InterviewerAccountList,
+  InterviewerPasswordUpdateInput,
   ListApplicantsParams,
   LoginInput,
   MessageResponse,
@@ -641,6 +643,149 @@ export const useSetupInterviewerPassword = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSetupInterviewerPasswordMutationOptions(options));
+    }
+
+export const getUpdateInterviewerPasswordUrl = (interviewerId: string,) => {
+
+
+
+
+  return `/api/auth/interviewers/${interviewerId}/password`
+}
+
+/**
+ * @summary Change or remove an interviewer password
+ */
+export const updateInterviewerPassword = async (interviewerId: string,
+    interviewerPasswordUpdateInput: InterviewerPasswordUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getUpdateInterviewerPasswordUrl(interviewerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewerPasswordUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateInterviewerPasswordMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateInterviewerPassword'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInterviewerPassword>>, {interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}> = (props) => {
+          const {interviewerId,data} = props ?? {};
+
+          return  updateInterviewerPassword(interviewerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateInterviewerPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof updateInterviewerPassword>>>
+    export type UpdateInterviewerPasswordMutationBody = BodyType<InterviewerPasswordUpdateInput>
+    export type UpdateInterviewerPasswordMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Change or remove an interviewer password
+ */
+export const useUpdateInterviewerPassword = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateInterviewerPassword>>,
+        TError,
+        {interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateInterviewerPasswordMutationOptions(options));
+    }
+
+export const getResetAllInterviewerPasswordsUrl = () => {
+
+
+
+
+  return `/api/auth/interviewers/passwords/reset-all`
+}
+
+/**
+ * @summary Remove every interviewer password so setup is required again
+ */
+export const resetAllInterviewerPasswords = async (eventPasswordInput: EventPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getResetAllInterviewerPasswordsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(eventPasswordInput)
+  }
+);}
+
+
+
+
+
+export const getResetAllInterviewerPasswordsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAllInterviewerPasswords>>, TError,{data: BodyType<EventPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetAllInterviewerPasswords>>, TError,{data: BodyType<EventPasswordInput>}, TContext> => {
+
+const mutationKey = ['resetAllInterviewerPasswords'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetAllInterviewerPasswords>>, {data: BodyType<EventPasswordInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  resetAllInterviewerPasswords(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetAllInterviewerPasswordsMutationResult = NonNullable<Awaited<ReturnType<typeof resetAllInterviewerPasswords>>>
+    export type ResetAllInterviewerPasswordsMutationBody = BodyType<EventPasswordInput>
+    export type ResetAllInterviewerPasswordsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove every interviewer password so setup is required again
+ */
+export const useResetAllInterviewerPasswords = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAllInterviewerPasswords>>, TError,{data: BodyType<EventPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetAllInterviewerPasswords>>,
+        TError,
+        {data: BodyType<EventPasswordInput>},
+        TContext
+      > => {
+      return useMutation(getResetAllInterviewerPasswordsMutationOptions(options));
     }
 
 export const getLogoutUrl = () => {

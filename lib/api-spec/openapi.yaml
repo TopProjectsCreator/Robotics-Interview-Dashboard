@@ -135,6 +135,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewerAccount"
+  /auth/interviewers/{interviewerId}/password:
+    patch:
+      operationId: updateInterviewerPassword
+      tags: [auth]
+      summary: Change or remove an interviewer password
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewerPasswordUpdateInput"
+      responses:
+        "200":
+          description: Updated interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+  /auth/interviewers/passwords/reset-all:
+    post:
+      operationId: resetAllInterviewerPasswords
+      tags: [auth]
+      summary: Remove every interviewer password so setup is required again
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventPasswordInput"
+      responses:
+        "200":
+          description: Passwords reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
   /auth/logout:
     post:
       operationId: logout
@@ -1184,6 +1232,24 @@ components:
           type: string
           minLength: 1
         password:
+          type: string
+          minLength: 1
+    InterviewerPasswordUpdateInput:
+      type: object
+      required: [eventPassword, password]
+      properties:
+        eventPassword:
+          type: string
+          minLength: 1
+        password:
+          type: ["string", "null"]
+          minLength: 1
+          description: New password, or null to remove the password and require setup again
+    EventPasswordInput:
+      type: object
+      required: [eventPassword]
+      properties:
+        eventPassword:
           type: string
           minLength: 1
     CreateInterviewerInput:

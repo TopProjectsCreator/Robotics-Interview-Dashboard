@@ -117,6 +117,44 @@ export const SetupInterviewerPasswordResponse = zod.object({
 
 
 /**
+ * @summary Change or remove an interviewer password
+ */
+export const UpdateInterviewerPasswordParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+
+
+
+
+export const UpdateInterviewerPasswordBody = zod.object({
+  "eventPassword": zod.string().min(1),
+  "password": zod.string().min(1).nullable().describe('New password, or null to remove the password and require setup again')
+})
+
+export const UpdateInterviewerPasswordResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean()
+})
+
+
+/**
+ * @summary Remove every interviewer password so setup is required again
+ */
+
+
+
+export const ResetAllInterviewerPasswordsBody = zod.object({
+  "eventPassword": zod.string().min(1)
+})
+
+export const ResetAllInterviewerPasswordsResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary End the current admin session
  */
 export const LogoutResponse = zod.object({

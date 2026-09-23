@@ -73,6 +73,22 @@ export interface SetupInterviewerPasswordInput {
   password: string;
 }
 
+export interface InterviewerPasswordUpdateInput {
+  /** @minLength 1 */
+  eventPassword: string;
+  /**
+     * New password, or null to remove the password and require setup again
+     * @minLength 1
+     * @nullable
+     */
+  password: string | null;
+}
+
+export interface EventPasswordInput {
+  /** @minLength 1 */
+  eventPassword: string;
+}
+
 export interface CreateInterviewerInput {
   /** @minLength 1 */
   displayName: string;
