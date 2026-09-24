@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } fr
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, Bot, Check, ChevronRight, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, Bot, Check, ChevronRight, CircleDot, ClipboardList,
   FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
@@ -55,6 +55,8 @@ import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 import { WhiteboardEditor } from "./components/WhiteboardEditor";
 import { DocumentEditor } from "./components/DocumentEditor";
+import { ChatMentionToken } from "./components/ChatMentionToken";
+import { findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 
 const queryClient = new QueryClient();
@@ -250,7 +252,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Notifications</p>
-        <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts pop up even in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — turn on to catch broadcasts"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white">Enable</button>}</SettingRow>
+       <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white">Enable</button>}</SettingRow>
       </div>
       <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Interviewer passwords</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91]">Use the event passcode to set or remove a personal password. Removing one sends that interviewer through setup again.</p>
@@ -278,15 +280,29 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
+function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionPerson[] = []): ReactNode[] {
   const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/|\/api\/storage\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:|\/api\/storage\/)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   let key = 0;
+  const pushText = (segment: string) => {
+    const mentions = findChatMentions(segment, mentionPeople);
+    if (!mentions.length) {
+      nodes.push(segment);
+      return;
+    }
+    let textCursor = 0;
+    for (const mention of mentions) {
+      if (mention.start > textCursor) nodes.push(segment.slice(textCursor, mention.start));
+      nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={mention.text} person={mention.person} />);
+      textCursor = mention.end;
+    }
+    if (textCursor < segment.length) nodes.push(segment.slice(textCursor));
+  };
 
   while ((match = tokenPattern.exec(text))) {
-    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    if (match.index > cursor) pushText(text.slice(cursor, match.index));
     const token = match[0];
     const tokenKey = `inline-${key++}`;
     const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/storage\/)[^)]+)\)$/);
@@ -303,16 +319,16 @@ function renderInlineMarkdown(text: string): ReactNode[] {
         ? <AuthenticatedChatAttachment key={tokenKey} src={link[2]} name={link[1]} />
         : <a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
     } else if (token.startsWith("**") || token.startsWith("__")) {
-      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2))}</strong>);
+      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2), mentionPeople)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(<code key={tokenKey} className="rounded bg-[#edf4f3] px-1 py-0.5 font-mono text-[.9em] text-[#315a61]">{token.slice(1, -1)}</code>);
     } else if (token.startsWith("*") || token.startsWith("_")) {
-      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1))}</em>);
+      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1), mentionPeople)}</em>);
     }
     cursor = match.index + token.length;
   }
 
-  if (cursor < text.length) nodes.push(text.slice(cursor));
+  if (cursor < text.length) pushText(text.slice(cursor));
   return nodes.length ? nodes : [text];
 }
 
@@ -556,7 +572,13 @@ function stripMarkdownCell(cell: string): string {
     .trim();
 }
 
-function MarkdownTableExport({ header, rows, aligns, tableKey }: { header: string[]; rows: string[][]; aligns: ("left" | "center" | "right")[]; tableKey: string }) {
+function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [] }: {
+  header: string[];
+  rows: string[][];
+  aligns: ("left" | "center" | "right")[];
+  tableKey: string;
+  mentionPeople?: readonly ChatMentionPerson[];
+}) {
   const [busy, setBusy] = useState(false);
   const fileBase = `ai-table-${new Date().toISOString().slice(0, 10)}`;
   const plainHeader = header.map(stripMarkdownCell);
@@ -590,13 +612,13 @@ function MarkdownTableExport({ header, rows, aligns, tableKey }: { header: strin
             <tr className="bg-[#edf4f3]">
               {header.map((cell, cellIndex) => (
                 <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#dce9e8] px-3 py-2 font-semibold text-[#183a4b]">
-                  {renderInlineMarkdown(cell)}
+                  {renderInlineMarkdown(cell, mentionPeople)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {bodyRowsFallback(rows, aligns, tableKey)}
+            {bodyRowsFallback(rows, aligns, tableKey, mentionPeople)}
           </tbody>
         </table>
       </div>
@@ -610,19 +632,27 @@ function MarkdownTableExport({ header, rows, aligns, tableKey }: { header: strin
   );
 }
 
-function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string) {
+function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = []) {
   return rows.map((row, rowIndex) => (
     <tr key={`tr-${tableKey}-${rowIndex}`} className="odd:bg-white even:bg-[#f7faf9]">
       {row.map((cell, cellIndex) => (
         <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#eef3f2] px-3 py-2 align-top">
-          {renderInlineMarkdown(cell)}
+          {renderInlineMarkdown(cell, mentionPeople)}
         </td>
       ))}
     </tr>
   ));
 }
 
-function MarkdownContent({ source, className = "" }: { source: string; className?: string }) {
+function MarkdownContent({
+  source,
+  className = "",
+  mentionPeople = [],
+}: {
+  source: string;
+  className?: string;
+  mentionPeople?: readonly ChatMentionPerson[];
+}) {
   const capped = source.length > MARKDOWN_MAX_CHARS ? `${source.slice(0, MARKDOWN_MAX_CHARS)}\n\n…(truncated)` : source;
   const blocks: ReactNode[] = [];
   const paragraph: string[] = [];
@@ -632,16 +662,16 @@ function MarkdownContent({ source, className = "" }: { source: string; className
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "))}</p>);
+    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "), mentionPeople)}</p>);
     paragraph.length = 0;
   };
   const flushLists = () => {
     if (orderedItems.length) {
-      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item)}</li>)}</ol>);
+      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople)}</li>)}</ol>);
       orderedItems.length = 0;
     }
     if (unorderedItems.length) {
-      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item)}</li>)}</ul>);
+      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople)}</li>)}</ul>);
       unorderedItems.length = 0;
     }
   };
@@ -681,7 +711,7 @@ function MarkdownContent({ source, className = "" }: { source: string; className
           if (rowCells.length === header.length) bodyRows.push(rowCells);
         }
         const tableKey = `table-${key++}`;
-        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} />);
+        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} mentionPeople={mentionPeople} />);
         for (let skip = 1; skip <= consumed; skip += 1) allLines[lineIndex + skip] = "";
         return;
       }
@@ -690,7 +720,7 @@ function MarkdownContent({ source, className = "" }: { source: string; className
     if (heading) {
       flush();
       const Heading = `h${Math.min(heading[1].length, 4)}` as "h1" | "h2" | "h3" | "h4";
-      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2])}</Heading>);
+      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople)}</Heading>);
       return;
     }
     const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
@@ -710,7 +740,7 @@ function MarkdownContent({ source, className = "" }: { source: string; className
     const quote = trimmed.match(/^>\s?(.+)$/);
     if (quote) {
       flush();
-      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1])}</blockquote>);
+      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1], mentionPeople)}</blockquote>);
       return;
     }
     if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
@@ -2577,6 +2607,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const interviewerLabels = queue.data?.interviewerLabels ?? [];
   const [conversationPeer, setConversationPeer] = useState<string | null>(null);
   const activeInterviewer = session.data?.label ?? "Interviewer";
+  const mentionLabels = useMemo(() => {
+    const unique = new Map<string, string>();
+    for (const label of [...interviewerLabels, activeInterviewer]) {
+      const normalized = label.trim().replace(/\s+/g, " ");
+      if (normalized && !unique.has(normalized.toLowerCase())) unique.set(normalized.toLowerCase(), normalized);
+    }
+    return [...unique.values()];
+  }, [activeInterviewer, interviewerLabels]);
   const conversationScope = conversationPeer ? "direct" : "shared";
   const conversationId = `${conversationScope}:${activeInterviewer}:${conversationPeer ?? ""}`;
   const chatParams = useMemo(() => ({
@@ -2625,6 +2663,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [mentionAttention, setMentionAttention] = useState<InterviewChatMessage | null>(null);
+  const seenChatMessagesRef = useRef<{ conversationId: string; ids: Set<string>; latestAt: number } | null>(null);
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [activeWhiteboardId, setActiveWhiteboardId] = useState<string | null>(null);
   const [whiteboardError, setWhiteboardError] = useState("");
@@ -2666,21 +2706,24 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [chatError, setChatError] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
-  const mentionPeople = useMemo(() => {
-    const labels = interviewerLabels;
-    const people = [
-      { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗" },
-      ...labels.map(label => ({ token: label, label, detail: "Interviewer", initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?" })),
-      { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI" },
-    ];
-    return people.filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index);
-  }, [interviewerLabels]);
+  const mentionPeople = useMemo<ChatMentionPerson[]>(() => [
+    { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
+    ...mentionLabels.map(label => ({
+      token: label,
+      label,
+      detail: "Interviewer · tryout team",
+      initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?",
+      kind: "interviewer" as const,
+    })),
+    { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI", kind: "assistant" as const },
+  ].filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index), [mentionLabels]);
   const filteredMentionPeople = useMemo(() => {
     const query = mentionQuery.trim().toLowerCase();
     return mentionPeople.filter(person => !query || `${person.label} ${person.token}`.toLowerCase().includes(query)).slice(0, 6);
@@ -2809,6 +2852,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const match = value.match(/(?:^|\s)@([^\s@]*)$/);
     setMentionOpen(Boolean(match));
     setMentionQuery(match?.[1] ?? "");
+    setMentionActiveIndex(0);
     setEmojiOpen(false);
     setComposerMenuOpen(false);
     setVoiceMenuOpen(false);
@@ -2830,7 +2874,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       input.setSelectionRange(cursor, cursor);
     });
   };
-  const selectMention = (person: { token: string }) => {
+  const selectMention = (person: ChatMentionPerson) => {
     const match = message.match(/(?:^|\s)@([^\s@]*)$/);
     if (!match || match.index === undefined) return;
     const start = match.index + (match[0].startsWith(" ") ? 1 : 0);
@@ -2843,6 +2887,35 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       input?.focus();
       input?.setSelectionRange(next.length, next.length);
     });
+  };
+  const handleChatInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      setMentionOpen(false);
+      setEmojiOpen(false);
+      setComposerMenuOpen(false);
+      return;
+    }
+    if (mentionOpen && filteredMentionPeople.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setMentionActiveIndex(index => (index + 1) % filteredMentionPeople.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionActiveIndex(index => (index - 1 + filteredMentionPeople.length) % filteredMentionPeople.length);
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey || event.key === "Tab" && !event.shiftKey) {
+        event.preventDefault();
+        selectMention(filteredMentionPeople[mentionActiveIndex] ?? filteredMentionPeople[0]);
+        return;
+      }
+    }
+    if (event.key === "Enter" && !event.shiftKey && !mentionOpen) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   };
   const applyFormatting = (before: string, after = before) => {
     const input = chatMessageInputRef.current;
@@ -2960,6 +3033,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setOlderChat([]);
     setChatHasMore(true);
     setChatLoadingMore(false);
+    setMentionAttention(null);
+    seenChatMessagesRef.current = null;
     setReplyingTo(null);
     setEditingMessageId(null);
     setEditDraft("");
@@ -3022,6 +3097,57 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     }
     chatPrevLenRef.current = n;
   }, [chatItems]);
+  useEffect(() => {
+    if (chat.data?.scope !== conversationScope || chat.data.peer !== (conversationPeer ?? null)) return;
+
+    const latestAt = chatItems.reduce((latest, item) => {
+      const timestamp = Date.parse(item.createdAt);
+      return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+    }, 0);
+    const currentIds = new Set(chatItems.map(item => item.id));
+    const previous = seenChatMessagesRef.current;
+    if (!previous || previous.conversationId !== conversationId) {
+      seenChatMessagesRef.current = { conversationId, ids: currentIds, latestAt };
+      return;
+    }
+
+    const newlyReceived = chatItems.filter(item => {
+      const timestamp = Date.parse(item.createdAt);
+      return !previous.ids.has(item.id) && Number.isFinite(timestamp) && timestamp >= previous.latestAt;
+    });
+    const newMentions = newlyReceived.filter(item =>
+      item.author.toLowerCase() !== activeInterviewer.toLowerCase() &&
+      messageMentionsInterviewer(item.message, activeInterviewer),
+    );
+    if (newMentions.length > 0) {
+      const latestMention = newMentions.reduce((latest, item) =>
+        Date.parse(item.createdAt) >= Date.parse(latest.createdAt) ? item : latest,
+      );
+      if (!chatStickRef.current) setMentionAttention(latestMention);
+
+      if (document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
+        const conversationName = conversationScope === "direct" ? "a direct message" : "team chat";
+        const body = newMentions.length > 1
+          ? `${newMentions.length} new messages in ${conversationName} mention you.`
+          : `${latestMention.author} mentioned you in ${conversationName}.`;
+        try {
+          const notification = new Notification(newMentions.length > 1 ? "New chat mentions" : "You were mentioned", {
+            body,
+            tag: `chat-mention-${conversationId}`,
+          });
+          notification.onclick = () => window.focus();
+        } catch {
+          // The in-chat highlight remains available if browser notifications are blocked.
+        }
+      }
+    }
+
+    seenChatMessagesRef.current = {
+      conversationId,
+      ids: new Set([...previous.ids, ...currentIds]),
+      latestAt: Math.max(previous.latestAt, latestAt),
+    };
+  }, [activeInterviewer, chat.data?.peer, chat.data?.scope, chatItems, conversationId, conversationPeer, conversationScope]);
   useEffect(() => {
     if (scopedChatItems.length < CHAT_PAGE_SIZE && olderChat.length === 0) setChatHasMore(false);
   }, [olderChat.length, scopedChatItems.length]);
@@ -3223,7 +3349,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
     const canManage = item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant";
     const editing = editingMessageId === item.id;
-    return <div key={item.id} className={`group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
+    const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer);
+    return <div key={item.id} id={`chat-message-${item.id}`} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
       <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
@@ -3236,7 +3363,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>
       </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
-      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}</div><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}{mentionedYou && <span className="chat-mentioned-you-badge" data-testid={`chat-mentioned-you-${item.id}`}><AtSign size={11} strokeWidth={3} /> Mentioned you</span>}</div><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
         {editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
@@ -3244,7 +3371,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
              ? <button type="button" onClick={() => openWhiteboard(sharedDocument.id)} className="shared-document-card mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition" data-testid={`button-open-document-${sharedDocument.id}`}><span className="shared-document-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm"><FileText size={18} /></span><span className="min-w-0"><span className="shared-document-card-label block text-[10px] font-bold uppercase tracking-[.12em]">Shared document</span><span className="shared-document-card-title mt-0.5 block truncate text-sm font-semibold">{sharedDocument.title}</span><span className="shared-document-card-description mt-0.5 block text-[11px]">Open collaborative editor</span></span><ChevronRight size={16} className="shared-document-card-chevron ml-auto shrink-0" /></button>
             : sharedWhiteboard
               ? <button type="button" onClick={() => openWhiteboard(sharedWhiteboard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[#b9dddd] bg-[#eef8f7] p-3 text-left transition hover:border-[#16869a] hover:bg-[#e3f4f2]" data-testid={`button-open-whiteboard-${sharedWhiteboard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm"><FilePenLine size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">Shared whiteboard</span><span className="mt-0.5 block truncate text-sm font-semibold text-[#183a4b]">{sharedWhiteboard.title}</span><span className="mt-0.5 block text-[11px] text-[#527079]">Open in Excalidraw</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-[#16869a]" /></button>
-              : <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />;
+               : <MarkdownContent source={item.message} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -3259,7 +3386,24 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
    return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-     <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+      {mentionAttention && <button
+        type="button"
+        onClick={() => {
+          document.getElementById(`chat-message-${mentionAttention.id}`)?.scrollIntoView({
+            behavior: settings.reduceMotion ? "auto" : "smooth",
+            block: "center",
+          });
+          setMentionAttention(null);
+        }}
+        className="chat-mention-alert mt-3 flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition"
+        data-testid="chat-mention-attention"
+        aria-live="polite"
+      >
+        <AtSign size={17} className="shrink-0" />
+        <span className="min-w-0 flex-1"><span className="block text-xs font-bold">{mentionAttention.author} mentioned you</span><span className="block truncate text-[11px]">{mentionAttention.message.replace(/\s+/g, " ").trim()}</span></span>
+        <ArrowRight size={15} className="shrink-0" />
+      </button>}
      <div className="mt-4 rounded-2xl border border-[#dce9e8] bg-[#f7faf9] p-3">
        <div className="flex flex-wrap items-center gap-2">
          <span className="rounded-lg border border-[#16869a] bg-[#e3f4f2] px-2.5 py-1.5 text-xs font-semibold text-[#12737d]">Signed in as {activeInterviewer}</span>
@@ -3276,9 +3420,27 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        {replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
-         {mentionOpen && filteredMentionPeople.length > 0 && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
+          {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
            <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Mention someone in this space</p></div>
-           <div className="max-h-64 overflow-y-auto p-1.5">{filteredMentionPeople.map(person => <button key={person.token} type="button" onMouseDown={event => event.preventDefault()} onClick={() => selectMention(person)} className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[#edf4f3]" data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span></button>)}</div>
+            <div className="max-h-64 overflow-y-auto p-1.5">
+              {filteredMentionPeople.length > 0
+                ? filteredMentionPeople.map((person, index) => <button
+                  key={person.token}
+                  id={`chat-mention-option-${index}`}
+                  role="option"
+                  aria-selected={index === mentionActiveIndex}
+                  type="button"
+                  onMouseDown={event => event.preventDefault()}
+                  onMouseEnter={() => setMentionActiveIndex(index)}
+                  onClick={() => selectMention(person)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${index === mentionActiveIndex ? "bg-[#edf4f3]" : "hover:bg-[#edf4f3]"}`}
+                  data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span>
+                </button>)
+                : <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">No matching people.</p>}
+            </div>
          </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-upload-files"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-open-create-menu"><Plus size={16} className="text-[#16869a]" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-[#8a999d]">Choose a shared workspace item</span></span></button></div>}
           {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-[#d5e0e0] bg-white p-2 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-[#183a4b]">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#71878d] hover:bg-[#edf4f3]"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#f0f3fb] disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-[#5576b8]" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-[#8a999d]">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-[#16869a]" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-[#8a999d]">Sketch ideas together</span></span></button></div>}
@@ -3288,7 +3450,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            <div className="flex items-end gap-1.5">
               <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
              <div className="min-w-0 flex-1">
-                 <textarea ref={chatMessageInputRef} value={message} onChange={event => updateMentionState(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { setMentionOpen(false); setEmojiOpen(false); setComposerMenuOpen(false); } if (event.key === "Enter" && !event.shiftKey && !mentionOpen) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} data-testid="input-interviewer-chat" rows={1} className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]" placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"} />
+                 <textarea
+                   ref={chatMessageInputRef}
+                   value={message}
+                   onChange={event => updateMentionState(event.target.value)}
+                   onKeyDown={handleChatInputKeyDown}
+                   aria-autocomplete="list"
+                   aria-controls={mentionOpen ? "chat-mention-listbox" : undefined}
+                   aria-expanded={mentionOpen}
+                   aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${mentionActiveIndex}` : undefined}
+                   data-testid="input-interviewer-chat"
+                   rows={1}
+                   className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
+                   placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
+                 />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
              </div>
              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">

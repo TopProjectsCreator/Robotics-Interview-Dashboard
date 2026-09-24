@@ -1,9 +1,10 @@
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Buffer } from "node:buffer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 
 import { renderInlineMarkdown } from "./App";
+import { TooltipProvider } from "./components/ui/tooltip";
 
 const DOCX_FIXTURE_BASE64 =
   "UEsDBBQAAAAIADoNOF15bjPX6AAAAK0BAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH1QyU7DMBD9FWuuKHHggBCK0wPLETiUDxjZk8SqN3nc0v49Tlt6QIXjzFv1+tXeO7GjzDYGBbdtB4KCjsaGScHn+rV5AMEFg0EXAyk4EMNq6NeHRCyqNrCCuZT0KCXrmTxyGxOFiowxeyz1zJNMqDc4kbzrunupYygUSlMWDxj6Zxpx64p42df3qUcmxyCeTsQlSwGm5KzGUnG5C+ZXSnNOaKvyyOHZJr6pBJBXExbk74Cz7r0Ok60h8YG5vKGvLPkVs5Em6q2vyvZ/mys94zhaTRf94pZy1MRcF/euvSAebfjpL49zD99QSwMEFAAAAAgAOg04XZv9N+qtAAAAKQEAAAsAAABfcmVscy8ucmVsc43POw7CMAwG4KtE3mlaBoRQ0y4IqSsqB7ASN61oHkrCo7cnAwNFDIy2f3+W6/ZpZnanECdnBVRFCYysdGqyWsClP232wGJCq3B2lgQsFKFt6jPNmPJKHCcfWTZsFDCm5A+cRzmSwVg4TzZPBhcMplwGzT3KK2ri27Lc8fBpwNpknRIQOlUB6xdP/9huGCZJRydvhmz6ceIrkWUMmpKAhwuKq3e7yCzwpuarF5sXUEsDBBQAAAAIADoNOF0t7xcEtgAAAPMAAAARAAAAd29yZC9kb2N1bWVudC54bWxFjsFuwjAMhl8lyn2k4zBNVVsOIK5ME5N2DYmhkRq7sg2Ft6cpBy6f5d/2Jzebex7MDVgSYWs/V5U1gIFiwktr/477j29rRD1GPxBCax8gdtM1Ux0pXDOgmlmAUk+t7VXH2jkJPWQvKxoB59mZOHudW764iTiOTAFEZn8e3Lqqvlz2CW1Rnig+Sh0LuEC7XzqRpiAmoQLfEkxmd9j+m3O665WhcWWpkBcupwJBf9gtwcvp3v92T1BLAQIUAxQAAAAIADoNOF15bjPX6AAAAK0BAAATAAAAAAAAAAAAAACAAQAAAABbQ29udGVudF9UeXBlc10ueG1sUEsBAhQDFAAAAAgAOg04XZv9N+qtAAAAKQEAAAsAAAAAAAAAAAAAAIABGQEAAF9yZWxzLy5yZWxzUEsBAhQDFAAAAAgAOg04XS3vFwS2AAAA8wAAABEAAAAAAAAAAAAAAIAB7wEAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAADAAMAuQAAANQCAAAAAA==";
@@ -139,5 +140,25 @@ describe("chat attachment inline previews", () => {
     await waitFor(() => fixture.assertPreview(container));
 
     expect(container.querySelector("a[href^='/api/storage/']")).not.toBeInTheDocument();
+  });
+});
+
+describe("chat mention rendering", () => {
+  it("highlights a known interviewer and reveals their profile details on focus", async () => {
+    const person = {
+      token: "Ishaan",
+      label: "Ishaan",
+      detail: "Interviewer · tryout team",
+      initials: "I",
+      kind: "interviewer" as const,
+    };
+    const { container } = render(
+      <TooltipProvider>{renderInlineMarkdown("Thanks, @Ishaan!", [person])}</TooltipProvider>,
+    );
+
+    const mention = container.querySelector('[data-testid="chat-mention-ishaan"]');
+    expect(mention).toHaveTextContent("@Ishaan");
+    fireEvent.focus(mention as HTMLElement);
+    await waitFor(() => expect(screen.getByText("Interviewer · tryout team")).toBeVisible());
   });
 });
