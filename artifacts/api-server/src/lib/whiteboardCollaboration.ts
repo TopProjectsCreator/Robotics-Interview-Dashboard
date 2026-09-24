@@ -9,6 +9,7 @@ import {
   isValidAdminSession,
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
+import { isDocumentCollaborationPath } from "./documentCollaboration";
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
 const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
@@ -289,6 +290,7 @@ export function setupWhiteboardCollaboration(server: Server): void {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     const match = WHITEBOARD_PATH.exec(url.pathname);
     if (!match) {
+      if (isDocumentCollaborationPath(url.pathname)) return;
       socket.destroy();
       return;
     }

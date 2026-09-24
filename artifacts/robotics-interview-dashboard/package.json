@@ -82,11 +82,21 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
+    "@tiptap/extension-collaboration": "^3.31.3",
+    "@tiptap/extension-collaboration-caret": "^3.31.3",
+    "@tiptap/extension-text-align": "^3.31.3",
+    "@tiptap/extension-underline": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/y-tiptap": "^3.0.9",
     "dompurify": "^3.4.15",
     "heic2any": "^0.0.4",
     "kitten-tts-webgpu": "^0.1.1",
     "kokoro-js": "^1.2.1",
+    "lib0": "^0.2.117",
     "mammoth": "^1.12.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
   }
 }

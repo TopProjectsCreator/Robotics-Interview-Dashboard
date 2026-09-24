@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
+import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { pool, db, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 
@@ -60,6 +61,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const server = createServer(app);
+setupDocumentCollaboration(server);
 setupWhiteboardCollaboration(server);
 
 server.listen(port, () => {

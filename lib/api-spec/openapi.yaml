@@ -2141,7 +2141,7 @@ components:
         data:
           type: string
           minLength: 2
-          description: Serialized Excalidraw scene data
+          description: Serialized whiteboard scene or collaborative document state
         scope:
           type: string
           enum: [shared, direct]
@@ -2161,7 +2161,7 @@ components:
         data:
           type: string
           minLength: 2
-          description: Serialized Excalidraw scene data
+          description: Serialized whiteboard scene or collaborative document state
     InterviewWhiteboard:
       type: object
       required: [id, title, data, createdBy, scope, peer, createdAt, updatedAt]
