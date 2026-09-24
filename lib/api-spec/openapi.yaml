@@ -679,6 +679,111 @@ paths:
       responses:
         "204":
           description: Message deleted
+  /whiteboards:
+    get:
+      operationId: listInterviewWhiteboards
+      tags: [queue]
+      summary: List whiteboards available in the current interviewer conversation
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, direct]
+            default: shared
+        - name: author
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: peer
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available interviewer whiteboards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewWhiteboardList"
+    post:
+      operationId: createInterviewWhiteboard
+      tags: [queue]
+      summary: Create a whiteboard in the current interviewer conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewWhiteboardInput"
+      responses:
+        "201":
+          description: Created interviewer whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewWhiteboard"
+  /whiteboards/{whiteboardId}:
+    get:
+      operationId: getInterviewWhiteboardById
+      tags: [queue]
+      summary: Get an interviewer whiteboard
+      parameters:
+        - name: whiteboardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, direct]
+            default: shared
+        - name: author
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: peer
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Interviewer whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewWhiteboard"
+    patch:
+      operationId: updateInterviewWhiteboard
+      tags: [queue]
+      summary: Save an interviewer whiteboard
+      parameters:
+        - name: whiteboardId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewWhiteboardUpdateInput"
+      responses:
+        "200":
+          description: Updated interviewer whiteboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewWhiteboard"
   /queue/reorder:
     post:
       operationId: reorderQueue
@@ -1988,6 +2093,74 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InterviewChatMessage"
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
+    InterviewWhiteboardInput:
+      type: object
+      required: [title, data, scope]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        data:
+          type: string
+          minLength: 2
+          description: Serialized Excalidraw scene data
+        scope:
+          type: string
+          enum: [shared, direct]
+          default: shared
+        recipient:
+          type: string
+          nullable: true
+          description: Configured interviewer label for a direct whiteboard
+    InterviewWhiteboardUpdateInput:
+      type: object
+      required: [title, data]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        data:
+          type: string
+          minLength: 2
+          description: Serialized Excalidraw scene data
+    InterviewWhiteboard:
+      type: object
+      required: [id, title, data, createdBy, scope, peer, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        data:
+          type: string
+        createdBy:
+          type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    InterviewWhiteboardList:
+      type: object
+      required: [items, scope, peer]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InterviewWhiteboard"
         scope:
           type: string
           enum: [shared, direct]

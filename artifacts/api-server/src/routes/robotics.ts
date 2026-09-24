@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -65,6 +65,16 @@ import {
   UpdateApplicantParams,
   UpdateApplicantResponse,
   DeleteApplicantParams,
+  CreateInterviewWhiteboardBody,
+  CreateInterviewWhiteboardResponse,
+  ListInterviewWhiteboardsQueryParams,
+  ListInterviewWhiteboardsResponse,
+  GetInterviewWhiteboardByIdParams,
+  GetInterviewWhiteboardByIdQueryParams,
+  GetInterviewWhiteboardByIdResponse,
+  UpdateInterviewWhiteboardBody,
+  UpdateInterviewWhiteboardParams,
+  UpdateInterviewWhiteboardResponse,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
@@ -2534,6 +2544,158 @@ function pageWindow(query: unknown): { limit: number; before?: Date } {  const r
   }
   return { limit, before };
 }
+
+const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
+
+function normalizeWhiteboardData(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (Buffer.byteLength(value, "utf8") > MAX_WHITEBOARD_DATA_BYTES) return null;
+  try {
+    const parsed = JSON.parse(value) as { elements?: unknown };
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) return null;
+    return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function whiteboardResponse(
+  whiteboard: {
+    id: string;
+    title: string;
+    data: string;
+    createdBy: string;
+    conversationScope: string;
+    conversationPeer: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  conversation: ChatConversation,
+) {
+  return {
+    id: whiteboard.id,
+    title: whiteboard.title,
+    data: whiteboard.data,
+    createdBy: whiteboard.createdBy,
+    scope: conversation.scope,
+    peer: conversation.peer,
+    createdAt: whiteboard.createdAt.toISOString(),
+    updatedAt: whiteboard.updatedAt.toISOString(),
+  };
+}
+
+function whiteboardConversationForAccount(
+  whiteboard: { conversationScope: string; conversationPeer: string | null },
+  displayName: string,
+): ChatConversation | null {
+  if (whiteboard.conversationScope !== "direct") return { scope: "shared", peer: null, key: null };
+  const labels = (whiteboard.conversationPeer ?? "").split("\u001f").filter(Boolean);
+  if (!labels.some((label) => label.toLowerCase() === displayName.toLowerCase())) return null;
+  const peer = labels.find((label) => label.toLowerCase() !== displayName.toLowerCase()) ?? null;
+  return { scope: "direct", peer, key: whiteboard.conversationPeer };
+}
+
+router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsedQuery = ListInterviewWhiteboardsQueryParams.safeParse(req.query);
+  if (!parsedQuery.success) { res.status(400).json({ error: "Invalid whiteboard conversation." }); return; }
+  const conversation = await resolveChatConversation(parsedQuery.data.scope, parsedQuery.data.peer, account.displayName);
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+  const filters = [
+    eq(interviewWhiteboardsTable.conversationScope, conversation.scope),
+    conversation.key === null
+      ? isNull(interviewWhiteboardsTable.conversationPeer)
+      : eq(interviewWhiteboardsTable.conversationPeer, conversation.key),
+  ];
+  const items = await db.select().from(interviewWhiteboardsTable)
+    .where(and(...filters))
+    .orderBy(desc(interviewWhiteboardsTable.updatedAt))
+    .limit(50);
+  res.json(ListInterviewWhiteboardsResponse.parse({
+    items: items.map((item) => whiteboardResponse(item, conversation)),
+    scope: conversation.scope,
+    peer: conversation.peer,
+  }));
+});
+
+router.post("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsed = CreateInterviewWhiteboardBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
+  const title = parsed.data.title.trim();
+  const data = normalizeWhiteboardData(parsed.data.data);
+  if (!title || !data) {
+    res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." });
+    return;
+  }
+  if (Buffer.byteLength(data, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+    res.status(413).json({ error: "That whiteboard is too large to save." });
+    return;
+  }
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+  const [whiteboard] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title: title.slice(0, 120),
+    data,
+    createdBy: account.displayName,
+    conversationScope: conversation.scope,
+    conversationPeer: conversation.key,
+  }).returning();
+  pushRealtimeHint("interview_whiteboards");
+  res.status(201).json(CreateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
+});
+
+router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = GetInterviewWhiteboardByIdParams.safeParse(req.params);
+  const query = GetInterviewWhiteboardByIdQueryParams.safeParse(req.query);
+  if (!params.success || !query.success) { res.status(400).json({ error: "Invalid whiteboard request." }); return; }
+  const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName);
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+  const [whiteboard] = await db.select().from(interviewWhiteboardsTable).where(and(
+    eq(interviewWhiteboardsTable.id, params.data.whiteboardId),
+    eq(interviewWhiteboardsTable.conversationScope, conversation.scope),
+    conversation.key === null
+      ? isNull(interviewWhiteboardsTable.conversationPeer)
+      : eq(interviewWhiteboardsTable.conversationPeer, conversation.key),
+  )).limit(1);
+  if (!whiteboard) { res.status(404).json({ error: "Whiteboard not found." }); return; }
+  res.json(GetInterviewWhiteboardByIdResponse.parse(whiteboardResponse(whiteboard, conversation)));
+});
+
+router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = UpdateInterviewWhiteboardParams.safeParse(req.params);
+  const parsed = UpdateInterviewWhiteboardBody.safeParse(req.body);
+  if (!params.success || !parsed.success) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
+  const data = normalizeWhiteboardData(parsed.data.data);
+  const title = parsed.data.title.trim();
+  if (!title || !data) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
+  if (Buffer.byteLength(data, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+    res.status(413).json({ error: "That whiteboard is too large to save." });
+    return;
+  }
+  const [existing] = await db.select().from(interviewWhiteboardsTable)
+    .where(eq(interviewWhiteboardsTable.id, params.data.whiteboardId))
+    .limit(1);
+  const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+  if (!existing || !conversation) { res.status(404).json({ error: "Whiteboard not found." }); return; }
+  const [whiteboard] = await db.update(interviewWhiteboardsTable)
+    .set({ title: title.slice(0, 120), data, updatedAt: new Date() })
+    .where(eq(interviewWhiteboardsTable.id, existing.id))
+    .returning();
+  pushRealtimeHint("interview_whiteboards");
+  res.json(UpdateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
+});
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);

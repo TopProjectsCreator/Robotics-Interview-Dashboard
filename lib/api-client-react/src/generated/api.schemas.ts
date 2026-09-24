@@ -545,6 +545,76 @@ export interface InterviewChat {
   peer: string | null;
 }
 
+export type InterviewWhiteboardInputScope = typeof InterviewWhiteboardInputScope[keyof typeof InterviewWhiteboardInputScope];
+
+
+export const InterviewWhiteboardInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface InterviewWhiteboardInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  /**
+     * Serialized Excalidraw scene data
+     * @minLength 2
+     */
+  data: string;
+  scope: InterviewWhiteboardInputScope;
+  /** Configured interviewer label for a direct whiteboard */
+  recipient?: string | null;
+}
+
+export interface InterviewWhiteboardUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  /**
+     * Serialized Excalidraw scene data
+     * @minLength 2
+     */
+  data: string;
+}
+
+export type InterviewWhiteboardScope = typeof InterviewWhiteboardScope[keyof typeof InterviewWhiteboardScope];
+
+
+export const InterviewWhiteboardScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface InterviewWhiteboard {
+  id: string;
+  title: string;
+  data: string;
+  createdBy: string;
+  scope: InterviewWhiteboardScope;
+  peer: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InterviewWhiteboardListScope = typeof InterviewWhiteboardListScope[keyof typeof InterviewWhiteboardListScope];
+
+
+export const InterviewWhiteboardListScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface InterviewWhiteboardList {
+  items: InterviewWhiteboard[];
+  scope: InterviewWhiteboardListScope;
+  peer: string | null;
+}
+
 export interface ReorderQueueInput {
   applicantIds: string[];
 }
@@ -839,6 +909,34 @@ export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof Ge
 
 
 export const GetInterviewChatScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export type ListInterviewWhiteboardsParams = {
+scope?: ListInterviewWhiteboardsScope;
+author?: string;
+peer?: string;
+};
+
+export type ListInterviewWhiteboardsScope = typeof ListInterviewWhiteboardsScope[keyof typeof ListInterviewWhiteboardsScope];
+
+
+export const ListInterviewWhiteboardsScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export type GetInterviewWhiteboardByIdParams = {
+scope?: GetInterviewWhiteboardByIdScope;
+author?: string;
+peer?: string;
+};
+
+export type GetInterviewWhiteboardByIdScope = typeof GetInterviewWhiteboardByIdScope[keyof typeof GetInterviewWhiteboardByIdScope];
+
+
+export const GetInterviewWhiteboardByIdScope = {
   shared: 'shared',
   direct: 'direct',
 } as const;

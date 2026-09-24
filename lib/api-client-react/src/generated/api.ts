@@ -57,6 +57,7 @@ import type {
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
   GetInterviewChatParams,
+  GetInterviewWhiteboardByIdParams,
   GetPresenceStatsParams,
   HealthStatus,
   ImportHistory,
@@ -66,10 +67,15 @@ import type {
   InterviewChat,
   InterviewChatInput,
   InterviewChatMessage,
+  InterviewWhiteboard,
+  InterviewWhiteboardInput,
+  InterviewWhiteboardList,
+  InterviewWhiteboardUpdateInput,
   InterviewerAccount,
   InterviewerAccountList,
   InterviewerPasswordUpdateInput,
   ListApplicantsParams,
+  ListInterviewWhiteboardsParams,
   LoginInput,
   MessageResponse,
   PresenceHeartbeat,
@@ -2928,6 +2934,322 @@ export const useDeleteChatMessage = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteChatMessageMutationOptions(options));
+    }
+
+export const getListInterviewWhiteboardsUrl = (params?: ListInterviewWhiteboardsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/whiteboards?${stringifiedParams}` : `/api/whiteboards`
+}
+
+/**
+ * @summary List whiteboards available in the current interviewer conversation
+ */
+export const listInterviewWhiteboards = async (params?: ListInterviewWhiteboardsParams, options?: Parameters<typeof customFetch>[1]): Promise<InterviewWhiteboardList> => {
+
+  return customFetch<InterviewWhiteboardList>(getListInterviewWhiteboardsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListInterviewWhiteboardsQueryKey = (params?: ListInterviewWhiteboardsParams,) => {
+    return [
+    `/api/whiteboards`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListInterviewWhiteboardsQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewWhiteboards>>, TError = ErrorType<unknown>>(params?: ListInterviewWhiteboardsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewWhiteboards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInterviewWhiteboardsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInterviewWhiteboards>>> = ({ signal }) => listInterviewWhiteboards(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInterviewWhiteboards>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListInterviewWhiteboardsQueryResult = NonNullable<Awaited<ReturnType<typeof listInterviewWhiteboards>>>
+export type ListInterviewWhiteboardsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List whiteboards available in the current interviewer conversation
+ */
+
+export function useListInterviewWhiteboards<TData = Awaited<ReturnType<typeof listInterviewWhiteboards>>, TError = ErrorType<unknown>>(
+ params?: ListInterviewWhiteboardsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewWhiteboards>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListInterviewWhiteboardsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateInterviewWhiteboardUrl = () => {
+
+
+
+
+  return `/api/whiteboards`
+}
+
+/**
+ * @summary Create a whiteboard in the current interviewer conversation
+ */
+export const createInterviewWhiteboard = async (interviewWhiteboardInput: InterviewWhiteboardInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewWhiteboard> => {
+
+  return customFetch<InterviewWhiteboard>(getCreateInterviewWhiteboardUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewWhiteboardInput)
+  }
+);}
+
+
+
+
+
+export const getCreateInterviewWhiteboardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewWhiteboard>>, TError,{data: BodyType<InterviewWhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInterviewWhiteboard>>, TError,{data: BodyType<InterviewWhiteboardInput>}, TContext> => {
+
+const mutationKey = ['createInterviewWhiteboard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInterviewWhiteboard>>, {data: BodyType<InterviewWhiteboardInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createInterviewWhiteboard(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInterviewWhiteboardMutationResult = NonNullable<Awaited<ReturnType<typeof createInterviewWhiteboard>>>
+    export type CreateInterviewWhiteboardMutationBody = BodyType<InterviewWhiteboardInput>
+    export type CreateInterviewWhiteboardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a whiteboard in the current interviewer conversation
+ */
+export const useCreateInterviewWhiteboard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewWhiteboard>>, TError,{data: BodyType<InterviewWhiteboardInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createInterviewWhiteboard>>,
+        TError,
+        {data: BodyType<InterviewWhiteboardInput>},
+        TContext
+      > => {
+      return useMutation(getCreateInterviewWhiteboardMutationOptions(options));
+    }
+
+export const getGetInterviewWhiteboardByIdUrl = (whiteboardId: string,
+    params?: GetInterviewWhiteboardByIdParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/whiteboards/${whiteboardId}?${stringifiedParams}` : `/api/whiteboards/${whiteboardId}`
+}
+
+/**
+ * @summary Get an interviewer whiteboard
+ */
+export const getInterviewWhiteboardById = async (whiteboardId: string,
+    params?: GetInterviewWhiteboardByIdParams, options?: Parameters<typeof customFetch>[1]): Promise<InterviewWhiteboard> => {
+
+  return customFetch<InterviewWhiteboard>(getGetInterviewWhiteboardByIdUrl(whiteboardId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInterviewWhiteboardByIdQueryKey = (whiteboardId: string,
+    params?: GetInterviewWhiteboardByIdParams,) => {
+    return [
+    `/api/whiteboards/${whiteboardId}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetInterviewWhiteboardByIdQueryOptions = <TData = Awaited<ReturnType<typeof getInterviewWhiteboardById>>, TError = ErrorType<unknown>>(whiteboardId: string,
+    params?: GetInterviewWhiteboardByIdParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewWhiteboardById>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInterviewWhiteboardByIdQueryKey(whiteboardId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInterviewWhiteboardById>>> = ({ signal }) => getInterviewWhiteboardById(whiteboardId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: whiteboardId !== null && whiteboardId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInterviewWhiteboardById>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInterviewWhiteboardByIdQueryResult = NonNullable<Awaited<ReturnType<typeof getInterviewWhiteboardById>>>
+export type GetInterviewWhiteboardByIdQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get an interviewer whiteboard
+ */
+
+export function useGetInterviewWhiteboardById<TData = Awaited<ReturnType<typeof getInterviewWhiteboardById>>, TError = ErrorType<unknown>>(
+ whiteboardId: string,
+    params?: GetInterviewWhiteboardByIdParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInterviewWhiteboardById>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInterviewWhiteboardByIdQueryOptions(whiteboardId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateInterviewWhiteboardUrl = (whiteboardId: string,) => {
+
+
+
+
+  return `/api/whiteboards/${whiteboardId}`
+}
+
+/**
+ * @summary Save an interviewer whiteboard
+ */
+export const updateInterviewWhiteboard = async (whiteboardId: string,
+    interviewWhiteboardUpdateInput: InterviewWhiteboardUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewWhiteboard> => {
+
+  return customFetch<InterviewWhiteboard>(getUpdateInterviewWhiteboardUrl(whiteboardId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewWhiteboardUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateInterviewWhiteboardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewWhiteboard>>, TError,{whiteboardId: string;data: BodyType<InterviewWhiteboardUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateInterviewWhiteboard>>, TError,{whiteboardId: string;data: BodyType<InterviewWhiteboardUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateInterviewWhiteboard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInterviewWhiteboard>>, {whiteboardId: string;data: BodyType<InterviewWhiteboardUpdateInput>}> = (props) => {
+          const {whiteboardId,data} = props ?? {};
+
+          return  updateInterviewWhiteboard(whiteboardId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateInterviewWhiteboardMutationResult = NonNullable<Awaited<ReturnType<typeof updateInterviewWhiteboard>>>
+    export type UpdateInterviewWhiteboardMutationBody = BodyType<InterviewWhiteboardUpdateInput>
+    export type UpdateInterviewWhiteboardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save an interviewer whiteboard
+ */
+export const useUpdateInterviewWhiteboard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewWhiteboard>>, TError,{whiteboardId: string;data: BodyType<InterviewWhiteboardUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateInterviewWhiteboard>>,
+        TError,
+        {whiteboardId: string;data: BodyType<InterviewWhiteboardUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateInterviewWhiteboardMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

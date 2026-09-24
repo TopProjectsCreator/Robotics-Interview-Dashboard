@@ -4,4 +4,6 @@ export * from "./generated/types";
 // over the star export above, and the query type stays reachable by alias.
 export { GetAssistantConversationMessagesParams } from "./generated/api";
 export type { GetAssistantConversationMessagesParams as GetAssistantConversationMessagesQuery } from "./generated/types/getAssistantConversationMessagesParams";
+export { GetInterviewWhiteboardByIdParams } from "./generated/api";
+export type { GetInterviewWhiteboardByIdParams as GetInterviewWhiteboardByIdQuery } from "./generated/types/getInterviewWhiteboardByIdParams";
 export * from './generated/api';

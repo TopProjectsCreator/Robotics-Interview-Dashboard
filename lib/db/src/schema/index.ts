@@ -27,3 +27,4 @@ export * from "./sessions";
 export * from "./dashboard";
 export * from "./snapshots";
 export * from "./interviewerAccounts";
+export * from "./whiteboards";

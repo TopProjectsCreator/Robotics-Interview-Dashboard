@@ -972,6 +972,118 @@ export const DeleteChatMessageResponse = zod.void()
 
 
 /**
+ * @summary List whiteboards available in the current interviewer conversation
+ */
+export const listInterviewWhiteboardsQueryScopeDefault = `shared`;
+
+export const ListInterviewWhiteboardsQueryParams = zod.object({
+  "scope": zod.enum(['shared', 'direct']).default(listInterviewWhiteboardsQueryScopeDefault),
+  "author": zod.coerce.string().optional(),
+  "peer": zod.coerce.string().optional()
+})
+
+export const ListInterviewWhiteboardsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string(),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable()
+})
+
+
+/**
+ * @summary Create a whiteboard in the current interviewer conversation
+ */
+export const createInterviewWhiteboardBodyTitleMax = 120;
+
+export const createInterviewWhiteboardBodyDataMin = 2;
+
+export const createInterviewWhiteboardBodyScopeDefault = `shared`;
+
+export const CreateInterviewWhiteboardBody = zod.object({
+  "title": zod.string().min(1).max(createInterviewWhiteboardBodyTitleMax),
+  "data": zod.string().min(createInterviewWhiteboardBodyDataMin).describe('Serialized Excalidraw scene data'),
+  "scope": zod.enum(['shared', 'direct']).default(createInterviewWhiteboardBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard')
+})
+
+export const CreateInterviewWhiteboardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string(),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Get an interviewer whiteboard
+ */
+export const GetInterviewWhiteboardByIdParams = zod.object({
+  "whiteboardId": zod.coerce.string()
+})
+
+export const getInterviewWhiteboardByIdQueryScopeDefault = `shared`;
+
+export const GetInterviewWhiteboardByIdQueryParams = zod.object({
+  "scope": zod.enum(['shared', 'direct']).default(getInterviewWhiteboardByIdQueryScopeDefault),
+  "author": zod.coerce.string().optional(),
+  "peer": zod.coerce.string().optional()
+})
+
+export const GetInterviewWhiteboardByIdResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string(),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Save an interviewer whiteboard
+ */
+export const UpdateInterviewWhiteboardParams = zod.object({
+  "whiteboardId": zod.coerce.string()
+})
+
+export const updateInterviewWhiteboardBodyTitleMax = 120;
+
+export const updateInterviewWhiteboardBodyDataMin = 2;
+
+
+
+export const UpdateInterviewWhiteboardBody = zod.object({
+  "title": zod.string().min(1).max(updateInterviewWhiteboardBodyTitleMax),
+  "data": zod.string().min(updateInterviewWhiteboardBodyDataMin).describe('Serialized Excalidraw scene data')
+})
+
+export const UpdateInterviewWhiteboardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.string(),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
  * @summary Save the interview order
  */
 export const ReorderQueueBody = zod.object({
