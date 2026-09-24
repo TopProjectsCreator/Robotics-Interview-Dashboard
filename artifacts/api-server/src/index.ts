@@ -1,6 +1,8 @@
+import { createServer } from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
+import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { pool, db, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 
@@ -57,12 +59,10 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+const server = createServer(app);
+setupWhiteboardCollaboration(server);
 
+server.listen(port, () => {
   logger.info({ port }, "Server listening");
   ensureSchema().catch((err) => {
     logger.error({ err }, "Schema migration failed; exiting");

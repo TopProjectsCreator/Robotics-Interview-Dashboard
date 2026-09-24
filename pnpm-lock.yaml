@@ -176,6 +176,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -206,6 +209,9 @@ importers:
       pino-http:
         specifier: ^10.5.0
         version: 10.5.0
+      ws:
+        specifier: ^8.21.3
+        version: 8.21.3
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -685,7 +691,7 @@ importers:
     dependencies:
       openai:
         specifier: ^6.27.0
-        version: 6.49.0(zod@3.25.76)
+        version: 6.49.0(ws@8.21.3)(zod@3.25.76)
       p-limit:
         specifier: ^7.3.0
         version: 7.3.2
@@ -2441,6 +2447,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@uppy/aws-s3@5.1.0':
     resolution: {integrity: sha512-UBz+shrtDbnOf11AboDrkc9Fq2Cdf8HbFftE+gqfxig6fkv5rHpHhBCLkl8wCGAq+X/CxdqvvNhm/OM23Uzw2w==}
@@ -4797,6 +4806,18 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xlsx@0.18.5:
     resolution: {integrity: sha512-dmg3LCjBPHZnQp5/F/+nnTa+miPJxUXB6vtk42YjBBKayDNagxGEeIdWApkYPOf3Z3pm3k62Knjzp7lMeTEtFQ==}
     engines: {node: '>=0.8'}
@@ -6751,6 +6772,10 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 25.9.5
+
   '@uppy/aws-s3@5.1.0(@uppy/core@5.2.0)':
     dependencies:
       '@uppy/companion-client': 5.1.1(@uppy/core@5.2.0)
@@ -8182,8 +8207,9 @@ snapshots:
 
   open-color@1.9.1: {}
 
-  openai@6.49.0(zod@3.25.76):
+  openai@6.49.0(ws@8.21.3)(zod@3.25.76):
     optionalDependencies:
+      ws: 8.21.3
       zod: 3.25.76
 
   orval@8.23.0(prettier@3.9.6)(typescript@5.9.3):
@@ -9063,6 +9089,8 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.1.0)
 
   wrappy@1.0.2: {}
+
+  ws@8.21.3: {}
 
   xlsx@0.18.5:
     dependencies:

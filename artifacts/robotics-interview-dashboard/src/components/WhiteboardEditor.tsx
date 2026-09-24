@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { Check, FilePenLine, LoaderCircle, Share2, X } from "lucide-react";
+import { getStoredAuthToken } from "../authSession";
 
 type WhiteboardRecord = {
   id: string;
@@ -26,6 +27,14 @@ type StoredScene = {
 };
 
 type ExcalidrawInitialData = NonNullable<ComponentProps<typeof Excalidraw>["initialData"]>;
+type ExcalidrawApi = {
+  updateScene: (scene: {
+    elements?: readonly unknown[];
+    appState?: Record<string, unknown>;
+    files?: Record<string, unknown>;
+  }) => void;
+};
+type CollaborationStatus = "offline" | "connecting" | "connected" | "reconnecting";
 
 const defaultScene: StoredScene = {
   elements: [],
@@ -72,11 +81,140 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
   const scene = useMemo(() => parseScene(whiteboard?.data), [whiteboard?.data]);
   const [title, setTitle] = useState(whiteboard?.title ?? "Untitled whiteboard");
   const [data, setData] = useState(() => JSON.stringify(scene));
+  const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("offline");
+  const [participants, setParticipants] = useState(0);
+  const apiRef = useRef<ExcalidrawApi | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stoppedRef = useRef(false);
+  const revisionRef = useRef(0);
+  const localDirtyRef = useRef(false);
+  const pendingDataRef = useRef<string | null>(null);
+  const remoteDataRef = useRef<string | null>(null);
 
   useEffect(() => {
     setTitle(whiteboard?.title ?? "Untitled whiteboard");
     setData(JSON.stringify(scene));
+    localDirtyRef.current = false;
+    pendingDataRef.current = null;
+    remoteDataRef.current = null;
   }, [scene, whiteboard?.title]);
+
+  useEffect(() => {
+    if (!whiteboard?.id) {
+      setCollaborationStatus("offline");
+      setParticipants(0);
+      return;
+    }
+
+    stoppedRef.current = false;
+    let retryDelay = 500;
+
+    const applyRemoteScene = (remoteData: string) => {
+      const remoteScene = parseScene(remoteData);
+      remoteDataRef.current = remoteData;
+      setData(remoteData);
+      apiRef.current?.updateScene({
+        elements: remoteScene.elements,
+        appState: remoteScene.appState,
+        files: remoteScene.files,
+      });
+    };
+
+    const sendPendingScene = () => {
+      const socket = socketRef.current;
+      const pending = pendingDataRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !pending) return;
+      const clientRevision = ++revisionRef.current;
+      socket.send(JSON.stringify({ type: "scene", data: pending, clientRevision }));
+    };
+
+    const connect = () => {
+      if (stoppedRef.current) return;
+      setCollaborationStatus(retryDelay === 500 ? "connecting" : "reconnecting");
+      const base = String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const token = getStoredAuthToken();
+      const query = token ? `?access_token=${encodeURIComponent(token)}` : "";
+      const socket = new WebSocket(`${protocol}//${window.location.host}${base}/api/whiteboards/${encodeURIComponent(whiteboard.id)}/collab${query}`);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        retryDelay = 500;
+        setCollaborationStatus("connected");
+        sendPendingScene();
+      };
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(String(event.data)) as {
+            type?: string;
+            data?: string;
+            title?: string;
+            participants?: number;
+            clientRevision?: number;
+          };
+          if (message.type === "snapshot" && typeof message.data === "string") {
+            setParticipants(message.participants ?? 1);
+            if (!localDirtyRef.current) applyRemoteScene(message.data);
+          } else if (message.type === "scene" && typeof message.data === "string") {
+            applyRemoteScene(message.data);
+          } else if (message.type === "presence") {
+            setParticipants(message.participants ?? 1);
+          } else if (message.type === "ack" && message.clientRevision === revisionRef.current) {
+            localDirtyRef.current = false;
+            pendingDataRef.current = null;
+          }
+        } catch {
+          // Ignore malformed collaboration messages and keep the editor usable.
+        }
+      };
+      socket.onerror = () => socket.close();
+      socket.onclose = () => {
+        if (socketRef.current === socket) socketRef.current = null;
+        if (stoppedRef.current) return;
+        setCollaborationStatus("reconnecting");
+        setParticipants(0);
+        reconnectTimerRef.current = setTimeout(connect, retryDelay);
+        retryDelay = Math.min(5000, retryDelay * 2);
+      };
+    };
+
+    connect();
+    return () => {
+      stoppedRef.current = true;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+  }, [whiteboard?.id]);
+
+  const queueScene = (nextData: string) => {
+    setData(nextData);
+    if (remoteDataRef.current === nextData) {
+      remoteDataRef.current = null;
+      return;
+    }
+    localDirtyRef.current = true;
+    pendingDataRef.current = nextData;
+    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
+    sendTimerRef.current = setTimeout(() => {
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN && pendingDataRef.current) {
+        const clientRevision = ++revisionRef.current;
+        socket.send(JSON.stringify({ type: "scene", data: pendingDataRef.current, clientRevision }));
+      }
+    }, 120);
+  };
+
+  const statusLabel = collaborationStatus === "connected"
+    ? `Live${participants > 1 ? ` · ${participants} editing` : ""}`
+    : collaborationStatus === "reconnecting"
+      ? "Reconnecting…"
+      : collaborationStatus === "connecting"
+        ? "Connecting…"
+        : "Live editing starts after saving";
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-[#f5f8f7]" role="dialog" aria-modal="true" aria-label="Whiteboard editor" data-testid="whiteboard-editor">
@@ -86,6 +224,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#16869a]">Team whiteboard</p>
             <input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} aria-label="Whiteboard title" data-testid="input-whiteboard-title" className="mt-0.5 w-full max-w-[420px] bg-transparent text-lg font-semibold text-[#183a4b] outline-none placeholder:text-[#9aa9ad]" placeholder="Name this whiteboard" />
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#71878d]" data-testid="whiteboard-collaboration-status"><span className={`h-1.5 w-1.5 rounded-full ${collaborationStatus === "connected" ? "bg-[#28a47f]" : collaborationStatus === "reconnecting" ? "bg-[#e1a52d]" : "bg-[#a7b7b9]"}`} />{statusLabel}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -100,7 +239,8 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
           <Excalidraw
             key={whiteboard?.id ?? "new-whiteboard"}
             initialData={scene as unknown as ExcalidrawInitialData}
-            onChange={(elements, appState, files) => setData(serializeScene(elements, appState, files))}
+            excalidrawAPI={(api) => { apiRef.current = api as unknown as ExcalidrawApi; }}
+            onChange={(elements, appState, files) => queueScene(serializeScene(elements, appState, files))}
             UIOptions={{ canvasActions: { export: false, saveToActiveFile: false } }}
           />
         </div>

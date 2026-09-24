@@ -79,6 +79,7 @@ import {
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
 import { pushRealtimeHint } from "../lib/realtime";
+import { broadcastWhiteboardScene } from "../lib/whiteboardCollaboration";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
@@ -2693,6 +2694,7 @@ router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promi
     .set({ title: title.slice(0, 120), data, updatedAt: new Date() })
     .where(eq(interviewWhiteboardsTable.id, existing.id))
     .returning();
+  broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName);
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });

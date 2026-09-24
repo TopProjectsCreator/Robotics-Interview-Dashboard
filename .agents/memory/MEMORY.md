@@ -5,3 +5,4 @@
 - [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
 - [Interviewer session ownership](interviewer-session-ownership.md) — derive chat authors, queue views, and chart ownership from the signed interviewer session, never browser-selected identity.
+- [Whiteboard collaboration](whiteboard-collaboration.md) — live editing uses an authorized WebSocket room with a signed-session query fallback and explicit artifact proxy routing.
