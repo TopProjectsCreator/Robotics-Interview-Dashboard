@@ -81,7 +81,7 @@ import {
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
 import { pushRealtimeHint } from "../lib/realtime";
-import { broadcastWhiteboardScene } from "../lib/whiteboardCollaboration";
+import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "../lib/whiteboardCollaboration";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
@@ -2692,8 +2692,9 @@ router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promi
     .limit(1);
   const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
   if (!existing || !conversation) { res.status(404).json({ error: "Whiteboard not found." }); return; }
+  const mergedData = mergeWhiteboardDataForSave(existing.id, data);
   const [whiteboard] = await db.update(interviewWhiteboardsTable)
-    .set({ title: title.slice(0, 120), data, updatedAt: new Date() })
+    .set({ title: title.slice(0, 120), data: mergedData, updatedAt: new Date() })
     .where(eq(interviewWhiteboardsTable.id, existing.id))
     .returning();
   broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName);

@@ -25,6 +25,7 @@ type StoredScene = {
   appState?: Record<string, unknown>;
   files?: Record<string, unknown>;
 };
+type StoredElement = { id: string; version?: number; versionNonce?: number; [key: string]: unknown };
 
 type ExcalidrawInitialData = NonNullable<ComponentProps<typeof Excalidraw>["initialData"]>;
 type ExcalidrawApi = {
@@ -58,6 +59,42 @@ function parseScene(data: string | undefined): StoredScene {
   }
 }
 
+function isNewerElement(incoming: StoredElement, existing: StoredElement): boolean {
+  const incomingVersion = typeof incoming.version === "number" ? incoming.version : 0;
+  const existingVersion = typeof existing.version === "number" ? existing.version : 0;
+  if (incomingVersion !== existingVersion) return incomingVersion > existingVersion;
+  const incomingNonce = typeof incoming.versionNonce === "number" ? incoming.versionNonce : 0;
+  const existingNonce = typeof existing.versionNonce === "number" ? existing.versionNonce : 0;
+  return incomingNonce >= existingNonce;
+}
+
+function mergeSceneData(currentData: string, incomingData: string): string {
+  const current = parseScene(currentData);
+  const incoming = parseScene(incomingData);
+  const currentElements = current.elements.filter((element): element is StoredElement => (
+    Boolean(element) && typeof element === "object" && typeof (element as StoredElement).id === "string"
+  ));
+  const incomingElements = incoming.elements.filter((element): element is StoredElement => (
+    Boolean(element) && typeof element === "object" && typeof (element as StoredElement).id === "string"
+  ));
+  const mergedById = new Map(currentElements.map((element) => [element.id, element]));
+  const order = currentElements.map((element) => element.id);
+  for (const element of incomingElements) {
+    const existing = mergedById.get(element.id);
+    if (!existing) {
+      order.push(element.id);
+      mergedById.set(element.id, element);
+    } else if (isNewerElement(element, existing)) {
+      mergedById.set(element.id, element);
+    }
+  }
+  return JSON.stringify({
+    ...current,
+    elements: order.map((id) => mergedById.get(id)).filter((element): element is StoredElement => Boolean(element)),
+    files: { ...(current.files ?? {}), ...(incoming.files ?? {}) },
+  });
+}
+
 function serializeScene(
   elements: readonly unknown[],
   appState: { viewBackgroundColor?: string; scrollX?: number; scrollY?: number; zoom?: unknown; gridSize?: number | null; gridModeEnabled?: boolean },
@@ -84,6 +121,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("offline");
   const [participants, setParticipants] = useState(0);
   const apiRef = useRef<ExcalidrawApi | null>(null);
+  const dataRef = useRef(data);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,7 +133,9 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
 
   useEffect(() => {
     setTitle(whiteboard?.title ?? "Untitled whiteboard");
-    setData(JSON.stringify(scene));
+    const nextData = JSON.stringify(scene);
+    dataRef.current = nextData;
+    setData(nextData);
     localDirtyRef.current = false;
     pendingDataRef.current = null;
     remoteDataRef.current = null;
@@ -112,12 +152,13 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
     let retryDelay = 500;
 
     const applyRemoteScene = (remoteData: string) => {
-      const remoteScene = parseScene(remoteData);
-      remoteDataRef.current = remoteData;
-      setData(remoteData);
+      const mergedData = mergeSceneData(dataRef.current, remoteData);
+      const remoteScene = parseScene(mergedData);
+      remoteDataRef.current = mergedData;
+      dataRef.current = mergedData;
+      setData(mergedData);
       apiRef.current?.updateScene({
         elements: remoteScene.elements,
-        appState: remoteScene.appState,
         files: remoteScene.files,
       });
     };
@@ -191,6 +232,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
   }, [whiteboard?.id]);
 
   const queueScene = (nextData: string) => {
+    dataRef.current = nextData;
     setData(nextData);
     if (remoteDataRef.current === nextData) {
       remoteDataRef.current = null;

@@ -15,6 +15,8 @@ const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
 const SESSION_COOKIE = "robotics_admin_session";
 
 type WhiteboardRow = typeof interviewWhiteboardsTable.$inferSelect;
+type StoredElement = { id: string; version?: number; versionNonce?: number; isDeleted?: boolean; [key: string]: unknown };
+type StoredScene = { elements: StoredElement[]; appState?: Record<string, unknown>; files?: Record<string, unknown>; [key: string]: unknown };
 
 type CollaborationMessage =
   | { type: "snapshot"; data: string; title: string; updatedAt: string; participants: number }
@@ -33,6 +35,7 @@ type CollaborationClient = {
 type CollaborationRoom = {
   whiteboardId: string;
   clients: Set<CollaborationClient>;
+  currentData: string;
   pendingData?: { data: string; updatedBy: string };
   flushTimer?: NodeJS.Timeout;
 };
@@ -86,16 +89,66 @@ function normalizeWhiteboardData(value: unknown): string | null {
   }
 }
 
+function parseScene(value: string): StoredScene | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredScene>;
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.elements)) return null;
+    return {
+      ...parsed,
+      elements: parsed.elements.filter((element): element is StoredElement => (
+        Boolean(element) &&
+        typeof element === "object" &&
+        typeof (element as StoredElement).id === "string"
+      )),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isNewerElement(incoming: StoredElement, existing: StoredElement): boolean {
+  const incomingVersion = typeof incoming.version === "number" ? incoming.version : 0;
+  const existingVersion = typeof existing.version === "number" ? existing.version : 0;
+  if (incomingVersion !== existingVersion) return incomingVersion > existingVersion;
+  const incomingNonce = typeof incoming.versionNonce === "number" ? incoming.versionNonce : 0;
+  const existingNonce = typeof existing.versionNonce === "number" ? existing.versionNonce : 0;
+  return incomingNonce >= existingNonce;
+}
+
+function mergeSceneData(currentData: string, incomingData: string): string {
+  const current = parseScene(currentData);
+  const incoming = parseScene(incomingData);
+  if (!current || !incoming) return incomingData;
+
+  const mergedById = new Map(current.elements.map((element) => [element.id, element]));
+  const order = current.elements.map((element) => element.id);
+  for (const element of incoming.elements) {
+    const existing = mergedById.get(element.id);
+    if (!existing) {
+      order.push(element.id);
+      mergedById.set(element.id, element);
+    } else if (isNewerElement(element, existing)) {
+      mergedById.set(element.id, element);
+    }
+  }
+
+  return JSON.stringify({
+    ...current,
+    elements: order.map((id) => mergedById.get(id)).filter((element): element is StoredElement => Boolean(element)),
+    files: { ...(current.files ?? {}), ...(incoming.files ?? {}) },
+  });
+}
+
 function broadcast(room: CollaborationRoom, message: CollaborationMessage, except?: WebSocket): void {
   for (const client of room.clients) {
     if (client.socket !== except) send(client.socket, message);
   }
 }
 
-function roomFor(whiteboardId: string): CollaborationRoom {
+function roomFor(whiteboardId: string, currentData: string): CollaborationRoom {
   const existing = rooms.get(whiteboardId);
   if (existing) return existing;
-  const room: CollaborationRoom = { whiteboardId, clients: new Set() };
+  const room: CollaborationRoom = { whiteboardId, clients: new Set(), currentData };
   rooms.set(whiteboardId, room);
   return room;
 }
@@ -143,7 +196,7 @@ async function openCollaboration(
     return;
   }
 
-  const room = roomFor(whiteboardId);
+  const room = roomFor(whiteboardId, whiteboard.data);
   const client: CollaborationClient = {
     id: randomUUID(),
     displayName: identity.displayName,
@@ -178,16 +231,18 @@ async function openCollaboration(
       return;
     }
 
+    const mergedData = mergeSceneData(room.currentData, data);
+    room.currentData = mergedData;
     const updatedAt = new Date().toISOString();
-    room.pendingData = { data, updatedBy: client.displayName };
+    room.pendingData = { data: mergedData, updatedBy: client.displayName };
     schedulePersist(room);
     broadcast(room, {
       type: "scene",
-      data,
+      data: mergedData,
       updatedAt,
       updatedBy: client.displayName,
       clientRevision,
-    }, socket);
+    });
     send(socket, { type: "ack", clientRevision, updatedAt });
   });
 
@@ -214,8 +269,19 @@ export function broadcastWhiteboardScene(whiteboardId: string, data: string, upd
   if (!room) return;
   const normalized = normalizeWhiteboardData(data);
   if (!normalized) return;
+  const mergedData = mergeWhiteboardDataForSave(whiteboardId, normalized);
+  room.currentData = mergedData;
   const updatedAt = new Date().toISOString();
-  broadcast(room, { type: "scene", data: normalized, updatedAt, updatedBy, clientRevision: 0 });
+  room.pendingData = { data: mergedData, updatedBy };
+  schedulePersist(room);
+  broadcast(room, { type: "scene", data: mergedData, updatedAt, updatedBy, clientRevision: 0 });
+}
+
+export function mergeWhiteboardDataForSave(whiteboardId: string, data: string): string {
+  const normalized = normalizeWhiteboardData(data);
+  if (!normalized) return data;
+  const room = rooms.get(whiteboardId);
+  return room ? mergeSceneData(room.currentData, normalized) : normalized;
 }
 
 export function setupWhiteboardCollaboration(server: Server): void {
