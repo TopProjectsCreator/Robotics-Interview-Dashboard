@@ -6,7 +6,7 @@ export type ChatMentionPerson = ChatMentionToken & {
   label: string;
   detail: string;
   initials: string;
-  kind: "interviewer" | "group" | "assistant";
+  kind: "interviewer" | "group" | "assistant" | "applicant";
 };
 
 export type ChatMentionMatch<T extends ChatMentionToken = ChatMentionPerson> = {
@@ -57,7 +57,19 @@ export function findChatMentions<T extends ChatMentionToken>(
   return matches;
 }
 
-export function messageMentionsInterviewer(message: string, interviewer: string): boolean {
+export function messageMentionsInterviewer(
+  message: string,
+  interviewer: string,
+  mentionPeople?: readonly ChatMentionPerson[],
+): boolean {
   const token = interviewer.trim();
-  return token.length > 0 && findChatMentions(message, [{ token }, { token: "all" }]).length > 0;
+  if (!token) return false;
+  const people = mentionPeople ?? [
+    { token, label: token, detail: "", initials: "", kind: "interviewer" as const },
+    { token: "all", label: "All interviewers", detail: "", initials: "", kind: "group" as const },
+  ];
+  return findChatMentions(message, people).some(({ person }) =>
+    person.kind === "group" ||
+    (person.kind === "interviewer" && person.token.toLowerCase() === token.toLowerCase()),
+  );
 }

@@ -2707,12 +2707,53 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const applicantMentionsQuery = useListApplicants(
+    { sort: "rank" },
+    {
+      query: {
+        queryKey: getListApplicantsQueryKey({ sort: "rank" }),
+        enabled: mentionOpen,
+        refetchInterval: mentionOpen ? refreshMs : false,
+      },
+    },
+  );
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [composerMenuOpen, setComposerMenuOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
+  const applicantMentionPeople = useMemo<ChatMentionPerson[]>(() => {
+    const applicants = applicantMentionsQuery.data?.items ?? [];
+    const normalizedNames = applicants.map(applicant => applicant.name.trim().replace(/\s+/g, " ").toLowerCase());
+    const nameCounts = new Map<string, number>();
+    normalizedNames.forEach(name => nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1));
+    const usedTokens = new Set([...mentionLabels, "all", "ai"].map(label => label.toLowerCase()));
+
+    return applicants.flatMap((applicant, index) => {
+      const label = applicant.name.trim().replace(/\s+/g, " ");
+      if (!label) return [];
+      const normalizedName = label.toLowerCase();
+      const queueRef = applicant.queuePosition > 0 ? `#${applicant.queuePosition}` : `#${applicant.id.slice(0, 6)}`;
+      const baseToken = `Applicant ${label}${nameCounts.get(normalizedName) && nameCounts.get(normalizedName)! > 1 ? ` ${queueRef}` : ""}`;
+      let token = baseToken;
+      let collision = 0;
+      while (usedTokens.has(token.toLowerCase())) {
+        token = `${baseToken} ${applicant.id.slice(0, 6)}${collision ? `-${collision}` : ""}`;
+        collision += 1;
+      }
+      usedTokens.add(token.toLowerCase());
+      const queueDetail = applicant.queuePosition > 0 ? `Queue ${queueRef}` : `Ref ${applicant.id.slice(0, 6)}`;
+      const grade = applicant.grade.trim() ? `Grade ${applicant.grade.trim()}` : "Grade not listed";
+      return [{
+        token,
+        label,
+        detail: `Applicant · ${grade} · ${queueDetail}`,
+        initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?",
+        kind: "applicant" as const,
+      }];
+    });
+  }, [applicantMentionsQuery.data?.items, mentionLabels]);
   const mentionPeople = useMemo<ChatMentionPerson[]>(() => [
     { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
     ...mentionLabels.map(label => ({
@@ -2723,11 +2764,19 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       kind: "interviewer" as const,
     })),
     { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI", kind: "assistant" as const },
-  ].filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index), [mentionLabels]);
+    ...applicantMentionPeople,
+  ].filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index), [applicantMentionPeople, mentionLabels]);
   const filteredMentionPeople = useMemo(() => {
     const query = mentionQuery.trim().toLowerCase();
-    return mentionPeople.filter(person => !query || `${person.label} ${person.token}`.toLowerCase().includes(query)).slice(0, 6);
+    const matches = mentionPeople.filter(person =>
+      !query || `${person.label} ${person.token} ${person.detail}`.toLowerCase().includes(query),
+    );
+    return [
+      ...matches.filter(person => person.kind !== "applicant").slice(0, 6),
+      ...matches.filter(person => person.kind === "applicant").slice(0, 8),
+    ];
   }, [mentionPeople, mentionQuery]);
+  const selectedMentionIndex = Math.min(mentionActiveIndex, Math.max(0, filteredMentionPeople.length - 1));
   const activeWhiteboard = activeWhiteboardId
     ? getWhiteboard.data ?? whiteboards.data?.items.find(item => item.id === activeWhiteboardId) ?? null
     : null;
@@ -3417,7 +3466,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
      </div>
      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form onSubmit={submitChat} className="mt-3 space-y-2">
-       {replyingTo && <div className="flex items-start gap-2 rounded-xl border border-[#b9dddd] bg-[#eef8f7] px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="mt-0.5 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#16869a]">Replying to {replyingTo.author}</p><p className="truncate text-xs text-[#52666e]">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#527079] hover:bg-white hover:text-[#b34a42]"><X size={13} /></button></div>}
+       {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
           {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">

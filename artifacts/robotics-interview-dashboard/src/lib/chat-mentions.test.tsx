@@ -37,4 +37,16 @@ describe("chat mentions", () => {
     expect(messageMentionsInterviewer("Please review, @Ishaan.", "Maksim")).toBe(false);
     expect(messageMentionsInterviewer("Team update, @all.", "Maksim")).toBe(true);
   });
+
+  it("does not treat an applicant mention as an interviewer mention", () => {
+    const roster = [
+      { token: "Ishaan", label: "Ishaan", detail: "Interviewer", initials: "I", kind: "interviewer" as const },
+      { token: "Applicant Ishaan", label: "Ishaan", detail: "Applicant", initials: "I", kind: "applicant" as const },
+      { token: "all", label: "All interviewers", detail: "Group", initials: "∗", kind: "group" as const },
+    ];
+
+    expect(messageMentionsInterviewer("@Ishaan", "Ishaan", roster)).toBe(true);
+    expect(messageMentionsInterviewer("@Applicant Ishaan", "Ishaan", roster)).toBe(false);
+    expect(messageMentionsInterviewer("@all", "Ishaan", roster)).toBe(true);
+  });
 });
