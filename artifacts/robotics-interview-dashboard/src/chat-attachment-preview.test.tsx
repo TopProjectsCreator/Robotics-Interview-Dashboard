@@ -161,4 +161,22 @@ describe("chat mention rendering", () => {
     fireEvent.focus(mention as HTMLElement);
     await waitFor(() => expect(screen.getByText("Interviewer · tryout team")).toBeVisible());
   });
+
+  it("renders an applicant reference with roster context on focus", async () => {
+    const applicant = {
+      token: "Applicant Casey Nguyen (Grade 6)",
+      label: "Casey Nguyen",
+      detail: "Applicant · Grade 6 · Queue #4",
+      initials: "CN",
+      kind: "applicant" as const,
+    };
+    const { container } = render(
+      <TooltipProvider>{renderInlineMarkdown("Please review @Applicant Casey Nguyen (Grade 6).", [applicant])}</TooltipProvider>,
+    );
+
+    const mention = container.querySelector(".chat-mention");
+    expect(mention).toHaveTextContent("@Applicant Casey Nguyen (Grade 6)");
+    fireEvent.focus(mention as HTMLElement);
+    await waitFor(() => expect(screen.getByText("Applicant · Grade 6 · Queue #4")).toBeVisible());
+  });
 });
