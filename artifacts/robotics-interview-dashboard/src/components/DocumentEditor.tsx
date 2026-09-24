@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useTheme } from "next-themes";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
@@ -113,8 +112,6 @@ export function DocumentEditor({
   onClose,
   onTitleSave,
 }: DocumentEditorProps) {
-  const { resolvedTheme } = useTheme();
-  const editorTheme = resolvedTheme === "dark" ? "dark" : "light";
   const collaboration = useMemo(
     () =>
       createDocumentCollaboration(documentRecord.id, documentRecord.data, {
@@ -271,69 +268,19 @@ export function DocumentEditor({
       : <CircleCheck size={14} />;
 
   return (
-    <div className="document-editor fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-[#edf2f1] text-[#183a4b]" role="dialog" aria-modal="true" aria-label="Shared interview document" data-testid="document-editor" data-theme={editorTheme}>
-      <style>{`
-        .document-editor .document-prose { min-height: 760px; padding: 72px 78px 130px; outline: none; color: #263f49; font-family: "Space Grotesk", sans-serif; font-size: 16px; line-height: 1.75; }
-        .document-editor .document-prose > *:first-child { margin-top: 0; }
-        .document-editor .document-prose h1, .document-editor .document-prose h2, .document-editor .document-prose h3 { color: #183a4b; letter-spacing: -.045em; line-height: 1.15; }
-        .document-editor .document-prose h1 { margin: 1.5em 0 .55em; font-size: 2.45rem; }
-        .document-editor .document-prose h2 { margin: 1.35em 0 .5em; font-size: 1.8rem; }
-        .document-editor .document-prose h3 { margin: 1.25em 0 .45em; font-size: 1.35rem; }
-        .document-editor .document-prose p { margin: .65em 0; }
-        .document-editor .document-prose ul, .document-editor .document-prose ol { padding-left: 1.5rem; }
-        .document-editor .document-prose blockquote { margin: 1.2rem 0; padding-left: 1rem; border-left: 3px solid #f1c44d; color: #567079; font-style: italic; }
-        .document-editor .document-prose code { border-radius: 5px; background: #e8f0ef; padding: .15em .35em; color: #116c79; font-family: "DM Mono", monospace; font-size: .88em; }
-        .document-editor .document-prose pre { overflow-x: auto; border-radius: 10px; background: #183a4b; padding: 1rem; color: #eff8f6; }
-        .document-editor .document-prose pre code { background: transparent; color: inherit; }
-        .document-editor .document-prose hr { margin: 2rem 0; border: 0; border-top: 1px solid #dce5e5; }
-        .document-editor .document-toolbar-button { display: inline-flex; height: 32px; min-width: 32px; align-items: center; justify-content: center; border: 0; border-radius: 7px; color: #52666e; background: transparent; transition: background-color .16s ease, color .16s ease; }
-        .document-editor .document-toolbar-button:hover { background: #e8f3f1; color: #12737d; }
-        .document-editor .document-toolbar-button:disabled { cursor: not-allowed; opacity: .38; }
-        .document-editor .document-toolbar-button-active { background: #dff2ef; color: #106d7a; }
-        .document-editor .collaboration-carets__caret { position: relative; margin-left: -1px; border-left: 2px solid var(--caret-color, #16869a); border-right: 0; pointer-events: none; }
-        .document-editor .collaboration-carets__label { position: absolute; z-index: 5; top: -1.45em; left: -2px; padding: 2px 6px; border-radius: 4px 4px 4px 0; color: #fff; background: var(--caret-color, #16869a); font: 600 10px/1.25 "Space Grotesk", sans-serif; white-space: nowrap; }
-        .document-editor[data-theme="dark"] { background: #0b141b; color: #e5edf2; }
-        .document-editor[data-theme="dark"] > header { background: #121f28; border-color: #2b3f4b; }
-        .document-editor[data-theme="dark"] > header > div:nth-child(2) { background: #14232d; border-color: #263b47; }
-        .document-editor[data-theme="dark"] > main { background: #0b141b; }
-        .document-editor[data-theme="dark"] > main > div { background: #172731; border-color: #2d414e; box-shadow: 0 13px 35px rgba(0,0,0,.24), 0 2px 5px rgba(0,0,0,.18); }
-        .document-editor[data-theme="dark"] [data-testid="status-document-loading"] { background: #172731; }
-        .document-editor[data-theme="dark"] .document-prose { color: #dce6eb; }
-        .document-editor[data-theme="dark"] .document-prose h1,
-        .document-editor[data-theme="dark"] .document-prose h2,
-        .document-editor[data-theme="dark"] .document-prose h3 { color: #f0f4f6; }
-        .document-editor[data-theme="dark"] .document-prose blockquote { color: #a9bbc4; }
-        .document-editor[data-theme="dark"] .document-prose code { background: #203943; color: #9bdbe2; }
-        .document-editor[data-theme="dark"] .document-prose pre { background: #0b141b; color: #e6edf1; }
-        .document-editor[data-theme="dark"] .document-prose hr { border-top-color: #304450; }
-        .document-editor[data-theme="dark"] .document-toolbar-button { color: #bdcbd2; }
-        .document-editor[data-theme="dark"] .document-toolbar-button:hover { background: #203844; color: #9bdbe2; }
-        .document-editor[data-theme="dark"] .document-toolbar-button-active { background: #1c3c43; color: #9bdbe2; }
-        .document-editor[data-theme="dark"] header input { color: #edf3f6; }
-        .document-editor[data-theme="dark"] header input::placeholder { color: #7f939e; }
-        .document-editor[data-theme="dark"] header [class*="text-[#657b82]"] { color: #aabac2; }
-        .document-editor[data-theme="dark"] header select { color: #bdcbd2; }
-        .document-editor[data-theme="dark"] header select option { background: #172731; color: #e5edf2; }
-        .document-editor[data-theme="dark"] [data-testid="button-close-document"] { background: #172731; border-color: #304450; color: #c6d2d8; }
-        .document-editor[data-theme="dark"] [data-testid="button-close-document"]:hover { background: #203844; border-color: #739aa5; color: #f0f4f6; }
-        .document-editor[data-theme="dark"] header [class*="bg-[#dfe8e7]"] { background: #304450; }
-        .document-editor[data-theme="dark"] [data-testid="status-document-error"] { background: #351f22; border-color: #61383a; color: #f1aaa4; }
-        .document-editor[data-theme="dark"] [data-testid^="avatar-collaborator-"] { border-color: #121f28; }
-        .document-editor[data-theme="dark"] [data-testid="text-document-footer"] { color: #81949e; }
-        @media (max-width: 700px) { .document-editor .document-prose { min-height: 680px; padding: 42px 25px 100px; font-size: 15px; } .document-editor .document-prose h1 { font-size: 2rem; } }
-      `}</style>
+    <div className="document-editor fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden" role="dialog" aria-modal="true" aria-label="Shared interview document" data-testid="document-editor">
 
-      <header className="shrink-0 border-b border-[#d8e3e2] bg-[#fbfcfa] shadow-[0_2px_10px_rgba(24,58,75,0.07)]">
+      <header className="shrink-0 border-b">
         <div className="flex min-h-[70px] items-center justify-between gap-4 px-4 py-3 sm:px-7">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#183a4b] text-[#f1c44d] shadow-sm" aria-hidden="true">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sidebar text-sidebar-primary shadow-sm" aria-hidden="true">
               <FileText size={19} />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-[.16em] text-[#16869a]">Tryout team workspace</span>
-                <span className="hidden text-[10px] text-[#a0afb0] sm:inline">/</span>
-                <span className="hidden text-[10px] text-[#7c8c91] sm:inline">shared plan</span>
+                <span className="document-eyebrow text-[10px] font-bold uppercase tracking-[.16em]">Tryout team workspace</span>
+                <span className="document-breadcrumb hidden text-[10px] sm:inline">/</span>
+                <span className="document-breadcrumb hidden text-[10px] sm:inline">shared plan</span>
               </div>
               <input
                 value={title}
@@ -342,30 +289,30 @@ export function DocumentEditor({
                 maxLength={120}
                 aria-label="Document title"
                 data-testid="input-document-title"
-                className="mt-0.5 w-full max-w-[500px] bg-transparent text-lg font-semibold tracking-[-.025em] text-[#183a4b] outline-none placeholder:text-[#9aa9ad]"
+                className="document-title-input mt-0.5 w-full max-w-[500px] bg-transparent text-lg font-semibold tracking-[-.025em] outline-none"
                 placeholder="Name this interview plan"
               />
-              <p className="mt-0.5 hidden text-[10px] text-[#819196] sm:block" data-testid="text-document-meta">
+              <p className="document-meta mt-0.5 hidden text-[10px] sm:block" data-testid="text-document-meta">
                 {documentRecord.createdBy ? `Created by ${documentRecord.createdBy} · ` : ""}{formatUpdatedAt(documentRecord.updatedAt)}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="hidden items-center gap-2 lg:flex" data-testid="status-document-autosave" aria-live="polite">
-              <span className={`${error ? "text-[#ad4b43]" : isSaving ? "text-[#b27a1d]" : "text-[#3d8b6a]"}`}>{autosaveIcon}</span>
-              <span className="text-[11px] font-semibold text-[#657b82]">{autosaveLabel}</span>
+              <span className="document-save-icon" data-state={error ? "error" : isSaving ? "saving" : "saved"}>{autosaveIcon}</span>
+              <span className="document-save-text text-[11px] font-semibold">{autosaveLabel}</span>
             </div>
-            <button type="button" onClick={() => { saveTitleNow(); onClose(); }} aria-label="Close document" data-testid="button-close-document" className="flex h-9 items-center gap-1.5 rounded-lg border border-[#d5e0e0] bg-[#fbfcfa] px-2.5 text-xs font-semibold text-[#52666e] transition hover:border-[#183a4b] hover:text-[#183a4b]">
+            <button type="button" onClick={() => { saveTitleNow(); onClose(); }} aria-label="Close document" data-testid="button-close-document" className="document-close-button flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition">
               <X size={15} />
               <span className="hidden sm:inline">Close</span>
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f1] px-4 py-2 sm:px-7">
+        <div className="document-toolbar flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2 sm:px-7">
           <div className="flex min-w-0 items-center gap-1">
             <ToolbarButton label="Undo" testId="button-document-undo" disabled={!editor?.can().undo()} onClick={() => run((currentEditor) => currentEditor.chain().focus().undo().run())}><Undo2 size={16} /></ToolbarButton>
             <ToolbarButton label="Redo" testId="button-document-redo" disabled={!editor?.can().redo()} onClick={() => run((currentEditor) => currentEditor.chain().focus().redo().run())}><Redo2 size={16} /></ToolbarButton>
-            <span className="mx-2 h-5 w-px bg-[#dfe8e7]" />
+            <span className="document-toolbar-separator mx-2 h-5 w-px" />
             <label className="relative flex h-8 items-center">
               <span className="sr-only">Text style</span>
               <select
@@ -376,24 +323,24 @@ export function DocumentEditor({
                   else currentEditor.chain().focus().toggleHeading({ level: Number(value.split("-")[1]) as 1 | 2 | 3 }).run();
                 })}
                 data-testid="select-document-heading"
-                className="h-8 appearance-none rounded-lg border-0 bg-transparent py-1 pl-2 pr-7 text-xs font-semibold text-[#52666e] outline-none hover:bg-[#e8f3f1]"
+                className="document-style-select h-8 appearance-none rounded-lg border-0 bg-transparent py-1 pl-2 pr-7 text-xs font-semibold outline-none"
               >
                 <option value="paragraph">Body</option>
                 <option value="heading-1">Heading 1</option>
                 <option value="heading-2">Heading 2</option>
                 <option value="heading-3">Heading 3</option>
               </select>
-              <ChevronDown size={13} className="pointer-events-none absolute right-1.5 text-[#7c8c91]" />
+              <ChevronDown size={13} className="document-muted-icon pointer-events-none absolute right-1.5" />
             </label>
-            <span className="mx-2 h-5 w-px bg-[#dfe8e7]" />
+            <span className="document-toolbar-separator mx-2 h-5 w-px" />
             <ToolbarButton label="Bold" testId="button-document-bold" active={Boolean(editor?.isActive("bold"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleBold().run())}><Bold size={16} /></ToolbarButton>
             <ToolbarButton label="Italic" testId="button-document-italic" active={Boolean(editor?.isActive("italic"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleItalic().run())}><Italic size={16} /></ToolbarButton>
             <ToolbarButton label="Underline" testId="button-document-underline" active={Boolean(editor?.isActive("underline"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleMark("underline").run())}><Underline size={16} /></ToolbarButton>
             <ToolbarButton label="Strikethrough" testId="button-document-strike" active={Boolean(editor?.isActive("strike"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleStrike().run())}><Strikethrough size={16} /></ToolbarButton>
-            <span className="mx-2 h-5 w-px bg-[#dfe8e7]" />
+            <span className="document-toolbar-separator mx-2 h-5 w-px" />
             <ToolbarButton label="Bulleted list" testId="button-document-bullet-list" active={Boolean(editor?.isActive("bulletList"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleBulletList().run())}><List size={17} /></ToolbarButton>
             <ToolbarButton label="Numbered list" testId="button-document-ordered-list" active={Boolean(editor?.isActive("orderedList"))} onClick={() => run((currentEditor) => currentEditor.chain().focus().toggleOrderedList().run())}><ListOrdered size={17} /></ToolbarButton>
-            <span className="mx-2 h-5 w-px bg-[#dfe8e7]" />
+            <span className="document-toolbar-separator mx-2 h-5 w-px" />
             <ToolbarButton label="Align left" testId="button-document-align-left" active={activeAlignment === "left"} onClick={() => setAlignment("left")}><AlignLeft size={16} /></ToolbarButton>
             <ToolbarButton label="Align center" testId="button-document-align-center" active={activeAlignment === "center"} onClick={() => setAlignment("center")}><AlignCenter size={16} /></ToolbarButton>
             <ToolbarButton label="Align right" testId="button-document-align-right" active={activeAlignment === "right"} onClick={() => setAlignment("right")}><AlignRight size={16} /></ToolbarButton>
@@ -401,30 +348,30 @@ export function DocumentEditor({
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2" data-testid="status-document-collaboration" aria-live="polite">
-              <span className={`h-2 w-2 rounded-full ${collaborationStatus === "connected" ? "bg-[#39a97e]" : collaborationStatus === "reconnecting" ? "bg-[#d9a63c]" : "bg-[#8da3a5]"}`} />
-              <span className="text-[11px] font-semibold text-[#657b82]">{connectionLabel}</span>
+              <span className="document-collaboration-dot h-2 w-2 rounded-full" data-status={collaborationStatus} />
+              <span className="document-muted-text text-[11px] font-semibold">{connectionLabel}</span>
             </div>
             <div className="flex items-center gap-2" data-testid="text-collaborator-count" aria-label={`${participants.length} interviewer${participants.length === 1 ? "" : "s"} in this document`}>
               <div className="flex -space-x-1.5">
                 {participants.slice(0, 4).map((participant, index) => (
-                  <span key={`${participant.name}-${index}`} title={participant.name} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[#fbfcfa] text-[9px] font-bold text-white" style={{ backgroundColor: participant.color }} data-testid={`avatar-collaborator-${index}`}>
+                  <span key={`${participant.name}-${index}`} title={participant.name} className="document-collaborator-avatar flex h-6 w-6 items-center justify-center rounded-full border-2 text-[9px] font-bold text-white" style={{ backgroundColor: participant.color }} data-testid={`avatar-collaborator-${index}`}>
                     {initialsFor(participant.name)}
                   </span>
                 ))}
               </div>
-              <span className="hidden text-[11px] font-semibold text-[#657b82] sm:inline"><Users size={13} className="mr-1 inline-block -translate-y-px" />{participants.length}</span>
+              <span className="document-muted-text hidden text-[11px] font-semibold sm:inline"><Users size={13} className="mr-1 inline-block -translate-y-px" />{participants.length}</span>
             </div>
           </div>
         </div>
       </header>
 
-      {error && <div className="flex shrink-0 items-center gap-2 border-b border-[#efc9c5] bg-[#fff4f2] px-4 py-2 text-xs font-semibold text-[#ad4b43] sm:px-7" role="alert" data-testid="status-document-error"><CircleAlert size={14} />{error}</div>}
+      {error && <div className="document-save-error flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs font-semibold sm:px-7" role="alert" data-testid="status-document-error"><CircleAlert size={14} />{error}</div>}
 
       <main className="min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-8 sm:py-9">
-        <div className="mx-auto min-h-[calc(100dvh-190px)] w-full max-w-[850px] border border-[#e0e8e5] bg-[#fffefa] shadow-[0_13px_35px_rgba(31,64,72,0.12),0_2px_5px_rgba(31,64,72,0.06)]">
-          {editor ? <EditorContent editor={editor} /> : <div className="min-h-[760px] animate-pulse bg-[#fffefa]" data-testid="status-document-loading" />}
+        <div className="document-paper mx-auto min-h-[calc(100dvh-190px)] w-full max-w-[850px]">
+          {editor ? <EditorContent editor={editor} /> : <div className="document-loading-surface min-h-[760px] animate-pulse" data-testid="status-document-loading" />}
         </div>
-        <p className="mx-auto mt-4 max-w-[850px] text-center text-[10px] uppercase tracking-[.13em] text-[#91a2a2]" data-testid="text-document-footer">Shared notes stay with the tryout team</p>
+        <p className="document-footer mx-auto mt-4 max-w-[850px] text-center text-[10px] uppercase tracking-[.13em]" data-testid="text-document-footer">Shared notes stay with the tryout team</p>
       </main>
     </div>
   );
