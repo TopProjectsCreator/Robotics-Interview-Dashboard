@@ -7,3 +7,4 @@
 - [Interviewer session ownership](interviewer-session-ownership.md) — derive chat authors, queue views, and chart ownership from the signed interviewer session, never browser-selected identity.
 - [Whiteboard collaboration](whiteboard-collaboration.md) — live editing uses an authorized WebSocket room with a signed-session query fallback and explicit artifact proxy routing.
 - [Scoped package installs](scoped-package-installs.md) — package installation helpers may target the workspace root; app dependencies must be installed with the artifact filter.
+- [Dashboard component test isolation](dashboard-component-test-isolation.md) — jsdom tests for the dashboard need lightweight Excalidraw stubs because the editor’s JSON dependency is browser-build-only.

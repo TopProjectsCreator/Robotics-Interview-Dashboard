@@ -484,7 +484,14 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
         }
         if (resolvedKind === "document" && /\.(docx)$/i.test(name)) {
           const mammoth = await import("mammoth");
-          const converted = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
+          const documentBytes = await blob.arrayBuffer();
+          // Mammoth's browser build reads `arrayBuffer`; its Node build reads
+          // `buffer`. Supplying both keeps the preview testable without
+          // changing the browser bundle selected by Vite.
+          const converted = await mammoth.convertToHtml({
+            arrayBuffer: documentBytes,
+            buffer: documentBytes,
+          } as unknown as Parameters<typeof mammoth.convertToHtml>[0]);
           const clean = DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
           if (active) setDocumentHtml(clean);
           return;
@@ -4239,4 +4246,5 @@ function ChatPage() {
 }
 function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
+export { MarkdownContent, renderInlineMarkdown };
 export default App;
