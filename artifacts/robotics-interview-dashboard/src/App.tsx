@@ -297,7 +297,9 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     }
     const link = token.match(/^\[([^\]]+)\]\(((?:https?:\/\/|mailto:|\/api\/storage\/)[^)]+)\)$/);
     if (link) {
-      nodes.push(<a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
+      nodes.push(link[2].startsWith("/api/storage/")
+        ? <AuthenticatedChatAttachment key={tokenKey} src={link[2]} name={link[1]} />
+        : <a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
     } else if (token.startsWith("**") || token.startsWith("__")) {
       nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2))}</strong>);
     } else if (token.startsWith("`")) {
@@ -355,6 +357,166 @@ function AuthenticatedChatImage({ src, alt }: { src: string; alt: string }) {
   if (failed) return <span className="my-2 block text-xs text-[#8a999d]">Image unavailable.</span>;
   if (!objectUrl) return <span className="my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]" aria-label="Loading image" />;
   return <img src={objectUrl} alt={alt} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />;
+}
+
+type ChatAttachmentSheet = { name: string; rows: string[][] };
+type ChatAttachmentKind = "audio" | "document" | "image" | "pdf" | "spreadsheet" | "text" | "video";
+
+function attachmentExtension(name: string): string {
+  return name.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
+  const extension = attachmentExtension(name);
+  if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
+  if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
+  if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
+  if (contentType === "application/pdf" || extension === "pdf") return "pdf";
+  if (
+    contentType.includes("spreadsheet") ||
+    contentType === "application/vnd.ms-excel" ||
+    ["csv", "tsv", "xls", "xlsx"].includes(extension)
+  ) return ["csv", "tsv"].includes(extension) || contentType.startsWith("text/") ? "text" : "spreadsheet";
+  if (contentType.startsWith("text/") || ["log", "md", "rtf", "txt"].includes(extension)) return "text";
+  return "document";
+}
+
+function parseDelimitedPreview(source: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < source.length && rows.length < 100; index += 1) {
+    const character = source[index];
+    if (character === "\"") {
+      if (quoted && source[index + 1] === "\"") {
+        cell += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === delimiter && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && source[index + 1] === "\n") index += 1;
+      row.push(cell);
+      if (row.some(value => value.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    if (row.some(value => value.trim())) rows.push(row);
+  }
+  return rows.map(values => values.slice(0, 18));
+}
+
+function ChatAttachmentTable({ rows, label }: { rows: string[][]; label: string }) {
+  if (!rows.length) return <p className="rounded-lg bg-[#f7faf9] p-3 text-xs text-[#7c8c91]">This file is empty.</p>;
+  const width = Math.max(...rows.map(row => row.length), 1);
+  const header = rows[0];
+  return <div className="overflow-hidden rounded-xl border border-[#dce9e8] bg-white">
+    <div className="border-b border-[#dce9e8] bg-[#edf4f3] px-3 py-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{label} · {rows.length} rows</div>
+    <div className="max-h-[360px] overflow-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead><tr>{Array.from({ length: width }, (_, index) => <th key={`head-${index}`} className="sticky top-0 border-b border-[#dce9e8] bg-[#f7faf9] px-3 py-2 text-left font-semibold text-[#183a4b]">{header[index] || `Column ${index + 1}`}</th>)}</tr></thead>
+        <tbody>{rows.slice(1).map((row, rowIndex) => <tr key={`row-${rowIndex}`} className="odd:bg-white even:bg-[#f7faf9]">{Array.from({ length: width }, (_, cellIndex) => <td key={`cell-${rowIndex}-${cellIndex}`} className="max-w-[260px] border-b border-[#eef3f2] px-3 py-2 align-top text-[#52666e]">{row[cellIndex] ?? ""}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
+function ChatAttachmentDocument({ name, html, objectUrl }: { name: string; html: string | null; objectUrl: string | null }) {
+  if (html) {
+    return <div className="rounded-xl border border-[#dce9e8] bg-white p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><div className="prose prose-sm max-w-none text-[#52666e]" dangerouslySetInnerHTML={{ __html: html }} /></div>;
+  }
+  if (!objectUrl) return null;
+  return <div className="rounded-xl border border-[#dce9e8] bg-white p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" /></div>;
+}
+
+function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [contentType, setContentType] = useState("");
+  const [text, setText] = useState<string | null>(null);
+  const [sheets, setSheets] = useState<ChatAttachmentSheet[]>([]);
+  const [documentHtml, setDocumentHtml] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const kind = attachmentKind(name, contentType);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    const controller = new AbortController();
+    const token = getStoredAuthToken();
+    void fetch(appRelativeUrl(src), {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`Attachment request failed (${response.status})`);
+        const responseType = normalizeChatFileType(response.headers.get("content-type") ?? "");
+        const blob = await response.blob();
+        const resolvedType = responseType || normalizeChatFileType(blob.type);
+        if (!active) return;
+        setContentType(resolvedType);
+        const resolvedKind = attachmentKind(name, resolvedType);
+        if (resolvedKind === "text") {
+          const raw = await blob.text();
+          if (active) setText(raw.slice(0, 250000));
+          return;
+        }
+        if (resolvedKind === "spreadsheet") {
+          const XLSX = await import("xlsx");
+          const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array", cellDates: true });
+          const parsedSheets = workbook.SheetNames.slice(0, 8).map(sheetName => ({
+            name: sheetName,
+            rows: (XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "" }) as unknown[][])
+              .slice(0, 100)
+              .map(row => row.slice(0, 18).map(cell => String(cell ?? ""))),
+          }));
+          if (active) setSheets(parsedSheets);
+          return;
+        }
+        if (resolvedKind === "document" && /\.(docx)$/i.test(name)) {
+          const mammoth = await import("mammoth");
+          const converted = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
+          const clean = DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
+          if (active) setDocumentHtml(clean);
+          return;
+        }
+        createdUrl = URL.createObjectURL(blob);
+        if (active) setObjectUrl(createdUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [name, src]);
+
+  if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+  if (!objectUrl && text === null && !sheets.length && documentHtml === null) return <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
+  if (text !== null) {
+    const extension = attachmentExtension(name);
+    const delimiter = extension === "tsv" ? "\t" : text.split("\n")[0]?.includes("\t") ? "\t" : ",";
+    const isDelimited = ["csv", "tsv"].includes(extension) || contentType === "text/csv" || contentType === "text/tab-separated-values";
+    const rows = isDelimited ? parseDelimitedPreview(text, delimiter) : [];
+    return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre className="max-h-[360px] overflow-auto rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e]">{text}</pre>}</div>;
+  }
+  if (sheets.length) return <div className="my-2 space-y-3">{sheets.map(sheet => <ChatAttachmentTable key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />)}</div>;
+  if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
+  if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
+  if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
+  if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
+  return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
 function sanitizeSvg(raw: string): string | null {
