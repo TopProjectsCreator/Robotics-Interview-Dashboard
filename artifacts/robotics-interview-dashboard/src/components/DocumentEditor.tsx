@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { useTheme } from "next-themes";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import TextAlign from "@tiptap/extension-text-align";
-import UnderlineExtension from "@tiptap/extension-underline";
 import {
   AlignCenter,
   AlignJustify,
@@ -113,6 +113,8 @@ export function DocumentEditor({
   onClose,
   onTitleSave,
 }: DocumentEditorProps) {
+  const { resolvedTheme } = useTheme();
+  const editorTheme = resolvedTheme === "dark" ? "dark" : "light";
   const collaboration = useMemo(
     () =>
       createDocumentCollaboration(documentRecord.id, documentRecord.data, {
@@ -137,7 +139,6 @@ export function DocumentEditor({
       extensions: [
         StarterKit.configure({ undoRedo: false }),
         TextAlign.configure({ types: ["heading", "paragraph"] }),
-        UnderlineExtension,
         Collaboration.configure({ document: collaboration.doc }),
         CollaborationCaret.configure({
           provider: collaboration.provider,
@@ -270,7 +271,7 @@ export function DocumentEditor({
       : <CircleCheck size={14} />;
 
   return (
-    <div className="document-editor fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-[#edf2f1] text-[#183a4b]" role="dialog" aria-modal="true" aria-label="Shared interview document" data-testid="document-editor">
+    <div className="document-editor fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-[#edf2f1] text-[#183a4b]" role="dialog" aria-modal="true" aria-label="Shared interview document" data-testid="document-editor" data-theme={editorTheme}>
       <style>{`
         .document-editor .document-prose { min-height: 760px; padding: 72px 78px 130px; outline: none; color: #263f49; font-family: "Space Grotesk", sans-serif; font-size: 16px; line-height: 1.75; }
         .document-editor .document-prose > *:first-child { margin-top: 0; }
@@ -291,6 +292,34 @@ export function DocumentEditor({
         .document-editor .document-toolbar-button-active { background: #dff2ef; color: #106d7a; }
         .document-editor .collaboration-carets__caret { position: relative; margin-left: -1px; border-left: 2px solid var(--caret-color, #16869a); border-right: 0; pointer-events: none; }
         .document-editor .collaboration-carets__label { position: absolute; z-index: 5; top: -1.45em; left: -2px; padding: 2px 6px; border-radius: 4px 4px 4px 0; color: #fff; background: var(--caret-color, #16869a); font: 600 10px/1.25 "Space Grotesk", sans-serif; white-space: nowrap; }
+        .document-editor[data-theme="dark"] { background: #0b141b; color: #e5edf2; }
+        .document-editor[data-theme="dark"] > header { background: #121f28; border-color: #2b3f4b; }
+        .document-editor[data-theme="dark"] > header > div:nth-child(2) { background: #14232d; border-color: #263b47; }
+        .document-editor[data-theme="dark"] > main { background: #0b141b; }
+        .document-editor[data-theme="dark"] > main > div { background: #172731; border-color: #2d414e; box-shadow: 0 13px 35px rgba(0,0,0,.24), 0 2px 5px rgba(0,0,0,.18); }
+        .document-editor[data-theme="dark"] [data-testid="status-document-loading"] { background: #172731; }
+        .document-editor[data-theme="dark"] .document-prose { color: #dce6eb; }
+        .document-editor[data-theme="dark"] .document-prose h1,
+        .document-editor[data-theme="dark"] .document-prose h2,
+        .document-editor[data-theme="dark"] .document-prose h3 { color: #f0f4f6; }
+        .document-editor[data-theme="dark"] .document-prose blockquote { color: #a9bbc4; }
+        .document-editor[data-theme="dark"] .document-prose code { background: #203943; color: #9bdbe2; }
+        .document-editor[data-theme="dark"] .document-prose pre { background: #0b141b; color: #e6edf1; }
+        .document-editor[data-theme="dark"] .document-prose hr { border-top-color: #304450; }
+        .document-editor[data-theme="dark"] .document-toolbar-button { color: #bdcbd2; }
+        .document-editor[data-theme="dark"] .document-toolbar-button:hover { background: #203844; color: #9bdbe2; }
+        .document-editor[data-theme="dark"] .document-toolbar-button-active { background: #1c3c43; color: #9bdbe2; }
+        .document-editor[data-theme="dark"] header input { color: #edf3f6; }
+        .document-editor[data-theme="dark"] header input::placeholder { color: #7f939e; }
+        .document-editor[data-theme="dark"] header [class*="text-[#657b82]"] { color: #aabac2; }
+        .document-editor[data-theme="dark"] header select { color: #bdcbd2; }
+        .document-editor[data-theme="dark"] header select option { background: #172731; color: #e5edf2; }
+        .document-editor[data-theme="dark"] [data-testid="button-close-document"] { background: #172731; border-color: #304450; color: #c6d2d8; }
+        .document-editor[data-theme="dark"] [data-testid="button-close-document"]:hover { background: #203844; border-color: #739aa5; color: #f0f4f6; }
+        .document-editor[data-theme="dark"] header [class*="bg-[#dfe8e7]"] { background: #304450; }
+        .document-editor[data-theme="dark"] [data-testid="status-document-error"] { background: #351f22; border-color: #61383a; color: #f1aaa4; }
+        .document-editor[data-theme="dark"] [data-testid^="avatar-collaborator-"] { border-color: #121f28; }
+        .document-editor[data-theme="dark"] [data-testid="text-document-footer"] { color: #81949e; }
         @media (max-width: 700px) { .document-editor .document-prose { min-height: 680px; padding: 42px 25px 100px; font-size: 15px; } .document-editor .document-prose h1 { font-size: 2rem; } }
       `}</style>
 
