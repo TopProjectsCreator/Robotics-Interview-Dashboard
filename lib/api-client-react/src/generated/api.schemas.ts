@@ -522,6 +522,14 @@ export interface ChatReactionInput {
   author: string;
 }
 
+export interface ChatMessageUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  message: string;
+}
+
 export interface ChatReactionList {
   reactions: ChatReaction[];
 }

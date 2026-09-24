@@ -18,7 +18,7 @@ import {
   useListAssistantConversations, useRenameAssistantConversation,
    useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard,
-   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin,
+   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
@@ -2443,8 +2443,12 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
   const togglePin = useToggleChatMessagePin();
+  const updateChatMessage = useUpdateChatMessage();
+  const deleteChatMessage = useDeleteChatMessage();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [activeWhiteboardId, setActiveWhiteboardId] = useState<string | null>(null);
   const [whiteboardError, setWhiteboardError] = useState("");
@@ -2747,6 +2751,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setChatHasMore(true);
     setChatLoadingMore(false);
     setReplyingTo(null);
+    setEditingMessageId(null);
+    setEditDraft("");
     setPickerFor(null);
     chatLoadGuardRef.current = false;
     chatAnchorRef.current = null;
@@ -2815,6 +2821,53 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     toggleReaction.mutate({ messageId, data: { emoji, author } }, {
       onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
+  };
+  const beginEdit = (item: InterviewChatMessage) => {
+    setPickerFor(null);
+    setReplyingTo(null);
+    setEditingMessageId(item.id);
+    setEditDraft(item.message);
+  };
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditDraft("");
+  };
+  const saveEdit = (item: InterviewChatMessage) => {
+    const nextMessage = editDraft.trim();
+    if (!nextMessage) {
+      setChatError("A message cannot be empty.");
+      return;
+    }
+    if (nextMessage.length > 1000) {
+      setChatError("Message is too long — shorten the text.");
+      return;
+    }
+    setChatError("");
+    updateChatMessage.mutate(
+      { messageId: item.id, data: { message: nextMessage } },
+      {
+        onSuccess: () => {
+          cancelEdit();
+          void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+        },
+        onError: error => setChatError(error instanceof Error ? error.message : "Couldn't edit that message."),
+      },
+    );
+  };
+  const removeChatMessage = (item: InterviewChatMessage) => {
+    if (deleteChatMessage.isPending || !window.confirm("Delete this message? This cannot be undone.")) return;
+    setChatError("");
+    deleteChatMessage.mutate(
+      { messageId: item.id },
+      {
+        onSuccess: () => {
+          if (editingMessageId === item.id) cancelEdit();
+          if (replyingTo?.id === item.id) setReplyingTo(null);
+          void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+        },
+        onError: error => setChatError(error instanceof Error ? error.message : "Couldn't delete that message."),
+      },
+    );
   };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -2958,6 +3011,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
     const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
+    const canManage = item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant";
+    const editing = editingMessageId === item.id;
     return <div key={item.id} className={`group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
       <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
@@ -2967,16 +3022,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
+           {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
         </div>
       </div>
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
       <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}</div><span className="text-[10px] text-[#8a999d]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
-       {(() => {
+        {editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
          const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
          return sharedWhiteboard
            ? <button type="button" onClick={() => openWhiteboard(sharedWhiteboard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[#b9dddd] bg-[#eef8f7] p-3 text-left transition hover:border-[#16869a] hover:bg-[#e3f4f2]" data-testid={`button-open-whiteboard-${sharedWhiteboard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm"><FilePenLine size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">Shared whiteboard</span><span className="mt-0.5 block truncate text-sm font-semibold text-[#183a4b]">{sharedWhiteboard.title}</span><span className="mt-0.5 block text-[11px] text-[#527079]">Open in Excalidraw</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-[#16869a]" /></button>
            : <MarkdownContent source={item.message} className="mt-1 text-[#52666e]" />;
-       })()}
+        })()}
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {

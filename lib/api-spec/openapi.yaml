@@ -666,6 +666,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatMessagePin"
   /queue/chat/{messageId}:
+    patch:
+      operationId: updateChatMessage
+      tags: [queue]
+      summary: Edit a chat message created by the signed-in interviewer
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessageUpdateInput"
+      responses:
+        "200":
+          description: Updated chat message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewChatMessage"
     delete:
       operationId: deleteChatMessage
       tags: [queue]
@@ -2067,6 +2090,14 @@ components:
         author:
           type: string
           description: "Interviewer label reacting"
+    ChatMessageUpdateInput:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 1000
     ChatReactionList:
       type: object
       required: [reactions]

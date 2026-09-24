@@ -61,6 +61,8 @@ import {
   ToggleChatMessagePinResponse,
   UpdateQueueSettingsBody,
   ReorderQueueResponse,
+  UpdateChatMessageBody,
+  UpdateChatMessageResponse,
   UpdateApplicantBody,
   UpdateApplicantParams,
   UpdateApplicantResponse,
@@ -2843,11 +2845,80 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
   }));
 });
 
+router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  const parsed = UpdateChatMessageBody.safeParse(req.body);
+  const message = parsed.success ? parsed.data.message.trim() : "";
+  if (!messageId || !parsed.success || !message) {
+    res.status(400).json({ error: "A chat message is required." });
+    return;
+  }
+  const [existing] = await db.select().from(interviewChatMessagesTable)
+    .where(eq(interviewChatMessagesTable.id, messageId))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
+    res.status(403).json({ error: "You can only edit your own messages." });
+    return;
+  }
+  if (existing.conversationScope === "direct") {
+    const participants = (existing.conversationPeer ?? "").split("\u001f").filter(Boolean);
+    if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
+      res.status(403).json({ error: "You cannot edit a message outside your conversation." });
+      return;
+    }
+  }
+  const [updated] = await db.update(interviewChatMessagesTable)
+    .set({ message: message.slice(0, 1000) })
+    .where(eq(interviewChatMessagesTable.id, messageId))
+    .returning();
+  const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
+  const conversation: ChatConversation = updated.conversationScope === "direct"
+    ? {
+        scope: "direct",
+        peer: participants.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? null,
+        key: updated.conversationPeer,
+      }
+    : { scope: "shared", peer: null, key: null };
+  pushRealtimeHint("interview_chat_messages");
+  res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation)));
+});
+
 router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   if (!messageId) {
     res.status(400).json({ error: "Message id required" });
     return;
+  }
+  const [existingMessage] = await db.select({
+    id: interviewChatMessagesTable.id,
+    author: interviewChatMessagesTable.author,
+    conversationScope: interviewChatMessagesTable.conversationScope,
+    conversationPeer: interviewChatMessagesTable.conversationPeer,
+  }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
+    res.status(403).json({ error: "You can only delete your own messages." });
+    return;
+  }
+  if (existingMessage.conversationScope === "direct") {
+    const participants = (existingMessage.conversationPeer ?? "").split("\u001f").filter(Boolean);
+    if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
+      res.status(403).json({ error: "You cannot delete a message outside your conversation." });
+      return;
+    }
   }
   await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.messageId, messageId));
   await db.delete(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId));

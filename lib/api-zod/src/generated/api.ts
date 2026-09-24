@@ -962,6 +962,42 @@ export const ToggleChatMessagePinResponse = zod.object({
 
 
 /**
+ * @summary Edit a chat message created by the signed-in interviewer
+ */
+export const UpdateChatMessageParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const updateChatMessageBodyMessageMax = 1000;
+
+
+
+export const UpdateChatMessageBody = zod.object({
+  "message": zod.string().min(1).max(updateChatMessageBodyMessageMax)
+})
+
+export const UpdateChatMessageResponse = zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "parentMessageId": zod.string().nullish(),
+  "pinnedAt": zod.coerce.date().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string()
+})).optional(),
+  "reactions": zod.array(zod.object({
+  "emoji": zod.string(),
+  "count": zod.number().int(),
+  "authors": zod.array(zod.string())
+})).optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary Delete a chat message and its reactions
  */
 export const DeleteChatMessageParams = zod.object({

@@ -40,6 +40,7 @@ import type {
   BroadcastInput,
   BroadcastList,
   ChatMessagePin,
+  ChatMessageUpdateInput,
   ChatReactionInput,
   ChatReactionList,
   CreateInterviewerInput,
@@ -2863,6 +2864,78 @@ export const useToggleChatMessagePin = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getToggleChatMessagePinMutationOptions(options));
+    }
+
+export const getUpdateChatMessageUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}`
+}
+
+/**
+ * @summary Edit a chat message created by the signed-in interviewer
+ */
+export const updateChatMessage = async (messageId: string,
+    chatMessageUpdateInput: ChatMessageUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewChatMessage> => {
+
+  return customFetch<InterviewChatMessage>(getUpdateChatMessageUrl(messageId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatMessageUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateChatMessageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatMessage>>, TError,{messageId: string;data: BodyType<ChatMessageUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateChatMessage>>, TError,{messageId: string;data: BodyType<ChatMessageUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateChatMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateChatMessage>>, {messageId: string;data: BodyType<ChatMessageUpdateInput>}> = (props) => {
+          const {messageId,data} = props ?? {};
+
+          return  updateChatMessage(messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateChatMessageMutationResult = NonNullable<Awaited<ReturnType<typeof updateChatMessage>>>
+    export type UpdateChatMessageMutationBody = BodyType<ChatMessageUpdateInput>
+    export type UpdateChatMessageMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Edit a chat message created by the signed-in interviewer
+ */
+export const useUpdateChatMessage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatMessage>>, TError,{messageId: string;data: BodyType<ChatMessageUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateChatMessage>>,
+        TError,
+        {messageId: string;data: BodyType<ChatMessageUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateChatMessageMutationOptions(options));
     }
 
 export const getDeleteChatMessageUrl = (messageId: string,) => {

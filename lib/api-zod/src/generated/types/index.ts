@@ -33,6 +33,7 @@ export * from './broadcastList';
 export * from './categoryParameter';
 export * from './chatLimitParameter';
 export * from './chatMessagePin';
+export * from './chatMessageUpdateInput';
 export * from './chatReaction';
 export * from './chatReactionInput';
 export * from './chatReactionList';
