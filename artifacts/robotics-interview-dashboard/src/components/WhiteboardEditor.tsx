@@ -34,6 +34,22 @@ type ExcalidrawApi = {
     appState?: Record<string, unknown>;
     files?: Record<string, unknown>;
   }) => void;
+  getAppState?: () => Record<string, unknown>;
+};
+type CursorPresence = {
+  id: string;
+  displayName: string;
+  x: number;
+  y: number;
+  visible: boolean;
+  selectedElementIds: string[];
+};
+type Viewport = {
+  scrollX: number;
+  scrollY: number;
+  zoom: { value: number };
+  offsetLeft: number;
+  offsetTop: number;
 };
 type CollaborationStatus = "offline" | "connecting" | "connected" | "reconnecting";
 
@@ -120,11 +136,27 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
   const [data, setData] = useState(() => JSON.stringify(scene));
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("offline");
   const [participants, setParticipants] = useState(0);
+  const [remoteCursors, setRemoteCursors] = useState<CursorPresence[]>([]);
+  const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: { value: 1 }, offsetLeft: 0, offsetTop: 0 });
   const apiRef = useRef<ExcalidrawApi | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const dataRef = useRef(data);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCursorRef = useRef<{
+    x: number;
+    y: number;
+    visible: boolean;
+    selectedElementIds: string[];
+  } | null>(null);
+  const localCursorRef = useRef({
+    x: 0,
+    y: 0,
+    visible: false,
+    selectedElementIds: [] as string[],
+  });
   const stoppedRef = useRef(false);
   const revisionRef = useRef(0);
   const localDirtyRef = useRef(false);
@@ -145,6 +177,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
     if (!whiteboard?.id) {
       setCollaborationStatus("offline");
       setParticipants(0);
+      setRemoteCursors([]);
       return;
     }
 
@@ -171,6 +204,14 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
       socket.send(JSON.stringify({ type: "scene", data: pending, clientRevision }));
     };
 
+    const sendPendingCursor = () => {
+      const socket = socketRef.current;
+      const pending = pendingCursorRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || !pending) return;
+      socket.send(JSON.stringify({ type: "cursor", cursor: pending }));
+      pendingCursorRef.current = null;
+    };
+
     const connect = () => {
       if (stoppedRef.current) return;
       setCollaborationStatus(retryDelay === 500 ? "connecting" : "reconnecting");
@@ -185,6 +226,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
         retryDelay = 500;
         setCollaborationStatus("connected");
         sendPendingScene();
+        sendPendingCursor();
       };
       socket.onmessage = (event) => {
         try {
@@ -194,14 +236,42 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
             title?: string;
             participants?: number;
             clientRevision?: number;
+            collaborators?: CursorPresence[];
+            id?: string;
+            displayName?: string;
+            x?: number;
+            y?: number;
+            visible?: boolean;
+            selectedElementIds?: string[];
           };
           if (message.type === "snapshot" && typeof message.data === "string") {
             setParticipants(message.participants ?? 1);
+            setRemoteCursors(message.collaborators ?? []);
             if (!localDirtyRef.current) applyRemoteScene(message.data);
           } else if (message.type === "scene" && typeof message.data === "string") {
             applyRemoteScene(message.data);
           } else if (message.type === "presence") {
             setParticipants(message.participants ?? 1);
+            setRemoteCursors(message.collaborators ?? []);
+          } else if (
+            message.type === "cursor" &&
+            typeof message.id === "string" &&
+            typeof message.displayName === "string" &&
+            typeof message.x === "number" &&
+            typeof message.y === "number"
+          ) {
+            setRemoteCursors((current) => {
+              const next = current.filter((cursor) => cursor.id !== message.id);
+              next.push({
+                id: message.id!,
+                displayName: message.displayName!,
+                x: message.x!,
+                y: message.y!,
+                visible: message.visible === true,
+                selectedElementIds: message.selectedElementIds ?? [],
+              });
+              return next;
+            });
           } else if (message.type === "ack" && message.clientRevision === revisionRef.current) {
             localDirtyRef.current = false;
             pendingDataRef.current = null;
@@ -216,6 +286,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
         if (stoppedRef.current) return;
         setCollaborationStatus("reconnecting");
         setParticipants(0);
+        setRemoteCursors([]);
         reconnectTimerRef.current = setTimeout(connect, retryDelay);
         retryDelay = Math.min(5000, retryDelay * 2);
       };
@@ -226,12 +297,30 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
       stoppedRef.current = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
+      if (cursorSendTimerRef.current) clearTimeout(cursorSendTimerRef.current);
       socketRef.current?.close();
       socketRef.current = null;
+      setRemoteCursors([]);
     };
   }, [whiteboard?.id]);
 
+  const queueCursor = (cursor: typeof localCursorRef.current) => {
+    localCursorRef.current = cursor;
+    pendingCursorRef.current = cursor;
+    if (cursorSendTimerRef.current) return;
+    cursorSendTimerRef.current = setTimeout(() => {
+      cursorSendTimerRef.current = null;
+      const socket = socketRef.current;
+      const pending = pendingCursorRef.current;
+      if (socket?.readyState === WebSocket.OPEN && pending) {
+        socket.send(JSON.stringify({ type: "cursor", cursor: pending }));
+        pendingCursorRef.current = null;
+      }
+    }, 50);
+  };
+
   const queueScene = (nextData: string) => {
+    if (nextData === dataRef.current) return;
     dataRef.current = nextData;
     setData(nextData);
     if (remoteDataRef.current === nextData) {
@@ -248,6 +337,21 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
         socket.send(JSON.stringify({ type: "scene", data: pendingDataRef.current, clientRevision }));
       }
     }, 120);
+  };
+
+  const selectedElementIdsFrom = (appState: Record<string, unknown>): string[] => {
+    const selected = appState.selectedElementIds as Record<string, unknown> | undefined;
+    if (!selected || typeof selected !== "object") return [];
+    return Object.keys(selected).filter((id) => selected[id] === true);
+  };
+
+  const updateCursor = (visible: boolean, x = localCursorRef.current.x, y = localCursorRef.current.y) => {
+    queueCursor({
+      x,
+      y,
+      visible,
+      selectedElementIds: localCursorRef.current.selectedElementIds,
+    });
   };
 
   const statusLabel = collaborationStatus === "connected"
@@ -277,14 +381,55 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
         </div>
       </header>
       <div className="min-h-0 flex-1 p-3 sm:p-5">
-        <div className="h-full overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-sm">
+        <div
+          ref={boardRef}
+          className="relative h-full overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-sm"
+          onMouseLeave={() => updateCursor(false)}
+        >
           <Excalidraw
             key={whiteboard?.id ?? "new-whiteboard"}
             initialData={scene as unknown as ExcalidrawInitialData}
             excalidrawAPI={(api) => { apiRef.current = api as unknown as ExcalidrawApi; }}
-            onChange={(elements, appState, files) => queueScene(serializeScene(elements, appState, files))}
+            onChange={(elements, appState, files) => {
+              const selectedElementIds = selectedElementIdsFrom(appState as unknown as Record<string, unknown>);
+              localCursorRef.current = { ...localCursorRef.current, selectedElementIds };
+              queueScene(serializeScene(elements, appState, files));
+              if (localCursorRef.current.visible) updateCursor(true);
+            }}
+            onPointerUpdate={({ pointer }) => updateCursor(true, pointer.x, pointer.y)}
+            onScrollChange={(scrollX, scrollY, zoom) => {
+              const appState = apiRef.current?.getAppState?.() as Record<string, unknown> | undefined;
+              setViewport({
+                scrollX,
+                scrollY,
+                zoom: { value: zoom.value },
+                offsetLeft: typeof appState?.offsetLeft === "number" ? appState.offsetLeft : 0,
+                offsetTop: typeof appState?.offsetTop === "number" ? appState.offsetTop : 0,
+              });
+            }}
             UIOptions={{ canvasActions: { export: false, saveToActiveFile: false } }}
           />
+          {remoteCursors.map((cursor) => {
+            if (!cursor.visible) return null;
+            const rect = boardRef.current?.getBoundingClientRect();
+            if (!rect) return null;
+            const left = (cursor.x - viewport.scrollX) * viewport.zoom.value + viewport.offsetLeft - rect.left;
+            const top = (cursor.y - viewport.scrollY) * viewport.zoom.value + viewport.offsetTop - rect.top;
+            return (
+              <div
+                key={cursor.id}
+                className="pointer-events-none absolute z-10 -translate-x-1 -translate-y-1"
+                style={{ left, top }}
+                data-testid={`whiteboard-cursor-${cursor.id}`}
+              >
+                <div className="h-0 w-0 border-x-[7px] border-b-[12px] border-x-transparent border-b-[#16869a] drop-shadow-sm" />
+                <div className="ml-2 mt-[-2px] flex items-center gap-1 whitespace-nowrap rounded-full bg-[#16869a] px-2 py-1 text-[10px] font-bold text-white shadow-md">
+                  {cursor.displayName}
+                  {cursor.selectedElementIds.length > 0 && <span className="rounded-full bg-white/20 px-1">{cursor.selectedElementIds.length} selected</span>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

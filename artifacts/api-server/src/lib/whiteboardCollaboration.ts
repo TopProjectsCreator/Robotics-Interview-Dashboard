@@ -18,12 +18,21 @@ const SESSION_COOKIE = "robotics_admin_session";
 type WhiteboardRow = typeof interviewWhiteboardsTable.$inferSelect;
 type StoredElement = { id: string; version?: number; versionNonce?: number; isDeleted?: boolean; [key: string]: unknown };
 type StoredScene = { elements: StoredElement[]; appState?: Record<string, unknown>; files?: Record<string, unknown>; [key: string]: unknown };
+type CursorPresence = {
+  id: string;
+  displayName: string;
+  x: number;
+  y: number;
+  visible: boolean;
+  selectedElementIds: string[];
+};
 
 type CollaborationMessage =
-  | { type: "snapshot"; data: string; title: string; updatedAt: string; participants: number }
+  | { type: "snapshot"; data: string; title: string; updatedAt: string; participants: number; collaborators: CursorPresence[] }
   | { type: "scene"; data: string; updatedAt: string; updatedBy: string; clientRevision: number }
   | { type: "ack"; clientRevision: number; updatedAt: string }
-  | { type: "presence"; participants: number }
+  | { type: "presence"; participants: number; collaborators: CursorPresence[] }
+  | { type: "cursor"; id: string; displayName: string; x: number; y: number; visible: boolean; selectedElementIds: string[] }
   | { type: "error"; message: string };
 
 type CollaborationClient = {
@@ -31,6 +40,7 @@ type CollaborationClient = {
   displayName: string;
   whiteboardId: string;
   socket: WebSocket;
+  cursor: CursorPresence;
 };
 
 type CollaborationRoom = {
@@ -146,6 +156,41 @@ function broadcast(room: CollaborationRoom, message: CollaborationMessage, excep
   }
 }
 
+function collaboratorsIn(room: CollaborationRoom, exceptId?: string): CursorPresence[] {
+  return [...room.clients]
+    .filter((client) => client.id !== exceptId)
+    .map((client) => client.cursor);
+}
+
+function normalizeCursor(value: unknown): Pick<CursorPresence, "x" | "y" | "visible" | "selectedElementIds"> | null {
+  if (!value || typeof value !== "object") return null;
+  const cursor = value as {
+    x?: unknown;
+    y?: unknown;
+    visible?: unknown;
+    selectedElementIds?: unknown;
+  };
+  if (
+    typeof cursor.x !== "number" ||
+    !Number.isFinite(cursor.x) ||
+    Math.abs(cursor.x) > 10_000_000 ||
+    typeof cursor.y !== "number" ||
+    !Number.isFinite(cursor.y) ||
+    Math.abs(cursor.y) > 10_000_000
+  ) return null;
+  const selectedElementIds = Array.isArray(cursor.selectedElementIds)
+    ? cursor.selectedElementIds
+      .filter((id): id is string => typeof id === "string" && id.length <= 128)
+      .slice(0, 100)
+    : [];
+  return {
+    x: cursor.x,
+    y: cursor.y,
+    visible: cursor.visible === true,
+    selectedElementIds,
+  };
+}
+
 function roomFor(whiteboardId: string, currentData: string): CollaborationRoom {
   const existing = rooms.get(whiteboardId);
   if (existing) return existing;
@@ -198,11 +243,20 @@ async function openCollaboration(
   }
 
   const room = roomFor(whiteboardId, whiteboard.data);
+  const clientId = randomUUID();
   const client: CollaborationClient = {
-    id: randomUUID(),
+    id: clientId,
     displayName: identity.displayName,
     whiteboardId,
     socket,
+    cursor: {
+      id: clientId,
+      displayName: identity.displayName,
+      x: 0,
+      y: 0,
+      visible: false,
+      selectedElementIds: [],
+    },
   };
   room.clients.add(client);
   send(socket, {
@@ -211,8 +265,9 @@ async function openCollaboration(
     title: whiteboard.title,
     updatedAt: whiteboard.updatedAt.toISOString(),
     participants: room.clients.size,
+    collaborators: collaboratorsIn(room, client.id),
   });
-  broadcast(room, { type: "presence", participants: room.clients.size });
+  broadcast(room, { type: "presence", participants: room.clients.size, collaborators: collaboratorsIn(room) }, socket);
 
   socket.on("message", (raw: RawData) => {
     let message: unknown;
@@ -223,7 +278,24 @@ async function openCollaboration(
       return;
     }
     if (!message || typeof message !== "object") return;
-    const payload = message as { type?: unknown; data?: unknown; clientRevision?: unknown };
+    const payload = message as {
+      type?: unknown;
+      data?: unknown;
+      clientRevision?: unknown;
+      cursor?: unknown;
+    };
+    if (payload.type === "cursor") {
+      const cursor = normalizeCursor(payload.cursor);
+      if (!cursor) return;
+      client.cursor = { ...client.cursor, ...cursor };
+      broadcast(room, {
+        type: "cursor",
+        id: client.id,
+        displayName: client.displayName,
+        ...cursor,
+      }, socket);
+      return;
+    }
     if (payload.type !== "scene") return;
     const data = normalizeWhiteboardData(payload.data);
     const clientRevision = typeof payload.clientRevision === "number" ? payload.clientRevision : 0;
@@ -249,7 +321,7 @@ async function openCollaboration(
 
   socket.on("close", () => {
     room.clients.delete(client);
-    broadcast(room, { type: "presence", participants: room.clients.size });
+    broadcast(room, { type: "presence", participants: room.clients.size, collaborators: collaboratorsIn(room) });
     if (!room.clients.size) {
       if (room.flushTimer) clearTimeout(room.flushTimer);
       const pending = room.pendingData;
