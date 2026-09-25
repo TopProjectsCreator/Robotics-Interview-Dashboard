@@ -168,7 +168,7 @@ button { cursor: pointer; }
 .dark [class~="hover:bg-[#dff2ee]"]:hover, .dark [class~="hover:bg-[#f3fbfa]"]:hover { background-color: #17332a; }
 .dark [class~="hover:bg-[#e3f4f2]"]:hover { background-color: #1d3a47; }
 .dark [class~="hover:bg-[#f0f3fb]"]:hover { background-color: #1c2c46; }
-.dark [class~="hover:bg-[#fff1ef]"]:hover { background-color: #40221f; }
+.dark [class~="hover:bg-[#fff1ef]"]:hover, .dark [class~="hover:bg-[#fff2f0]"]:hover, .dark [class~="hover:bg-[#fff7f6]"]:hover { background-color: #40221f; }
 .dark [class~="text-[#182232]"], .dark [class~="text-[#183a4b]"] { color: #e8eef2; }
 .dark [class~="text-[#385762]"], .dark [class~="text-[#38555e]"], .dark [class~="text-[#52666e]"], .dark [class~="text-[#4f6870]"], .dark [class~="text-[#4f626b]"], .dark [class~="text-[#315a61]"] { color: #b9c9d1; }
 .dark [class~="text-[#7c8c91]"], .dark [class~="text-[#819198]"], .dark [class~="text-[#718189]"], .dark [class~="text-[#7a8b90]"], .dark [class~="text-[#8a999d]"], .dark [class~="text-[#60757c]"], .dark [class~="text-[#63747c]"], .dark [class~="text-[#587278]"], .dark [class~="text-[#7b8a8f]"], .dark [class~="text-[#7f9da6]"], .dark [class~="text-[#809196]"], .dark [class~="text-[#9aa7aa]"], .dark [class~="text-[#9db6bd]"], .dark [class~="text-[#87a3ac]"], .dark [class~="text-[#617d86]"], .dark [class~="text-[#78949d]"], .dark [class~="text-[#365965]"] { color: #8fa1ab; }
