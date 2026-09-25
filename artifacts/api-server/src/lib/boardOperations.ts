@@ -11,6 +11,8 @@ const MAX_COLUMNS = 20;
 const MAX_CARDS = 2_000;
 const MAX_CARD_TITLE = 200;
 const MAX_COLUMN_TITLE = 80;
+const MAX_BOARD_DESCRIPTION = 500;
+const DEFAULT_BOARD_DESCRIPTION = "Open tasks, handoffs, and timeline";
 
 type OperationResult =
   | { ok: true; data: BoardData; title?: string }
@@ -128,6 +130,7 @@ export function initialBoardData(): BoardData {
   return {
     kind: "board",
     version: 1,
+    description: DEFAULT_BOARD_DESCRIPTION,
     columns: [
       { id: "backlog", title: "Backlog", color: COLUMN_COLORS[0], position: 0 },
       { id: "planned", title: "To do", color: COLUMN_COLORS[1], position: 1 },
@@ -154,6 +157,10 @@ export function parseBoardData(raw: string): BoardData | null {
 
     const columns = candidate.columns as unknown[];
     const rawCards = candidate.cards as unknown[];
+    const description = candidate.description === undefined
+      ? DEFAULT_BOARD_DESCRIPTION
+      : candidate.description;
+    if (typeof description !== "string" || description.length > MAX_BOARD_DESCRIPTION) return null;
     const columnsValid = columns.every((value) => {
       if (!value || typeof value !== "object") return false;
       const column = value as Record<string, unknown>;
@@ -215,6 +222,7 @@ export function parseBoardData(raw: string): BoardData | null {
     return {
       kind: "board",
       version: 1,
+      description,
       columns: columns as BoardData["columns"],
       cards: parsedCards,
     };
@@ -237,10 +245,23 @@ export function applyBoardOperation(
 
   switch (operation.operation) {
     case "rename_board": {
-      const title = operation.title?.trim();
-      if (!title) return fail("Board name cannot be empty.");
-      if (title.length > 120) return fail("Board names must be 120 characters or fewer.");
-      return { ok: true, data, title };
+      const title = operation.title === undefined ? undefined : operation.title.trim();
+      if (operation.title !== undefined && !title) return fail("Board name cannot be empty.");
+      if (title && title.length > 120) return fail("Board names must be 120 characters or fewer.");
+      if (operation.title === undefined && operation.description === undefined) {
+        return fail("Choose a board name or description to update.");
+      }
+      const description = operation.description === undefined
+        ? data.description
+        : operation.description.trim();
+      if (description.length > MAX_BOARD_DESCRIPTION) {
+        return fail("Board descriptions must be 500 characters or fewer.");
+      }
+      return {
+        ok: true,
+        data: { ...data, description },
+        ...(title ? { title } : {}),
+      };
     }
 
     case "create_card": {

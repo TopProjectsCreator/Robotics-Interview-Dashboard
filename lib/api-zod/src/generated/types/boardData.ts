@@ -13,6 +13,8 @@ import type { BoardDataVersion } from './boardDataVersion';
 export interface BoardData {
   kind: BoardDataKind;
   version: BoardDataVersion;
+  /** @maxLength 500 */
+  description: string;
   /** @maxItems 20 */
   columns: BoardColumn[];
   /** @maxItems 2000 */

@@ -35,7 +35,7 @@ import {
 
 type BoardEditorProps = { boardId: string; assignees: string[]; onClose: () => void };
 type ViewMode = "board" | "table" | "list" | "timeline";
-type Modal = "card" | "bulk" | "column" | "renameColumn" | null;
+type Modal = "card" | "bulk" | "column" | "renameColumn" | "boardDetails" | null;
 type CardDraft = {
   title: string;
   description: string;
@@ -150,6 +150,8 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const [columnTitle, setColumnTitle] = useState("");
   const [columnColor, setColumnColor] = useState("#16869a");
   const [renameTitle, setRenameTitle] = useState("");
+  const [boardTitleDraft, setBoardTitleDraft] = useState("");
+  const [boardDescriptionDraft, setBoardDescriptionDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [sort, setSort] = useState<"position" | "priority" | "dueDate" | "title">("position");
@@ -215,10 +217,23 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
     if (!cardId || cardId === beforeCardId) return;
     await apply({ operation: "move_card", cardId, targetColumnId, beforeCardId: beforeCardId ?? null });
   };
-  const saveRename = async (value: string) => {
-    const title = value.trim();
-    if (!title || title === board?.title) return;
-    await apply({ operation: "rename_board", title });
+  const beginEditBoardDetails = () => {
+    if (!board) return;
+    setBoardTitleDraft(board.title);
+    setBoardDescriptionDraft(board.data.description);
+    setError("");
+    setModal("boardDetails");
+  };
+  const submitBoardDetails = async (event: FormEvent) => {
+    event.preventDefault();
+    const title = boardTitleDraft.trim();
+    if (!title) return;
+    const result = await apply({
+      operation: "rename_board",
+      title,
+      description: boardDescriptionDraft.trim(),
+    });
+    if (result) setModal(null);
   };
   const submitBulk = async (event: FormEvent) => {
     event.preventDefault();
@@ -251,8 +266,8 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   return <div className="fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden bg-background text-foreground" role="dialog" aria-modal="true" aria-label="Board editor" data-testid="board-editor">
     <header className="shrink-0 border-b border-border bg-card/95 shadow-sm backdrop-blur">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ClipboardList size={18} /></div><div className="min-w-0"><p className="mono text-[9px] font-bold uppercase tracking-[.18em] text-primary">Coordination board</p><input defaultValue={board.title} maxLength={80} onBlur={event => { void saveRename(event.target.value); }} onKeyDown={event => { if (event.key === "Enter") { event.currentTarget.blur(); } }} aria-label="Board title" data-testid="input-board-title" className="w-full max-w-[420px] bg-transparent text-lg font-semibold tracking-tight outline-none placeholder:text-muted-foreground" /></div></div>
-        <div className="flex items-center gap-2"><span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${saving ? "bg-accent" : error || query.isError ? "bg-destructive" : "bg-primary"}`} />{saving ? "Saving" : error ? "Save issue" : query.isError ? "Sync issue" : "Live"}</span><Button label="close-editor" onClick={onClose}><X size={15} />Close</Button></div>
+        <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ClipboardList size={18} /></div><div className="min-w-0"><p className="mono text-[9px] font-bold uppercase tracking-[.18em] text-primary">Coordination board</p><h1 className="truncate text-lg font-semibold tracking-tight">{board.title}</h1><p className="max-w-[560px] truncate text-xs text-muted-foreground">{board.data.description || "No description yet"}</p></div></div>
+        <div className="flex items-center gap-2"><span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${saving ? "bg-accent" : error || query.isError ? "bg-destructive" : "bg-primary"}`} />{saving ? "Saving" : error ? "Save issue" : query.isError ? "Sync issue" : "Live"}</span><Button label="edit-board-details" onClick={beginEditBoardDetails}><Pencil size={14} />Edit details</Button><Button label="close-editor" onClick={onClose}><X size={15} />Close</Button></div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-border/70 px-4 py-2.5 sm:px-6">
         <div className="flex rounded-lg border border-border bg-muted/50 p-0.5" role="tablist" aria-label="Board views">{([["board", LayoutGrid, "Board"], ["table", Table2, "Table"], ["list", List, "List"], ["timeline", CalendarDays, "Timeline"]] as const).map(([value, Icon, label]) => <button key={value} type="button" role="tab" aria-selected={view === value} onClick={() => setView(value)} data-testid={`button-view-${value}`} className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${view === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}><Icon size={14} />{label}</button>)}</div>
@@ -279,6 +294,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
       {view === "timeline" && <Timeline cards={filteredCards} columns={columns} onOpen={openDetail} />}
       {view !== "board" && filteredCards.length === 0 && view !== "list" && <EmptyResults />}
     </main>
+    {modal === "boardDetails" && <ModalShell title="Edit board details" eyebrow="Board settings" onClose={() => setModal(null)}><form onSubmit={submitBoardDetails} className="space-y-4"><label className="block"><FieldLabel>Board name</FieldLabel><input required autoFocus maxLength={120} value={boardTitleDraft} onChange={event => setBoardTitleDraft(event.target.value)} aria-label="Board name" data-testid="input-board-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="Name this board" /></label><label className="block"><FieldLabel>Description</FieldLabel><textarea maxLength={500} rows={4} value={boardDescriptionDraft} onChange={event => setBoardDescriptionDraft(event.target.value)} aria-label="Board description" data-testid="input-board-description" className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="What is this board for? Give teammates useful context." /></label><p className="-mt-2 text-[11px] text-muted-foreground">Shown on the board card in chat. You can leave it blank.</p><div className="flex justify-end gap-2 border-t border-border pt-4"><Button label="cancel-board-details" onClick={() => setModal(null)}>Cancel</Button><Button label="save-board-details" variant="primary" disabled={saving || !boardTitleDraft.trim()}>{saving && <LoaderCircle size={14} className="animate-spin" />}Save details</Button></div></form></ModalShell>}
     {modal === "card" && <ModalShell title="New coordination card" eyebrow="Add handoff" onClose={() => setModal(null)}><CardForm draft={draft} setDraft={setDraft} onSubmit={submitCard} onCancel={() => setModal(null)} saving={saving} assignees={assignees} columns={columns} columnId={draftColumnId} onColumnChange={setDraftColumnId} submitLabel="Create card" /></ModalShell>}
     {activeCard && <ModalShell title="Edit coordination card" eyebrow="Card detail" onClose={() => setActiveCard(null)}><CardForm draft={draft} setDraft={setDraft} onSubmit={submitCard} onCancel={() => setActiveCard(null)} saving={saving} assignees={assignees} columns={columns} columnId={draftColumnId} onColumnChange={setDraftColumnId} submitLabel="Save changes" /><div className="mt-3 border-t border-border pt-3"><Button label="delete-card" variant="danger" onClick={() => void deleteCard()} disabled={saving}><Trash2 size={14} />Delete card</Button><p className="mt-2 text-[11px] text-muted-foreground">Created {dateTimeLabel(activeCard.createdAt)} · Last updated by {activeCard.updatedBy}</p></div></ModalShell>}
     {modal === "bulk" && <ModalShell title="Add a run of cards" eyebrow="Bulk add" onClose={() => setModal(null)}><form onSubmit={submitBulk}><p className="mb-3 text-sm text-muted-foreground">One card per line. New cards land in {columns[0]?.title ?? "the first column"}.</p><textarea required value={bulkText} onChange={e => setBulkText(e.target.value)} autoFocus data-testid="textarea-bulk-card-titles" className="min-h-48 w-full resize-y rounded-xl border border-input bg-background p-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder={"Verify battery safety\nCheck manipulator handoff\nReview final rubric"} /><div className="mt-4 flex justify-end gap-2"><Button label="cancel-bulk-add" onClick={() => setModal(null)}>Cancel</Button><Button label="create-bulk-cards" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}Add cards</Button></div></form></ModalShell>}

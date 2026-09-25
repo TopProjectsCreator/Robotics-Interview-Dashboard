@@ -1194,6 +1194,8 @@ export const CreateBoardBody = zod.object({
   "recipient": zod.string().nullish()
 })
 
+export const createBoardResponseDataDescriptionMax = 500;
+
 export const createBoardResponseDataColumnsItemTitleMax = 80;
 
 export const createBoardResponseDataColumnsItemColorMax = 32;
@@ -1222,6 +1224,7 @@ export const CreateBoardResponse = zod.object({
   "data": zod.object({
   "kind": zod.enum(['board']),
   "version": zod.literal(1),
+  "description": zod.string().max(createBoardResponseDataDescriptionMax),
   "columns": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string().min(1).max(createBoardResponseDataColumnsItemTitleMax),
@@ -1259,6 +1262,8 @@ export const GetBoardParams = zod.object({
   "boardId": zod.coerce.string()
 })
 
+export const getBoardResponseDataDescriptionMax = 500;
+
 export const getBoardResponseDataColumnsItemTitleMax = 80;
 
 export const getBoardResponseDataColumnsItemColorMax = 32;
@@ -1287,6 +1292,7 @@ export const GetBoardResponse = zod.object({
   "data": zod.object({
   "kind": zod.enum(['board']),
   "version": zod.literal(1),
+  "description": zod.string().max(getBoardResponseDataDescriptionMax),
   "columns": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string().min(1).max(getBoardResponseDataColumnsItemTitleMax),
@@ -1347,7 +1353,9 @@ export const updateBoardBodyTitlesItemMax = 200;
 
 export const updateBoardBodyTitlesMax = 250;
 
-export const updateBoardBodyTitleMax = 80;
+export const updateBoardBodyTitleMax = 120;
+
+export const updateBoardBodyDescriptionMax = 500;
 
 export const updateBoardBodyColorMax = 32;
 
@@ -1381,8 +1389,11 @@ export const UpdateBoardBody = zod.object({
   "targetColumnId": zod.string().optional(),
   "beforeCardId": zod.string().nullish(),
   "title": zod.string().min(1).max(updateBoardBodyTitleMax).optional(),
+  "description": zod.string().max(updateBoardBodyDescriptionMax).optional(),
   "color": zod.string().max(updateBoardBodyColorMax).optional()
 })
+
+export const updateBoardResponseDataDescriptionMax = 500;
 
 export const updateBoardResponseDataColumnsItemTitleMax = 80;
 
@@ -1412,6 +1423,7 @@ export const UpdateBoardResponse = zod.object({
   "data": zod.object({
   "kind": zod.enum(['board']),
   "version": zod.literal(1),
+  "description": zod.string().max(updateBoardResponseDataDescriptionMax),
   "columns": zod.array(zod.object({
   "id": zod.string(),
   "title": zod.string().min(1).max(updateBoardResponseDataColumnsItemTitleMax),

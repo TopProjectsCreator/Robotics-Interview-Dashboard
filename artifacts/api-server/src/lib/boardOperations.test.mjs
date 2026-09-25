@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyBoardOperation, initialBoardData } from "./boardOperations.ts";
+import { UpdateBoardResponse } from "../../../../lib/api-zod/src/generated/api.ts";
+import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations.ts";
 
 function apply(data, operation) {
   const result = applyBoardOperation(data, operation, "Alex");
@@ -103,4 +104,53 @@ test("invalid card dates are rejected instead of being silently stored", () => {
 
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.error, /valid start date/i);
+});
+
+test("board name and description changes are stored, including clearing the description", () => {
+  const renamed = applyBoardOperation(initialBoardData(), {
+    operation: "rename_board",
+    title: "Hello",
+    description: "Plan for the Saturday interviews",
+  }, "Alex");
+
+  assert.equal(renamed.ok, true);
+  if (!renamed.ok) return;
+  assert.equal(renamed.title, "Hello");
+  assert.equal(renamed.data.description, "Plan for the Saturday interviews");
+
+  const cleared = applyBoardOperation(renamed.data, {
+    operation: "rename_board",
+    description: "",
+  }, "Alex");
+  assert.equal(cleared.ok, true);
+  if (cleared.ok) assert.equal(cleared.data.description, "");
+});
+
+test("older boards get a default description and updated responses match the generated schema", () => {
+  const legacyData = { ...initialBoardData() };
+  delete legacyData.description;
+  const parsedLegacy = parseBoardData(JSON.stringify(legacyData));
+  assert.equal(parsedLegacy?.description, "Open tasks, handoffs, and timeline");
+
+  const result = applyBoardOperation(initialBoardData(), {
+    operation: "rename_board",
+    title: "Hello",
+    description: "The plan for interview day",
+  }, "Alex");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const now = new Date().toISOString();
+  const response = UpdateBoardResponse.parse({
+    id: "board-fixture",
+    title: result.title,
+    data: result.data,
+    createdBy: "Alex",
+    scope: "shared",
+    peer: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  assert.equal(response.title, "Hello");
+  assert.equal(response.data.description, "The plan for interview day");
 });

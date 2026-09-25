@@ -29,9 +29,11 @@ export interface BoardOperationInput {
   beforeCardId?: string | null;
   /**
      * @minLength 1
-     * @maxLength 80
+     * @maxLength 120
      */
   title?: string;
+  /** @maxLength 500 */
+  description?: string;
   /** @maxLength 32 */
   color?: string;
 }
