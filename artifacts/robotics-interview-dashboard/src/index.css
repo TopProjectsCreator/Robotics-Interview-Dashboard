@@ -153,6 +153,8 @@ button { cursor: pointer; }
 }
 .dark [class~="bg-white"] { background-color: #16262f; }
 .dark [class~="bg-[#f3f6f5]"] { background-color: #0c161e; }
+.dark [class~="bg-[#f3f6f5]/90"] { background-color: hsl(var(--background) / 90%); }
+.dark [class~="bg-[#eaf7f5]/60"] { background-color: hsl(var(--card) / 60%); }
 .dark [class~="bg-[#eef3f2]"], .dark [class~="bg-[#eef4f3]"], .dark [class~="bg-[#f4f8f7]"], .dark [class~="bg-[#f7faf9]"], .dark [class~="bg-[#f1f6f5]"] { background-color: #13222c; }
 .dark [class~="bg-[#edf1f1]"], .dark [class~="bg-[#d7e8e5]"], .dark [class~="bg-[#dfe7ea]"] { background-color: #22374a; }
 .dark [class~="bg-[#edf1f3]"] { background-color: #2a3f52; }
