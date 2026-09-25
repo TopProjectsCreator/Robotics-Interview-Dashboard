@@ -12,6 +12,52 @@ initRealtime();
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
 async function ensureSchema(): Promise<void> {
+  const privateTableRlsStatements = [
+    "applicants",
+    "application_imports",
+    "assistant_conversations",
+    "assistant_messages",
+    "audit_logs",
+    "broadcast_acks",
+    "broadcasts",
+    "chat_custom_emojis",
+    "chat_message_reactions",
+    "dashboard_charts",
+    "data_snapshots",
+    "display_settings",
+    "interview_chat_messages",
+    "interview_queue",
+    "interview_whiteboards",
+    "interviewer_accounts",
+    "page_visits",
+    "presence_heartbeats",
+    "revoked_sessions",
+    "seating_settings",
+    "whiteboards",
+  ].map((tableName) => `
+    DO $rls$
+    BEGIN
+      IF to_regclass('public.${tableName}') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE public.${tableName} ENABLE ROW LEVEL SECURITY';
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_policies
+          WHERE schemaname = 'public'
+            AND tablename = '${tableName}'
+            AND policyname = 'deny_supabase_client_access'
+        ) THEN
+          BEGIN
+            EXECUTE 'CREATE POLICY deny_supabase_client_access ON public.${tableName} AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)';
+          EXCEPTION
+            WHEN duplicate_object THEN NULL;
+          END;
+        END IF;
+      END IF;
+    END
+    $rls$
+  `);
+
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
     `alter table "dashboard_charts" add column if not exists "x_axis" text`,
@@ -28,6 +74,7 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
+    ...privateTableRlsStatements,
   ];
   for (const sql of statements) {
     try {
