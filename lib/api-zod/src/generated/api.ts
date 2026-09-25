@@ -86,7 +86,8 @@ export const ListInterviewersResponse = zod.object({
 export const CreateInterviewerBody = zod.object({
   "displayName": zod.string().min(1),
   "eventPassword": zod.string().min(1),
-  "password": zod.string().min(1)
+  "password": zod.string().min(1),
+  "confirmLowExposure": zod.boolean().optional().describe('Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown')
 })
 
 export const CreateInterviewerResponse = zod.object({
@@ -106,7 +107,8 @@ export const CreateInterviewerResponse = zod.object({
 export const SetupInterviewerPasswordBody = zod.object({
   "interviewerId": zod.string(),
   "eventPassword": zod.string().min(1),
-  "password": zod.string().min(1)
+  "password": zod.string().min(1),
+  "confirmLowExposure": zod.boolean().optional().describe('Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown')
 })
 
 export const SetupInterviewerPasswordResponse = zod.object({
@@ -129,7 +131,8 @@ export const UpdateInterviewerPasswordParams = zod.object({
 
 export const UpdateInterviewerPasswordBody = zod.object({
   "eventPassword": zod.string().min(1),
-  "password": zod.string().min(1).nullable().describe('New password, or null to remove the password and require setup again')
+  "password": zod.string().min(1).nullable().describe('New password, or null to remove the password and require setup again'),
+  "confirmLowExposure": zod.boolean().optional().describe('Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown')
 })
 
 export const UpdateInterviewerPasswordResponse = zod.object({

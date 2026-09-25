@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import { db, interviewerAccountsTable } from "@workspace/db";
 import {
@@ -30,12 +30,54 @@ import {
 } from "../middlewares/adminAuth";
 import { deletePresenceHeartbeat } from "./presence";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
+import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { getInterviewSettings } from "../lib/roboticsData";
+import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
 
 const router: IRouter = Router();
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
+
+async function rejectUnsafePassword(
+  req: Request,
+  res: Response,
+  password: string,
+  confirmLowExposure = false,
+): Promise<boolean> {
+  let count: number;
+  try {
+    count = await getPwnedPasswordCount(password);
+  } catch {
+    req.log.warn("Pwned Passwords check failed; rejecting password change");
+    res.status(503).json({
+      error: "Password safety check is temporarily unavailable. Your password was not changed; try again shortly.",
+      code: "PASSWORD_CHECK_UNAVAILABLE",
+    });
+    return true;
+  }
+
+  const exposure = assessPasswordExposure(count, confirmLowExposure);
+  if (exposure.kind === "blocked") {
+    res.status(422).json({
+      error: `This password appears in known breach data ${count} times. Choose a different password.`,
+      code: "PASSWORD_EXPOSURE_BLOCKED",
+      count,
+    });
+    return true;
+  }
+
+  if (exposure.kind === "warning") {
+    res.status(409).json({
+      error: `This password appears in known breach data ${count} ${count === 1 ? "time" : "times"}. Confirm before using it.`,
+      code: "PASSWORD_EXPOSURE_WARNING",
+      count,
+    });
+    return true;
+  }
+
+  return false;
+}
 
 function loginAllowed(ip: string): boolean {
   const now = Date.now();
@@ -110,6 +152,7 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(409).json({ error: "That interviewer already exists." });
     return;
   }
+  if (await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)) return;
   const [account] = await db.insert(interviewerAccountsTable).values({
     id: randomBytes(16).toString("hex"),
     displayName,
@@ -143,6 +186,7 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
     res.status(409).json({ error: "That interviewer already has a password." });
     return;
   }
+  if (await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)) return;
   const [updated] = await db.update(interviewerAccountsTable)
     .set({ passwordHash: hashPassword(parsed.data.password), updatedAt: new Date() })
     .where(eq(interviewerAccountsTable.id, account.id)).returning();
@@ -173,6 +217,10 @@ router.patch("/auth/interviewers/:interviewerId/password", requireAdmin, async (
     res.status(404).json({ error: "Interviewer not found." });
     return;
   }
+  if (
+    parsed.data.password !== null &&
+    await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)
+  ) return;
   const [updated] = await db.update(interviewerAccountsTable)
     .set({ passwordHash: parsed.data.password === null ? null : hashPassword(parsed.data.password), updatedAt: new Date() })
     .where(eq(interviewerAccountsTable.id, account.id))

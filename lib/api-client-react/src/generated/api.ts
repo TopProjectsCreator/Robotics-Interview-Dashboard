@@ -82,6 +82,7 @@ import type {
   ListInterviewWhiteboardsParams,
   LoginInput,
   MessageResponse,
+  PasswordSafetyError,
   PresenceHeartbeat,
   PresenceHeartbeatInput,
   PresenceIpStats,
@@ -539,7 +540,7 @@ export const createInterviewer = async (createInterviewerInput: CreateInterviewe
 
 
 
-export const getCreateInterviewerMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateInterviewerMutationOptions = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext> => {
 
@@ -568,12 +569,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateInterviewerMutationResult = NonNullable<Awaited<ReturnType<typeof createInterviewer>>>
     export type CreateInterviewerMutationBody = BodyType<CreateInterviewerInput>
-    export type CreateInterviewerMutationError = ErrorType<unknown>
+    export type CreateInterviewerMutationError = ErrorType<PasswordSafetyError>
 
     /**
  * @summary Create an interviewer account using the event passcode
  */
-export const useCreateInterviewer = <TError = ErrorType<unknown>,
+export const useCreateInterviewer = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInterviewer>>, TError,{data: BodyType<CreateInterviewerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createInterviewer>>,
@@ -610,7 +611,7 @@ export const setupInterviewerPassword = async (setupInterviewerPasswordInput: Se
 
 
 
-export const getSetupInterviewerPasswordMutationOptions = <TError = ErrorType<unknown>,
+export const getSetupInterviewerPasswordMutationOptions = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext> => {
 
@@ -639,12 +640,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SetupInterviewerPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof setupInterviewerPassword>>>
     export type SetupInterviewerPasswordMutationBody = BodyType<SetupInterviewerPasswordInput>
-    export type SetupInterviewerPasswordMutationError = ErrorType<unknown>
+    export type SetupInterviewerPasswordMutationError = ErrorType<PasswordSafetyError>
 
     /**
  * @summary Set the password for a legacy interviewer account using the event passcode
  */
-export const useSetupInterviewerPassword = <TError = ErrorType<unknown>,
+export const useSetupInterviewerPassword = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setupInterviewerPassword>>, TError,{data: BodyType<SetupInterviewerPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof setupInterviewerPassword>>,
@@ -682,7 +683,7 @@ export const updateInterviewerPassword = async (interviewerId: string,
 
 
 
-export const getUpdateInterviewerPasswordMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateInterviewerPasswordMutationOptions = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext> => {
 
@@ -711,12 +712,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateInterviewerPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof updateInterviewerPassword>>>
     export type UpdateInterviewerPasswordMutationBody = BodyType<InterviewerPasswordUpdateInput>
-    export type UpdateInterviewerPasswordMutationError = ErrorType<unknown>
+    export type UpdateInterviewerPasswordMutationError = ErrorType<PasswordSafetyError>
 
     /**
  * @summary Change or remove an interviewer password
  */
-export const useUpdateInterviewerPassword = <TError = ErrorType<unknown>,
+export const useUpdateInterviewerPassword = <TError = ErrorType<PasswordSafetyError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerPassword>>, TError,{interviewerId: string;data: BodyType<InterviewerPasswordUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateInterviewerPassword>>,

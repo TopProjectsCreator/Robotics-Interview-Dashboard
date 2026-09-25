@@ -117,6 +117,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewerAccount"
+        "409":
+          description: Account already exists or the password needs confirmation because it appeared 1–2 times in breach data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "422":
+          description: Password appeared at least 3 times in breach data and is blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "503":
+          description: Password safety service is unavailable; no account was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
   /auth/interviewers/setup:
     post:
       operationId: setupInterviewerPassword
@@ -135,6 +153,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewerAccount"
+        "409":
+          description: Account already has a password or the password needs confirmation because it appeared 1–2 times in breach data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "422":
+          description: Password appeared at least 3 times in breach data and is blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "503":
+          description: Password safety service is unavailable; no password was set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
   /auth/interviewers/{interviewerId}/password:
     patch:
       operationId: updateInterviewerPassword
@@ -162,6 +198,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewerAccount"
+        "409":
+          description: Password needs confirmation because it appeared 1–2 times in breach data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "422":
+          description: Password appeared at least 3 times in breach data and is blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
+        "503":
+          description: Password safety service is unavailable; no password was changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordSafetyError"
   /auth/interviewers/passwords/reset-all:
     post:
       operationId: resetAllInterviewerPasswords
@@ -1391,6 +1445,9 @@ components:
         password:
           type: string
           minLength: 1
+        confirmLowExposure:
+          type: boolean
+          description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
     InterviewerPasswordUpdateInput:
       type: object
       required: [eventPassword, password]
@@ -1402,6 +1459,9 @@ components:
           type: ["string", "null"]
           minLength: 1
           description: New password, or null to remove the password and require setup again
+        confirmLowExposure:
+          type: boolean
+          description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
     EventPasswordInput:
       type: object
       required: [eventPassword]
@@ -1422,6 +1482,24 @@ components:
         password:
           type: string
           minLength: 1
+        confirmLowExposure:
+          type: boolean
+          description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    PasswordSafetyError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - PASSWORD_EXPOSURE_WARNING
+            - PASSWORD_EXPOSURE_BLOCKED
+            - PASSWORD_CHECK_UNAVAILABLE
+        count:
+          type: integer
+          minimum: 1
     DashboardCount:
       type: object
       required: [label, value]

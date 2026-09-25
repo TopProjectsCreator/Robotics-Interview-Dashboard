@@ -94,6 +94,8 @@ export * from './listInterviewWhiteboardsParams';
 export * from './listInterviewWhiteboardsScope';
 export * from './loginInput';
 export * from './messageResponse';
+export * from './passwordSafetyError';
+export * from './passwordSafetyErrorCode';
 export * from './presenceEntry';
 export * from './presenceHeartbeat';
 export * from './presenceHeartbeatInput';

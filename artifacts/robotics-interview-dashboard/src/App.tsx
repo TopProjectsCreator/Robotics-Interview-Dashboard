@@ -194,7 +194,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setLocation("/");
     }
   };
-  const changeInterviewerPassword = (interviewerId: string, password: string | null) => {
+  const changeInterviewerPassword = (interviewerId: string, password: string | null, confirmLowExposure = false) => {
     setPasswordNotice("");
     setPasswordError("");
     if (!passwordAdminCode.trim()) {
@@ -206,13 +206,36 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       return;
     }
     updateInterviewerPassword.mutate(
-      { interviewerId, data: { eventPassword: passwordAdminCode.trim(), password: password === null ? null : password } },
       {
-        onSuccess: () => finishPasswordAction(
-          password === null ? "Password removed. That interviewer must set one up at next sign-in." : "Password updated.",
-          password === null && session.data?.interviewerId === interviewerId,
-        ),
-        onError: () => setPasswordError("Could not update that password. Check the event passcode and try again."),
+        interviewerId,
+        data: {
+          eventPassword: passwordAdminCode.trim(),
+          password,
+          ...(confirmLowExposure ? { confirmLowExposure: true } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          if (password !== null) {
+            setPasswordDrafts(current => ({ ...current, [interviewerId]: "" }));
+          }
+          finishPasswordAction(
+            password === null ? "Password removed. That interviewer must set one up at next sign-in." : "Password updated.",
+            password === null && session.data?.interviewerId === interviewerId,
+          );
+        },
+        onError: error => {
+          const issue = passwordSafetyIssue(error);
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
+            if (!confirmLowExposure && issue.count && window.confirm(passwordExposureConfirmation(issue.count))) {
+              changeInterviewerPassword(interviewerId, password, true);
+              return;
+            }
+            setPasswordError("Password was not changed. Choose a different password.");
+            return;
+          }
+          setPasswordError(passwordSafetyErrorMessage(issue) ?? "Could not update that password. Check the event passcode and try again.");
+        },
       },
     );
   };
@@ -1213,6 +1236,45 @@ function FullscreenButton({ active, onClick, dark = false }: { active: boolean; 
   </button>;
 }
 
+type PasswordSafetyIssue =
+  | { code: "PASSWORD_EXPOSURE_WARNING"; count: number }
+  | { code: "PASSWORD_EXPOSURE_BLOCKED"; count: number }
+  | { code: "PASSWORD_CHECK_UNAVAILABLE" };
+
+function passwordSafetyIssue(error: unknown): PasswordSafetyIssue | null {
+  if (typeof error !== "object" || error === null || !("data" in error)) return null;
+  const data = (error as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return null;
+
+  const payload = data as Record<string, unknown>;
+  if (payload.code === "PASSWORD_CHECK_UNAVAILABLE") {
+    return { code: "PASSWORD_CHECK_UNAVAILABLE" };
+  }
+  if (
+    (payload.code === "PASSWORD_EXPOSURE_WARNING" || payload.code === "PASSWORD_EXPOSURE_BLOCKED") &&
+    typeof payload.count === "number" &&
+    Number.isInteger(payload.count)
+  ) {
+    return { code: payload.code, count: payload.count };
+  }
+  return null;
+}
+
+function passwordSafetyErrorMessage(issue: PasswordSafetyIssue | null): string | null {
+  if (!issue) return null;
+  if (issue.code === "PASSWORD_CHECK_UNAVAILABLE") {
+    return "Password safety check is temporarily unavailable. Nothing was saved; try again shortly.";
+  }
+  if (issue.code === "PASSWORD_EXPOSURE_BLOCKED") {
+    return `This password appears in known breach data ${issue.count} times. Choose a different password.`;
+  }
+  return `This password appears in known breach data ${issue.count} ${issue.count === 1 ? "time" : "times"}.`;
+}
+
+function passwordExposureConfirmation(count: number): string {
+  return `This password has appeared in known breach data ${count} ${count === 1 ? "time" : "times"}. A unique password is safer. Continue with it anyway?`;
+}
+
 function LegacyLogin() {
   const [password, setPassword] = useState("");
   const [eventPassword, setEventPassword] = useState("");
@@ -1333,28 +1395,84 @@ function Login() {
     setStep("password");
   };
 
+  const setSelectedPassword = (confirmLowExposure = false) => {
+    if (!selected) return;
+    setup.mutate(
+      {
+        data: {
+          interviewerId: selected.id,
+          eventPassword,
+          password: personalPassword,
+          ...(confirmLowExposure ? { confirmLowExposure: true } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          login.mutate(
+            { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
+            { onSuccess: finishLogin, onError: () => setError("Password setup succeeded, but sign-in failed. Try again.") },
+          );
+        },
+        onError: error => {
+          const issue = passwordSafetyIssue(error);
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
+            if (!confirmLowExposure && window.confirm(passwordExposureConfirmation(issue.count))) {
+              setSelectedPassword(true);
+              return;
+            }
+            setError("Password not set. Choose a different password.");
+            return;
+          }
+          setError(passwordSafetyErrorMessage(issue) ?? "The event passcode was rejected. Go back and re-enter it exactly, then continue.");
+        },
+      },
+    );
+  };
+
   const submitPassword = (event: React.FormEvent) => {
     event.preventDefault();
     if (!selected || !personalPassword) return;
     setError("");
     if (!selected.hasPassword) {
-      setup.mutate(
-        { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-        {
-          onSuccess: () => {
-            login.mutate(
-              { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-              { onSuccess: finishLogin, onError: () => setError("Password setup succeeded, but sign-in failed. Try again.") },
-            );
-          },
-          onError: () => setError("The event passcode was rejected. Go back and re-enter it exactly, then continue."),
-        },
-      );
+      setSelectedPassword();
       return;
     }
     login.mutate(
       { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
       { onSuccess: finishLogin, onError: () => setError("The event passcode or personal password is incorrect.") },
+    );
+  };
+
+  const createInterviewerAccount = (confirmLowExposure = false) => {
+    create.mutate(
+      {
+        data: {
+          displayName: newName,
+          eventPassword,
+          password: personalPassword,
+          ...(confirmLowExposure ? { confirmLowExposure: true } : {}),
+        },
+      },
+      {
+        onSuccess: account => {
+          login.mutate(
+            { data: { interviewerId: account.id, eventPassword, password: personalPassword } },
+            { onSuccess: finishLogin, onError: () => setError("Account created, but sign-in failed. Try again.") },
+          );
+        },
+        onError: error => {
+          const issue = passwordSafetyIssue(error);
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
+            if (!confirmLowExposure && window.confirm(passwordExposureConfirmation(issue.count))) {
+              createInterviewerAccount(true);
+              return;
+            }
+            setError("Password not saved. Choose a different password.");
+            return;
+          }
+          setError(passwordSafetyErrorMessage(issue) ?? "Could not add that interviewer. Check the event passcode or name.");
+        },
+      },
     );
   };
 
@@ -1373,18 +1491,7 @@ function Login() {
     event.preventDefault();
     if (!newName.trim() || !personalPassword) return;
     setError("");
-    create.mutate(
-      { data: { displayName: newName, eventPassword, password: personalPassword } },
-      {
-        onSuccess: account => {
-          login.mutate(
-            { data: { interviewerId: account.id, eventPassword, password: personalPassword } },
-            { onSuccess: finishLogin, onError: () => setError("Account created, but sign-in failed. Try again.") },
-          );
-        },
-        onError: () => setError("Could not add that interviewer. Check the event passcode or name."),
-      },
-    );
+    createInterviewerAccount();
   };
 
   const back = () => {

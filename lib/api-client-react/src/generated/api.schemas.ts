@@ -71,6 +71,8 @@ export interface SetupInterviewerPasswordInput {
   eventPassword: string;
   /** @minLength 1 */
   password: string;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
 }
 
 export interface InterviewerPasswordUpdateInput {
@@ -82,6 +84,8 @@ export interface InterviewerPasswordUpdateInput {
      * @nullable
      */
   password: string | null;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
 }
 
 export interface EventPasswordInput {
@@ -96,6 +100,24 @@ export interface CreateInterviewerInput {
   eventPassword: string;
   /** @minLength 1 */
   password: string;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
+}
+
+export type PasswordSafetyErrorCode = typeof PasswordSafetyErrorCode[keyof typeof PasswordSafetyErrorCode];
+
+
+export const PasswordSafetyErrorCode = {
+  PASSWORD_EXPOSURE_WARNING: 'PASSWORD_EXPOSURE_WARNING',
+  PASSWORD_EXPOSURE_BLOCKED: 'PASSWORD_EXPOSURE_BLOCKED',
+  PASSWORD_CHECK_UNAVAILABLE: 'PASSWORD_CHECK_UNAVAILABLE',
+} as const;
+
+export interface PasswordSafetyError {
+  error: string;
+  code?: PasswordSafetyErrorCode;
+  /** @minimum 1 */
+  count?: number;
 }
 
 export interface DashboardCount {

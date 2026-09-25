@@ -15,4 +15,6 @@ export interface InterviewerPasswordUpdateInput {
      * @nullable
      */
   password: string | null;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
 }

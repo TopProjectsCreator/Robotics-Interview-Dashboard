@@ -12,4 +12,6 @@ export interface SetupInterviewerPasswordInput {
   eventPassword: string;
   /** @minLength 1 */
   password: string;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
 }
