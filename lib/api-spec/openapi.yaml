@@ -623,6 +623,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/custom-emojis:
+    get:
+      operationId: listChatCustomEmojis
+      tags: [queue]
+      summary: List team-shared custom chat emojis
+      responses:
+        "200":
+          description: Custom emojis available to signed-in interviewers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCustomEmojiList"
+    post:
+      operationId: uploadChatCustomEmoji
+      tags: [queue]
+      summary: Upload a team-shared custom chat emoji
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCustomEmojiInput"
+      responses:
+        "201":
+          description: Uploaded custom emoji
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCustomEmoji"
   /queue/chat/{messageId}/reactions:
     post:
       operationId: toggleChatReaction
@@ -2130,6 +2159,51 @@ components:
         peer:
           type: string
           nullable: true
+    ChatCustomEmoji:
+      type: object
+      required: [id, name, imagePath, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          minLength: 2
+          maxLength: 32
+          pattern: "^[a-z0-9_]+$"
+        imagePath:
+          type: string
+          description: Private object path; fetch through the authenticated storage route.
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ChatCustomEmojiList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatCustomEmoji"
+    ChatCustomEmojiInput:
+      type: object
+      required: [name, contentType, imageBase64]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 32
+          pattern: "^[a-z0-9_]+$"
+          description: Lowercase shortcode name without colons.
+        contentType:
+          type: string
+          enum: [image/png, image/jpeg, image/gif, image/webp]
+        imageBase64:
+          type: string
+          minLength: 1
+          maxLength: 699052
+          description: Base64-encoded image bytes; the server decodes and stores these privately.
     InterviewWhiteboardInput:
       type: object
       required: [title, data, scope]

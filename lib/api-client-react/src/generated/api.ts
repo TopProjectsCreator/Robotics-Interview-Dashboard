@@ -39,6 +39,9 @@ import type {
   BroadcastAck,
   BroadcastInput,
   BroadcastList,
+  ChatCustomEmoji,
+  ChatCustomEmojiInput,
+  ChatCustomEmojiList,
   ChatMessagePin,
   ChatMessageUpdateInput,
   ChatReactionInput,
@@ -2721,6 +2724,154 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getListChatCustomEmojisUrl = () => {
+
+
+
+
+  return `/api/queue/custom-emojis`
+}
+
+/**
+ * @summary List team-shared custom chat emojis
+ */
+export const listChatCustomEmojis = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatCustomEmojiList> => {
+
+  return customFetch<ChatCustomEmojiList>(getListChatCustomEmojisUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListChatCustomEmojisQueryKey = () => {
+    return [
+    `/api/queue/custom-emojis`
+    ] as const;
+    }
+
+
+export const getListChatCustomEmojisQueryOptions = <TData = Awaited<ReturnType<typeof listChatCustomEmojis>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatCustomEmojis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListChatCustomEmojisQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChatCustomEmojis>>> = ({ signal }) => listChatCustomEmojis({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChatCustomEmojis>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListChatCustomEmojisQueryResult = NonNullable<Awaited<ReturnType<typeof listChatCustomEmojis>>>
+export type ListChatCustomEmojisQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List team-shared custom chat emojis
+ */
+
+export function useListChatCustomEmojis<TData = Awaited<ReturnType<typeof listChatCustomEmojis>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatCustomEmojis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListChatCustomEmojisQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUploadChatCustomEmojiUrl = () => {
+
+
+
+
+  return `/api/queue/custom-emojis`
+}
+
+/**
+ * @summary Upload a team-shared custom chat emoji
+ */
+export const uploadChatCustomEmoji = async (chatCustomEmojiInput: ChatCustomEmojiInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatCustomEmoji> => {
+
+  return customFetch<ChatCustomEmoji>(getUploadChatCustomEmojiUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatCustomEmojiInput)
+  }
+);}
+
+
+
+
+
+export const getUploadChatCustomEmojiMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadChatCustomEmoji>>, TError,{data: BodyType<ChatCustomEmojiInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadChatCustomEmoji>>, TError,{data: BodyType<ChatCustomEmojiInput>}, TContext> => {
+
+const mutationKey = ['uploadChatCustomEmoji'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadChatCustomEmoji>>, {data: BodyType<ChatCustomEmojiInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadChatCustomEmoji(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadChatCustomEmojiMutationResult = NonNullable<Awaited<ReturnType<typeof uploadChatCustomEmoji>>>
+    export type UploadChatCustomEmojiMutationBody = BodyType<ChatCustomEmojiInput>
+    export type UploadChatCustomEmojiMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Upload a team-shared custom chat emoji
+ */
+export const useUploadChatCustomEmoji = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadChatCustomEmoji>>, TError,{data: BodyType<ChatCustomEmojiInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadChatCustomEmoji>>,
+        TError,
+        {data: BodyType<ChatCustomEmojiInput>},
+        TContext
+      > => {
+      return useMutation(getUploadChatCustomEmojiMutationOptions(options));
     }
 
 export const getToggleChatReactionUrl = (messageId: string,) => {

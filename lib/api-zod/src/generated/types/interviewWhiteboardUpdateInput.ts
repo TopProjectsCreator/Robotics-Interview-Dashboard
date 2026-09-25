@@ -13,7 +13,7 @@ export interface InterviewWhiteboardUpdateInput {
      */
   title: string;
   /**
-     * Serialized Excalidraw scene data
+     * Serialized whiteboard scene or collaborative document state
      * @minLength 2
      */
   data: string;

@@ -553,6 +553,51 @@ export interface InterviewChat {
   peer: string | null;
 }
 
+export interface ChatCustomEmoji {
+  id: string;
+  /**
+     * @minLength 2
+     * @maxLength 32
+     * @pattern ^[a-z0-9_]+$
+     */
+  name: string;
+  /** Private object path; fetch through the authenticated storage route. */
+  imagePath: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ChatCustomEmojiList {
+  items: ChatCustomEmoji[];
+}
+
+export type ChatCustomEmojiInputContentType = typeof ChatCustomEmojiInputContentType[keyof typeof ChatCustomEmojiInputContentType];
+
+
+export const ChatCustomEmojiInputContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/gif': 'image/gif',
+  'image/webp': 'image/webp',
+} as const;
+
+export interface ChatCustomEmojiInput {
+  /**
+     * Lowercase shortcode name without colons.
+     * @minLength 2
+     * @maxLength 32
+     * @pattern ^[a-z0-9_]+$
+     */
+  name: string;
+  contentType: ChatCustomEmojiInputContentType;
+  /**
+     * Base64-encoded image bytes; the server decodes and stores these privately.
+     * @minLength 1
+     * @maxLength 699052
+     */
+  imageBase64: string;
+}
+
 export type InterviewWhiteboardInputScope = typeof InterviewWhiteboardInputScope[keyof typeof InterviewWhiteboardInputScope];
 
 
@@ -568,7 +613,7 @@ export interface InterviewWhiteboardInput {
      */
   title: string;
   /**
-     * Serialized Excalidraw scene data
+     * Serialized whiteboard scene or collaborative document state
      * @minLength 2
      */
   data: string;
@@ -584,7 +629,7 @@ export interface InterviewWhiteboardUpdateInput {
      */
   title: string;
   /**
-     * Serialized Excalidraw scene data
+     * Serialized whiteboard scene or collaborative document state
      * @minLength 2
      */
   data: string;

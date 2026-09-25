@@ -928,6 +928,61 @@ export const SendInterviewChatResponse = zod.object({
 
 
 /**
+ * @summary List team-shared custom chat emojis
+ */
+export const listChatCustomEmojisResponseItemsItemNameMin = 2;
+export const listChatCustomEmojisResponseItemsItemNameMax = 32;
+
+
+export const listChatCustomEmojisResponseItemsItemNameRegExp = new RegExp('^[a-z0-9_]+$');
+
+
+export const ListChatCustomEmojisResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(listChatCustomEmojisResponseItemsItemNameMin).max(listChatCustomEmojisResponseItemsItemNameMax).regex(listChatCustomEmojisResponseItemsItemNameRegExp),
+  "imagePath": zod.string().describe('Private object path; fetch through the authenticated storage route.'),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Upload a team-shared custom chat emoji
+ */
+export const uploadChatCustomEmojiBodyNameMin = 2;
+export const uploadChatCustomEmojiBodyNameMax = 32;
+
+
+export const uploadChatCustomEmojiBodyNameRegExp = new RegExp('^[a-z0-9_]+$');
+export const uploadChatCustomEmojiBodyImageBase64Max = 699052;
+
+
+
+export const UploadChatCustomEmojiBody = zod.object({
+  "name": zod.string().min(uploadChatCustomEmojiBodyNameMin).max(uploadChatCustomEmojiBodyNameMax).regex(uploadChatCustomEmojiBodyNameRegExp).describe('Lowercase shortcode name without colons.'),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+  "imageBase64": zod.string().min(1).max(uploadChatCustomEmojiBodyImageBase64Max).describe('Base64-encoded image bytes; the server decodes and stores these privately.')
+})
+
+export const uploadChatCustomEmojiResponseNameMin = 2;
+export const uploadChatCustomEmojiResponseNameMax = 32;
+
+
+export const uploadChatCustomEmojiResponseNameRegExp = new RegExp('^[a-z0-9_]+$');
+
+
+export const UploadChatCustomEmojiResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(uploadChatCustomEmojiResponseNameMin).max(uploadChatCustomEmojiResponseNameMax).regex(uploadChatCustomEmojiResponseNameRegExp),
+  "imagePath": zod.string().describe('Private object path; fetch through the authenticated storage route.'),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Toggle an emoji reaction on a chat message
  */
 export const ToggleChatReactionParams = zod.object({
@@ -1045,7 +1100,7 @@ export const createInterviewWhiteboardBodyScopeDefault = `shared`;
 
 export const CreateInterviewWhiteboardBody = zod.object({
   "title": zod.string().min(1).max(createInterviewWhiteboardBodyTitleMax),
-  "data": zod.string().min(createInterviewWhiteboardBodyDataMin).describe('Serialized Excalidraw scene data'),
+  "data": zod.string().min(createInterviewWhiteboardBodyDataMin).describe('Serialized whiteboard scene or collaborative document state'),
   "scope": zod.enum(['shared', 'direct']).default(createInterviewWhiteboardBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard')
 })
@@ -1104,7 +1159,7 @@ export const updateInterviewWhiteboardBodyDataMin = 2;
 
 export const UpdateInterviewWhiteboardBody = zod.object({
   "title": zod.string().min(1).max(updateInterviewWhiteboardBodyTitleMax),
-  "data": zod.string().min(updateInterviewWhiteboardBodyDataMin).describe('Serialized Excalidraw scene data')
+  "data": zod.string().min(updateInterviewWhiteboardBodyDataMin).describe('Serialized whiteboard scene or collaborative document state')
 })
 
 export const UpdateInterviewWhiteboardResponse = zod.object({

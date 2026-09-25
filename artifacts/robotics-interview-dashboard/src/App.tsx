@@ -13,6 +13,7 @@ import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey,
+  getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
@@ -39,6 +40,8 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
+import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
+import { addTeamEmojiMarkdown } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
@@ -307,8 +310,9 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
     const tokenKey = `inline-${key++}`;
     const image = token.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/storage\/)[^)]+)\)$/);
     if (image) {
+      const customEmoji = image[1].startsWith("emoji:");
       nodes.push(image[2].startsWith("/api/storage/")
-        ? <AuthenticatedChatImage key={tokenKey} src={image[2]} alt={image[1]} />
+        ? <AuthenticatedChatImage key={tokenKey} src={image[2]} alt={customEmoji ? `:${image[1].slice("emoji:".length)}:` : image[1]} inline={customEmoji} />
         : <img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
       cursor = match.index + token.length;
       continue;
@@ -338,7 +342,7 @@ function appRelativeUrl(path: string): string {
   return `${base}${path}`;
 }
 
-function AuthenticatedChatImage({ src, alt }: { src: string; alt: string }) {
+function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt: string; inline?: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -372,9 +376,13 @@ function AuthenticatedChatImage({ src, alt }: { src: string; alt: string }) {
     };
   }, [src]);
 
-  if (failed) return <span className="my-2 block text-xs text-[#8a999d]">Image unavailable.</span>;
-  if (!objectUrl) return <span className="my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]" aria-label="Loading image" />;
-  return <img src={objectUrl} alt={alt} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />;
+  if (failed) return inline
+    ? <span className="inline-block h-5 w-5 align-[-0.25em] rounded bg-[#edf4f3] text-center text-[10px] text-[#8a999d]" role="img" aria-label={`${alt} unavailable`}>?</span>
+    : <span className="my-2 block text-xs text-[#8a999d]">Image unavailable.</span>;
+  if (!objectUrl) return inline
+    ? <span className="inline-block h-5 w-5 animate-pulse align-[-0.25em] rounded bg-[#edf4f3]" role="img" aria-label={`Loading ${alt}`} />
+    : <span className="my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]" aria-label="Loading image" />;
+  return <img src={objectUrl} alt={alt} loading="lazy" className={inline ? "mx-0.5 inline-block h-5 w-5 align-[-0.25em] rounded object-contain" : "my-2 block max-w-full rounded-xl border border-[#dce9e8]"} />;
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
@@ -2599,11 +2607,25 @@ function parseDocumentChatMessage(message: string): { id: string; title: string 
   if (!match) return null;
   return { id: match[1], title: match[2]?.trim() || "Untitled document" };
 }
+
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
+  const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const customEmojisQuery = useListChatCustomEmojis({
+    query: {
+      queryKey: getListChatCustomEmojisQueryKey(),
+      staleTime: 15_000,
+      refetchInterval: 30_000,
+    },
+  });
+  const customEmojiItems = useMemo(() => customEmojisQuery.data?.items ?? [], [customEmojisQuery.data?.items]);
+  const customEmojiPaths = useMemo(
+    () => new Map(customEmojiItems.map(emoji => [emoji.name, emoji.imagePath])),
+    [customEmojiItems],
+  );
   const interviewerLabels = queue.data?.interviewerLabels ?? [];
   const [conversationPeer, setConversationPeer] = useState<string | null>(null);
   const activeInterviewer = session.data?.label ?? "Interviewer";
@@ -3393,7 +3415,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
              ? <button type="button" onClick={() => openWhiteboard(sharedDocument.id)} className="shared-document-card mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition" data-testid={`button-open-document-${sharedDocument.id}`}><span className="shared-document-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm"><FileText size={18} /></span><span className="min-w-0"><span className="shared-document-card-label block text-[10px] font-bold uppercase tracking-[.12em]">Shared document</span><span className="shared-document-card-title mt-0.5 block truncate text-sm font-semibold">{sharedDocument.title}</span><span className="shared-document-card-description mt-0.5 block text-[11px]">Open collaborative editor</span></span><ChevronRight size={16} className="shared-document-card-chevron ml-auto shrink-0" /></button>
             : sharedWhiteboard
               ? <button type="button" onClick={() => openWhiteboard(sharedWhiteboard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[#b9dddd] bg-[#eef8f7] p-3 text-left transition hover:border-[#16869a] hover:bg-[#e3f4f2]" data-testid={`button-open-whiteboard-${sharedWhiteboard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm"><FilePenLine size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">Shared whiteboard</span><span className="mt-0.5 block truncate text-sm font-semibold text-[#183a4b]">{sharedWhiteboard.title}</span><span className="mt-0.5 block text-[11px] text-[#527079]">Open in Excalidraw</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-[#16869a]" /></button>
-               : <MarkdownContent source={item.message} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
+               : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -3467,7 +3489,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
          </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-upload-files"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-open-create-menu"><Plus size={16} className="text-[#16869a]" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-[#8a999d]">Choose a shared workspace item</span></span></button></div>}
           {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-[#d5e0e0] bg-white p-2 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-[#183a4b]">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#71878d] hover:bg-[#edf4f3]"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#f0f3fb] disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-[#5576b8]" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-[#8a999d]">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-[#16869a]" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-[#8a999d]">Sketch ideas together</span></span></button></div>}
-         {emojiOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="emoji-picker"><p className="mb-2 text-xs font-semibold text-[#52666e]">Emoji</p><div className="grid grid-cols-6 gap-1">{["😀", "😂", "😍", "👍", "🙏", "🎉", "🔥", "✅", "😮", "😢", "❤️", "🤖"].map(emoji => <button key={emoji} type="button" onClick={() => insertAtCursor(emoji)} aria-label={`Insert ${emoji}`} className="rounded-lg p-2 text-xl transition hover:bg-[#edf4f3]">{emoji}</button>)}</div></div>}
+         {emojiOpen && <InterviewerChatEmojiPicker
+           dark={theme === "dark"}
+           customEmojis={customEmojiItems}
+           customEmojiLoadFailed={customEmojisQuery.isError}
+           onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
+           onSelect={value => { insertAtCursor(value); setEmojiOpen(false); }}
+         />}
           {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-dictation"><Type size={16} className="text-[#16869a]" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-[#8a999d]">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-start-audio-recording"><Mic size={16} className="text-[#16869a]" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-[#8a999d]">Send your voice as an audio file</span></span></button></div>}
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
            <div className="flex items-end gap-1.5">

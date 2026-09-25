@@ -34,6 +34,15 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const chatCustomEmojisTable = pgTable("chat_custom_emojis", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  imagePath: text("image_path").notNull().unique(),
+  contentType: text("content_type").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const importsTable = pgTable("application_imports", {
   id: text("id").primaryKey(),
   objectPath: text("object_path").notNull(),
@@ -61,5 +70,10 @@ export const insertInterviewChatMessageSchema = createInsertSchema(interviewChat
 });
 export type InterviewChatMessage = typeof interviewChatMessagesTable.$inferSelect;
 export type InsertInterviewChatMessage = z.infer<typeof insertInterviewChatMessageSchema>;
+export const insertChatCustomEmojiSchema = createInsertSchema(chatCustomEmojisTable).omit({
+  createdAt: true,
+});
+export type InsertChatCustomEmoji = z.infer<typeof insertChatCustomEmojiSchema>;
+export type ChatCustomEmoji = typeof chatCustomEmojisTable.$inferSelect;
 export type ApplicationImport = typeof importsTable.$inferSelect;
 export type InsertApplicationImport = z.infer<typeof insertImportSchema>;

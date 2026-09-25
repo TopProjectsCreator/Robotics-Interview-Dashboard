@@ -1,0 +1,23 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+.emoji-preview {
+  --surface: #ffffff;
+  --surface-soft: #f5f8f7;
+  --surface-hover: #edf4f3;
+  --border: #d5e0e0;
+  --text: #183a4b;
+  --muted: #71878d;
+  --accent: #16869a;
+  color: var(--text);
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.emoji-preview.is-dark {
+  --surface: #172b38;
+  --surface-soft: #10232d;
+  --surface-hover: #1d3744;
+  --border: #355663;
+  --text: #e8eef2;
+  --muted: #9aadb5;
+  --accent: #6fc3cf;
+}

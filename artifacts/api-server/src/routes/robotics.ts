@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -35,6 +35,7 @@ import {
   AssignSeatBody,
   AssignSeatResponse,
   GetInterviewChatResponse,
+  ListChatCustomEmojisResponse,
   GetQueueResponse,
   GetAssistantHistoryResponse,
   GenerateAssistantImageBody,
@@ -63,6 +64,8 @@ import {
   ReorderQueueResponse,
   UpdateChatMessageBody,
   UpdateChatMessageResponse,
+  UploadChatCustomEmojiBody,
+  UploadChatCustomEmojiResponse,
   UpdateApplicantBody,
   UpdateApplicantParams,
   UpdateApplicantResponse,
@@ -2700,6 +2703,112 @@ router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promi
   broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName);
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
+});
+
+const CUSTOM_EMOJI_MAX_BYTES = 512 * 1024;
+const CUSTOM_EMOJI_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+function hasValidCustomEmojiImage(data: Buffer, contentType: string): boolean {
+  if (contentType === "image/png") {
+    return data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  }
+  if (contentType === "image/jpeg") {
+    return data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  }
+  if (contentType === "image/gif") {
+    const signature = data.subarray(0, 6).toString("ascii");
+    return signature === "GIF87a" || signature === "GIF89a";
+  }
+  if (contentType === "image/webp") {
+    return data.length >= 12 && data.toString("ascii", 0, 4) === "RIFF" && data.toString("ascii", 8, 12) === "WEBP";
+  }
+  return false;
+}
+
+function chatCustomEmojiResponse(emoji: typeof chatCustomEmojisTable.$inferSelect) {
+  return {
+    id: emoji.id,
+    name: emoji.name,
+    imagePath: emoji.imagePath,
+    createdBy: emoji.createdBy,
+    createdAt: emoji.createdAt.toISOString(),
+  };
+}
+
+router.get("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const items = await db.select().from(chatCustomEmojisTable);
+  res.json(ListChatCustomEmojisResponse.parse({
+    items: items.map(chatCustomEmojiResponse),
+  }));
+});
+
+router.post("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const parsed = UploadChatCustomEmojiBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Provide a lowercase emoji name and a supported image." });
+    return;
+  }
+
+  const name = parsed.data.name.trim().toLowerCase();
+  const contentType = parsed.data.contentType;
+  const imageBase64 = parsed.data.imageBase64;
+  if (!/^[a-z0-9_]{2,32}$/.test(name) || !CUSTOM_EMOJI_IMAGE_TYPES.has(contentType)) {
+    res.status(400).json({ error: "Provide a valid name and a PNG, JPEG, GIF, or WebP image." });
+    return;
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(imageBase64)) {
+    res.status(400).json({ error: "The image data is invalid." });
+    return;
+  }
+  const image = Buffer.from(imageBase64, "base64");
+  if (
+    image.length === 0 ||
+    image.length > CUSTOM_EMOJI_MAX_BYTES ||
+    image.toString("base64") !== imageBase64 ||
+    !hasValidCustomEmojiImage(image, contentType)
+  ) {
+    res.status(400).json({ error: "The image must be a valid PNG, JPEG, GIF, or WebP file under 512 KB." });
+    return;
+  }
+
+  const [existing] = await db.select({ id: chatCustomEmojisTable.id })
+    .from(chatCustomEmojisTable)
+    .where(eq(chatCustomEmojisTable.name, name))
+    .limit(1);
+  if (existing) {
+    res.status(409).json({ error: "That team emoji name is already in use." });
+    return;
+  }
+
+  const imagePath = await objectStorageService.uploadChatImage(image, contentType);
+  try {
+    const [created] = await db.insert(chatCustomEmojisTable).values({
+      id: randomUUID(),
+      name,
+      imagePath,
+      contentType,
+      createdBy: account.displayName,
+    }).returning();
+    res.status(201).json(UploadChatCustomEmojiResponse.parse(chatCustomEmojiResponse(created)));
+  } catch (error) {
+    await objectStorageService.deleteObject(imagePath).catch((cleanupError) => {
+      req.log.warn({ err: cleanupError, imagePath }, "Failed to remove an unreferenced custom emoji upload");
+    });
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+      res.status(409).json({ error: "That team emoji name is already in use." });
+      return;
+    }
+    req.log.error({ err: error }, "Error saving team-shared custom emoji");
+    res.status(500).json({ error: "The custom emoji could not be saved." });
+  }
 });
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
