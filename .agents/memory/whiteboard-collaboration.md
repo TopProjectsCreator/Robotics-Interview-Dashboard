@@ -8,3 +8,9 @@ Live whiteboard editing uses a server-authenticated WebSocket room scoped by whi
 **Why:** The dashboard can be embedded, and cookie-only WebSocket authentication is unreliable when third-party cookies are blocked. Reusing the existing signed session preserves the interviewer identity boundary without adding a second credential system.
 
 **How to apply:** Keep the WebSocket path explicitly listed in the API artifact service paths so proxy upgrades reach the API. Persist merged scenes server-side with a bounded debounce, broadcast updates only to authorized room members, and keep reconnect hydration from the database. Treat same-element simultaneous edits as last-writer-wins; add a CRDT or per-user cursor/presence layer if true Miro/Google Docs parity is required.
+
+When other collaborative data shares the whiteboard storage channel, avoid subscribing the whole table to high-frequency database change events. Send targeted local realtime hints and keep a bounded authenticated polling fallback so clients on other API processes still converge.
+
+**Why:** Drawing-scene persistence can emit frequent row updates; broad subscriptions would cause unrelated collaborative views to refetch repeatedly.
+
+**How to apply:** Invalidate only the relevant workspace queries on a hint, and keep periodic reads while a board is open unless the database changefeed can filter and throttle updates safely.

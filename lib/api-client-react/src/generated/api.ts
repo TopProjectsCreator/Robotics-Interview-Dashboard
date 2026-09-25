@@ -35,6 +35,9 @@ import type {
   AssistantInput,
   AssistantResponse,
   AuthSession,
+  Board,
+  BoardCreateInput,
+  BoardOperationInput,
   Broadcast,
   BroadcastAck,
   BroadcastInput,
@@ -3475,6 +3478,226 @@ export const useUpdateInterviewWhiteboard = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateInterviewWhiteboardMutationOptions(options));
+    }
+
+export const getCreateBoardUrl = () => {
+
+
+
+
+  return `/api/boards`
+}
+
+/**
+ * @summary Create a shared interviewer task board
+ */
+export const createBoard = async (boardCreateInput: BoardCreateInput, options?: Parameters<typeof customFetch>[1]): Promise<Board> => {
+
+  return customFetch<Board>(getCreateBoardUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(boardCreateInput)
+  }
+);}
+
+
+
+
+
+export const getCreateBoardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBoard>>, TError,{data: BodyType<BoardCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createBoard>>, TError,{data: BodyType<BoardCreateInput>}, TContext> => {
+
+const mutationKey = ['createBoard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBoard>>, {data: BodyType<BoardCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createBoard(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateBoardMutationResult = NonNullable<Awaited<ReturnType<typeof createBoard>>>
+    export type CreateBoardMutationBody = BodyType<BoardCreateInput>
+    export type CreateBoardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a shared interviewer task board
+ */
+export const useCreateBoard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBoard>>, TError,{data: BodyType<BoardCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createBoard>>,
+        TError,
+        {data: BodyType<BoardCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateBoardMutationOptions(options));
+    }
+
+export const getGetBoardUrl = (boardId: string,) => {
+
+
+
+
+  return `/api/boards/${boardId}`
+}
+
+/**
+ * @summary Get a board in the current interviewer conversation
+ */
+export const getBoard = async (boardId: string, options?: Parameters<typeof customFetch>[1]): Promise<Board> => {
+
+  return customFetch<Board>(getGetBoardUrl(boardId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBoardQueryKey = (boardId: string,) => {
+    return [
+    `/api/boards/${boardId}`
+    ] as const;
+    }
+
+
+export const getGetBoardQueryOptions = <TData = Awaited<ReturnType<typeof getBoard>>, TError = ErrorType<unknown>>(boardId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBoard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBoardQueryKey(boardId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBoard>>> = ({ signal }) => getBoard(boardId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: boardId !== null && boardId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBoard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBoardQueryResult = NonNullable<Awaited<ReturnType<typeof getBoard>>>
+export type GetBoardQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a board in the current interviewer conversation
+ */
+
+export function useGetBoard<TData = Awaited<ReturnType<typeof getBoard>>, TError = ErrorType<unknown>>(
+ boardId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBoard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBoardQueryOptions(boardId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateBoardUrl = (boardId: string,) => {
+
+
+
+
+  return `/api/boards/${boardId}`
+}
+
+/**
+ * @summary Apply one atomic board operation
+ */
+export const updateBoard = async (boardId: string,
+    boardOperationInput: BoardOperationInput, options?: Parameters<typeof customFetch>[1]): Promise<Board> => {
+
+  return customFetch<Board>(getUpdateBoardUrl(boardId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(boardOperationInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateBoardMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBoard>>, TError,{boardId: string;data: BodyType<BoardOperationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateBoard>>, TError,{boardId: string;data: BodyType<BoardOperationInput>}, TContext> => {
+
+const mutationKey = ['updateBoard'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateBoard>>, {boardId: string;data: BodyType<BoardOperationInput>}> = (props) => {
+          const {boardId,data} = props ?? {};
+
+          return  updateBoard(boardId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateBoardMutationResult = NonNullable<Awaited<ReturnType<typeof updateBoard>>>
+    export type UpdateBoardMutationBody = BodyType<BoardOperationInput>
+    export type UpdateBoardMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Apply one atomic board operation
+ */
+export const useUpdateBoard = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBoard>>, TError,{boardId: string;data: BodyType<BoardOperationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateBoard>>,
+        TError,
+        {boardId: string;data: BodyType<BoardOperationInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateBoardMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

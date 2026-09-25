@@ -23,8 +23,22 @@ export function useRealtimeSync(authenticated: boolean) {
     const source = new EventSource(`${import.meta.env.BASE_URL}api/events`, {
       withCredentials: true,
     });
-    source.onmessage = () => {
+    source.onmessage = (event) => {
       if (stopped) return;
+      try {
+        const hint = JSON.parse(event.data) as { table?: unknown };
+        if (hint.table === "interview_whiteboards") {
+          void qc.invalidateQueries({
+            predicate: ({ queryKey }) => {
+              const key = JSON.stringify(queryKey);
+              return key.includes("/api/boards") || key.includes("/api/whiteboards");
+            },
+          });
+          return;
+        }
+      } catch {
+        // Unknown realtime messages still trigger the broad refresh below.
+      }
       qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
       qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
       qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });

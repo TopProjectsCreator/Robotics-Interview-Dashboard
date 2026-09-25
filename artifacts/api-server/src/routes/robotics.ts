@@ -80,11 +80,19 @@ import {
   UpdateInterviewWhiteboardBody,
   UpdateInterviewWhiteboardParams,
   UpdateInterviewWhiteboardResponse,
+  CreateBoardBody,
+  CreateBoardResponse,
+  GetBoardParams,
+  GetBoardResponse,
+  UpdateBoardBody,
+  UpdateBoardParams,
+  UpdateBoardResponse,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
 import { pushRealtimeHint } from "../lib/realtime";
 import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "../lib/whiteboardCollaboration";
+import { applyBoardOperation, initialBoardData, parseBoardData } from "../lib/boardOperations";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
@@ -2703,6 +2711,121 @@ router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promi
   broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName);
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
+});
+
+function boardResponse(
+  board: {
+    id: string;
+    title: string;
+    data: string;
+    createdBy: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  conversation: ChatConversation,
+) {
+  const data = parseBoardData(board.data);
+  if (!data) throw new Error("Stored board data is invalid.");
+  return {
+    id: board.id,
+    title: board.title,
+    data,
+    createdBy: board.createdBy,
+    scope: conversation.scope,
+    peer: conversation.peer,
+    createdAt: board.createdAt.toISOString(),
+    updatedAt: board.updatedAt.toISOString(),
+  };
+}
+
+router.post("/boards", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsed = CreateBoardBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A board name and valid conversation are required." }); return; }
+
+  const title = parsed.data.title.trim();
+  if (!title) { res.status(400).json({ error: "Board name cannot be empty." }); return; }
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+
+  const [board] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title: title.slice(0, 120),
+    data: JSON.stringify(initialBoardData()),
+    createdBy: account.displayName,
+    conversationScope: conversation.scope,
+    conversationPeer: conversation.key,
+  }).returning();
+
+  pushRealtimeHint("interview_whiteboards", "INSERT");
+  res.status(201).json(CreateBoardResponse.parse(boardResponse(board, conversation)));
+});
+
+router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = GetBoardParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid board request." }); return; }
+
+  const [board] = await db.select().from(interviewWhiteboardsTable)
+    .where(eq(interviewWhiteboardsTable.id, params.data.boardId))
+    .limit(1);
+  const conversation = board ? whiteboardConversationForAccount(board, account.displayName) : null;
+  if (!board || !conversation || !parseBoardData(board.data)) {
+    res.status(404).json({ error: "Board not found." });
+    return;
+  }
+  res.json(GetBoardResponse.parse(boardResponse(board, conversation)));
+});
+
+router.patch("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = UpdateBoardParams.safeParse(req.params);
+  const parsed = UpdateBoardBody.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    res.status(400).json({ error: "A valid board operation is required." });
+    return;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(interviewWhiteboardsTable)
+      .where(eq(interviewWhiteboardsTable.id, params.data.boardId))
+      .limit(1)
+      .for("update");
+    const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+    const current = existing ? parseBoardData(existing.data) : null;
+    if (!existing || !conversation || !current) {
+      return { ok: false as const, status: 404, error: "Board not found." };
+    }
+
+    const applied = applyBoardOperation(current, parsed.data, account.displayName);
+    if (!applied.ok) return applied;
+    const data = JSON.stringify(applied.data);
+    if (Buffer.byteLength(data, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+      return { ok: false as const, status: 413, error: "This board is too large to save." };
+    }
+    const [updated] = await tx.update(interviewWhiteboardsTable)
+      .set({
+        data,
+        ...(applied.title ? { title: applied.title.slice(0, 120) } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(interviewWhiteboardsTable.id, existing.id))
+      .returning();
+    return { ok: true as const, board: updated, conversation };
+  });
+
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  pushRealtimeHint("interview_whiteboards");
+  res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
 });
 
 const CUSTOM_EMOJI_MAX_BYTES = 512 * 1024;

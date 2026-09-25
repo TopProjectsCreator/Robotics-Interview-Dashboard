@@ -890,6 +890,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewWhiteboard"
+  /boards:
+    post:
+      operationId: createBoard
+      tags: [queue]
+      summary: Create a shared interviewer task board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardCreateInput"
+      responses:
+        "201":
+          description: Created board
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+  /boards/{boardId}:
+    get:
+      operationId: getBoard
+      tags: [queue]
+      summary: Get a board in the current interviewer conversation
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Interviewer board
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
+    patch:
+      operationId: updateBoard
+      tags: [queue]
+      summary: Apply one atomic board operation
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardOperationInput"
+      responses:
+        "200":
+          description: Updated board
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Board"
   /queue/reorder:
     post:
       operationId: reorderQueue
@@ -2352,6 +2411,219 @@ components:
         peer:
           type: string
           nullable: true
+    BoardColumn:
+      type: object
+      required: [id, title, color, position]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type: string
+          maxLength: 32
+        position:
+          type: integer
+          minimum: 0
+    BoardCard:
+      type: object
+      required: [id, title, description, columnId, position, priority, assignee, startDate, dueDate, labels, createdAt, updatedAt, updatedBy]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 12000
+        columnId:
+          type: string
+        position:
+          type: integer
+          minimum: 0
+        priority:
+          type: string
+          enum: [urgent, high, normal, low]
+        assignee:
+          type: [string, "null"]
+        startDate:
+          type: [string, "null"]
+          format: date
+        dueDate:
+          type: [string, "null"]
+          format: date
+        labels:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+            maxLength: 40
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+    BoardData:
+      type: object
+      required: [kind, version, columns, cards]
+      properties:
+        kind:
+          type: string
+          enum: [board]
+        version:
+          type: integer
+          enum: [1]
+        columns:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/BoardColumn"
+        cards:
+          type: array
+          maxItems: 2000
+          items:
+            $ref: "#/components/schemas/BoardCard"
+    Board:
+      type: object
+      required: [id, title, data, createdBy, scope, peer, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        data:
+          $ref: "#/components/schemas/BoardData"
+        createdBy:
+          type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    BoardCreateInput:
+      type: object
+      required: [title, scope]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        scope:
+          type: string
+          enum: [shared, direct]
+          default: shared
+        recipient:
+          type: [string, "null"]
+    BoardCardInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 12000
+        columnId:
+          type: string
+        priority:
+          type: string
+          enum: [urgent, high, normal, low]
+          default: normal
+        assignee:
+          type: [string, "null"]
+        startDate:
+          type: [string, "null"]
+          format: date
+        dueDate:
+          type: [string, "null"]
+          format: date
+        labels:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+            maxLength: 40
+    BoardCardPatch:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 12000
+        priority:
+          type: string
+          enum: [urgent, high, normal, low]
+        assignee:
+          type: [string, "null"]
+        startDate:
+          type: [string, "null"]
+          format: date
+        dueDate:
+          type: [string, "null"]
+          format: date
+        labels:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+            maxLength: 40
+    BoardOperationInput:
+      type: object
+      required: [operation]
+      properties:
+        operation:
+          type: string
+          enum: [rename_board, create_card, update_card, move_card, delete_card, bulk_add_cards, bulk_move_cards, bulk_delete_cards, create_column, rename_column, delete_column]
+        card:
+          $ref: "#/components/schemas/BoardCardInput"
+        cardId:
+          type: string
+        cardPatch:
+          $ref: "#/components/schemas/BoardCardPatch"
+        cardIds:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+        titles:
+          type: array
+          minItems: 1
+          maxItems: 250
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        columnId:
+          type: string
+        targetColumnId:
+          type: string
+        beforeCardId:
+          type: [string, "null"]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type: string
+          maxLength: 32
     ReorderQueueInput:
       type: object
       required: [applicantIds]

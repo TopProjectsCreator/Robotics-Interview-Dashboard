@@ -1182,6 +1182,267 @@ export const UpdateInterviewWhiteboardResponse = zod.object({
 
 
 /**
+ * @summary Create a shared interviewer task board
+ */
+export const createBoardBodyTitleMax = 120;
+
+export const createBoardBodyScopeDefault = `shared`;
+
+export const CreateBoardBody = zod.object({
+  "title": zod.string().min(1).max(createBoardBodyTitleMax),
+  "scope": zod.enum(['shared', 'direct']).default(createBoardBodyScopeDefault),
+  "recipient": zod.string().nullish()
+})
+
+export const createBoardResponseDataColumnsItemTitleMax = 80;
+
+export const createBoardResponseDataColumnsItemColorMax = 32;
+
+export const createBoardResponseDataColumnsItemPositionMin = 0;
+
+export const createBoardResponseDataColumnsMax = 20;
+
+export const createBoardResponseDataCardsItemTitleMax = 200;
+
+export const createBoardResponseDataCardsItemDescriptionMax = 12000;
+
+export const createBoardResponseDataCardsItemPositionMin = 0;
+
+export const createBoardResponseDataCardsItemLabelsItemMax = 40;
+
+export const createBoardResponseDataCardsItemLabelsMax = 12;
+
+export const createBoardResponseDataCardsMax = 2000;
+
+
+
+export const CreateBoardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['board']),
+  "version": zod.literal(1),
+  "columns": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(createBoardResponseDataColumnsItemTitleMax),
+  "color": zod.string().max(createBoardResponseDataColumnsItemColorMax),
+  "position": zod.number().int().min(createBoardResponseDataColumnsItemPositionMin)
+})).max(createBoardResponseDataColumnsMax),
+  "cards": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(createBoardResponseDataCardsItemTitleMax),
+  "description": zod.string().max(createBoardResponseDataCardsItemDescriptionMax),
+  "columnId": zod.string(),
+  "position": zod.number().int().min(createBoardResponseDataCardsItemPositionMin),
+  "priority": zod.enum(['urgent', 'high', 'normal', 'low']),
+  "assignee": zod.string().nullable(),
+  "startDate": zod.coerce.date().nullable(),
+  "dueDate": zod.coerce.date().nullable(),
+  "labels": zod.array(zod.string().max(createBoardResponseDataCardsItemLabelsItemMax)).max(createBoardResponseDataCardsItemLabelsMax),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(createBoardResponseDataCardsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a board in the current interviewer conversation
+ */
+export const GetBoardParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const getBoardResponseDataColumnsItemTitleMax = 80;
+
+export const getBoardResponseDataColumnsItemColorMax = 32;
+
+export const getBoardResponseDataColumnsItemPositionMin = 0;
+
+export const getBoardResponseDataColumnsMax = 20;
+
+export const getBoardResponseDataCardsItemTitleMax = 200;
+
+export const getBoardResponseDataCardsItemDescriptionMax = 12000;
+
+export const getBoardResponseDataCardsItemPositionMin = 0;
+
+export const getBoardResponseDataCardsItemLabelsItemMax = 40;
+
+export const getBoardResponseDataCardsItemLabelsMax = 12;
+
+export const getBoardResponseDataCardsMax = 2000;
+
+
+
+export const GetBoardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['board']),
+  "version": zod.literal(1),
+  "columns": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(getBoardResponseDataColumnsItemTitleMax),
+  "color": zod.string().max(getBoardResponseDataColumnsItemColorMax),
+  "position": zod.number().int().min(getBoardResponseDataColumnsItemPositionMin)
+})).max(getBoardResponseDataColumnsMax),
+  "cards": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(getBoardResponseDataCardsItemTitleMax),
+  "description": zod.string().max(getBoardResponseDataCardsItemDescriptionMax),
+  "columnId": zod.string(),
+  "position": zod.number().int().min(getBoardResponseDataCardsItemPositionMin),
+  "priority": zod.enum(['urgent', 'high', 'normal', 'low']),
+  "assignee": zod.string().nullable(),
+  "startDate": zod.coerce.date().nullable(),
+  "dueDate": zod.coerce.date().nullable(),
+  "labels": zod.array(zod.string().max(getBoardResponseDataCardsItemLabelsItemMax)).max(getBoardResponseDataCardsItemLabelsMax),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(getBoardResponseDataCardsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Apply one atomic board operation
+ */
+export const UpdateBoardParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const updateBoardBodyCardTitleMax = 200;
+
+export const updateBoardBodyCardDescriptionMax = 12000;
+
+export const updateBoardBodyCardPriorityDefault = `normal`;
+export const updateBoardBodyCardLabelsItemMax = 40;
+
+export const updateBoardBodyCardLabelsMax = 12;
+
+export const updateBoardBodyCardPatchTitleMax = 200;
+
+export const updateBoardBodyCardPatchDescriptionMax = 12000;
+
+export const updateBoardBodyCardPatchLabelsItemMax = 40;
+
+export const updateBoardBodyCardPatchLabelsMax = 12;
+
+export const updateBoardBodyCardIdsMax = 500;
+
+export const updateBoardBodyTitlesItemMax = 200;
+
+export const updateBoardBodyTitlesMax = 250;
+
+export const updateBoardBodyTitleMax = 80;
+
+export const updateBoardBodyColorMax = 32;
+
+
+
+export const UpdateBoardBody = zod.object({
+  "operation": zod.enum(['rename_board', 'create_card', 'update_card', 'move_card', 'delete_card', 'bulk_add_cards', 'bulk_move_cards', 'bulk_delete_cards', 'create_column', 'rename_column', 'delete_column']),
+  "card": zod.object({
+  "title": zod.string().min(1).max(updateBoardBodyCardTitleMax),
+  "description": zod.string().max(updateBoardBodyCardDescriptionMax).optional(),
+  "columnId": zod.string().optional(),
+  "priority": zod.enum(['urgent', 'high', 'normal', 'low']).default(updateBoardBodyCardPriorityDefault),
+  "assignee": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "dueDate": zod.coerce.date().nullish(),
+  "labels": zod.array(zod.string().max(updateBoardBodyCardLabelsItemMax)).max(updateBoardBodyCardLabelsMax).optional()
+}).optional(),
+  "cardId": zod.string().optional(),
+  "cardPatch": zod.object({
+  "title": zod.string().min(1).max(updateBoardBodyCardPatchTitleMax).optional(),
+  "description": zod.string().max(updateBoardBodyCardPatchDescriptionMax).optional(),
+  "priority": zod.enum(['urgent', 'high', 'normal', 'low']).optional(),
+  "assignee": zod.string().nullish(),
+  "startDate": zod.coerce.date().nullish(),
+  "dueDate": zod.coerce.date().nullish(),
+  "labels": zod.array(zod.string().max(updateBoardBodyCardPatchLabelsItemMax)).max(updateBoardBodyCardPatchLabelsMax).optional()
+}).optional(),
+  "cardIds": zod.array(zod.string()).max(updateBoardBodyCardIdsMax).optional(),
+  "titles": zod.array(zod.string().min(1).max(updateBoardBodyTitlesItemMax)).min(1).max(updateBoardBodyTitlesMax).optional(),
+  "columnId": zod.string().optional(),
+  "targetColumnId": zod.string().optional(),
+  "beforeCardId": zod.string().nullish(),
+  "title": zod.string().min(1).max(updateBoardBodyTitleMax).optional(),
+  "color": zod.string().max(updateBoardBodyColorMax).optional()
+})
+
+export const updateBoardResponseDataColumnsItemTitleMax = 80;
+
+export const updateBoardResponseDataColumnsItemColorMax = 32;
+
+export const updateBoardResponseDataColumnsItemPositionMin = 0;
+
+export const updateBoardResponseDataColumnsMax = 20;
+
+export const updateBoardResponseDataCardsItemTitleMax = 200;
+
+export const updateBoardResponseDataCardsItemDescriptionMax = 12000;
+
+export const updateBoardResponseDataCardsItemPositionMin = 0;
+
+export const updateBoardResponseDataCardsItemLabelsItemMax = 40;
+
+export const updateBoardResponseDataCardsItemLabelsMax = 12;
+
+export const updateBoardResponseDataCardsMax = 2000;
+
+
+
+export const UpdateBoardResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['board']),
+  "version": zod.literal(1),
+  "columns": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(updateBoardResponseDataColumnsItemTitleMax),
+  "color": zod.string().max(updateBoardResponseDataColumnsItemColorMax),
+  "position": zod.number().int().min(updateBoardResponseDataColumnsItemPositionMin)
+})).max(updateBoardResponseDataColumnsMax),
+  "cards": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(updateBoardResponseDataCardsItemTitleMax),
+  "description": zod.string().max(updateBoardResponseDataCardsItemDescriptionMax),
+  "columnId": zod.string(),
+  "position": zod.number().int().min(updateBoardResponseDataCardsItemPositionMin),
+  "priority": zod.enum(['urgent', 'high', 'normal', 'low']),
+  "assignee": zod.string().nullable(),
+  "startDate": zod.coerce.date().nullable(),
+  "dueDate": zod.coerce.date().nullable(),
+  "labels": zod.array(zod.string().max(updateBoardResponseDataCardsItemLabelsItemMax)).max(updateBoardResponseDataCardsItemLabelsMax),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(updateBoardResponseDataCardsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Save the interview order
  */
 export const ReorderQueueBody = zod.object({

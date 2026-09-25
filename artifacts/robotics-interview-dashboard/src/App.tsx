@@ -18,7 +18,7 @@ import {
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useRenameAssistantConversation,
    useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
-   useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard,
+   useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
@@ -58,6 +58,7 @@ import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 import { WhiteboardEditor } from "./components/WhiteboardEditor";
 import { DocumentEditor } from "./components/DocumentEditor";
+import { BoardEditor } from "./components/BoardEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
@@ -2713,6 +2714,11 @@ function parseDocumentChatMessage(message: string): { id: string; title: string 
   if (!match) return null;
   return { id: match[1], title: match[2]?.trim() || "Untitled document" };
 }
+function parseBoardChatMessage(message: string): { id: string; title: string } | null {
+  const match = message.match(/^\[\[board:([a-f0-9-]+)\]\]\s*(.*)$/i);
+  if (!match) return null;
+  return { id: match[1], title: match[2]?.trim() || "Interview coordination board" };
+}
 
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { theme } = useTheme();
@@ -2795,6 +2801,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const seenChatMessagesRef = useRef<{ conversationId: string; ids: Set<string>; latestAt: number } | null>(null);
   const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [activeWhiteboardId, setActiveWhiteboardId] = useState<string | null>(null);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [whiteboardError, setWhiteboardError] = useState("");
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const whiteboards = useListInterviewWhiteboards(chatParams, {
@@ -2804,6 +2812,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     },
   });
   const createWhiteboard = useCreateInterviewWhiteboard();
+  const createBoardMutation = useCreateBoard();
   const getWhiteboard = useGetInterviewWhiteboardById(
     activeWhiteboardId ?? "",
     chatParams,
@@ -2888,6 +2897,12 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
   };
+  const openBoard = (id: string) => {
+    setActiveBoardId(id);
+    setBoardOpen(true);
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+  };
   const createSharedDocument = async () => {
     setWhiteboardError("");
     setChatError("");
@@ -2917,6 +2932,34 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't create the document. Try again.";
       setWhiteboardError(message);
+      setChatError(message);
+    }
+  };
+  const createSharedBoard = async () => {
+    setChatError("");
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    try {
+      const saved = await createBoardMutation.mutateAsync({
+        data: {
+          title: "Interview coordination board",
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+        },
+      });
+      setActiveBoardId(saved.id);
+      setBoardOpen(true);
+      await sendChat.mutateAsync({
+        data: {
+          author: activeInterviewer,
+          message: `[[board:${saved.id}]] ${saved.title}`,
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+        },
+      });
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Couldn't create the board. Try again.";
       setChatError(message);
     }
   };
@@ -3517,11 +3560,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         {editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
+           const sharedBoard = parseBoardChatMessage(item.message);
           return sharedDocument
              ? <button type="button" onClick={() => openWhiteboard(sharedDocument.id)} className="shared-document-card mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition" data-testid={`button-open-document-${sharedDocument.id}`}><span className="shared-document-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm"><FileText size={18} /></span><span className="min-w-0"><span className="shared-document-card-label block text-[10px] font-bold uppercase tracking-[.12em]">Shared document</span><span className="shared-document-card-title mt-0.5 block truncate text-sm font-semibold">{sharedDocument.title}</span><span className="shared-document-card-description mt-0.5 block text-[11px]">Open collaborative editor</span></span><ChevronRight size={16} className="shared-document-card-chevron ml-auto shrink-0" /></button>
             : sharedWhiteboard
               ? <button type="button" onClick={() => openWhiteboard(sharedWhiteboard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[#b9dddd] bg-[#eef8f7] p-3 text-left transition hover:border-[#16869a] hover:bg-[#e3f4f2]" data-testid={`button-open-whiteboard-${sharedWhiteboard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm"><FilePenLine size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">Shared whiteboard</span><span className="mt-0.5 block truncate text-sm font-semibold text-[#183a4b]">{sharedWhiteboard.title}</span><span className="mt-0.5 block text-[11px] text-[#527079]">Open in Excalidraw</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-[#16869a]" /></button>
-               : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
+               : sharedBoard
+                 ? <button type="button" onClick={() => openBoard(sharedBoard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left text-card-foreground transition hover:border-primary/50 hover:bg-accent" data-testid={`button-open-board-${sharedBoard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm"><ClipboardList size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-primary">Shared board</span><span className="mt-0.5 block truncate text-sm font-semibold">{sharedBoard.title}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">Open tasks, handoffs, and timeline</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-primary" /></button>
+                 : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
       <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -3601,7 +3647,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             </div>
          </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-[#d5e0e0] bg-white p-1.5 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-upload-files"><Upload size={16} className="text-[#16869a]" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-[#8a999d]">Images, documents, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-open-create-menu"><Plus size={16} className="text-[#16869a]" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-[#8a999d]">Choose a shared workspace item</span></span></button></div>}
-          {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-[#d5e0e0] bg-white p-2 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-[#183a4b]">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#71878d] hover:bg-[#edf4f3]"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#f0f3fb] disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-[#5576b8]" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-[#8a999d]">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-[#16869a]" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-[#8a999d]">Sketch ideas together</span></span></button></div>}
+           {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-[#d5e0e0] bg-white p-2 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-[#183a4b]">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-[#71878d] hover:bg-[#edf4f3]"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#f0f3fb] disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-[#5576b8]" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-[#8a999d]">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3]" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-[#16869a]" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-[#8a999d]">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#385762] transition hover:bg-[#edf4f3] disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-[#16869a]" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-[#8a999d]">Track tasks, handoffs, and dates</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
            dark={theme === "dark"}
            customEmojis={customEmojiItems}
@@ -3648,7 +3694,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
         : activeWhiteboard && isDocumentData(activeWhiteboard.data)
           ? <DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} />
-          : <WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} />)}
+           : <WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} />)}
+       {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
   </section>;
 }
 function Queue() {

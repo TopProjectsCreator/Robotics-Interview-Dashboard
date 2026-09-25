@@ -694,6 +694,229 @@ export interface InterviewWhiteboardList {
   peer: string | null;
 }
 
+export interface BoardColumn {
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title: string;
+  /** @maxLength 32 */
+  color: string;
+  /** @minimum 0 */
+  position: number;
+}
+
+export type BoardCardPriority = typeof BoardCardPriority[keyof typeof BoardCardPriority];
+
+
+export const BoardCardPriority = {
+  urgent: 'urgent',
+  high: 'high',
+  normal: 'normal',
+  low: 'low',
+} as const;
+
+export interface BoardCard {
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /** @maxLength 12000 */
+  description: string;
+  columnId: string;
+  /** @minimum 0 */
+  position: number;
+  priority: BoardCardPriority;
+  /** @nullable */
+  assignee: string | null;
+  /** @nullable */
+  startDate: string | null;
+  /** @nullable */
+  dueDate: string | null;
+  /**
+     * @maxItems 12
+     * @items.maxLength 40
+     */
+  labels: string[];
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type BoardDataKind = typeof BoardDataKind[keyof typeof BoardDataKind];
+
+
+export const BoardDataKind = {
+  board: 'board',
+} as const;
+
+export type BoardDataVersion = typeof BoardDataVersion[keyof typeof BoardDataVersion];
+
+
+export const BoardDataVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export interface BoardData {
+  kind: BoardDataKind;
+  version: BoardDataVersion;
+  /** @maxItems 20 */
+  columns: BoardColumn[];
+  /** @maxItems 2000 */
+  cards: BoardCard[];
+}
+
+export type BoardScope = typeof BoardScope[keyof typeof BoardScope];
+
+
+export const BoardScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface Board {
+  id: string;
+  title: string;
+  data: BoardData;
+  createdBy: string;
+  scope: BoardScope;
+  /** @nullable */
+  peer: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BoardCreateInputScope = typeof BoardCreateInputScope[keyof typeof BoardCreateInputScope];
+
+
+export const BoardCreateInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface BoardCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  scope: BoardCreateInputScope;
+  /** @nullable */
+  recipient?: string | null;
+}
+
+export type BoardCardInputPriority = typeof BoardCardInputPriority[keyof typeof BoardCardInputPriority];
+
+
+export const BoardCardInputPriority = {
+  urgent: 'urgent',
+  high: 'high',
+  normal: 'normal',
+  low: 'low',
+} as const;
+
+export interface BoardCardInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /** @maxLength 12000 */
+  description?: string;
+  columnId?: string;
+  priority?: BoardCardInputPriority;
+  /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /**
+     * @maxItems 12
+     * @items.maxLength 40
+     */
+  labels?: string[];
+}
+
+export type BoardCardPatchPriority = typeof BoardCardPatchPriority[keyof typeof BoardCardPatchPriority];
+
+
+export const BoardCardPatchPriority = {
+  urgent: 'urgent',
+  high: 'high',
+  normal: 'normal',
+  low: 'low',
+} as const;
+
+export interface BoardCardPatch {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title?: string;
+  /** @maxLength 12000 */
+  description?: string;
+  priority?: BoardCardPatchPriority;
+  /** @nullable */
+  assignee?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  dueDate?: string | null;
+  /**
+     * @maxItems 12
+     * @items.maxLength 40
+     */
+  labels?: string[];
+}
+
+export type BoardOperationInputOperation = typeof BoardOperationInputOperation[keyof typeof BoardOperationInputOperation];
+
+
+export const BoardOperationInputOperation = {
+  rename_board: 'rename_board',
+  create_card: 'create_card',
+  update_card: 'update_card',
+  move_card: 'move_card',
+  delete_card: 'delete_card',
+  bulk_add_cards: 'bulk_add_cards',
+  bulk_move_cards: 'bulk_move_cards',
+  bulk_delete_cards: 'bulk_delete_cards',
+  create_column: 'create_column',
+  rename_column: 'rename_column',
+  delete_column: 'delete_column',
+} as const;
+
+export interface BoardOperationInput {
+  operation: BoardOperationInputOperation;
+  card?: BoardCardInput;
+  cardId?: string;
+  cardPatch?: BoardCardPatch;
+  /** @maxItems 500 */
+  cardIds?: string[];
+  /**
+     * @minItems 1
+     * @maxItems 250
+     * @items.minLength 1
+     * @items.maxLength 200
+     */
+  titles?: string[];
+  columnId?: string;
+  targetColumnId?: string;
+  /** @nullable */
+  beforeCardId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  title?: string;
+  /** @maxLength 32 */
+  color?: string;
+}
+
 export interface ReorderQueueInput {
   applicantIds: string[];
 }
