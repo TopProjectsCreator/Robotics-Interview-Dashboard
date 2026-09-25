@@ -1,0 +1,42 @@
+haveibeenpwned apiYou can access the official Have I Been Pwned API Documentation to programmatically check for data breaches.Core Features & RequirementsBase URL: https://haveibeenpwned.com/api/v3/Authentication: Required for account and domain searches via a hibp-api-key header.User-Agent: Every request must include a custom user-agent header identifying the consuming application.Pricing & Subscriptions: Account/domain search APIs require a paid subscription (starting at $3.50/month) to prevent abuse and manage rate limits.Pwned Passwords API: Completely free and does not require an API key or authentication, using k-anonymity for privacy.If you'd like, let me know:Are you looking to check emails/domains or use the Pwned Passwords tool?What programming language or framework are you using to build your integration?I can provide a custom code snippet for your project.Have I Been PwnedHave I Been Pwned: API DocumentationTroy HuntTroy Hunt: Authentication and the Have I Been Pwned APIHave I Been PwnedPwned PasswordsShow allI just want to add it as a password checker on my app to make sure people dont reuse unsecure or leaked passwordsTo implement a password leak checker, you should use the Pwned Passwords API. It is 100% free, requires no API key, and is designed with extreme privacy (k-Anonymity) so you never actually send the user's password over the internet.🛠️ How it Works: The k-Anonymity ModelInstead of sending the plaintext password or even its full hash, you only send a small piece of it:Hash the password locally on your app using SHA-1.Split the hash into two parts:Prefix: The first 5 characters.Suffix: The remaining 35 characters.Send only the 5-character prefix to the HIBP API.The API returns a list of all leaked suffixes starting with that prefix, along with how many times each was leaked.Match the suffix locally. If your suffix is in the list, the password has been breached.💻 Code Implementation (JavaScript / Node.js)Here is a clean, production-ready function to check a password using the official HIBP Pwned Passwords range API:javascriptasync function isPasswordLeaked(password) {
+    // 1. Generate SHA-1 hash of the password
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const sha1 = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+    // 2. Split into 5-character prefix and 35-character suffix
+    const prefix = sha1.slice(0, 5);
+    const suffix = sha1.slice(5);
+
+    // 3. Query the HIBP Range API (Requires a custom User-Agent)
+    const url = `https://pwnedpasswords.com{prefix}`;
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'YourAppName-PasswordChecker' }
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch from HaveIBeenPwned API');
+    }
+
+    const text = await response.text();
+    
+    // 4. Parse the response lines (Format: "SUFFIX:COUNT")
+    const lines = text.split('\n');
+    for (const line of lines) {
+        const [returnedSuffix, count] = line.trim().split(':');
+        
+        // 5. If suffix matches, the password is leaked
+        if (returnedSuffix === suffix) {
+            return { leaked: true, count: parseInt(count, 10) };
+        }
+    }
+
+    return { leaked: false, count: 0 };
+}
+
+// Example usage:
+// const result = await isPasswordLeaked("password123");
+// if (result.leaked) { console.log(`Leaked ${result.count} times!`); }
+Use code with caution.💡 Best PracticesDon't block registration completely: If a password has only been seen 1 or 2 times, it might just be a false positive or low risk. Consider blocking passwords only if the breach count is above a threshold (e.g., seen more than 5 times), or warn the user rather than forcing a change.Cache common hits: To optimize your app's performance, you can cache heavily leaked prefixes locally so you don't hit the API on every single keystroke or submission.If you are using a different back-end or front-end language like Python, PHP, or Go, let me know and I can rewrite the snippet for you!AI can make mistakes, so double-check responses 
