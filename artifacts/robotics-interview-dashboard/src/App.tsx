@@ -41,7 +41,7 @@ import {
   regenerateApplicant,
 } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
-import { addTeamEmojiMarkdown } from "./lib/chat-custom-emojis";
+import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
@@ -2596,7 +2596,6 @@ async function prepareChatFile(file: File): Promise<PreparedChatFile> {
     inlineImage: sourceType.startsWith("image/") && CHAT_INLINE_IMAGE_TYPES.has(sourceType),
   };
 }
-const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "✅"];
 function parseWhiteboardChatMessage(message: string): { id: string; title: string } | null {
   const match = message.match(/^\[\[whiteboard:([a-f0-9-]+)\]\]\s*(.*)$/i);
   if (!match) return null;
@@ -3400,7 +3399,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
         </div>
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
-          <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => setPickerFor(pickerFor === item.id ? null : item.id)} aria-label="Add reaction" data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
+          <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
            {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
@@ -3421,11 +3420,18 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {
            const mine = r.authors.includes(activeInterviewer);
-          return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{r.emoji}</span><span className="mono">{r.count}</span></button>;
+          const customEmojiUrl = getTeamEmojiStorageUrl(r.emoji, customEmojiPaths);
+          return <button key={r.emoji} onClick={() => react(item.id, r.emoji)} title={r.authors.join(", ") || r.emoji} data-testid={`button-reaction-${item.id}`} className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${mine ? "border-[#16869a] bg-[#e3f4f2] font-bold" : "border-[#dce9e8] bg-white hover:border-[#16869a]"}`}><span>{customEmojiUrl ? <AuthenticatedChatImage src={customEmojiUrl} alt={r.emoji} inline /> : r.emoji}</span><span className="mono">{r.count}</span></button>;
         })}
         {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
       </div>
-      {pickerFor === item.id && <div className="mt-1.5 flex flex-wrap gap-1 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`reaction-picker-${item.id}`}>{REACTION_EMOJIS.map(e => <button key={e} onClick={() => react(item.id, e)} aria-label={`React with ${e}`} className="rounded-lg px-1.5 py-1 text-lg transition hover:bg-[#e3ebeb]">{e}</button>)}</div>}
+      {pickerFor === item.id && <div data-testid={`reaction-picker-${item.id}`}><InterviewerChatEmojiPicker
+        dark={theme === "dark"}
+        customEmojis={customEmojiItems}
+        customEmojiLoadFailed={customEmojisQuery.isError}
+        onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
+        onSelect={value => react(item.id, value)}
+      /></div>}
     </div>;
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
@@ -3519,7 +3525,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
              </div>
              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
-                <button type="button" onClick={() => { setEmojiOpen(open => !open); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+                <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
                 <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
              </div>

@@ -989,8 +989,12 @@ export const ToggleChatReactionParams = zod.object({
   "messageId": zod.coerce.string()
 })
 
+export const toggleChatReactionBodyEmojiMax = 34;
+
+
+
 export const ToggleChatReactionBody = zod.object({
-  "emoji": zod.string().describe('Single emoji character'),
+  "emoji": zod.string().min(1).max(toggleChatReactionBodyEmojiMax).describe('A single Unicode emoji or an existing team emoji shortcode such as :rover:.'),
   "author": zod.string().describe('Interviewer label reacting')
 })
 

@@ -516,7 +516,11 @@ export interface InterviewChatMessage {
 }
 
 export interface ChatReactionInput {
-  /** Single emoji character */
+  /**
+     * A single Unicode emoji or an existing team emoji shortcode such as :rover:.
+     * @minLength 1
+     * @maxLength 34
+     */
   emoji: string;
   /** Interviewer label reacting */
   author: string;

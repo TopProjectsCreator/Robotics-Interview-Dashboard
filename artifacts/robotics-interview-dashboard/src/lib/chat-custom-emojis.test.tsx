@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addTeamEmojiMarkdown } from "./chat-custom-emojis";
+import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./chat-custom-emojis";
 
 describe("addTeamEmojiMarkdown", () => {
   const emojiPaths = new Map([["rover", "/objects/abc-123"]]);
@@ -22,5 +22,12 @@ describe("addTeamEmojiMarkdown", () => {
   it("rejects stored object paths that are not a single private object id", () => {
     expect(addTeamEmojiMarkdown(":rover:", new Map([["rover", "/objects/a/../b"]])))
       .toBe(":rover:");
+  });
+
+  it("resolves team emoji reactions to the authenticated private image route", () => {
+    expect(getTeamEmojiStorageUrl(":ROVER:", emojiPaths))
+      .toBe("/api/storage/objects/abc-123");
+    expect(getTeamEmojiStorageUrl(":missing:", emojiPaths)).toBeNull();
+    expect(getTeamEmojiStorageUrl(":rover: extra", emojiPaths)).toBeNull();
   });
 });

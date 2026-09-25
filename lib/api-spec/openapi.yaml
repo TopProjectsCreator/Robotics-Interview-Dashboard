@@ -2115,7 +2115,9 @@ components:
       properties:
         emoji:
           type: string
-          description: "Single emoji character"
+          minLength: 1
+          maxLength: 34
+          description: "A single Unicode emoji or an existing team emoji shortcode such as :rover:."
         author:
           type: string
           description: "Interviewer label reacting"

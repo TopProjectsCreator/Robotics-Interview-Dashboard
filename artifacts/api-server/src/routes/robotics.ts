@@ -2898,16 +2898,37 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }));
 });
 
+const chatReactionEmojiSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+function isSingleUnicodeEmoji(value: string): boolean {
+  if (!value || [...value].length > 34) return false;
+  if ([...chatReactionEmojiSegmenter.segment(value)].length !== 1) return false;
+  return /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(value)
+    || /^[0-9#*]\uFE0F?\u20E3$/u.test(value);
+}
+
 router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = ToggleChatReactionBody.safeParse(req.body);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
-  const emoji = parsed.success ? [...parsed.data.emoji.trim()].slice(0, 4).join("") : "";
+  const submittedEmoji = parsed.success ? parsed.data.emoji.trim() : "";
+  const shortcodeMatch = submittedEmoji.match(/^:([a-z0-9_]{2,32}):$/i);
+  let emoji = "";
+  if (shortcodeMatch) {
+    const name = shortcodeMatch[1].toLowerCase();
+    const [teamEmoji] = await db.select({ id: chatCustomEmojisTable.id })
+      .from(chatCustomEmojisTable)
+      .where(eq(chatCustomEmojisTable.name, name))
+      .limit(1);
+    if (teamEmoji) emoji = `:${name}:`;
+  } else if (isSingleUnicodeEmoji(submittedEmoji)) {
+    emoji = submittedEmoji;
+  }
   const author = account.displayName;
   if (!parsed.success || !messageId || !emoji || !author) {
-    res.status(400).json({ error: "A message, emoji, and author are required." });
+    res.status(400).json({ error: "Provide one emoji or a valid team emoji shortcode." });
     return;
   }
   const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
