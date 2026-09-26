@@ -10,6 +10,11 @@ import type { AssistantInputChatContextItem } from './assistantInputChatContextI
 
 export interface AssistantInput {
   question: string;
+  /**
+     * Optional model id selected from the configured provider's live model list.
+     * @maxLength 200
+     */
+  model?: string;
   conversationId?: string;
   applicantIds?: string[];
   /** Files attached in chat (already uploaded to storage). */

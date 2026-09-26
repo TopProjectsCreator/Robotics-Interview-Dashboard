@@ -1174,6 +1174,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenerateImageResult"
+  /assistant/models:
+    get:
+      operationId: listAssistantModels
+      tags: [assistant]
+      summary: List models available from the configured OpenAI-compatible provider
+      responses:
+        "200":
+          description: Models available to the assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantModelList"
+        "502":
+          description: The configured model provider could not be reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /dashboard/charts:
     get:
       operationId: listDashboardCharts
@@ -3033,6 +3051,10 @@ components:
       properties:
         question:
           type: string
+        model:
+          type: string
+          maxLength: 200
+          description: "Optional model id selected from the configured provider's live model list."
         conversationId:
           type: string
         applicantIds:
@@ -3141,6 +3163,22 @@ components:
         visionModel:
           type: string
           description: "Vision model used for image input"
+    AssistantModel:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    AssistantModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantModel"
     AssistantHistory:
       type: object
       required: [items]

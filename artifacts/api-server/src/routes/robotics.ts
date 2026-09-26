@@ -40,6 +40,7 @@ import {
   GetAssistantHistoryResponse,
   GenerateAssistantImageBody,
   GenerateAssistantImageResponse,
+  ListAssistantModelsResponse,
   GetAssistantConversationMessagesParams,
   GetAssistantConversationMessagesResponse,
   CreateAssistantConversationBody,
@@ -3573,7 +3574,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     .where(eq(assistantMessagesTable.conversationId, conversation.id))
     .orderBy(asc(assistantMessagesTable.createdAt));
   try {
-  const model = TEXT_MODEL;
+  const model = parsed.data.model?.trim() || TEXT_MODEL;
   let liveWebContext = "";
   if (needsWebSearch(parsed.data.question)) {
     const webOutcome = await searchWebFallback(parsed.data.question);
@@ -3833,7 +3834,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   const previousMessages = await db.select().from(assistantMessagesTable)
     .where(eq(assistantMessagesTable.conversationId, conversation.id))
     .orderBy(asc(assistantMessagesTable.createdAt));
-  const model = TEXT_MODEL;
+  const model = parsed.data.model?.trim() || TEXT_MODEL;
   let liveWebContext = "";
   if (needsWebSearch(parsed.data.question)) {
     const webOutcome = await searchWebFallback(parsed.data.question);
@@ -4097,6 +4098,20 @@ router.post("/assistant/images", requireAdmin, async (req, res): Promise<void> =
     req.log.warn({ err: error }, "Generated image persist failed, using direct URL");
   }
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
+});
+
+router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const result = await openai.models.list();
+    const items = result.data
+      .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
+      .map((model) => ({ id: model.id }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    res.json(ListAssistantModelsResponse.parse({ items }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load models from the configured AI provider");
+    res.status(502).json({ error: "The model list is unavailable right now." });
+  }
 });
 
 router.get("/assistant/config", requireAdmin, async (_req, res): Promise<void> => {

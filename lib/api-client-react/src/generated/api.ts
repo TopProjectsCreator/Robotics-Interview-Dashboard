@@ -33,6 +33,7 @@ import type {
   AssistantConversationUpdate,
   AssistantHistory,
   AssistantInput,
+  AssistantModelList,
   AssistantResponse,
   AuthSession,
   Board,
@@ -4650,6 +4651,83 @@ export const useGenerateAssistantImage = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getGenerateAssistantImageMutationOptions(options));
     }
+
+export const getListAssistantModelsUrl = () => {
+
+
+
+
+  return `/api/assistant/models`
+}
+
+/**
+ * @summary List models available from the configured OpenAI-compatible provider
+ */
+export const listAssistantModels = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantModelList> => {
+
+  return customFetch<AssistantModelList>(getListAssistantModelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAssistantModelsQueryKey = () => {
+    return [
+    `/api/assistant/models`
+    ] as const;
+    }
+
+
+export const getListAssistantModelsQueryOptions = <TData = Awaited<ReturnType<typeof listAssistantModels>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAssistantModelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssistantModels>>> = ({ signal }) => listAssistantModels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssistantModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAssistantModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listAssistantModels>>>
+export type ListAssistantModelsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List models available from the configured OpenAI-compatible provider
+ */
+
+export function useListAssistantModels<TData = Awaited<ReturnType<typeof listAssistantModels>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAssistantModelsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListDashboardChartsUrl = () => {
 

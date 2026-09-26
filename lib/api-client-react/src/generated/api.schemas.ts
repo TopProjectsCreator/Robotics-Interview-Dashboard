@@ -1207,6 +1207,11 @@ export type AssistantInputChatContextItem = {
 
 export interface AssistantInput {
   question: string;
+  /**
+     * Optional model id selected from the configured provider's live model list.
+     * @maxLength 200
+     */
+  model?: string;
   conversationId?: string;
   applicantIds?: string[];
   /** Files attached in chat (already uploaded to storage). */
@@ -1257,6 +1262,15 @@ export interface AssistantConfig {
   textModel: string;
   /** Vision model used for image input */
   visionModel: string;
+}
+
+export interface AssistantModel {
+  id: string;
+  name?: string;
+}
+
+export interface AssistantModelList {
+  items: AssistantModel[];
 }
 
 export type AssistantHistoryItemsItem = {

@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey,
+  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getListAssistantModelsQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
-  useListAssistantConversations, useRenameAssistantConversation,
+  useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetDisplayState, useGetInterviewChat, useGetQueue, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
@@ -42,6 +42,7 @@ import {
   regenerateApplicant,
 } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
+import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
@@ -4217,6 +4218,13 @@ function ConversationAssistant() {
   const [renamingId, setRenamingId] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    try {
+      return window.localStorage.getItem("robotics-assistant-model") ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState("");
@@ -4231,6 +4239,31 @@ function ConversationAssistant() {
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
   const assistantConfig = useGetAssistantConfig({ query: { queryKey: getGetAssistantConfigQueryKey() } });
+  const assistantModels = useListAssistantModels({
+    query: { queryKey: getListAssistantModelsQueryKey(), staleTime: 5 * 60 * 1000 },
+  });
+  const modelOptions = assistantModels.data?.items ?? [];
+  const availableModel = (
+    selectedModel && modelOptions.some((item) => item.id === selectedModel)
+      ? selectedModel
+      : undefined
+  )
+    ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
+    ?? modelOptions[0]?.id
+    ?? (selectedModel || assistantConfig.data?.textModel || "");
+  useEffect(() => {
+    if (!modelOptions.length) return;
+    const nextModel = modelOptions.some((item) => item.id === selectedModel)
+      ? selectedModel
+      : modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
+        ?? modelOptions[0].id;
+    if (nextModel !== selectedModel) setSelectedModel(nextModel);
+    try {
+      window.localStorage.setItem("robotics-assistant-model", nextModel);
+    } catch {
+      // Storage can be unavailable in private browsing.
+    }
+  }, [assistantConfig.data?.textModel, modelOptions, selectedModel]);
   const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
   const activeMessages = useGetAssistantConversationMessages(activeConversationId, undefined, {
     query: {
@@ -4326,7 +4359,7 @@ function ConversationAssistant() {
     streamAbort.current = controller;
     setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
+    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -4454,7 +4487,7 @@ function ConversationAssistant() {
   const activeConversation = conversations.data?.items.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<div className="flex flex-wrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge><Badge tone="neutral"><Bot size={12} className="mr-1" /> Model: {assistantConfig.data?.textModel ?? "…"}</Badge></div>} />
+    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<div className="flex flex-wrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={(model) => { setSelectedModel(model); try { window.localStorage.setItem("robotics-assistant-model", model); } catch { /* Storage can be unavailable in private browsing. */ } }} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

@@ -1913,8 +1913,13 @@ export const AssignSeatResponse = zod.object({
 /**
  * @summary Ask the AI assistant about the current applicants
  */
+export const askAssistantBodyModelMax = 200;
+
+
+
 export const AskAssistantBody = zod.object({
   "question": zod.string(),
+  "model": zod.string().max(askAssistantBodyModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
   "conversationId": zod.string().optional(),
   "applicantIds": zod.array(zod.string()).optional(),
   "attachments": zod.array(zod.object({
@@ -1948,6 +1953,17 @@ export const GenerateAssistantImageResponse = zod.object({
   "imageUrl": zod.string(),
   "prompt": zod.string(),
   "seed": zod.number().int()
+})
+
+
+/**
+ * @summary List models available from the configured OpenAI-compatible provider
+ */
+export const ListAssistantModelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().optional()
+}))
 })
 
 

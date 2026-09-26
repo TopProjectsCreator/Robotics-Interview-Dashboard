@@ -23,6 +23,8 @@ export * from './assistantHistoryItemsItem';
 export * from './assistantInput';
 export * from './assistantInputAttachmentsItem';
 export * from './assistantInputChatContextItem';
+export * from './assistantModel';
+export * from './assistantModelList';
 export * from './assistantResponse';
 export * from './authSession';
 export * from './beforeParameter';
