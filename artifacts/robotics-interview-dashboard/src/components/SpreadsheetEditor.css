@@ -107,3 +107,77 @@
 .dark .spreadsheet-workbook .fortune-sheet-overlay {
   color: #f3f4f6;
 }
+
+/* FortuneSheet renders its dialogs over the workbook with their own light surfaces. */
+.dark .fortune-modal-container {
+  color: #e5e7eb;
+  background-color: rgb(3 7 18 / 72%) !important;
+}
+
+.dark .fortune-modal-container .fortune-dialog,
+.dark .fortune-modal-container #fortune-data-verification,
+.dark .fortune-modal-container #range-dialog,
+.dark .fortune-modal-container #fortune-search-replace,
+.dark .fortune-modal-container .fortune-link-modify-modal,
+.dark .fortune-modal-container .fortune-sort-modal > div {
+  color: #e5e7eb !important;
+  border-color: #374151 !important;
+  background-color: #111827 !important;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 55%);
+}
+
+.dark .fortune-modal-container .fortune-modal-dialog-icon-close {
+  color: #9ca3af !important;
+  opacity: 0.9;
+}
+
+.dark .fortune-modal-container input:not([type="checkbox"]):not([type="radio"]),
+.dark .fortune-modal-container select,
+.dark .fortune-modal-container textarea {
+  color: #f3f4f6 !important;
+  border-color: #4b5563 !important;
+  background-color: #0b1220 !important;
+}
+
+.dark .fortune-modal-container input::placeholder,
+.dark .fortune-modal-container textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+.dark .fortune-modal-container select option {
+  color: #f3f4f6;
+  background-color: #111827;
+}
+
+.dark .fortune-modal-container input[type="checkbox"],
+.dark .fortune-modal-container input[type="radio"] {
+  accent-color: #34d399;
+}
+
+.dark .fortune-modal-container .fortune-message-box-button.button-default,
+.dark .fortune-modal-container #fortune-data-verification .button-close,
+.dark .fortune-modal-container #range-dialog .button-close {
+  color: #e5e7eb !important;
+  border-color: #4b5563 !important;
+  background-color: #1f2937 !important;
+}
+
+.dark .fortune-modal-container #fortune-data-verification .box .box-item {
+  border-color: #374151 !important;
+}
+
+.dark .fortune-modal-container #fortune-data-verification .data-verification-range,
+.dark .fortune-modal-container #fortune-data-verification .data-verification-type-select {
+  border-color: #4b5563 !important;
+  background-color: #0b1220 !important;
+}
+
+.dark #luckysheet-dataVerification-dropdown-List {
+  color: #e5e7eb;
+  border-color: #374151;
+  background-color: #111827;
+}
+
+.dark #luckysheet-dataVerification-dropdown-List .dropdown-List-item:hover {
+  background-color: #263244;
+}
