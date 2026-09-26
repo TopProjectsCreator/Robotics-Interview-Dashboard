@@ -100,6 +100,61 @@
   background-color: #111827 !important;
 }
 
+.dark .spreadsheet-workbook .fortune-toolbar-color-picker,
+.dark .spreadsheet-workbook #fortune-custom-color,
+.dark .spreadsheet-workbook #fortune-change-color {
+  color: #e5e7eb !important;
+  border-color: #374151 !important;
+  background: #111827 !important;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 48%);
+  color-scheme: dark;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .color-reset,
+.dark .spreadsheet-workbook #fortune-change-color .color-reset {
+  color: #e5e7eb !important;
+  border-bottom: 1px solid #374151;
+  background: #1f2937 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .color-reset:hover,
+.dark .spreadsheet-workbook #fortune-change-color .color-reset:hover {
+  color: #fff !important;
+  background: #263244 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .custom-color,
+.dark .spreadsheet-workbook #fortune-change-color .custom-color {
+  color: #e5e7eb !important;
+  border-bottom: 1px solid #374151;
+  background: #1f2937 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .custom-color input[type="color"],
+.dark .spreadsheet-workbook #fortune-change-color .custom-color input[type="color"] {
+  width: 40px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid #526174;
+  border-radius: 5px;
+  background: #0b1220;
+  color-scheme: dark;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .custom-color .button-primary,
+.dark .spreadsheet-workbook #fortune-change-color .custom-color .button-primary {
+  border: 1px solid #34d399;
+  border-radius: 7px;
+  color: #071b17 !important;
+  background: #34d399 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-custom-color .custom-color .button-primary:hover,
+.dark .spreadsheet-workbook #fortune-change-color .custom-color .button-primary:hover {
+  border-color: #6ee7b7;
+  background: #6ee7b7 !important;
+}
+
 /* FortuneSheet paints the cell grid to canvas with fixed light defaults. */
 .dark .spreadsheet-workbook canvas {
   filter: invert(0.88) hue-rotate(180deg);
