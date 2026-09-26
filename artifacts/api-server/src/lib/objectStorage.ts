@@ -133,7 +133,7 @@ export class ObjectStorageService {
       .storage.from(storageBucket())
       .upload(storagePath, data, { contentType, upsert: false });
     if (error) {
-      throw new Error(`Failed to store chat image: ${error.message}`);
+      throw new Error(`Failed to store chat attachment: ${error.message}`);
     }
     return `/objects/${id}`;
   }

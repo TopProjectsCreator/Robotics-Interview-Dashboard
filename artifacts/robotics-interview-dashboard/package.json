@@ -84,6 +84,7 @@
     "@corbe30/fortune-excel": "2.3.4",
     "@excalidraw/excalidraw": "^0.18.1",
     "@fortune-sheet/react": "1.0.4",
+    "@google/model-viewer": "^4.3.1",
     "@tiptap/extension-collaboration": "^3.31.3",
     "@tiptap/extension-collaboration-caret": "^3.31.3",
     "@tiptap/extension-text-align": "^3.31.3",
@@ -98,6 +99,7 @@
     "kokoro-js": "^1.2.1",
     "lib0": "^0.2.117",
     "mammoth": "^1.12.3",
+    "three": "^0.183.2",
     "xlsx": "^0.18.5",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.32"

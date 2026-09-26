@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } fr
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, Bot, Check, ChevronRight, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, Bot, Box, Check, ChevronRight, CircleDot, ClipboardList,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
@@ -65,6 +65,7 @@ import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
 import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
+import { ChatGlbViewer } from "./components/ChatGlbViewer";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 
@@ -415,7 +416,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "pdf" | "spreadsheet" | "text" | "video";
+type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "pdf" | "spreadsheet" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -424,6 +425,7 @@ function attachmentExtension(name: string): string {
 function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   const extension = attachmentExtension(name);
   if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
+  if (contentType === "model/gltf-binary" || extension === "glb") return "model";
   if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
   if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
   if (contentType === "application/pdf" || extension === "pdf") return "pdf";
@@ -578,6 +580,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
+  if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
@@ -2554,6 +2557,7 @@ const CHAT_FILE_ACCEPT = [
   "image/*",
   "video/*",
   "audio/*",
+  "model/gltf-binary",
   "application/pdf",
   "application/msword",
   "application/rtf",
@@ -2594,6 +2598,7 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   flac: "audio/flac",
   gif: "image/gif",
+  glb: "model/gltf-binary",
   heic: "image/heic",
   heif: "image/heif",
   jpeg: "image/jpeg",
@@ -2631,7 +2636,7 @@ const CHAT_INLINE_IMAGE_TYPES = new Set([
   "image/svg+xml",
   "image/webp",
 ]);
-type ChatFileKind = "image" | "video" | "audio" | "file";
+type ChatFileKind = "image" | "video" | "audio" | "model" | "file";
 type PreparedChatFile = { blob: Blob; name: string; type: string; inlineImage: boolean };
 function normalizeChatFileType(type: string): string {
   return type.split(";")[0]?.trim().toLowerCase() ?? "";
@@ -2662,6 +2667,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
+  if (type === "model/gltf-binary") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -2673,6 +2679,9 @@ function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: str
   }
   if (file.kind === "audio") {
     return <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-lg border border-[#dce9e8] bg-[#edf4f3]"><Paperclip size={18} className="text-[#16869a]" /></div>;
+  }
+  if (file.kind === "model") {
+    return <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border border-[#dce9e8] bg-[#edf4f3] text-[#16869a]"><Box size={20} /><span className="text-[9px] font-bold uppercase tracking-wide">3D</span></div>;
   }
   return <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-[#dce9e8] bg-[#edf4f3]"><Paperclip size={18} className="text-[#16869a]" /></div>;
 }
@@ -3699,7 +3708,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                {filteredMentionPeople.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">No matching people or applicants.</p>}
             </div>
          </div>}
-          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
+          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, 3D models, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
             {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
            dark={theme === "dark"}
@@ -3739,7 +3748,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-       <input ref={chatFileInputRef} type="file" accept={CHAT_FILE_ACCEPT} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+       <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
      </form>

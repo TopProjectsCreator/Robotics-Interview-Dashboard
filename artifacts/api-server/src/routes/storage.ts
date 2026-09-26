@@ -97,11 +97,18 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/csv',
   'text/plain',
   'text/tab-separated-values',
+  'model/gltf-binary',
 ];
 function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
     allowed.endsWith('/*') ? contentType.startsWith(allowed.slice(0, -1)) : contentType === allowed,
   );
+}
+function isValidGlb(data: Buffer): boolean {
+  return data.length >= 20 &&
+    data.toString('ascii', 0, 4) === 'glTF' &&
+    data.readUInt32LE(4) === 2 &&
+    data.readUInt32LE(8) === data.length;
 }
 router.post(
   '/storage/uploads',
@@ -112,11 +119,15 @@ router.post(
       const data = req.body as Buffer | undefined;
       const contentType = req.get('content-type')?.split(';')[0]?.trim() ?? '';
       if (!data || !Buffer.isBuffer(data) || data.length === 0) {
-        res.status(400).json({ error: 'No image data received' });
+        res.status(400).json({ error: 'No attachment data received' });
         return;
       }
       if (!isAllowedChatUploadType(contentType)) {
         res.status(400).json({ error: 'This file type is not supported' });
+        return;
+      }
+      if (contentType === 'model/gltf-binary' && !isValidGlb(data)) {
+        res.status(400).json({ error: 'This is not a valid GLB 2.0 model' });
         return;
       }
       if (data.length > CHAT_UPLOAD_MAX_BYTES) {
@@ -126,7 +137,7 @@ router.post(
       const objectPath = await objectStorageService.uploadChatImage(data, contentType);
       res.status(201).json({ objectPath });
     } catch (error) {
-      req.log.error({ err: error }, 'Error storing uploaded image');
+      req.log.error({ err: error }, 'Error storing uploaded attachment');
       res.status(500).json({ error: 'Upload failed on the server' });
     }
   },
