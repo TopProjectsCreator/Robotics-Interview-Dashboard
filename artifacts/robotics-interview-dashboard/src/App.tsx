@@ -641,13 +641,13 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
     }
   };
   return (
-    <div className="overflow-hidden rounded-xl border border-[#dce9e8]">
+    <div className="chat-markdown-table overflow-hidden rounded-xl border">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-[#edf4f3]">
+            <tr className="chat-markdown-table-header">
               {header.map((cell, cellIndex) => (
-                <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#dce9e8] px-3 py-2 font-semibold text-[#183a4b]">
+                <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-heading border-b px-3 py-2 font-semibold">
                   {renderInlineMarkdown(cell, mentionPeople)}
                 </th>
               ))}
@@ -658,11 +658,11 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-[#dce9e8] bg-[#f7faf9] px-3 py-2">
-        <span className="mr-1 text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Export table</span>
-        <button onClick={() => downloadDelimited(",", "csv", "text/csv")} data-testid={`export-table-csv-${tableKey}`} className="rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b]">CSV</button>
-        <button onClick={() => downloadDelimited(";", "csv", "text/csv")} data-testid={`export-table-semicolon-${tableKey}`} className="rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b]">CSV (;)</button>
-        <button onClick={() => void downloadExcel()} disabled={busy} data-testid={`export-table-xlsx-${tableKey}`} className="flex items-center gap-1 rounded-md bg-[#eef3f2] px-2 py-1 text-[11px] font-semibold text-[#63747c] transition hover:bg-[#dce9e8] hover:text-[#183a4b] disabled:opacity-50"><Download size={12} />{busy ? "..." : "Excel"}</button>
+      <div className="chat-markdown-table-export flex flex-wrap items-center gap-1.5 border-t px-3 py-2">
+        <span className="chat-markdown-table-export-label mr-1 text-[10px] font-semibold uppercase tracking-[.1em]">Export table</span>
+        <button onClick={() => downloadDelimited(",", "csv", "text/csv")} data-testid={`export-table-csv-${tableKey}`} className="chat-markdown-table-export-button rounded-md px-2 py-1 text-[11px] font-semibold">CSV</button>
+        <button onClick={() => downloadDelimited(";", "csv", "text/csv")} data-testid={`export-table-semicolon-${tableKey}`} className="chat-markdown-table-export-button rounded-md px-2 py-1 text-[11px] font-semibold">CSV (;)</button>
+        <button onClick={() => void downloadExcel()} disabled={busy} data-testid={`export-table-xlsx-${tableKey}`} className="chat-markdown-table-export-button flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50"><Download size={12} />{busy ? "..." : "Excel"}</button>
       </div>
     </div>
   );
@@ -670,9 +670,9 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
 
 function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = []) {
   return rows.map((row, rowIndex) => (
-    <tr key={`tr-${tableKey}-${rowIndex}`} className="odd:bg-white even:bg-[#f7faf9]">
+    <tr key={`tr-${tableKey}-${rowIndex}`} className="chat-markdown-table-row">
       {row.map((cell, cellIndex) => (
-        <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="border-b border-[#eef3f2] px-3 py-2 align-top">
+        <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-cell border-b px-3 py-2 align-top">
           {renderInlineMarkdown(cell, mentionPeople)}
         </td>
       ))}

@@ -94,6 +94,27 @@ button { cursor: pointer; }
   --chat-reply-text: #d1dde1; --chat-reply-close: #aabdc5;
   --chat-reply-close-hover-bg: #40221f; --chat-reply-close-hover-text: #f1aaa4;
 }
+.chat-markdown-table { color: #52666e; border-color: #dce9e8; background: #fff; }
+.chat-markdown-table-header { background: #edf4f3; }
+.chat-markdown-table-heading { border-color: #dce9e8; color: #183a4b; }
+.chat-markdown-table-row:nth-child(odd) { background: #fff; }
+.chat-markdown-table-row:nth-child(even) { background: #f7faf9; }
+.chat-markdown-table-cell { border-color: #eef3f2; color: #52666e; }
+.chat-markdown-table-export { border-color: #dce9e8; background: #f7faf9; }
+.chat-markdown-table-export-label { color: #7c8c91; }
+.chat-markdown-table-export-button { color: #63747c; background: #eef3f2; transition: color .15s ease, background-color .15s ease; }
+.chat-markdown-table-export-button:hover:not(:disabled) { color: #183a4b; background: #dce9e8; }
+.dark .chat-markdown-table { color: #d6e2e7; border-color: #2b424d; background: #142630; }
+.dark .chat-markdown-table-header { background: #1c3944; }
+.dark .chat-markdown-table-heading { border-color: #2b424d; color: #eef5f7; }
+.dark .chat-markdown-table-row:nth-child(odd) { background: #142630; }
+.dark .chat-markdown-table-row:nth-child(even) { background: #192f39; }
+.dark .chat-markdown-table-row:hover { background: #203944; }
+.dark .chat-markdown-table-cell { border-color: #2b424d; color: #d6e2e7; }
+.dark .chat-markdown-table-export { border-color: #2b424d; background: #11232c; }
+.dark .chat-markdown-table-export-label { color: #a9bac2; }
+.dark .chat-markdown-table-export-button { color: #cbd9de; background: #203943; }
+.dark .chat-markdown-table-export-button:hover:not(:disabled) { color: #f3f8fa; background: #2b4a56; }
 .document-editor { color: var(--document-foreground); background: var(--document-shell); }
 .document-editor > header { background: var(--document-header); border-color: var(--document-border); box-shadow: var(--document-header-shadow); }
 .document-editor .document-toolbar { background: var(--document-toolbar); border-color: var(--document-divider); }
