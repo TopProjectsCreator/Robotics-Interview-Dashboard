@@ -1,4 +1,11 @@
-import { Bot, ChevronDown } from "lucide-react";
+import { Bot } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export type AssistantModelOption = {
   id: string;
@@ -24,30 +31,42 @@ export function AssistantModelPicker({
 
   return (
     <div className="assistant-model-picker-wrap">
-      <label className="assistant-model-picker">
-        <Bot size={14} aria-hidden="true" />
-        <span>Model:</span>
-        <select
+      <Select
+        value={options.some((option) => option.id === model) ? model : ""}
+        disabled={loading || models.length === 0}
+        onValueChange={onChange}
+      >
+        <SelectTrigger
           aria-label="Assistant model"
           data-testid="assistant-model-picker"
-          value={model}
-          disabled={loading || models.length === 0}
-          onChange={(event) => onChange(event.target.value)}
           title={model}
+          className="assistant-model-trigger"
         >
-          {!options.length && (
-            <option value="">
-              {loading ? "Loading models…" : error ? "Model list unavailable" : "No free models available"}
-            </option>
-          )}
+          <span className="assistant-model-trigger-label" aria-hidden="true">
+            <Bot size={15} />
+            <span>Model</span>
+          </span>
+          <SelectValue
+            className="assistant-model-current"
+            placeholder={loading ? "Loading…" : error ? "Unavailable" : "Choose a model"}
+          />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          align="end"
+          className="assistant-model-menu"
+        >
           {options.map((option) => (
-            <option key={option.id} value={option.id}>
+            <SelectItem
+              key={option.id}
+              value={option.id}
+              className="assistant-model-option"
+            >
               {option.name || option.id}
-            </option>
+            </SelectItem>
           ))}
-        </select>
-        <ChevronDown size={13} aria-hidden="true" />
-      </label>
+        </SelectContent>
+      </Select>
       {error && (
         <span className="assistant-model-picker-error" role="status">
           Model list unavailable

@@ -1222,6 +1222,8 @@ export interface AssistantInput {
 
 export interface AssistantResponse {
   answer: string;
+  /** Model id used to produce the answer. */
+  model?: string;
   activities?: AssistantActivity[];
 }
 

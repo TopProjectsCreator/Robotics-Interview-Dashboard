@@ -1934,6 +1934,7 @@ export const AskAssistantBody = zod.object({
 
 export const AskAssistantResponse = zod.object({
   "answer": zod.string(),
+  "model": zod.string().optional().describe('Model id used to produce the answer.'),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()

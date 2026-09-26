@@ -3089,6 +3089,9 @@ components:
       properties:
         answer:
           type: string
+        model:
+          type: string
+          description: "Model id used to produce the answer."
         activities:
           type: array
           items:

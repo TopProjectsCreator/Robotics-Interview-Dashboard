@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AssistantModelPicker } from "./AssistantModelPicker";
 
 describe("AssistantModelPicker", () => {
-  it("shows provider models and reports the selected id", () => {
+  it("shows provider models and reports the selected id", async () => {
     const onChange = vi.fn();
     render(
       <AssistantModelPicker
@@ -20,10 +20,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const picker = screen.getByRole("combobox", { name: "Assistant model" });
-    expect(picker).toHaveValue("openrouter/free");
-    expect(screen.getByRole("option", { name: "New provider model" })).toBeInTheDocument();
+    expect(picker).toHaveTextContent("openrouter/free");
 
-    fireEvent.change(picker, { target: { value: "provider/new-model" } });
+    fireEvent.keyDown(picker, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "New provider model" }));
     expect(onChange).toHaveBeenCalledWith("provider/new-model");
   });
 
@@ -38,7 +38,8 @@ describe("AssistantModelPicker", () => {
       />,
     );
 
-    expect(screen.getByRole("combobox", { name: "Assistant model" })).toBeDisabled();
-    expect(screen.getByRole("option", { name: "openrouter/free" })).toBeInTheDocument();
+    const picker = screen.getByRole("combobox", { name: "Assistant model" });
+    expect(picker).toBeDisabled();
+    expect(picker).toHaveTextContent("openrouter/free");
   });
 });

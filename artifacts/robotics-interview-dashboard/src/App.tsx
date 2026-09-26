@@ -4146,6 +4146,7 @@ function timeAgo(iso: string): string {
 
 function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "web_search") return { label: "Searched the web", Icon: Search };
+  if (tool === "set_assistant_model") return { label: "Changed assistant model", Icon: Sparkles };
   if (tool === "python_exec" || tool === "python") return { label: "Ran Python", Icon: SquareTerminal };
   if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };
   if (tool === "web_fetch" || tool === "fetch_url") return { label: "Fetched page", Icon: Globe };
@@ -4243,6 +4244,14 @@ function ConversationAssistant() {
     query: { queryKey: getListAssistantModelsQueryKey(), staleTime: 5 * 60 * 1000 },
   });
   const modelOptions = assistantModels.data?.items ?? [];
+  const rememberModel = (model: string) => {
+    setSelectedModel(model);
+    try {
+      window.localStorage.setItem("robotics-assistant-model", model);
+    } catch {
+      // Storage can be unavailable in private browsing.
+    }
+  };
   const availableModel = modelOptions.find((item) => item.id === selectedModel)?.id
     ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
     ?? modelOptions[0]?.id
@@ -4381,13 +4390,17 @@ function ConversationAssistant() {
           for (const part of parts) {
             const line = part.split("\n").find(entry => entry.startsWith("data:"));
             if (!line) continue;
-            let message: { delta?: string; done?: boolean; answer?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string } | null = null;
+            let message: { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string } | null = null;
             try {
-              message = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; answer?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string };
+              message = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string };
             } catch {
               continue;
             }
             if (!message) continue;
+            if (typeof message.model === "string" && message.model) {
+              rememberModel(message.model);
+              payload.model = message.model;
+            }
             if (typeof message.delta === "string" && message.delta) {
               finalAnswer += message.delta;
               setStreamingText(current => current + (message.delta as string));
@@ -4420,6 +4433,7 @@ function ConversationAssistant() {
         // Streaming failed mid-flight; fall back to the classic request.
         ask.mutate({ data: payload }, {
           onSuccess: response => {
+            if (response.model) rememberModel(response.model);
             setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
             setAttachments([]);
             queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
@@ -4483,7 +4497,7 @@ function ConversationAssistant() {
   const activeConversation = conversations.data?.items.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<div className="flex flex-wrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={(model) => { setSelectedModel(model); try { window.localStorage.setItem("robotics-assistant-model", model); } catch { /* Storage can be unavailable in private browsing. */ } }} /></div>} />
+    <PageHeading eyebrow="Decision support / AI workspace" title="Ask the room." detail="A focused control-room assistant with saved conversations for each decision thread." action={<div className="flex flex-wrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> Context: {selected.length ? `${selected.length} selected` : "all applicants"}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

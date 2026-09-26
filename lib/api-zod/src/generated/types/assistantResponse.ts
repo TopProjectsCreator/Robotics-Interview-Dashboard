@@ -9,5 +9,7 @@ import type { AssistantActivity } from './assistantActivity';
 
 export interface AssistantResponse {
   answer: string;
+  /** Model id used to produce the answer. */
+  model?: string;
   activities?: AssistantActivity[];
 }

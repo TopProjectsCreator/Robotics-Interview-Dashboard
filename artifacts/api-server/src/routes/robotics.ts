@@ -749,7 +749,23 @@ const ASSISTANT_LIST_PRESENCE_TOOL = {
   },
 };
 
+const ASSISTANT_SET_MODEL_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "set_assistant_model",
+    description: "Change the model for the rest of this answer and the coordinator's later requests. Use only when the coordinator explicitly asks to switch or choose a model, and pass an exact id from the available list.",
+    parameters: {
+      type: "object",
+      properties: {
+        model_id: { type: "string", description: "Exact model id from the available list." },
+      },
+      required: ["model_id"],
+    },
+  },
+};
+
 const ASSISTANT_TOOLS = [
+  ASSISTANT_SET_MODEL_TOOL,
   ASSISTANT_IMAGE_TOOL,
   ASSISTANT_SEARCH_TOOL,
   ASSISTANT_PYTHON_TOOL,
@@ -879,6 +895,7 @@ function parsePseudoToolCalls(text: string): AssistantToolCall[] {
       name !== "list_presence" &&
       name !== "presence_stats" &&
       name !== "kick_presence"
+      && name !== "set_assistant_model"
     )
       continue;
     const args: Record<string, string> = {};
@@ -922,6 +939,7 @@ function parsePseudoToolCalls(text: string): AssistantToolCall[] {
       name !== "list_presence" &&
       name !== "presence_stats" &&
       name !== "kick_presence"
+      && name !== "set_assistant_model"
     )
       continue;
     const args: Record<string, string> = {};
@@ -953,12 +971,14 @@ async function runAssistantTools(
   currentConversationId = "",
   currentSessionHash = "",
   requesterDisplayName = "",
+  availableFreeModelIds: Set<string> = new Set(),
 ): Promise<{
   toolMessages: { role: "tool"; content: string; tool_call_id: string }[];
   outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[];
   imageMarkdown: string;
   images: GeneratedImage[];
   activities: AssistantActivity[];
+  model?: string;
 }> {
   const toolMessages: { role: "tool"; content: string; tool_call_id: string }[] = [];
   const outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[] = [];
@@ -968,6 +988,7 @@ async function runAssistantTools(
   let searches = 0;
   let pythonRuns = 0;
   let renamed = false;
+  let changedModel: string | undefined;
   for (const call of calls.slice(0, 8)) {
     const name = call.function?.name;
     if (
@@ -1000,6 +1021,7 @@ async function runAssistantTools(
       name !== "list_presence" &&
       name !== "presence_stats" &&
       name !== "kick_presence" &&
+      name !== "set_assistant_model" &&
       !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name ?? "")
     )
       continue;
@@ -1009,7 +1031,22 @@ async function runAssistantTools(
     } catch {
       continue;
     }
-    if (name === "generate_image") {
+    if (name === "set_assistant_model") {
+      const modelId = String(args.model_id ?? "").trim();
+      const accepted = availableFreeModelIds.has(modelId);
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      toolMessages.push({
+        role: "tool",
+        content: accepted
+          ? `Model changed to ${modelId}. Use it for the rest of this answer.`
+          : "That model id is not in the current available model list. Keep using the current model and only choose an exact listed id.",
+        tool_call_id: call.id,
+      });
+      if (accepted) {
+        changedModel = modelId;
+        activities.push({ tool: "set_assistant_model", detail: modelId });
+      }
+    } else if (name === "generate_image") {
       const imagePrompt = String(args.prompt ?? "").trim().slice(0, 500);
       if (!imagePrompt) continue;
       const size = args.size === "512x512" ? "512x512" : "1024x1024";
@@ -1686,7 +1723,7 @@ async function runAssistantTools(
       });
     }
   }
-  return { toolMessages, outgoingCalls, imageMarkdown: imageMarkdowns.join("\n\n"), images, activities };
+  return { toolMessages, outgoingCalls, imageMarkdown: imageMarkdowns.join("\n\n"), images, activities, model: changedModel };
 }
 
 async function saveAssistantAnswer(conversationId: string, question: string, applicantIds: string[], answer: string, activities: AssistantActivity[] = []): Promise<void> {
@@ -3574,7 +3611,24 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     .where(eq(assistantMessagesTable.conversationId, conversation.id))
     .orderBy(asc(assistantMessagesTable.createdAt));
   try {
-  const model = parsed.data.model?.trim() || TEXT_MODEL;
+  const requestedModel = parsed.data.model?.trim();
+  let model = requestedModel || TEXT_MODEL;
+  let freeModelIds: string[] = [];
+  let modelCatalogAvailable = true;
+  try {
+    freeModelIds = await listFreeAssistantModelIds();
+  } catch (catalogError) {
+    modelCatalogAvailable = false;
+    req.log.warn({ err: catalogError }, "Assistant model catalog unavailable");
+  }
+  if (requestedModel && !modelCatalogAvailable) {
+    res.status(503).json({ error: "The selected model could not be verified right now. Try again." });
+    return;
+  }
+  if (requestedModel && !freeModelIds.includes(requestedModel)) {
+    res.status(400).json({ error: "The selected model is not available." });
+    return;
+  }
   let liveWebContext = "";
   if (needsWebSearch(parsed.data.question)) {
     const webOutcome = await searchWebFallback(parsed.data.question);
@@ -3599,6 +3653,10 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   baseMessages.splice(1, 0, {
     role: "system" as const,
     content: ASSISTANT_ARTIFACT_INSTRUCTIONS,
+  });
+  baseMessages.splice(2, 0, {
+    role: "system" as const,
+    content: assistantModelSelectionInstructions(freeModelIds),
   });
   let completion;
   const withTools = () => openai.chat.completions.create({
@@ -3665,7 +3723,9 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
       conversation.id,
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
+      new Set(freeModelIds),
     );
+    if (executed.model) model = executed.model;
     activities.push(...executed.activities);
     if (executed.outgoingCalls.length === 0) break;
     req.log.info({ tools: executed.outgoingCalls.map((call) => call.function.name), round }, "Assistant tools executed");
@@ -3734,7 +3794,9 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
       conversation.id,
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
+      new Set(freeModelIds),
       );
+      if (executed.model) model = executed.model;
       activities.push(...executed.activities);
       if (executed.outgoingCalls.length > 0) {
         const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
@@ -3790,7 +3852,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   }
   if (!answer.trim()) answer = "I could not produce an answer for that question.";
   await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities);
-  res.json(AskAssistantResponse.parse({ answer, activities }));
+  res.json(AskAssistantResponse.parse({ answer, activities, model }));
   } catch (error) {
     req.log.error({ err: error }, "Assistant chat completion failed");
     res.status(503).json({ error: "Assistant is unavailable. Check AI_INTEGRATIONS_OPENAI_BASE_URL / API key and AI_ASSISTANT_MODEL." });
@@ -3834,7 +3896,24 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   const previousMessages = await db.select().from(assistantMessagesTable)
     .where(eq(assistantMessagesTable.conversationId, conversation.id))
     .orderBy(asc(assistantMessagesTable.createdAt));
-  const model = parsed.data.model?.trim() || TEXT_MODEL;
+  const requestedModel = parsed.data.model?.trim();
+  let model = requestedModel || TEXT_MODEL;
+  let freeModelIds: string[] = [];
+  let modelCatalogAvailable = true;
+  try {
+    freeModelIds = await listFreeAssistantModelIds();
+  } catch (catalogError) {
+    modelCatalogAvailable = false;
+    req.log.warn({ err: catalogError }, "Assistant model catalog unavailable");
+  }
+  if (requestedModel && !modelCatalogAvailable) {
+    res.status(503).json({ error: "The selected model could not be verified right now. Try again." });
+    return;
+  }
+  if (requestedModel && !freeModelIds.includes(requestedModel)) {
+    res.status(400).json({ error: "The selected model is not available." });
+    return;
+  }
   let liveWebContext = "";
   if (needsWebSearch(parsed.data.question)) {
     const webOutcome = await searchWebFallback(parsed.data.question);
@@ -3859,6 +3938,10 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   baseMessages.splice(1, 0, {
     role: "system" as const,
     content: ASSISTANT_ARTIFACT_INSTRUCTIONS,
+  });
+  baseMessages.splice(2, 0, {
+    role: "system" as const,
+    content: assistantModelSelectionInstructions(freeModelIds),
   });
   const isRateLimit = (error: unknown) =>
     typeof error === "object" && error !== null && "status" in error &&
@@ -3947,7 +4030,12 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       conversation.id,
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
+      new Set(freeModelIds),
       );
+      if (executed.model) {
+        model = executed.model;
+        send({ model });
+      }
       activities.push(...executed.activities);
       if (executed.outgoingCalls.length > 0) {
         req.log.info({ tools: executed.outgoingCalls.map((call) => call.function.name) }, "Assistant stream tools executed");
@@ -4017,7 +4105,12 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       conversation.id,
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
+      new Set(freeModelIds),
       );
+        if (executed.model) {
+          model = executed.model;
+          send({ model });
+        }
         activities.push(...executed.activities);
         if (executed.outgoingCalls.length > 0) {
           send({ status: "working" });
@@ -4062,7 +4155,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
     await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities);
     for (const activity of activities) send({ activity });
-    send({ done: true, answer, activities });
+    send({ done: true, answer, activities, model });
     res.end();
   } catch (error) {
     const limited = isRateLimit(error);
@@ -4100,17 +4193,27 @@ router.post("/assistant/images", requireAdmin, async (req, res): Promise<void> =
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
 });
 
+async function listFreeAssistantModelIds(): Promise<string[]> {
+  const result = await openai.models.list();
+  // Trust explicit provider metadata; free model ids do not all use :free.
+  const catalog = result.data as Array<(typeof result.data)[number] & { isFree?: unknown }>;
+  return catalog
+    .filter((model) => model.isFree === true)
+    .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
+    .map((model) => model.id)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function assistantModelSelectionInstructions(modelIds: string[]): string {
+  if (modelIds.length === 0) {
+    return "Only change models when the coordinator explicitly asks. The model catalog is currently unavailable, so do not call set_assistant_model.";
+  }
+  return `Only change models when the coordinator explicitly asks to switch or choose one. Then call set_assistant_model with an exact id from this list, and use that model for the rest of this answer. The browser will remember the selected model for later requests. Do not mention model pricing or tiers unless asked. Available model ids: ${modelIds.join(", ")}`;
+}
+
 router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const result = await openai.models.list();
-    // Kilo marks models available through its keyless free route explicitly;
-    // names alone are not reliable because some free ids have no ":free" suffix.
-    const catalog = result.data as Array<(typeof result.data)[number] & { isFree?: unknown }>;
-    const items = catalog
-      .filter((model) => model.isFree === true)
-      .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
-      .map((model) => ({ id: model.id }))
-      .sort((left, right) => left.id.localeCompare(right.id));
+    const items = (await listFreeAssistantModelIds()).map((id) => ({ id }));
     res.json(ListAssistantModelsResponse.parse({ items }));
   } catch (error) {
     req.log.error({ err: error }, "Could not load models from the configured AI provider");
