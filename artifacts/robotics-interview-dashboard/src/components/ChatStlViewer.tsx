@@ -15,7 +15,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
     if (!host) return;
 
     let active = true;
-    let request: XMLHttpRequest | null = null;
+    let abortController: AbortController | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let resizeHandler: (() => void) | null = null;
     let renderer: import("three").WebGLRenderer | null = null;
@@ -83,14 +83,18 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
         window.addEventListener("resize", resize);
 
         const loader = new STLLoader();
-        request = loader.load(
-          src,
-          loadedGeometry => {
+        abortController = new AbortController();
+        void fetch(src, { signal: abortController.signal })
+          .then(response => {
+            if (!response.ok) throw new Error("STL download failed");
+            return response.arrayBuffer();
+          })
+          .then(bytes => {
             if (!active) {
-              loadedGeometry.dispose();
               return;
             }
             try {
+              const loadedGeometry = loader.parse(bytes);
               const positions = loadedGeometry.getAttribute("position");
               if (!positions || positions.count < 3) {
                 loadedGeometry.dispose();
@@ -131,10 +135,10 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
             } catch {
               fail();
             }
-          },
-          undefined,
-          fail,
-        );
+          })
+          .catch(() => {
+            if (active) fail();
+          });
       } catch {
         fail();
       }
@@ -142,7 +146,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
 
     return () => {
       active = false;
-      request?.abort();
+      abortController?.abort();
       resizeObserver?.disconnect();
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
       controls?.dispose();

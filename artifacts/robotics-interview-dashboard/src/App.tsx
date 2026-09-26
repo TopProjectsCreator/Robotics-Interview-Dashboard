@@ -417,7 +417,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "pdf" | "spreadsheet" | "stl" | "text" | "video";
+type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -426,6 +426,7 @@ function attachmentExtension(name: string): string {
 function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   const extension = attachmentExtension(name);
   if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
+  if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
   if (contentType === "model/gltf-binary" || extension === "glb") return "model";
   if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
   if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
@@ -495,6 +496,16 @@ function ChatAttachmentDocument({ name, html, objectUrl }: { name: string; html:
   }
   if (!objectUrl) return null;
   return <div className="rounded-xl border border-[#dce9e8] bg-white p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" /></div>;
+}
+
+function ChatParasolidAttachment({ name, src }: { name: string; src: string }) {
+  return <figure className="my-2 max-w-xl overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-parasolid-attachment">
+    <figcaption className="border-b border-[#dce9e8] px-3 py-2 text-[11px] font-semibold text-[#183a4b] dark:border-[#2a3f52] dark:text-[#e5edf3]">{name} · Parasolid CAD file</figcaption>
+    <div className="flex flex-wrap items-center justify-between gap-3 p-3">
+      <p className="text-xs text-[#718189] dark:text-[#a8bac8]">The file is stored privately. Inline preview requires CAD conversion.</p>
+      <a href={src} download={name} className="shrink-0 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white hover:bg-[#24516a]">Download CAD file</a>
+    </div>
+  </figure>;
 }
 
 function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {
@@ -582,6 +593,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
+  if (kind === "parasolid" && objectUrl) return <ChatParasolidAttachment name={name} src={objectUrl} />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
@@ -2562,6 +2574,7 @@ const CHAT_FILE_ACCEPT = [
   "audio/*",
   "model/gltf-binary",
   "model/stl",
+  "model/x-parasolid",
   "application/pdf",
   "application/msword",
   "application/rtf",
@@ -2604,6 +2617,8 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   gif: "image/gif",
   glb: "model/gltf-binary",
   stl: "model/stl",
+  x_b: "model/x-parasolid",
+  x_t: "model/x-parasolid",
   heic: "image/heic",
   heif: "image/heif",
   jpeg: "image/jpeg",
@@ -2672,7 +2687,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
-  if (type === "model/gltf-binary" || type === "model/stl") return "model";
+  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/x-parasolid") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -3753,7 +3768,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
      </form>

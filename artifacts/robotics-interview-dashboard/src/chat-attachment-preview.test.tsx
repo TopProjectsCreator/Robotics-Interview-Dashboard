@@ -85,6 +85,25 @@ const fixtures: Fixture[] = [
     },
   },
   {
+    name: "robot.x_t",
+    contentType: "model/x-parasolid",
+    body: new Blob(["Parasolid text fixture"], { type: "model/x-parasolid" }),
+    assertPreview: container => {
+      expect(container.querySelector('[data-testid="chat-parasolid-attachment"]')).toBeInTheDocument();
+      expect(container).toHaveTextContent("Inline preview requires CAD conversion");
+      expect(container.querySelector("a[download='robot.x_t']")).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+    },
+  },
+  {
+    name: "robot.x_b",
+    contentType: "model/x-parasolid",
+    body: new Blob([new Uint8Array([0x50, 0x61, 0x72, 0x61, 0x53, 0x6f, 0x6c, 0x69, 0x64])], { type: "model/x-parasolid" }),
+    assertPreview: container => {
+      expect(container.querySelector('[data-testid="chat-parasolid-attachment"]')).toBeInTheDocument();
+      expect(container.querySelector("a[download='robot.x_b']")).toBeInTheDocument();
+    },
+  },
+  {
     name: "scores.csv",
     contentType: "text/csv",
     body: new Blob(["Applicant,Score\nAda Lovelace,9\nGrace Hopper,10\n"], { type: "text/csv" }),

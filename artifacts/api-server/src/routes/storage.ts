@@ -99,6 +99,7 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/tab-separated-values',
   'model/gltf-binary',
   'model/stl',
+  'model/x-parasolid',
 ];
 function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
