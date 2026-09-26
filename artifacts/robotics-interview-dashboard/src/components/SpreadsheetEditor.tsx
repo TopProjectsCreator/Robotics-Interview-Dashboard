@@ -144,13 +144,11 @@ function normalizeSheets(input: unknown, previous: WorkbookSheet[] = []): Workbo
     const savedSelection = raw.luckysheet_select_save === undefined
       ? oldSheet?.luckysheet_select_save
       : raw.luckysheet_select_save;
-    if (savedSelection !== undefined) {
-      merged.luckysheet_select_save = normalizeSavedSheetSelection(
-        savedSelection,
-        merged.row ?? 1000,
-        merged.column ?? 26,
-      );
-    }
+    merged.luckysheet_select_save = normalizeSavedSheetSelection(
+      savedSelection ?? [],
+      merged.row ?? 1000,
+      merged.column ?? 26,
+    );
     const convertedCells = sparseCellsFromData(raw.data);
     if (convertedCells) {
       merged.celldata = convertedCells;
@@ -537,6 +535,19 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const closeDialogOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const dialog = document.querySelector(".spreadsheet-workbook .fortune-modal-container");
+      const closeButton = dialog?.querySelector<HTMLElement>(".fortune-modal-dialog-icon-close");
+      if (!closeButton) return;
+      event.preventDefault();
+      closeButton.click();
+    };
+    window.addEventListener("keydown", closeDialogOnEscape);
+    return () => window.removeEventListener("keydown", closeDialogOnEscape);
   }, []);
 
   const commit = async (nextTitle: string, nextData: SpreadsheetData) => {

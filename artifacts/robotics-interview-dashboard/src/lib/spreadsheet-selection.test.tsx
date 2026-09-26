@@ -15,6 +15,15 @@ describe("normalizeSavedSheetSelection", () => {
     }]);
   });
 
+  it("defaults a worksheet without a saved selection to the first cell", () => {
+    expect(normalizeSavedSheetSelection([], 1000, 26)).toEqual([{
+      row: [0, 0],
+      column: [0, 0],
+      row_focus: 0,
+      column_focus: 0,
+    }]);
+  });
+
   it("clamps valid ranges and focus coordinates to worksheet dimensions", () => {
     expect(normalizeSavedSheetSelection(
       [{ row: [3, 9], column: [2, 7], row_focus: 8, column_focus: 6 }],
