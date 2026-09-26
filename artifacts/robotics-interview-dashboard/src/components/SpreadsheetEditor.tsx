@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -89,6 +89,18 @@ function sheetNameCandidate(value: unknown, fallback: string): string {
   return sanitized || fallback.slice(0, 31);
 }
 
+function sparseCellsFromData(data: unknown): { r: number; c: number; v: unknown }[] | null {
+  if (!Array.isArray(data)) return null;
+  const cells: { r: number; c: number; v: unknown }[] = [];
+  data.forEach((row, r) => {
+    if (!Array.isArray(row)) return;
+    row.forEach((value, c) => {
+      if (value !== null && value !== undefined) cells.push({ r, c, v: value });
+    });
+  });
+  return cells;
+}
+
 function normalizeSheets(input: unknown, previous: WorkbookSheet[] = []): WorkbookSheet[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 255) {
     throw new Error("This workbook must contain between 1 and 255 worksheets.");
@@ -120,6 +132,13 @@ function normalizeSheets(input: unknown, previous: WorkbookSheet[] = []): Workbo
       name,
       order: index,
     };
+    const convertedCells = sparseCellsFromData(raw.data);
+    if (convertedCells) {
+      merged.celldata = convertedCells;
+      delete merged.data;
+    } else if (Array.isArray(raw.celldata)) {
+      delete merged.data;
+    }
     if (raw.charts === undefined && oldSheet?.charts !== undefined) {
       merged.charts = oldSheet.charts;
     }
@@ -441,6 +460,11 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
   const recordingRef = useRef(false);
   const macroPlaybackRef = useRef(false);
   const macroOperationsRef = useRef<SafeMacroOperation[]>([]);
+  const workbookChangeHandlerRef = useRef<(sheets: unknown[]) => void>(() => {});
+  const stableWorkbookChangeHandler = useCallback(
+    (sheets: unknown[]) => workbookChangeHandlerRef.current(sheets),
+    [],
+  );
   titleRef.current = title;
   dataRef.current = data;
 
@@ -557,6 +581,10 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
       setSaveError(error instanceof Error ? error.message : "Worksheet changes could not be read.");
       return;
     }
+    if (JSON.stringify(workbook) === JSON.stringify(current.workbook ?? [])) {
+      lastWorkbookRef.current = workbook;
+      return;
+    }
     if (recordingRef.current && !macroPlaybackRef.current) {
       const operations = macroDiff(lastWorkbookRef.current, workbook);
       if (operations.length) {
@@ -577,6 +605,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
     setData(nextData);
     scheduleSave(titleRef.current, nextData);
   };
+  workbookChangeHandlerRef.current = handleWorkbookChange;
 
   const onTitleChange = (value: string) => {
     const nextTitle = value.slice(0, 120);
@@ -870,7 +899,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-primary"><FileSpreadsheet size={17} /><span className="mono text-[10px] font-bold uppercase tracking-[.18em]">Shared workbook</span></div>
             <input value={title} onChange={event => onTitleChange(event.target.value)} onBlur={restoreTitleIfEmpty} aria-label="Spreadsheet title" data-testid="input-spreadsheet-title" className="mt-1 w-full max-w-2xl bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground sm:text-3xl" placeholder="Name this workbook" maxLength={120} />
-            <p className="mt-1 text-xs text-muted-foreground">Formulas, formatting, worksheets, and changes sync for everyone in this conversation.</p>
+            <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Authorized interviewers share this workbook. Saved changes from others appear within about 5 seconds; simultaneous edits are not merged and can overwrite each other.</p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <SaveStatus state={saveState} savedAt={savedAt} error={saveError} />
@@ -955,7 +984,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
               key={workbookKey}
               ref={workbookRef}
               data={workbook as never}
-              onChange={handleWorkbookChange}
+              onChange={stableWorkbookChangeHandler}
               allowEdit
               showToolbar
               showFormulaBar

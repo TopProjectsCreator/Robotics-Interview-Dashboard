@@ -14,3 +14,9 @@ When other collaborative data shares the whiteboard storage channel, avoid subsc
 **Why:** Drawing-scene persistence can emit frequent row updates; broad subscriptions would cause unrelated collaborative views to refetch repeatedly.
 
 **How to apply:** Invalidate only the relevant workspace queries on a hint, and keep periodic reads while a board is open unless the database changefeed can filter and throttle updates safely.
+
+FortuneSheet's React `Workbook` calls its `onChange` prop from an effect that depends on both workbook data and the callback identity. Keep that prop stable across parent renders, and make workbook normalization idempotent before updating React state.
+
+**Why:** An inline callback can trigger `onChange` after every parent render; if the handler sets parent state even when the workbook is unchanged, it creates a maximum-update-depth loop.
+
+**How to apply:** When using FortuneSheet, pass a stable callback wrapper that reads the latest handler from a ref, and skip state updates for unchanged normalized workbook data.

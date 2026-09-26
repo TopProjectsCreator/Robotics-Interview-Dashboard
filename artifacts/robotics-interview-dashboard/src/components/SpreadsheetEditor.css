@@ -29,29 +29,67 @@
 .dark .spreadsheet-workbook .fortune-sheet-area,
 .dark .spreadsheet-workbook .fortune-sheet-list,
 .dark .spreadsheet-workbook .fortune-sheettab-container,
+.dark .spreadsheet-workbook .fortune-sheettab-container-c,
+.dark .spreadsheet-workbook .fortune-sheettab-scroll,
+.dark .spreadsheet-workbook .fortune-sheettab-placeholder,
+.dark .spreadsheet-workbook .fortune-sheet-list-item,
 .dark .spreadsheet-workbook .fortune-name-box-container,
+.dark .spreadsheet-workbook .fortune-fx-editor,
+.dark .spreadsheet-workbook .fortune-fx-input-container,
+.dark .spreadsheet-workbook .fortune-toolbar-select,
+.dark .spreadsheet-workbook .fortune-toolbar-color-picker,
 .dark .spreadsheet-workbook .fortune-toolbar-combo-popup,
-.dark .spreadsheet-workbook .fortune-sheet-container-menu-hide {
+.dark .spreadsheet-workbook .fortune-sheet-container-menu-hide,
+.dark .spreadsheet-workbook .fortune-sheet-container-menu,
+.dark .spreadsheet-workbook .luckysheet-sheet-area,
+.dark .spreadsheet-workbook .luckysheet-sheets-item,
+.dark .spreadsheet-workbook .luckysheet-formula-search-c,
+.dark .spreadsheet-workbook .luckysheet-formula-help-c {
   color: #e5e7eb;
   border-color: #374151;
-  background-color: #111827;
+  background-color: #111827 !important;
+}
+
+.dark .spreadsheet-workbook .fortune-name-box,
+.dark .spreadsheet-workbook .fortune-fx-input,
+.dark .spreadsheet-workbook .fortune-fx-icon,
+.dark .spreadsheet-workbook .luckysheet-formula-search-item,
+.dark .spreadsheet-workbook .luckysheet-formula-search-func,
+.dark .spreadsheet-workbook .luckysheet-formula-search-detail {
+  color: #f3f4f6 !important;
+  background-color: #111827 !important;
+}
+
+.dark .spreadsheet-workbook .fortune-toolbar-menu-divider,
+.dark .spreadsheet-workbook .fortune-toolbar-menu-line {
+  border-color: #374151;
+}
+
+.dark .spreadsheet-workbook .fortune-toolbar-menu-divider {
+  background-color: #374151;
 }
 
 .dark .spreadsheet-workbook .fortune-toolbar-button:hover,
 .dark .spreadsheet-workbook .fortune-toolbar-combo-button:hover,
 .dark .spreadsheet-workbook .fortune-sheet-list-item:hover,
-.dark .spreadsheet-workbook .fortune-sheettab-button:hover {
-  background-color: #263244;
+.dark .spreadsheet-workbook .fortune-sheettab-button:hover,
+.dark .spreadsheet-workbook .fortune-toolbar-select-option:hover,
+.dark .spreadsheet-workbook .luckysheet-formula-search-item-active {
+  color: #f9fafb;
+  background-color: #263244 !important;
 }
 
 .dark .spreadsheet-workbook .fortune-toolbar input,
 .dark .spreadsheet-workbook .fortune-toolbar select,
 .dark .spreadsheet-workbook .fortune-name-box-container input,
+.dark .spreadsheet-workbook .fortune-fx-input-container input,
+.dark .spreadsheet-workbook .fortune-toolbar-select input,
 .dark .spreadsheet-workbook .luckysheet-input-box,
-.dark .spreadsheet-workbook .luckysheet-input-box-inner {
-  color: #f3f4f6;
-  border-color: #4b5563;
-  background-color: #111827;
+.dark .spreadsheet-workbook .luckysheet-input-box-inner,
+.dark .spreadsheet-workbook .luckysheet-cell-input {
+  color: #f3f4f6 !important;
+  border-color: #4b5563 !important;
+  background-color: #111827 !important;
 }
 
 /* FortuneSheet paints the cell grid to canvas with fixed light defaults. */
