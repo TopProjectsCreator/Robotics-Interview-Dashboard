@@ -82,17 +82,25 @@ import {
   UpdateInterviewWhiteboardResponse,
   CreateBoardBody,
   CreateBoardResponse,
+  CreateSpreadsheetBody,
+  CreateSpreadsheetResponse,
   GetBoardParams,
   GetBoardResponse,
+  GetSpreadsheetParams,
+  GetSpreadsheetResponse,
   UpdateBoardBody,
   UpdateBoardParams,
   UpdateBoardResponse,
+  UpdateSpreadsheetBody,
+  UpdateSpreadsheetParams,
+  UpdateSpreadsheetResponse,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
 import { pushRealtimeHint } from "../lib/realtime";
 import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "../lib/whiteboardCollaboration";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "../lib/boardOperations";
+import { initialSpreadsheetData, isSpreadsheetRecordData, parseSpreadsheetData } from "../lib/spreadsheetOperations";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
@@ -2598,6 +2606,31 @@ function whiteboardResponse(
   };
 }
 
+function spreadsheetResponse(
+  spreadsheet: {
+    id: string;
+    title: string;
+    data: string;
+    createdBy: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  conversation: ChatConversation,
+) {
+  const data = parseSpreadsheetData(spreadsheet.data);
+  if (!data) throw new Error("Stored spreadsheet data is invalid.");
+  return {
+    id: spreadsheet.id,
+    title: spreadsheet.title,
+    data,
+    createdBy: spreadsheet.createdBy,
+    scope: conversation.scope,
+    peer: conversation.peer,
+    createdAt: spreadsheet.createdAt.toISOString(),
+    updatedAt: spreadsheet.updatedAt.toISOString(),
+  };
+}
+
 function whiteboardConversationForAccount(
   whiteboard: { conversationScope: string; conversationPeer: string | null },
   displayName: string,
@@ -2623,10 +2656,11 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
       ? isNull(interviewWhiteboardsTable.conversationPeer)
       : eq(interviewWhiteboardsTable.conversationPeer, conversation.key),
   ];
-  const items = await db.select().from(interviewWhiteboardsTable)
+  const items = (await db.select().from(interviewWhiteboardsTable)
     .where(and(...filters))
     .orderBy(desc(interviewWhiteboardsTable.updatedAt))
-    .limit(50);
+    .limit(50))
+    .filter((item) => !isSpreadsheetRecordData(item.data));
   res.json(ListInterviewWhiteboardsResponse.parse({
     items: items.map((item) => whiteboardResponse(item, conversation)),
     scope: conversation.scope,
@@ -2680,7 +2714,7 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
       ? isNull(interviewWhiteboardsTable.conversationPeer)
       : eq(interviewWhiteboardsTable.conversationPeer, conversation.key),
   )).limit(1);
-  if (!whiteboard) { res.status(404).json({ error: "Whiteboard not found." }); return; }
+  if (!whiteboard || isSpreadsheetRecordData(whiteboard.data)) { res.status(404).json({ error: "Whiteboard not found." }); return; }
   res.json(GetInterviewWhiteboardByIdResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });
 
@@ -2702,7 +2736,7 @@ router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promi
     .where(eq(interviewWhiteboardsTable.id, params.data.whiteboardId))
     .limit(1);
   const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
-  if (!existing || !conversation) { res.status(404).json({ error: "Whiteboard not found." }); return; }
+  if (!existing || !conversation || isSpreadsheetRecordData(existing.data)) { res.status(404).json({ error: "Whiteboard not found." }); return; }
   const mergedData = mergeWhiteboardDataForSave(existing.id, data);
   const [whiteboard] = await db.update(interviewWhiteboardsTable)
     .set({ title: title.slice(0, 120), data: mergedData, updatedAt: new Date() })
@@ -2826,6 +2860,110 @@ router.patch("/boards/:boardId", requireAdmin, async (req, res): Promise<void> =
   }
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
+});
+
+router.post("/spreadsheets", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsed = CreateSpreadsheetBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A spreadsheet title and valid conversation are required." }); return; }
+
+  const title = parsed.data.title.trim();
+  if (!title) { res.status(400).json({ error: "Spreadsheet title cannot be empty." }); return; }
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+  const data = JSON.stringify(initialSpreadsheetData());
+  if (Buffer.byteLength(data, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+    res.status(413).json({ error: "That spreadsheet is too large to save." });
+    return;
+  }
+
+  const [spreadsheet] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title: title.slice(0, 120),
+    data,
+    createdBy: account.displayName,
+    conversationScope: conversation.scope,
+    conversationPeer: conversation.key,
+  }).returning();
+  pushRealtimeHint("interview_whiteboards", "INSERT");
+  res.status(201).json(CreateSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+});
+
+router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = GetSpreadsheetParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid spreadsheet request." }); return; }
+
+  const [spreadsheet] = await db.select().from(interviewWhiteboardsTable)
+    .where(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId))
+    .limit(1);
+  const conversation = spreadsheet ? whiteboardConversationForAccount(spreadsheet, account.displayName) : null;
+  if (!spreadsheet || !conversation || !parseSpreadsheetData(spreadsheet.data)) {
+    res.status(404).json({ error: "Spreadsheet not found." });
+    return;
+  }
+  res.json(GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+});
+
+router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = UpdateSpreadsheetParams.safeParse(req.params);
+  const parsed = UpdateSpreadsheetBody.safeParse(req.body);
+  if (!params.success || !parsed.success || (parsed.data.title === undefined && parsed.data.data === undefined)) {
+    res.status(400).json({ error: "Provide a spreadsheet title or valid spreadsheet data." });
+    return;
+  }
+
+  const requestedTitle = parsed.data.title?.trim();
+  if (parsed.data.title !== undefined && !requestedTitle) {
+    res.status(400).json({ error: "Spreadsheet title cannot be empty." });
+    return;
+  }
+  const requestedData = parsed.data.data === undefined ? null : parseSpreadsheetData(parsed.data.data);
+  if (parsed.data.data !== undefined && !requestedData) {
+    res.status(400).json({ error: "Spreadsheet rows must match the column count and contain valid cell text." });
+    return;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(interviewWhiteboardsTable)
+      .where(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId))
+      .limit(1)
+      .for("update");
+    const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+    const currentData = existing ? parseSpreadsheetData(existing.data) : null;
+    if (!existing || !conversation || !currentData) {
+      return { ok: false as const, status: 404, error: "Spreadsheet not found." };
+    }
+
+    const nextData = requestedData ?? currentData;
+    const serializedData = JSON.stringify(nextData);
+    if (Buffer.byteLength(serializedData, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+      return { ok: false as const, status: 413, error: "That spreadsheet is too large to save." };
+    }
+    const [updated] = await tx.update(interviewWhiteboardsTable)
+      .set({
+        title: requestedTitle === undefined ? existing.title : requestedTitle.slice(0, 120),
+        data: serializedData,
+        updatedAt: new Date(),
+      })
+      .where(eq(interviewWhiteboardsTable.id, existing.id))
+      .returning();
+    return { ok: true as const, spreadsheet: updated, conversation };
+  });
+
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  pushRealtimeHint("interview_whiteboards");
+  res.json(UpdateSpreadsheetResponse.parse(spreadsheetResponse(result.spreadsheet, result.conversation)));
 });
 
 const CUSTOM_EMOJI_MAX_BYTES = 512 * 1024;

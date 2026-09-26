@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, Res
 import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, Bot, Check, ChevronRight, CircleDot, ClipboardList,
-  FileUp, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
+   FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -35,6 +35,7 @@ import {
   useUpdateApplicant,
   useInterpretApplicantSearch,
   useGetSystemUsage,
+  useCreateSpreadsheet,
   getInterviewChat,
   getAssistantConversationMessages,
   listApplicants,
@@ -60,6 +61,8 @@ import { WhiteboardEditor } from "./components/WhiteboardEditor";
 import { DocumentEditor } from "./components/DocumentEditor";
 import { BoardEditor } from "./components/BoardEditor";
 import { BoardChatCard } from "./components/BoardChatCard";
+import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
+import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
@@ -2720,10 +2723,16 @@ function parseBoardChatMessage(message: string): { id: string; title: string } |
   if (!match) return null;
   return { id: match[1], title: match[2]?.trim() || "Interview coordination board" };
 }
+function parseSpreadsheetChatMessage(message: string): { id: string; title: string } | null {
+  const match = message.match(/^\[\[spreadsheet:([a-f0-9-]+)\]\]\s*(.*)$/i);
+  if (!match) return null;
+  return { id: match[1], title: match[2]?.trim() || "Shared spreadsheet" };
+}
 
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
   const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
+  const [location, setLocation] = useLocation();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
@@ -2740,7 +2749,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     [customEmojiItems],
   );
   const interviewerLabels = queue.data?.interviewerLabels ?? [];
-  const [conversationPeer, setConversationPeer] = useState<string | null>(null);
+  const [conversationPeer, setConversationPeer] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
+  });
   const activeInterviewer = session.data?.label ?? "Interviewer";
   const mentionLabels = useMemo(() => {
     const unique = new Map<string, string>();
@@ -2814,6 +2826,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   });
   const createWhiteboard = useCreateInterviewWhiteboard();
   const createBoardMutation = useCreateBoard();
+  const createSpreadsheetMutation = useCreateSpreadsheet();
   const getWhiteboard = useGetInterviewWhiteboardById(
     activeWhiteboardId ?? "",
     chatParams,
@@ -2904,6 +2917,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
   };
+  const openSpreadsheet = (id: string) => {
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    const currentPath = location.split("?")[0];
+    const returnPath = currentPath === "/queue" || currentPath === "/chat" ? currentPath : "/chat";
+    const returnTo = conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
+    setLocation(`/spreadsheets/${id}?returnTo=${encodeURIComponent(returnTo)}`);
+  };
   const createSharedDocument = async () => {
     setWhiteboardError("");
     setChatError("");
@@ -2961,6 +2982,33 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't create the board. Try again.";
+      setChatError(message);
+    }
+  };
+  const createSharedSpreadsheet = async () => {
+    setChatError("");
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    try {
+      const saved = await createSpreadsheetMutation.mutateAsync({
+        data: {
+          title: "Tryout worksheet",
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+        },
+      });
+      await sendChat.mutateAsync({
+        data: {
+          author: activeInterviewer,
+          message: `[[spreadsheet:${saved.id}]] ${saved.title}`,
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+        },
+      });
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+      openSpreadsheet(saved.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Couldn't create the spreadsheet. Try again.";
       setChatError(message);
     }
   };
@@ -3562,12 +3610,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
            const sharedBoard = parseBoardChatMessage(item.message);
+          const sharedSpreadsheet = parseSpreadsheetChatMessage(item.message);
           return sharedDocument
              ? <button type="button" onClick={() => openWhiteboard(sharedDocument.id)} className="shared-document-card mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition" data-testid={`button-open-document-${sharedDocument.id}`}><span className="shared-document-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm"><FileText size={18} /></span><span className="min-w-0"><span className="shared-document-card-label block text-[10px] font-bold uppercase tracking-[.12em]">Shared document</span><span className="shared-document-card-title mt-0.5 block truncate text-sm font-semibold">{sharedDocument.title}</span><span className="shared-document-card-description mt-0.5 block text-[11px]">Open collaborative editor</span></span><ChevronRight size={16} className="shared-document-card-chevron ml-auto shrink-0" /></button>
             : sharedWhiteboard
               ? <button type="button" onClick={() => openWhiteboard(sharedWhiteboard.id)} className="mt-2 flex w-full items-center gap-3 rounded-xl border border-[#b9dddd] bg-[#eef8f7] p-3 text-left transition hover:border-[#16869a] hover:bg-[#e3f4f2]" data-testid={`button-open-whiteboard-${sharedWhiteboard.id}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm"><FilePenLine size={18} /></span><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">Shared whiteboard</span><span className="mt-0.5 block truncate text-sm font-semibold text-[#183a4b]">{sharedWhiteboard.title}</span><span className="mt-0.5 block text-[11px] text-[#527079]">Open in Excalidraw</span></span><ChevronRight size={16} className="ml-auto shrink-0 text-[#16869a]" /></button>
               : sharedBoard
                  ? <BoardChatCard boardId={sharedBoard.id} fallbackTitle={sharedBoard.title} onOpen={() => openBoard(sharedBoard.id)} />
+                 : sharedSpreadsheet
+                   ? <SpreadsheetChatCard spreadsheetId={sharedSpreadsheet.id} fallbackTitle={sharedSpreadsheet.title} onOpen={() => openSpreadsheet(sharedSpreadsheet.id)} />
                  : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
@@ -3648,7 +3699,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             </div>
          </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
-            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button></div>}
+            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
            dark={theme === "dark"}
            customEmojis={customEmojiItems}
@@ -4680,7 +4731,7 @@ function ChatPage() {
   const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
   return <div className="fade-up"><PageHeading eyebrow="Interviewer channel / full page" title="Team chat." detail="The same shared interviewer channel from the queue, full height. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
 }
-function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export { MarkdownContent, renderInlineMarkdown };
 export default App;

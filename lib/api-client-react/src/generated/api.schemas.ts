@@ -921,6 +921,90 @@ export interface BoardOperationInput {
   color?: string;
 }
 
+/**
+ * @minItems 1
+ * @maxItems 40
+ * @items.maxLength 4000
+ */
+export type SpreadsheetRow = string[];
+
+export type SpreadsheetDataKind = typeof SpreadsheetDataKind[keyof typeof SpreadsheetDataKind];
+
+
+export const SpreadsheetDataKind = {
+  spreadsheet: 'spreadsheet',
+} as const;
+
+export type SpreadsheetDataVersion = typeof SpreadsheetDataVersion[keyof typeof SpreadsheetDataVersion];
+
+
+export const SpreadsheetDataVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export interface SpreadsheetData {
+  kind: SpreadsheetDataKind;
+  version: SpreadsheetDataVersion;
+  /**
+     * @minimum 1
+     * @maximum 40
+     */
+  columnCount: number;
+  /**
+     * @minItems 1
+     * @maxItems 1000
+     */
+  rows: SpreadsheetRow[];
+}
+
+export type SpreadsheetScope = typeof SpreadsheetScope[keyof typeof SpreadsheetScope];
+
+
+export const SpreadsheetScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface Spreadsheet {
+  id: string;
+  title: string;
+  data: SpreadsheetData;
+  createdBy: string;
+  scope: SpreadsheetScope;
+  /** @nullable */
+  peer: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SpreadsheetCreateInputScope = typeof SpreadsheetCreateInputScope[keyof typeof SpreadsheetCreateInputScope];
+
+
+export const SpreadsheetCreateInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface SpreadsheetCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  scope: SpreadsheetCreateInputScope;
+  /** @nullable */
+  recipient?: string | null;
+}
+
+export interface SpreadsheetUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title?: string;
+  data?: SpreadsheetData;
+}
+
 export interface ReorderQueueInput {
   applicantIds: string[];
 }

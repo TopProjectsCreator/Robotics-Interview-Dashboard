@@ -105,6 +105,9 @@ import type {
   SnapshotList,
   SnapshotRestoreInput,
   SnapshotRestoreResult,
+  Spreadsheet,
+  SpreadsheetCreateInput,
+  SpreadsheetUpdateInput,
   SystemUsage,
   UploadInput,
   UploadResponse
@@ -3698,6 +3701,226 @@ export const useUpdateBoard = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateBoardMutationOptions(options));
+    }
+
+export const getCreateSpreadsheetUrl = () => {
+
+
+
+
+  return `/api/spreadsheets`
+}
+
+/**
+ * @summary Create a shared interviewer spreadsheet
+ */
+export const createSpreadsheet = async (spreadsheetCreateInput: SpreadsheetCreateInput, options?: Parameters<typeof customFetch>[1]): Promise<Spreadsheet> => {
+
+  return customFetch<Spreadsheet>(getCreateSpreadsheetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(spreadsheetCreateInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSpreadsheetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSpreadsheet>>, TError,{data: BodyType<SpreadsheetCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSpreadsheet>>, TError,{data: BodyType<SpreadsheetCreateInput>}, TContext> => {
+
+const mutationKey = ['createSpreadsheet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSpreadsheet>>, {data: BodyType<SpreadsheetCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSpreadsheet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSpreadsheetMutationResult = NonNullable<Awaited<ReturnType<typeof createSpreadsheet>>>
+    export type CreateSpreadsheetMutationBody = BodyType<SpreadsheetCreateInput>
+    export type CreateSpreadsheetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a shared interviewer spreadsheet
+ */
+export const useCreateSpreadsheet = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSpreadsheet>>, TError,{data: BodyType<SpreadsheetCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSpreadsheet>>,
+        TError,
+        {data: BodyType<SpreadsheetCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSpreadsheetMutationOptions(options));
+    }
+
+export const getGetSpreadsheetUrl = (spreadsheetId: string,) => {
+
+
+
+
+  return `/api/spreadsheets/${spreadsheetId}`
+}
+
+/**
+ * @summary Get a spreadsheet in the current interviewer conversation
+ */
+export const getSpreadsheet = async (spreadsheetId: string, options?: Parameters<typeof customFetch>[1]): Promise<Spreadsheet> => {
+
+  return customFetch<Spreadsheet>(getGetSpreadsheetUrl(spreadsheetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSpreadsheetQueryKey = (spreadsheetId: string,) => {
+    return [
+    `/api/spreadsheets/${spreadsheetId}`
+    ] as const;
+    }
+
+
+export const getGetSpreadsheetQueryOptions = <TData = Awaited<ReturnType<typeof getSpreadsheet>>, TError = ErrorType<unknown>>(spreadsheetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpreadsheet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSpreadsheetQueryKey(spreadsheetId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSpreadsheet>>> = ({ signal }) => getSpreadsheet(spreadsheetId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: spreadsheetId !== null && spreadsheetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSpreadsheet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSpreadsheetQueryResult = NonNullable<Awaited<ReturnType<typeof getSpreadsheet>>>
+export type GetSpreadsheetQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get a spreadsheet in the current interviewer conversation
+ */
+
+export function useGetSpreadsheet<TData = Awaited<ReturnType<typeof getSpreadsheet>>, TError = ErrorType<unknown>>(
+ spreadsheetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpreadsheet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSpreadsheetQueryOptions(spreadsheetId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSpreadsheetUrl = (spreadsheetId: string,) => {
+
+
+
+
+  return `/api/spreadsheets/${spreadsheetId}`
+}
+
+/**
+ * @summary Save spreadsheet data or title
+ */
+export const updateSpreadsheet = async (spreadsheetId: string,
+    spreadsheetUpdateInput: SpreadsheetUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<Spreadsheet> => {
+
+  return customFetch<Spreadsheet>(getUpdateSpreadsheetUrl(spreadsheetId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(spreadsheetUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateSpreadsheetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateSpreadsheet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSpreadsheet>>, {spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}> = (props) => {
+          const {spreadsheetId,data} = props ?? {};
+
+          return  updateSpreadsheet(spreadsheetId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSpreadsheetMutationResult = NonNullable<Awaited<ReturnType<typeof updateSpreadsheet>>>
+    export type UpdateSpreadsheetMutationBody = BodyType<SpreadsheetUpdateInput>
+    export type UpdateSpreadsheetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save spreadsheet data or title
+ */
+export const useUpdateSpreadsheet = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSpreadsheet>>,
+        TError,
+        {spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSpreadsheetMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

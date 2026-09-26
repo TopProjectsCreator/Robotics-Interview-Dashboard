@@ -1455,6 +1455,136 @@ export const UpdateBoardResponse = zod.object({
 
 
 /**
+ * @summary Create a shared interviewer spreadsheet
+ */
+export const createSpreadsheetBodyTitleMax = 120;
+
+export const createSpreadsheetBodyScopeDefault = `shared`;
+
+export const CreateSpreadsheetBody = zod.object({
+  "title": zod.string().min(1).max(createSpreadsheetBodyTitleMax),
+  "scope": zod.enum(['shared', 'direct']).default(createSpreadsheetBodyScopeDefault),
+  "recipient": zod.string().nullish()
+})
+
+export const createSpreadsheetResponseDataColumnCountMax = 40;
+
+export const createSpreadsheetResponseDataRowsItemItemMax = 4000;
+
+export const createSpreadsheetResponseDataRowsItemMax = 40;
+
+export const createSpreadsheetResponseDataRowsMax = 1000;
+
+
+
+export const CreateSpreadsheetResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['spreadsheet']),
+  "version": zod.literal(1),
+  "columnCount": zod.number().int().min(1).max(createSpreadsheetResponseDataColumnCountMax),
+  "rows": zod.array(zod.array(zod.string().max(createSpreadsheetResponseDataRowsItemItemMax)).min(1).max(createSpreadsheetResponseDataRowsItemMax)).min(1).max(createSpreadsheetResponseDataRowsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a spreadsheet in the current interviewer conversation
+ */
+export const GetSpreadsheetParams = zod.object({
+  "spreadsheetId": zod.coerce.string()
+})
+
+export const getSpreadsheetResponseDataColumnCountMax = 40;
+
+export const getSpreadsheetResponseDataRowsItemItemMax = 4000;
+
+export const getSpreadsheetResponseDataRowsItemMax = 40;
+
+export const getSpreadsheetResponseDataRowsMax = 1000;
+
+
+
+export const GetSpreadsheetResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['spreadsheet']),
+  "version": zod.literal(1),
+  "columnCount": zod.number().int().min(1).max(getSpreadsheetResponseDataColumnCountMax),
+  "rows": zod.array(zod.array(zod.string().max(getSpreadsheetResponseDataRowsItemItemMax)).min(1).max(getSpreadsheetResponseDataRowsItemMax)).min(1).max(getSpreadsheetResponseDataRowsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Save spreadsheet data or title
+ */
+export const UpdateSpreadsheetParams = zod.object({
+  "spreadsheetId": zod.coerce.string()
+})
+
+export const updateSpreadsheetBodyTitleMax = 120;
+
+export const updateSpreadsheetBodyDataColumnCountMax = 40;
+
+export const updateSpreadsheetBodyDataRowsItemItemMax = 4000;
+
+export const updateSpreadsheetBodyDataRowsItemMax = 40;
+
+export const updateSpreadsheetBodyDataRowsMax = 1000;
+
+
+
+export const UpdateSpreadsheetBody = zod.object({
+  "title": zod.string().min(1).max(updateSpreadsheetBodyTitleMax).optional(),
+  "data": zod.object({
+  "kind": zod.enum(['spreadsheet']),
+  "version": zod.literal(1),
+  "columnCount": zod.number().int().min(1).max(updateSpreadsheetBodyDataColumnCountMax),
+  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetBodyDataRowsItemItemMax)).min(1).max(updateSpreadsheetBodyDataRowsItemMax)).min(1).max(updateSpreadsheetBodyDataRowsMax)
+}).optional()
+})
+
+export const updateSpreadsheetResponseDataColumnCountMax = 40;
+
+export const updateSpreadsheetResponseDataRowsItemItemMax = 4000;
+
+export const updateSpreadsheetResponseDataRowsItemMax = 40;
+
+export const updateSpreadsheetResponseDataRowsMax = 1000;
+
+
+
+export const UpdateSpreadsheetResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['spreadsheet']),
+  "version": zod.literal(1),
+  "columnCount": zod.number().int().min(1).max(updateSpreadsheetResponseDataColumnCountMax),
+  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetResponseDataRowsItemItemMax)).min(1).max(updateSpreadsheetResponseDataRowsItemMax)).min(1).max(updateSpreadsheetResponseDataRowsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Save the interview order
  */
 export const ReorderQueueBody = zod.object({
