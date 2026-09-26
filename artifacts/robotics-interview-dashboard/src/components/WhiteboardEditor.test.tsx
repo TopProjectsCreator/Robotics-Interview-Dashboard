@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { WhiteboardEditor } from "./WhiteboardEditor";
 
@@ -39,5 +39,41 @@ describe("WhiteboardEditor embed validation", () => {
     expect(screen.getByTestId("whiteboard-embed-policy-note")).toHaveTextContent(
       "security settings may be responsible",
     );
+  });
+
+  it("offers a safe new-tab link only for a selected valid website embed", () => {
+    render(
+      <WhiteboardEditor
+        whiteboard={null}
+        saving={false}
+        error=""
+        onClose={() => {}}
+        onSave={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("link-open-embedded-site")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-select-test-embed"));
+
+    const link = screen.getByTestId("link-open-embedded-site");
+    expect(link).toHaveAttribute("href", "https://example.com/board");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("does not offer a new-tab link for an unsafe selected embed URL", () => {
+    render(
+      <WhiteboardEditor
+        whiteboard={null}
+        saving={false}
+        error=""
+        onClose={() => {}}
+        onSave={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("button-select-invalid-test-embed"));
+
+    expect(screen.queryByTestId("link-open-embedded-site")).not.toBeInTheDocument();
   });
 });

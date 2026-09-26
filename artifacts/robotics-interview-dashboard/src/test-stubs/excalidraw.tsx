@@ -1,12 +1,21 @@
 import type { ComponentProps } from "react";
 import type { ExcalidrawProps } from "@excalidraw/excalidraw/types";
 
-type ExcalidrawStubProps = ComponentProps<"div"> & Pick<ExcalidrawProps, "validateEmbeddable">;
+type ExcalidrawStubProps = Omit<ComponentProps<"div">, "onChange"> &
+  Pick<ExcalidrawProps, "validateEmbeddable" | "onChange">;
 
-export function Excalidraw({ validateEmbeddable, ...props }: ExcalidrawStubProps) {
+export function Excalidraw({ validateEmbeddable, onChange, ...props }: ExcalidrawStubProps) {
   const isValid = (url: string) => (
     typeof validateEmbeddable === "function" && validateEmbeddable(url) === true
   );
+  const selectEmbed = (link: string) => {
+    const args = [
+      [{ id: "test-embed", type: "embeddable", link }],
+      { selectedElementIds: { "test-embed": true } },
+      {},
+    ] as unknown as Parameters<NonNullable<ExcalidrawProps["onChange"]>>;
+    onChange?.(...args);
+  };
 
   return (
     <div
@@ -17,7 +26,14 @@ export function Excalidraw({ validateEmbeddable, ...props }: ExcalidrawStubProps
       data-embed-invalid-malformed={String(isValid("https://"))}
       data-embed-invalid-ftp={String(isValid("ftp://whiteboard.example.net/embed"))}
       data-embed-invalid-javascript={String(isValid("javascript:alert(1)"))}
-    />
+    >
+      <button type="button" data-testid="button-select-test-embed" onClick={() => selectEmbed("https://example.com/board")}>
+        Select test embed
+      </button>
+      <button type="button" data-testid="button-select-invalid-test-embed" onClick={() => selectEmbed("javascript:alert(1)")}>
+        Select invalid test embed
+      </button>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import { Check, FilePenLine, Info, LoaderCircle, Share2, X } from "lucide-react";
+import { Check, ExternalLink, FilePenLine, Info, LoaderCircle, Share2, X } from "lucide-react";
 import { getStoredAuthToken } from "../authSession";
 
 type WhiteboardRecord = {
@@ -67,6 +67,23 @@ function isValidWhiteboardEmbedUrl(link: string): boolean {
   } catch {
     return false;
   }
+}
+
+function selectedEmbeddableUrl(elements: readonly unknown[], selectedIds: string[]): string | null {
+  const selected = new Set(selectedIds);
+  for (const element of elements) {
+    if (!element || typeof element !== "object") continue;
+    const embed = element as StoredElement & { type?: string; link?: unknown };
+    if (
+      embed.type === "embeddable" &&
+      selected.has(embed.id) &&
+      typeof embed.link === "string" &&
+      isValidWhiteboardEmbedUrl(embed.link)
+    ) {
+      return embed.link;
+    }
+  }
+  return null;
 }
 
 function parseScene(data: string | undefined): StoredScene {
@@ -144,6 +161,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
   const scene = useMemo(() => parseScene(whiteboard?.data), [whiteboard?.data]);
   const [title, setTitle] = useState(whiteboard?.title ?? "Untitled whiteboard");
   const [data, setData] = useState(() => JSON.stringify(scene));
+  const [selectedEmbedUrl, setSelectedEmbedUrl] = useState<string | null>(null);
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("offline");
   const [participants, setParticipants] = useState(0);
   const [remoteCursors, setRemoteCursors] = useState<CursorPresence[]>([]);
@@ -175,6 +193,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
 
   useEffect(() => {
     setTitle(whiteboard?.title ?? "Untitled whiteboard");
+    setSelectedEmbedUrl(null);
     const nextData = JSON.stringify(scene);
     dataRef.current = nextData;
     setData(nextData);
@@ -390,9 +409,20 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
           <button type="button" onClick={() => onSave(title.trim() || "Untitled whiteboard", data, true)} disabled={saving} className="rounded-xl bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50" data-testid="button-share-whiteboard">{saving ? <LoaderCircle size={14} className="mr-1 inline animate-spin" /> : <Share2 size={14} className="mr-1 inline" />}{whiteboard ? "Save & share" : "Save & share with team"}</button>
         </div>
       </header>
-      <div className="mx-3 mt-3 flex items-start gap-2 rounded-xl border border-[#cbe5e2] bg-[#eaf7f5] px-3 py-2.5 text-xs leading-5 text-[#315a61] dark:border-[#2a3f52] dark:bg-[#1c2f3d] dark:text-[#b9c9d1] sm:mx-5" role="note" data-testid="whiteboard-embed-policy-note">
+      <div className="mx-3 mt-3 flex flex-wrap items-start gap-2 rounded-xl border border-[#cbe5e2] bg-[#eaf7f5] px-3 py-2.5 text-xs leading-5 text-[#315a61] dark:border-[#2a3f52] dark:bg-[#1c2f3d] dark:text-[#b9c9d1] sm:mx-5" role="note" data-testid="whiteboard-embed-policy-note">
         <Info size={15} className="mt-0.5 shrink-0 text-[#16869a] dark:text-[#6fc3cf]" aria-hidden="true" />
-        <p>Some websites prohibit iframe embedding. If a linked site doesn’t appear, its security settings may be responsible; it may not be a whiteboard permission or connection issue.</p>
+        <p className="min-w-0 flex-1">Some websites prohibit iframe embedding. If a linked site doesn’t appear, its security settings may be responsible; it may not be a whiteboard permission or connection issue. Select its embed to open the site separately.</p>
+        {selectedEmbedUrl && (
+          <a
+            href={selectedEmbedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="link-open-embedded-site"
+            className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#12737d] underline decoration-[#12737d]/40 underline-offset-2 hover:text-[#106d7a] dark:text-[#6fc3cf] dark:decoration-[#6fc3cf]/50 dark:hover:text-[#9adce3]"
+          >
+            Open selected site <ExternalLink size={13} aria-hidden="true" />
+          </a>
+        )}
       </div>
       <div className="min-h-0 flex-1 p-3 sm:p-5">
         <div
@@ -406,6 +436,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
             excalidrawAPI={(api) => { apiRef.current = api as unknown as ExcalidrawApi; }}
             onChange={(elements, appState, files) => {
               const selectedElementIds = selectedElementIdsFrom(appState as unknown as Record<string, unknown>);
+              setSelectedEmbedUrl(selectedEmbeddableUrl(elements, selectedElementIds));
               localCursorRef.current = { ...localCursorRef.current, selectedElementIds };
               queueScene(serializeScene(elements, appState, files));
               if (localCursorRef.current.visible) updateCursor(true);
