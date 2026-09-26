@@ -21,6 +21,7 @@ timeoutMs = 120000
 
 [nix]
 channel = "stable-25_05"
+packages = ["libGL", "xorg.libX11", "expat"]
 
 [objectStorage]
 defaultBucketID = "replit-objstore-8be2f692-0196-4838-bf87-c7f56c292fcb"

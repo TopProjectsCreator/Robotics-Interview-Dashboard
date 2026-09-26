@@ -2,7 +2,12 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
+import { execFile } from 'node:child_process';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   ObjectNotFoundError,
@@ -79,6 +84,14 @@ router.post(
  * Body is raw media/document bytes (max 100 MB).
  */
 const CHAT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+const PARASOLID_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+const PARASOLID_PREVIEW_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+const PARASOLID_PREVIEW_TIMEOUT_MS = 60_000;
+const PARASOLID_PREVIEW_MAX_CONCURRENT = 2;
+let activeParasolidPreviews = 0;
+const PARASOLID_PREVIEW_WORKER_PATH = fileURLToPath(
+  new URL('./parasolidPreviewWorker.py', import.meta.url),
+);
 const CHAT_UPLOAD_CONTENT_TYPES = [
   'image/*',
   'video/*',
@@ -159,6 +172,94 @@ router.post(
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
       res.status(500).json({ error: 'Upload failed on the server' });
+    }
+  },
+);
+
+/**
+ * POST /storage/parasolid-preview
+ *
+ * Convert a private Parasolid attachment with the local parasolid-kit parser.
+ * Input and generated previews stay on this server; the GLB is temporary and
+ * is returned only to the authenticated requester.
+ */
+router.post(
+  '/storage/parasolid-preview',
+  requireAdmin,
+  express.raw({ type: 'model/x-parasolid', limit: '50mb' }),
+  async (req: Request, res: Response) => {
+    const data = req.body as Buffer | undefined;
+    const formatHeader = req.get('x-parasolid-format')?.toLowerCase();
+    const sourceFormat = formatHeader === 'x-t' || formatHeader === 'x-b' ? formatHeader : null;
+
+    if (!sourceFormat) {
+      res.status(400).json({ error: 'Parasolid format must be x_t or x_b' });
+      return;
+    }
+    if (!data || !Buffer.isBuffer(data) || data.length === 0) {
+      res.status(400).json({ error: 'No Parasolid model data received' });
+      return;
+    }
+    if (data.length > PARASOLID_PREVIEW_MAX_BYTES) {
+      res.status(413).json({ error: 'Inline previews are limited to 50 MB; download the CAD file instead' });
+      return;
+    }
+    if (activeParasolidPreviews >= PARASOLID_PREVIEW_MAX_CONCURRENT) {
+      res.status(429).json({ error: 'The local CAD preview converter is busy; try again shortly' });
+      return;
+    }
+
+    activeParasolidPreviews += 1;
+    let tempRoot: string | null = null;
+    try {
+      tempRoot = await mkdtemp(join(tmpdir(), 'robotics-parasolid-preview-'));
+      const inputPath = join(tempRoot, sourceFormat === 'x-t' ? 'source.x_t' : 'source.x_b');
+      const outputPath = join(tempRoot, 'preview');
+      await writeFile(inputPath, data, { mode: 0o600 });
+
+      await new Promise<void>((resolve, reject) => {
+        execFile(
+          'python',
+          [PARASOLID_PREVIEW_WORKER_PATH, inputPath, outputPath],
+          {
+            timeout: PARASOLID_PREVIEW_TIMEOUT_MS,
+            maxBuffer: 256 * 1024,
+            windowsHide: true,
+          },
+          (error) => error ? reject(error) : resolve(),
+        );
+      });
+
+      const glb = await readFile(join(outputPath, 'preview.glb'));
+      if (glb.length > PARASOLID_PREVIEW_MAX_OUTPUT_BYTES || !isValidGlb(glb)) {
+        throw new Error('The local converter returned an invalid or oversized preview');
+      }
+
+      res
+        .status(200)
+        .setHeader('Content-Type', 'model/gltf-binary')
+        .setHeader('Content-Length', String(glb.length))
+        .setHeader('Cache-Control', 'private, no-store')
+        .send(glb);
+    } catch (error) {
+      req.log.warn({ err: error, sourceFormat }, 'Parasolid preview conversion failed');
+      const workerError = error as NodeJS.ErrnoException & { killed?: boolean };
+      const timedOut = workerError.killed || workerError.code === 'ETIMEDOUT';
+      const unavailable = workerError.code === 'ENOENT';
+      res.status(unavailable ? 503 : timedOut ? 504 : 422).json({
+        error: unavailable
+          ? 'The local Parasolid preview converter is unavailable. Download the CAD file instead.'
+          : timedOut
+            ? 'Parasolid preview conversion took too long. Download the CAD file instead.'
+            : 'This Parasolid model could not be converted for inline preview. Download it to open in CAD.',
+      });
+    } finally {
+      activeParasolidPreviews -= 1;
+      if (tempRoot) {
+        await rm(tempRoot, { recursive: true, force: true }).catch((error) => {
+          req.log.warn({ err: error }, 'Could not remove temporary Parasolid preview files');
+        });
+      }
     }
   },
 );

@@ -64,6 +64,7 @@ import { BoardEditor } from "./components/BoardEditor";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
 import { ChatStlViewer } from "./components/ChatStlViewer";
+import { ChatParasolidViewer } from "./components/ChatParasolidViewer";
 import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
@@ -498,16 +499,6 @@ function ChatAttachmentDocument({ name, html, objectUrl }: { name: string; html:
   return <div className="rounded-xl border border-[#dce9e8] bg-white p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" /></div>;
 }
 
-function ChatParasolidAttachment({ name, src }: { name: string; src: string }) {
-  return <figure className="my-2 max-w-xl overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-parasolid-attachment">
-    <figcaption className="border-b border-[#dce9e8] px-3 py-2 text-[11px] font-semibold text-[#183a4b] dark:border-[#2a3f52] dark:text-[#e5edf3]">{name} · Parasolid CAD file</figcaption>
-    <div className="flex flex-wrap items-center justify-between gap-3 p-3">
-      <p className="text-xs text-[#718189] dark:text-[#a8bac8]">The file is stored privately. Inline preview requires CAD conversion.</p>
-      <a href={src} download={name} className="shrink-0 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white hover:bg-[#24516a]">Download CAD file</a>
-    </div>
-  </figure>;
-}
-
 function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [contentType, setContentType] = useState("");
@@ -593,7 +584,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
-  if (kind === "parasolid" && objectUrl) return <ChatParasolidAttachment name={name} src={objectUrl} />;
+  if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;

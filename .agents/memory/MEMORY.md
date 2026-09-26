@@ -13,3 +13,4 @@
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.
 - [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and the provider's `isFree` flag; Kilo's catalog is not at `/v1/models`.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
+- [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
