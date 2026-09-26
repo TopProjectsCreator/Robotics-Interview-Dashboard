@@ -63,6 +63,7 @@ import { DocumentEditor } from "./components/DocumentEditor";
 import { BoardEditor } from "./components/BoardEditor";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
+import { ChatStlViewer } from "./components/ChatStlViewer";
 import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
@@ -416,7 +417,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "pdf" | "spreadsheet" | "text" | "video";
+type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "pdf" | "spreadsheet" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -426,6 +427,7 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   const extension = attachmentExtension(name);
   if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
   if (contentType === "model/gltf-binary" || extension === "glb") return "model";
+  if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
   if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
   if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
   if (contentType === "application/pdf" || extension === "pdf") return "pdf";
@@ -581,6 +583,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
+  if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
@@ -2558,6 +2561,7 @@ const CHAT_FILE_ACCEPT = [
   "video/*",
   "audio/*",
   "model/gltf-binary",
+  "model/stl",
   "application/pdf",
   "application/msword",
   "application/rtf",
@@ -2599,6 +2603,7 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   flac: "audio/flac",
   gif: "image/gif",
   glb: "model/gltf-binary",
+  stl: "model/stl",
   heic: "image/heic",
   heif: "image/heif",
   jpeg: "image/jpeg",
@@ -2667,7 +2672,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
-  if (type === "model/gltf-binary") return "model";
+  if (type === "model/gltf-binary" || type === "model/stl") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -3748,7 +3753,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-       <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
      </form>

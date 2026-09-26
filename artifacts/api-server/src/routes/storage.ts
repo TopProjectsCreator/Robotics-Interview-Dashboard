@@ -98,6 +98,7 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/plain',
   'text/tab-separated-values',
   'model/gltf-binary',
+  'model/stl',
 ];
 function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
@@ -109,6 +110,20 @@ function isValidGlb(data: Buffer): boolean {
     data.toString('ascii', 0, 4) === 'glTF' &&
     data.readUInt32LE(4) === 2 &&
     data.readUInt32LE(8) === data.length;
+}
+function isValidStl(data: Buffer): boolean {
+  if (data.length >= 84) {
+    const triangleCount = data.readUInt32LE(80);
+    if (triangleCount > 0 && 84 + triangleCount * 50 === data.length) return true;
+  }
+
+  if (data.length < 20) return false;
+  const header = data.subarray(0, Math.min(512, data.length)).toString('ascii');
+  const ending = data.subarray(Math.max(0, data.length - 128)).toString('ascii');
+  return /^\s*solid(?:\s|$)/i.test(header) &&
+    /\bendsolid(?:\s|$)[\s\S]*$/i.test(ending.trim()) &&
+    data.includes('facet') &&
+    data.includes('vertex');
 }
 router.post(
   '/storage/uploads',
@@ -128,6 +143,10 @@ router.post(
       }
       if (contentType === 'model/gltf-binary' && !isValidGlb(data)) {
         res.status(400).json({ error: 'This is not a valid GLB 2.0 model' });
+        return;
+      }
+      if (contentType === 'model/stl' && !isValidStl(data)) {
+        res.status(400).json({ error: 'This is not a valid STL model' });
         return;
       }
       if (data.length > CHAT_UPLOAD_MAX_BYTES) {
