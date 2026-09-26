@@ -116,6 +116,7 @@ button { cursor: pointer; }
 .dark .chat-markdown-table-export-button { color: #cbd9de; background: #203943; }
 .dark .chat-markdown-table-export-button:hover:not(:disabled) { color: #f3f8fa; background: #2b4a56; }
 .assistant-model-picker-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.assistant-model-actions { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; }
 .assistant-model-trigger { display: flex; width: min(360px, calc(100vw - 32px)); min-width: min(280px, calc(100vw - 32px)); height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); padding: 0 12px; color: hsl(var(--foreground)); box-shadow: 0 2px 8px rgba(24,58,75,.06); transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
 .assistant-model-trigger:hover:not([data-disabled]) { border-color: hsl(var(--primary) / .55); background: hsl(var(--card)); }
 .assistant-model-trigger:focus-visible { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / .16); }
@@ -130,6 +131,13 @@ button { cursor: pointer; }
 .assistant-model-option[data-state="checked"] { background: hsl(var(--primary) / .12); color: hsl(var(--primary)); font-weight: 600; }
 .assistant-model-option[data-state="checked"][data-highlighted] { background: hsl(var(--primary) / .2); }
 .assistant-model-picker-error { color: hsl(var(--destructive)); font-size: 10px; }
+@media (max-width: 640px) {
+  .assistant-model-trigger { width: min(360px, calc(100vw - 242px)); min-width: min(180px, calc(100vw - 242px)); }
+}
+@media (max-width: 400px) {
+  .assistant-model-actions { flex-wrap: wrap; }
+  .assistant-model-trigger { width: min(360px, calc(100vw - 32px)); min-width: min(280px, calc(100vw - 32px)); }
+}
 .document-editor { color: var(--document-foreground); background: var(--document-shell); }
 .document-editor > header { background: var(--document-header); border-color: var(--document-border); box-shadow: var(--document-header-shadow); }
 .document-editor .document-toolbar { background: var(--document-toolbar); border-color: var(--document-divider); }
