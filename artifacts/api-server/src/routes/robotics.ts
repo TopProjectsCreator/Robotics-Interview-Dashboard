@@ -4103,7 +4103,11 @@ router.post("/assistant/images", requireAdmin, async (req, res): Promise<void> =
 router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
   try {
     const result = await openai.models.list();
-    const items = result.data
+    // Kilo marks models available through its keyless free route explicitly;
+    // names alone are not reliable because some free ids have no ":free" suffix.
+    const catalog = result.data as Array<(typeof result.data)[number] & { isFree?: unknown }>;
+    const items = catalog
+      .filter((model) => model.isFree === true)
       .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
       .map((model) => ({ id: model.id }))
       .sort((left, right) => left.id.localeCompare(right.id));

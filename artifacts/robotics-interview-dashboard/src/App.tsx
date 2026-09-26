@@ -4243,14 +4243,10 @@ function ConversationAssistant() {
     query: { queryKey: getListAssistantModelsQueryKey(), staleTime: 5 * 60 * 1000 },
   });
   const modelOptions = assistantModels.data?.items ?? [];
-  const availableModel = (
-    selectedModel && modelOptions.some((item) => item.id === selectedModel)
-      ? selectedModel
-      : undefined
-  )
+  const availableModel = modelOptions.find((item) => item.id === selectedModel)?.id
     ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
     ?? modelOptions[0]?.id
-    ?? (selectedModel || assistantConfig.data?.textModel || "");
+    ?? "";
   useEffect(() => {
     if (!modelOptions.length) return;
     const nextModel = modelOptions.some((item) => item.id === selectedModel)

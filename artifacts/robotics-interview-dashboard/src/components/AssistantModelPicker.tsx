@@ -35,7 +35,11 @@ export function AssistantModelPicker({
           onChange={(event) => onChange(event.target.value)}
           title={model}
         >
-          {!options.length && <option value="">Loading models…</option>}
+          {!options.length && (
+            <option value="">
+              {loading ? "Loading models…" : error ? "Model list unavailable" : "No free models available"}
+            </option>
+          )}
           {options.map((option) => (
             <option key={option.id} value={option.id}>
               {option.name || option.id}

@@ -11,4 +11,4 @@
 - [Scoped package installs](scoped-package-installs.md) — package installation helpers may target the workspace root; app dependencies must be installed with the artifact filter.
 - [Dashboard component test isolation](dashboard-component-test-isolation.md) — jsdom tests for the dashboard need lightweight Excalidraw stubs because the editor’s JSON dependency is browser-build-only.
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.
-- [Kilo model catalog route](kilo-model-catalog-route.md) — use the configured OpenAI client's model-list method; Kilo exposes models at `/api/openrouter/models`, not `/v1/models`.
+- [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and the provider's `isFree` flag; Kilo's catalog is not at `/v1/models`.
