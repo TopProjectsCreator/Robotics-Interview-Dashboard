@@ -115,7 +115,10 @@
   inset: 0;
   width: 100vw;
   height: 100dvh;
-  z-index: 10000;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow-y: auto;
   padding: 16px;
   color: #e5e7eb;
@@ -136,11 +139,28 @@
 
 .dark .fortune-modal-container .fortune-dialog {
   min-width: min(320px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  position: relative;
 }
 
 .dark .fortune-modal-container .fortune-modal-dialog-icon-close {
-  color: #9ca3af !important;
-  opacity: 0.9;
+  display: flex;
+  min-width: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #f3f4f6 !important;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.dark .fortune-modal-container .fortune-modal-dialog-icon-close:hover,
+.dark .fortune-modal-container .fortune-modal-dialog-icon-close:focus-visible {
+  background-color: #374151;
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
 }
 
 .dark .fortune-modal-container input:not([type="checkbox"]):not([type="radio"]),
@@ -192,4 +212,126 @@
 
 .dark #luckysheet-dataVerification-dropdown-List .dropdown-List-item:hover {
   background-color: #263244;
+}
+
+/* Search/Replace is positioned inside .fortune-container, not in the modal backdrop. */
+.dark .spreadsheet-workbook .fortune-container {
+  isolation: isolate;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace.fortune-dialog {
+  z-index: 1002;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 22px 24px;
+  color: #e5e7eb !important;
+  border: 1px solid #374151 !important;
+  background-color: #1f2937 !important;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 55%);
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .tabBox span {
+  color: #d1d5db;
+  border-color: #374151;
+  background-color: #111827;
+  cursor: pointer;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .tabBox span.on {
+  color: #fff;
+  border-color: #6366f1;
+  background-color: #4f46e5;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .ctBox {
+  min-width: min(500px, calc(100vw - 80px));
+  color: #e5e7eb;
+  border-color: #374151;
+  background-color: #1f2937;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .textboxs input {
+  box-sizing: border-box;
+  min-width: 180px;
+  color: #f3f4f6 !important;
+  border: 1px solid #4b5563 !important;
+  border-radius: 4px;
+  background-color: #0b1220 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .textboxs input:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .checkboxs {
+  color: #d1d5db;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .checkboxs input[type="checkbox"] {
+  accent-color: #60a5fa;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .fortune-message-box-button.button-default {
+  color: #e5e7eb !important;
+  border: 1px solid #4b5563 !important;
+  background-color: #374151 !important;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .fortune-message-box-button.button-default:hover,
+.dark .spreadsheet-workbook #fortune-search-replace .fortune-message-box-button.button-default:focus-visible {
+  color: #fff !important;
+  border-color: #60a5fa !important;
+  background-color: #263244 !important;
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace #searchAllbox {
+  color: #e5e7eb;
+  border-color: #374151;
+  background-color: #111827;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace #searchAllbox .boxTitle {
+  color: #e5e7eb;
+  border-color: #374151;
+  background-color: #1f2937;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace #searchAllbox .boxItem {
+  border-color: #374151;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace #searchAllbox .boxItem.on {
+  color: #fff;
+  background-color: #4f46e5;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .icon-close {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #f3f4f6 !important;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.dark .spreadsheet-workbook #fortune-search-replace .icon-close:hover,
+.dark .spreadsheet-workbook #fortune-search-replace .icon-close:focus-visible {
+  background-color: #374151;
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.dark .fortune-modal-container .fortune-dialog img {
+  display: block;
+  max-width: 100% !important;
+  max-height: calc(100dvh - 140px) !important;
+  margin: 12px auto 0;
+  object-fit: contain;
 }

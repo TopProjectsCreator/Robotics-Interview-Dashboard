@@ -28,6 +28,7 @@ import {
   type SpreadsheetData,
   type SpreadsheetDataWorkbookItem,
 } from "@workspace/api-client-react";
+import { normalizeSavedSheetSelection } from "../lib/spreadsheet-selection";
 
 type SpreadsheetEditorProps = { spreadsheetId: string };
 type SaveState = "saved" | "saving" | "error" | "conflict";
@@ -140,6 +141,16 @@ function normalizeSheets(input: unknown, previous: WorkbookSheet[] = []): Workbo
     };
     merged.row = normalizeDimension(merged.row, 1000, MAX_ROWS);
     merged.column = normalizeDimension(merged.column, 26, MAX_COLUMNS);
+    const savedSelection = raw.luckysheet_select_save === undefined
+      ? oldSheet?.luckysheet_select_save
+      : raw.luckysheet_select_save;
+    if (savedSelection !== undefined) {
+      merged.luckysheet_select_save = normalizeSavedSheetSelection(
+        savedSelection,
+        merged.row ?? 1000,
+        merged.column ?? 26,
+      );
+    }
     const convertedCells = sparseCellsFromData(raw.data);
     if (convertedCells) {
       merged.celldata = convertedCells;
