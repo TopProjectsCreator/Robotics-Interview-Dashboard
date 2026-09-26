@@ -1489,6 +1489,9 @@ export const createSpreadsheetResponseDataMacrosItemOperationsMax = 200;
 
 export const createSpreadsheetResponseDataMacrosMax = 25;
 
+export const createSpreadsheetResponseRevisionMin = 64;
+export const createSpreadsheetResponseRevisionMax = 64;
+
 
 
 export const CreateSpreadsheetResponse = zod.object({
@@ -1513,7 +1516,8 @@ export const CreateSpreadsheetResponse = zod.object({
   "scope": zod.enum(['shared', 'direct']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "revision": zod.string().min(createSpreadsheetResponseRevisionMin).max(createSpreadsheetResponseRevisionMax)
 })
 
 
@@ -1546,6 +1550,9 @@ export const getSpreadsheetResponseDataMacrosItemOperationsMax = 200;
 
 export const getSpreadsheetResponseDataMacrosMax = 25;
 
+export const getSpreadsheetResponseRevisionMin = 64;
+export const getSpreadsheetResponseRevisionMax = 64;
+
 
 
 export const GetSpreadsheetResponse = zod.object({
@@ -1570,7 +1577,8 @@ export const GetSpreadsheetResponse = zod.object({
   "scope": zod.enum(['shared', 'direct']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "revision": zod.string().min(getSpreadsheetResponseRevisionMin).max(getSpreadsheetResponseRevisionMax)
 })
 
 
@@ -1580,6 +1588,9 @@ export const GetSpreadsheetResponse = zod.object({
 export const UpdateSpreadsheetParams = zod.object({
   "spreadsheetId": zod.coerce.string()
 })
+
+export const updateSpreadsheetBodyExpectedRevisionMin = 64;
+export const updateSpreadsheetBodyExpectedRevisionMax = 64;
 
 export const updateSpreadsheetBodyTitleMax = 120;
 
@@ -1608,6 +1619,7 @@ export const updateSpreadsheetBodyDataMacrosMax = 25;
 
 
 export const UpdateSpreadsheetBody = zod.object({
+  "expectedRevision": zod.string().min(updateSpreadsheetBodyExpectedRevisionMin).max(updateSpreadsheetBodyExpectedRevisionMax),
   "title": zod.string().min(1).max(updateSpreadsheetBodyTitleMax).optional(),
   "data": zod.object({
   "kind": zod.enum(['spreadsheet']),
@@ -1648,6 +1660,9 @@ export const updateSpreadsheetResponseDataMacrosItemOperationsMax = 200;
 
 export const updateSpreadsheetResponseDataMacrosMax = 25;
 
+export const updateSpreadsheetResponseRevisionMin = 64;
+export const updateSpreadsheetResponseRevisionMax = 64;
+
 
 
 export const UpdateSpreadsheetResponse = zod.object({
@@ -1672,7 +1687,8 @@ export const UpdateSpreadsheetResponse = zod.object({
   "scope": zod.enum(['shared', 'direct']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "revision": zod.string().min(updateSpreadsheetResponseRevisionMin).max(updateSpreadsheetResponseRevisionMax)
 })
 
 

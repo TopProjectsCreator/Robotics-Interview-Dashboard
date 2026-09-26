@@ -3878,7 +3878,7 @@ export const updateSpreadsheet = async (spreadsheetId: string,
 
 
 
-export const getUpdateSpreadsheetMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateSpreadsheetMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext> => {
 
@@ -3907,12 +3907,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateSpreadsheetMutationResult = NonNullable<Awaited<ReturnType<typeof updateSpreadsheet>>>
     export type UpdateSpreadsheetMutationBody = BodyType<SpreadsheetUpdateInput>
-    export type UpdateSpreadsheetMutationError = ErrorType<unknown>
+    export type UpdateSpreadsheetMutationError = ErrorType<ErrorResponse>
 
     /**
  * @summary Save spreadsheet data or title
  */
-export const useUpdateSpreadsheet = <TError = ErrorType<unknown>,
+export const useUpdateSpreadsheet = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSpreadsheet>>, TError,{spreadsheetId: string;data: BodyType<SpreadsheetUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateSpreadsheet>>,

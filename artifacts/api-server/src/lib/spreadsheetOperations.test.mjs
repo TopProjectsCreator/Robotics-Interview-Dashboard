@@ -6,6 +6,8 @@ import {
   parseSpreadsheetData,
   applySpreadsheetAssistantEdits,
   spreadsheetPreviewRows,
+  spreadsheetRevision,
+  spreadsheetRevisionMatches,
 } from "./spreadsheetOperations.ts";
 
 test("new spreadsheets start as a multi-sheet workbook with a sparse grid", () => {
@@ -46,6 +48,33 @@ test("spreadsheet discriminator detection preserves non-spreadsheet rows", () =>
   assert.equal(isSpreadsheetRecordData(JSON.stringify(initialSpreadsheetData())), true);
   assert.equal(isSpreadsheetRecordData(JSON.stringify({ kind: "document" })), false);
   assert.equal(isSpreadsheetRecordData("legacy whiteboard data"), false);
+});
+
+test("two sessions editing different cells produce a clear conflict instead of replacing the first save", () => {
+  const title = "Interview notes";
+  const initial = initialSpreadsheetData();
+  const sessionA = structuredClone(initial);
+  const sessionB = structuredClone(initial);
+  sessionA.workbook[0].celldata.push({ r: 0, c: 0, v: { v: "Session A" } });
+  sessionB.workbook[0].celldata.push({ r: 0, c: 1, v: { v: "Session B" } });
+
+  const revisionSeenByBothSessions = spreadsheetRevision(title, initial);
+  let persisted = { title, data: initial };
+
+  const save = (expectedRevision, nextData) => {
+    if (!spreadsheetRevisionMatches(expectedRevision, persisted.title, persisted.data)) {
+      return { status: 409, current: persisted };
+    }
+    persisted = { title: persisted.title, data: nextData };
+    return { status: 200, current: persisted };
+  };
+
+  assert.equal(save(revisionSeenByBothSessions, sessionA).status, 200);
+  const staleSave = save(revisionSeenByBothSessions, sessionB);
+
+  assert.equal(staleSave.status, 409);
+  assert.equal(staleSave.current.data.workbook[0].celldata[0].v.v, "Session A");
+  assert.equal(staleSave.current.data.workbook[0].celldata.some((cell) => cell.v.v === "Session B"), false);
 });
 
 test("assistant spreadsheet edits update cells and append rectangular rows and columns", () => {

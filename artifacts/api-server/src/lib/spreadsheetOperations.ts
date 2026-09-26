@@ -1,4 +1,5 @@
 import type { SpreadsheetData, SpreadsheetDataWorkbookItem } from "@workspace/api-zod";
+import { createHash } from "node:crypto";
 
 const LEGACY_MAX_COLUMNS = 40;
 const LEGACY_MAX_ROWS = 1000;
@@ -11,6 +12,20 @@ const MAX_SHEETS = 255;
 const MAX_SPARSE_CELLS = 100_000;
 const MAX_MACROS = 25;
 const MAX_MACRO_OPERATIONS = 200;
+
+export function spreadsheetRevision(title: string, data: SpreadsheetData): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ title, data }))
+    .digest("hex");
+}
+
+export function spreadsheetRevisionMatches(
+  expectedRevision: string,
+  currentTitle: string,
+  currentData: SpreadsheetData,
+): boolean {
+  return expectedRevision === spreadsheetRevision(currentTitle, currentData);
+}
 
 type PlainRecord = Record<string, unknown>;
 type StoredCell = { r: number; c: number; v: PlainRecord | null };

@@ -9,6 +9,11 @@ import type { SpreadsheetData } from './spreadsheetData';
 
 export interface SpreadsheetUpdateInput {
   /**
+     * @minLength 64
+     * @maxLength 64
+     */
+  expectedRevision: string;
+  /**
      * @minLength 1
      * @maxLength 120
      */

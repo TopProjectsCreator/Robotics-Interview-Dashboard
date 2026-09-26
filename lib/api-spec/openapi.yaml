@@ -1008,6 +1008,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Spreadsheet"
+        "409":
+          description: The spreadsheet changed since the supplied revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /queue/reorder:
     post:
       operationId: reorderQueue
@@ -2756,7 +2762,7 @@ components:
             additionalProperties: true
     Spreadsheet:
       type: object
-      required: [id, title, data, createdBy, scope, peer, createdAt, updatedAt]
+      required: [id, title, data, createdBy, scope, peer, createdAt, updatedAt, revision]
       properties:
         id:
           type: string
@@ -2777,6 +2783,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        revision:
+          type: string
+          minLength: 64
+          maxLength: 64
     SpreadsheetCreateInput:
       type: object
       required: [title, scope]
@@ -2793,7 +2803,12 @@ components:
           type: [string, "null"]
     SpreadsheetUpdateInput:
       type: object
+      required: [expectedRevision]
       properties:
+        expectedRevision:
+          type: string
+          minLength: 64
+          maxLength: 64
         title:
           type: string
           minLength: 1

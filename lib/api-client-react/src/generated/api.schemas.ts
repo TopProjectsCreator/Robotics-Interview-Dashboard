@@ -1008,6 +1008,11 @@ export interface Spreadsheet {
   peer: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+     * @minLength 64
+     * @maxLength 64
+     */
+  revision: string;
 }
 
 export type SpreadsheetCreateInputScope = typeof SpreadsheetCreateInputScope[keyof typeof SpreadsheetCreateInputScope];
@@ -1030,6 +1035,11 @@ export interface SpreadsheetCreateInput {
 }
 
 export interface SpreadsheetUpdateInput {
+  /**
+     * @minLength 64
+     * @maxLength 64
+     */
+  expectedRevision: string;
   /**
      * @minLength 1
      * @maxLength 120

@@ -105,6 +105,8 @@ import {
   isSpreadsheetRecordData,
   MAX_SPREADSHEET_DATA_BYTES,
   parseSpreadsheetData,
+  spreadsheetRevision,
+  spreadsheetRevisionMatches,
 } from "../lib/spreadsheetOperations";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
@@ -2654,6 +2656,7 @@ function spreadsheetResponse(
     peer: conversation.peer,
     createdAt: spreadsheet.createdAt.toISOString(),
     updatedAt: spreadsheet.updatedAt.toISOString(),
+    revision: spreadsheetRevision(spreadsheet.title, data),
   };
 }
 
@@ -2966,6 +2969,13 @@ router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Pro
     const currentData = existing ? parseSpreadsheetData(existing.data) : null;
     if (!existing || !conversation || !currentData) {
       return { ok: false as const, status: 404, error: "Spreadsheet not found." };
+    }
+    if (!spreadsheetRevisionMatches(parsed.data.expectedRevision, existing.title, currentData)) {
+      return {
+        ok: false as const,
+        status: 409,
+        error: "This spreadsheet changed since your editor loaded it.",
+      };
     }
 
     const nextData = requestedData ?? currentData;

@@ -18,4 +18,9 @@ export interface Spreadsheet {
   peer: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+     * @minLength 64
+     * @maxLength 64
+     */
+  revision: string;
 }

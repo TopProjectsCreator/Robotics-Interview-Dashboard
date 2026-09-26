@@ -30,7 +30,7 @@ import {
 } from "@workspace/api-client-react";
 
 type SpreadsheetEditorProps = { spreadsheetId: string };
-type SaveState = "saved" | "saving" | "error";
+type SaveState = "saved" | "saving" | "error" | "conflict";
 type WorkbookSheet = SpreadsheetDataWorkbookItem & Record<string, unknown> & {
   row?: number;
   column?: number;
@@ -408,6 +408,9 @@ function SaveStatus({ state, savedAt, error }: { state: SaveState; savedAt: stri
   if (state === "saving") {
     return <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="status-spreadsheet-saving"><LoaderCircle size={13} className="animate-spin text-accent" />Saving changes</span>;
   }
+  if (state === "conflict") {
+    return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive" data-testid="status-spreadsheet-conflict"><TriangleAlert size={13} />Save conflict</span>;
+  }
   if (state === "error") {
     return <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive" data-testid="status-spreadsheet-error"><TriangleAlert size={13} />{error || "Could not save changes"}</span>;
   }
@@ -448,6 +451,8 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
   const initializedForId = useRef<string | null>(null);
   const lastSaved = useRef<{ title: string; data: SpreadsheetData } | null>(null);
   const lastServerUpdatedAt = useRef("");
+  const lastServerRevision = useRef("");
+  const conflictRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ title: string; data: SpreadsheetData } | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -481,7 +486,9 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
     }
     if (initializedForId.current !== spreadsheetId) {
       initializedForId.current = spreadsheetId;
+      conflictRef.current = false;
       lastServerUpdatedAt.current = spreadsheet.updatedAt;
+      lastServerRevision.current = spreadsheet.revision;
       lastWorkbookRef.current = (nextData.workbook ?? []) as WorkbookSheet[];
       setTitle(spreadsheet.title);
       setData(nextData);
@@ -499,6 +506,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
       && !updateSpreadsheet.isPending;
     if (!canApplyRemoteUpdate) return;
     lastServerUpdatedAt.current = spreadsheet.updatedAt;
+    lastServerRevision.current = spreadsheet.revision;
     lastWorkbookRef.current = (nextData.workbook ?? []) as WorkbookSheet[];
     setTitle(spreadsheet.title);
     setData(nextData);
@@ -513,7 +521,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
   }, []);
 
   const commit = async (nextTitle: string, nextData: SpreadsheetData) => {
-    if (!initializedForId.current) return;
+    if (!initializedForId.current || conflictRef.current) return;
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -530,6 +538,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
     setSaveError("");
     const requestId = ++saveRequestId.current;
     const request = saveQueue.current.then(async () => {
+      if (conflictRef.current) return;
       const previous = lastSaved.current;
       if (previous && previous.title === payload.title && JSON.stringify(previous.data) === JSON.stringify(payload.data)) {
         if (requestId === saveRequestId.current && !pendingRef.current && !saveTimer.current) {
@@ -539,16 +548,31 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
         return;
       }
       try {
-        const saved = await updateSpreadsheet.mutateAsync({ spreadsheetId, data: payload });
+        const saved = await updateSpreadsheet.mutateAsync({
+          spreadsheetId,
+          data: { ...payload, expectedRevision: lastServerRevision.current },
+        });
         const savedData = normalizeData(saved.data);
         lastSaved.current = { title: saved.title, data: copyData(savedData) };
         lastServerUpdatedAt.current = saved.updatedAt;
+        lastServerRevision.current = saved.revision;
         queryClient.setQueryData(getGetSpreadsheetQueryKey(spreadsheetId), { ...saved, data: savedData });
         setSavedAt(formatSavedAt(saved.updatedAt));
         if (requestId === saveRequestId.current && !pendingRef.current && !saveTimer.current) {
           setSaveState("saved");
         }
       } catch (error) {
+        if ((error as { status?: unknown })?.status === 409) {
+          conflictRef.current = true;
+          if (saveTimer.current) {
+            clearTimeout(saveTimer.current);
+            saveTimer.current = null;
+          }
+          pendingRef.current = null;
+          setSaveState("conflict");
+          setSaveError("Someone else saved a newer version. Your local changes are still here; download a copy before loading the latest version.");
+          return;
+        }
         if (requestId === saveRequestId.current && !pendingRef.current) {
           setSaveState("error");
           setSaveError(error instanceof Error ? error.message : "Could not save changes");
@@ -560,6 +584,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
   };
 
   const scheduleSave = (nextTitle: string, nextData: SpreadsheetData) => {
+    if (conflictRef.current) return;
     pendingRef.current = { title: nextTitle, data: copyData(nextData) };
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveState("saving");
@@ -569,6 +594,38 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
       pendingRef.current = null;
       if (pending) void commit(pending.title, pending.data);
     }, 650);
+  };
+
+  const loadLatestVersion = async () => {
+    try {
+      const latest = await query.refetch();
+      if (latest.isError || !latest.data) {
+        throw latest.error instanceof Error
+          ? latest.error
+          : new Error("The latest workbook could not be loaded.");
+      }
+      const latestData = normalizeData(latest.data.data);
+      conflictRef.current = false;
+      lastServerUpdatedAt.current = latest.data.updatedAt;
+      lastServerRevision.current = latest.data.revision;
+      lastWorkbookRef.current = (latestData.workbook ?? []) as WorkbookSheet[];
+      lastSaved.current = { title: latest.data.title, data: copyData(latestData) };
+      titleRef.current = latest.data.title;
+      dataRef.current = latestData;
+      setTitle(latest.data.title);
+      setData(latestData);
+      setWorkbookKey((key) => key + 1);
+      setSaveState("saved");
+      setSaveError("");
+      setSavedAt(formatSavedAt(latest.data.updatedAt));
+      setFileError("");
+      queryClient.setQueryData(getGetSpreadsheetQueryKey(spreadsheetId), {
+        ...latest.data,
+        data: latestData,
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "The latest workbook could not be loaded.");
+    }
   };
 
   const handleWorkbookChange = (sheets: unknown[]) => {
@@ -899,7 +956,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-primary"><FileSpreadsheet size={17} /><span className="mono text-[10px] font-bold uppercase tracking-[.18em]">Shared workbook</span></div>
             <input value={title} onChange={event => onTitleChange(event.target.value)} onBlur={restoreTitleIfEmpty} aria-label="Spreadsheet title" data-testid="input-spreadsheet-title" className="mt-1 w-full max-w-2xl bg-transparent text-2xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground sm:text-3xl" placeholder="Name this workbook" maxLength={120} />
-            <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Authorized interviewers share this workbook. Saved changes from others appear within about 5 seconds; simultaneous edits are not merged and can overwrite each other.</p>
+            <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Authorized interviewers share this workbook. Saved changes from others appear within about 5 seconds. Saves based on an older version are blocked to protect everyone’s work.</p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <SaveStatus state={saveState} savedAt={savedAt} error={saveError} />
@@ -916,6 +973,19 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
             <button type="button" onClick={() => void exportWorkbook("csv")} disabled={fileBusy} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"><Download size={14} />CSV</button>
           </div>
         </header>
+
+        {saveState === "conflict" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs text-destructive" role="alert" data-testid="spreadsheet-save-conflict">
+            <TriangleAlert size={14} />
+            <span className="min-w-[240px] flex-1">{saveError || "Someone else saved a newer version. Your local changes are still here."}</span>
+            <button type="button" onClick={() => void exportWorkbook("xlsx")} disabled={fileBusy} data-testid="button-download-local-spreadsheet" className="rounded-md border border-destructive/30 px-2 py-1 font-semibold disabled:opacity-50">
+              {fileBusy ? "Preparing copy…" : "Download local XLSX"}
+            </button>
+            <button type="button" onClick={() => void loadLatestVersion()} disabled={query.isFetching} data-testid="button-load-latest-spreadsheet" className="rounded-md border border-destructive/30 px-2 py-1 font-semibold disabled:opacity-50">
+              {query.isFetching ? "Loading…" : "Load latest version"}
+            </button>
+          </div>
+        )}
 
         {(fileError || saveState === "error") && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-xs text-destructive" role="alert" data-testid="spreadsheet-save-error">
