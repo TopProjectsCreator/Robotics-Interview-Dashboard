@@ -21,4 +21,23 @@ describe("WhiteboardEditor embed validation", () => {
     expect(editor).toHaveAttribute("data-embed-invalid-ftp", "false");
     expect(editor).toHaveAttribute("data-embed-invalid-javascript", "false");
   });
+
+  it("explains that external websites may prohibit embedding", () => {
+    render(
+      <WhiteboardEditor
+        whiteboard={null}
+        saving={false}
+        error=""
+        onClose={() => {}}
+        onSave={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("whiteboard-embed-policy-note")).toHaveTextContent(
+      "Some websites prohibit iframe embedding.",
+    );
+    expect(screen.getByTestId("whiteboard-embed-policy-note")).toHaveTextContent(
+      "security settings may be responsible",
+    );
+  });
 });
