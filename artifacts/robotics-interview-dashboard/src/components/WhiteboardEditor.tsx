@@ -59,6 +59,16 @@ const defaultScene: StoredScene = {
   files: {},
 };
 
+function isValidWhiteboardEmbedUrl(link: string): boolean {
+  if (!/^https?:\/\/\S+$/i.test(link)) return false;
+  try {
+    const url = new URL(link);
+    return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function parseScene(data: string | undefined): StoredScene {
   if (!data) return defaultScene;
   try {
@@ -407,6 +417,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
                 offsetTop: typeof appState?.offsetTop === "number" ? appState.offsetTop : 0,
               });
             }}
+            validateEmbeddable={isValidWhiteboardEmbedUrl}
             UIOptions={{ canvasActions: { export: false, saveToActiveFile: false } }}
           />
           {remoteCursors.map((cursor) => {
