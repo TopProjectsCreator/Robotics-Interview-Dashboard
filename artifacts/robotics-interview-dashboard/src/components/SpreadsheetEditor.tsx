@@ -74,6 +74,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function normalizeDimension(value: unknown, fallback: number, maximum: number): number {
+  const dimension = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(dimension) || dimension < 1) return fallback;
+  return Math.min(maximum, Math.floor(dimension));
+}
+
 function copyData(data: SpreadsheetData): SpreadsheetData {
   return JSON.parse(JSON.stringify(data)) as SpreadsheetData;
 }
@@ -132,6 +138,8 @@ function normalizeSheets(input: unknown, previous: WorkbookSheet[] = []): Workbo
       name,
       order: index,
     };
+    merged.row = normalizeDimension(merged.row, 1000, MAX_ROWS);
+    merged.column = normalizeDimension(merged.column, 26, MAX_COLUMNS);
     const convertedCells = sparseCellsFromData(raw.data);
     if (convertedCells) {
       merged.celldata = convertedCells;

@@ -32,6 +32,7 @@
 }
 
 .dark .spreadsheet-workbook .fortune-sheet-container,
+.dark .spreadsheet-workbook .fortune-container,
 .dark .spreadsheet-workbook .fortune-toolbar,
 .dark .spreadsheet-workbook .fortune-sheet-area,
 .dark .spreadsheet-workbook .fortune-sheet-list,
@@ -108,10 +109,17 @@
   color: #f3f4f6;
 }
 
-/* FortuneSheet renders its dialogs over the workbook with their own light surfaces. */
+/* Keep FortuneSheet dialogs centered over the viewport instead of anchoring to the sheet. */
 .dark .fortune-modal-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 10000;
+  overflow-y: auto;
+  padding: 16px;
   color: #e5e7eb;
-  background-color: rgb(3 7 18 / 72%) !important;
+  background-color: rgb(0 0 0 / 38%) !important;
 }
 
 .dark .fortune-modal-container .fortune-dialog,
@@ -122,8 +130,12 @@
 .dark .fortune-modal-container .fortune-sort-modal > div {
   color: #e5e7eb !important;
   border-color: #374151 !important;
-  background-color: #111827 !important;
+  background-color: #1f2937 !important;
   box-shadow: 0 16px 48px rgb(0 0 0 / 55%);
+}
+
+.dark .fortune-modal-container .fortune-dialog {
+  min-width: min(320px, calc(100vw - 32px));
 }
 
 .dark .fortune-modal-container .fortune-modal-dialog-icon-close {
