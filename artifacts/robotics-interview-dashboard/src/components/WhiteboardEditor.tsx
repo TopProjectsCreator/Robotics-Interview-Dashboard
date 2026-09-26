@@ -402,7 +402,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
             <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#71878d]" data-testid="whiteboard-collaboration-status"><span className={`h-1.5 w-1.5 rounded-full ${collaborationStatus === "connected" ? "bg-[#28a47f]" : collaborationStatus === "reconnecting" ? "bg-[#e1a52d]" : "bg-[#a7b7b9]"}`} />{statusLabel}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" data-testid="whiteboard-actions">
           {error && <p className="max-w-[260px] text-right text-xs text-[#ad4b43]" role="alert">{error}</p>}
           <button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e] transition hover:border-[#183a4b] disabled:opacity-50" data-testid="button-close-whiteboard"><X size={15} className="mr-1 inline" />Close</button>
           {whiteboard && <button type="button" onClick={() => onSave(title.trim() || "Untitled whiteboard", data, false)} disabled={saving} className="rounded-xl border border-[#16869a] bg-white px-3 py-2 text-xs font-semibold text-[#12737d] transition hover:bg-[#e3f4f2] disabled:opacity-50" data-testid="button-save-whiteboard">{saving ? <LoaderCircle size={14} className="mr-1 inline animate-spin" /> : <Check size={14} className="mr-1 inline" />}Save changes</button>}
@@ -424,7 +424,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
           </a>
         )}
       </div>
-      <div className="min-h-0 flex-1 p-3 sm:p-5">
+      <div className="min-h-0 flex-1 p-3 sm:p-5" data-testid="whiteboard-canvas-region">
         <div
           ref={boardRef}
           className="relative h-full overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-sm"
