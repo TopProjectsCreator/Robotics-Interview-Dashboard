@@ -7,6 +7,7 @@
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
 - [Interviewer session ownership](interviewer-session-ownership.md) — derive chat authors, queue views, and chart ownership from the signed interviewer session, never browser-selected identity.
 - [Whiteboard collaboration](whiteboard-collaboration.md) — live editing uses an authorized WebSocket room with a signed-session query fallback and explicit artifact proxy routing.
+- [Collaborative document edits](document-collaboration-transactions.md) — stage assistant changes off-room and broadcast only after the database transaction succeeds.
 - [Scoped package installs](scoped-package-installs.md) — package installation helpers may target the workspace root; app dependencies must be installed with the artifact filter.
 - [Dashboard component test isolation](dashboard-component-test-isolation.md) — jsdom tests for the dashboard need lightweight Excalidraw stubs because the editor’s JSON dependency is browser-build-only.
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.

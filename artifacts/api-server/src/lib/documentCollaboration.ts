@@ -11,6 +11,12 @@ import {
 } from "y-protocols/awareness";
 import { db, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
 import {
+  applyDocumentAssistantContent,
+  documentDocFromEnvelope,
+  documentPlainText,
+  type DocumentAssistantEditMode,
+} from "./documentAssistantContent";
+import {
   interviewerIdFromSession,
   isRevokedAdminSession,
   isValidAdminSession,
@@ -144,14 +150,12 @@ function roomFor(
   const existing = rooms.get(id);
   if (existing) return existing;
 
-  const doc = new Y.Doc();
+  let doc: Y.Doc;
   try {
-    const parsed = JSON.parse(storedData) as { yState?: unknown };
-    if (typeof parsed.yState === "string" && parsed.yState) {
-      Y.applyUpdate(doc, new Uint8Array(Buffer.from(parsed.yState, "base64")));
-    }
+    doc = documentDocFromEnvelope(storedData);
   } catch (error) {
     logger.warn({ err: error, documentId: id }, "Stored collaborative document state was invalid");
+    doc = new Y.Doc();
   }
   const room: DocumentRoom = {
     id,
@@ -178,6 +182,136 @@ function roomFor(
   });
   rooms.set(id, room);
   return room;
+}
+
+function isDocumentEnvelope(raw: string): boolean {
+  try {
+    return (JSON.parse(raw) as { kind?: unknown }).kind === "document";
+  } catch {
+    return false;
+  }
+}
+
+export async function readDocumentForAssistant(
+  documentId: string,
+  displayName: string,
+): Promise<{ ok: true; title: string; content: string } | { ok: false; error: string }> {
+  const [document] = await db.select().from(interviewWhiteboardsTable)
+    .where(eq(interviewWhiteboardsTable.id, documentId))
+    .limit(1);
+  if (!document || !canAccessDocument(document, displayName) || !isDocumentEnvelope(document.data)) {
+    return { ok: false, error: "Document not found or not accessible." };
+  }
+
+  const room = rooms.get(documentId);
+  let doc: Y.Doc;
+  try {
+    doc = room?.doc ?? documentDocFromEnvelope(document.data);
+  } catch {
+    return { ok: false, error: "The stored document could not be read." };
+  }
+  const content = documentPlainText(doc);
+  if (!room) doc.destroy();
+  return { ok: true, title: room?.title ?? document.title, content };
+}
+
+export async function editDocumentForAssistant(
+  documentId: string,
+  displayName: string,
+  mode: DocumentAssistantEditMode,
+  content: string,
+  requestedTitle?: string,
+): Promise<{ ok: true; title: string; content: string } | { ok: false; error: string }> {
+  const title = requestedTitle?.trim();
+  if (requestedTitle !== undefined && (!title || title.length > 120)) {
+    return { ok: false, error: "Document titles must contain 1 to 120 characters." };
+  }
+  if (mode === "append" && !content.trim()) {
+    return { ok: false, error: "Provide non-empty content to append." };
+  }
+  if (Buffer.byteLength(content, "utf8") > 30_000) {
+    return { ok: false, error: "Document edits must be 30,000 bytes or fewer." };
+  }
+
+  let workingDoc: Y.Doc | undefined;
+  let result:
+    | {
+        ok: true;
+        title: string;
+        content: string;
+        room: DocumentRoom | undefined;
+        liveUpdate?: Uint8Array;
+        titleChanged: boolean;
+      }
+    | { ok: false; error: string };
+  try {
+    result = await db.transaction(async (tx) => {
+      const [document] = await tx.select().from(interviewWhiteboardsTable)
+        .where(eq(interviewWhiteboardsTable.id, documentId))
+        .limit(1)
+        .for("update");
+      if (!document || !canAccessDocument(document, displayName) || !isDocumentEnvelope(document.data)) {
+        return { ok: false as const, error: "Document not found or not accessible." };
+      }
+
+      const room = rooms.get(documentId);
+      let doc: Y.Doc;
+      let roomStateVector: Uint8Array | undefined;
+      try {
+        if (room) {
+          roomStateVector = Y.encodeStateVector(room.doc);
+          doc = new Y.Doc();
+          Y.applyUpdate(doc, Y.encodeStateAsUpdate(room.doc));
+        } else {
+          doc = documentDocFromEnvelope(document.data);
+        }
+        workingDoc = doc;
+      } catch {
+        return { ok: false as const, error: "The stored document could not be edited." };
+      }
+
+      applyDocumentAssistantContent(doc, mode, content);
+      const serializedData = documentEnvelope(doc);
+      if (Buffer.byteLength(serializedData, "utf8") > MAX_DOCUMENT_DATA_BYTES) {
+        return { ok: false as const, error: "This document reached the maximum size." };
+      }
+      const nextTitle = title ?? document.title;
+      const liveUpdate = room && roomStateVector
+        ? Y.encodeStateAsUpdate(doc, roomStateVector)
+        : undefined;
+      await tx.update(interviewWhiteboardsTable)
+        .set({ data: serializedData, title: nextTitle, updatedAt: new Date() })
+        .where(eq(interviewWhiteboardsTable.id, documentId));
+      return {
+        ok: true as const,
+        title: nextTitle,
+        content: documentPlainText(doc),
+        room,
+        liveUpdate,
+        titleChanged: nextTitle !== document.title,
+      };
+    });
+  } catch (error) {
+    workingDoc?.destroy();
+    throw error;
+  }
+  workingDoc?.destroy();
+  if (!result.ok) return result;
+
+  if (result.room) {
+    const activeRoom = rooms.get(documentId);
+    if (activeRoom === result.room && result.liveUpdate?.byteLength) {
+      Y.applyUpdate(activeRoom.doc, result.liveUpdate);
+    }
+    result.room.title = result.title;
+    if (activeRoom === result.room && result.titleChanged) {
+      for (const client of activeRoom.clients) {
+        sendJson(client.socket, { type: "meta", title: result.title, participants: activeRoom.clients.size });
+        sendJson(client.socket, { type: "saved" });
+      }
+    }
+  }
+  return { ok: true, title: result.title, content: result.content };
 }
 
 function awarenessClientIds(update: Uint8Array): number[] {

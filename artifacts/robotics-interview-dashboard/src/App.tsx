@@ -4170,6 +4170,12 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "kick_presence") return { label: "Kicked IP", Icon: LogOut };
   if (tool === "presence_stats") return { label: "Checked IP stats", Icon: UsersRound };
   if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
+  if (tool === "list_collaboration_artifacts") return { label: "Listed shared artifacts", Icon: Search };
+  if (tool === "read_collaboration_artifact") return { label: "Read artifact", Icon: Search };
+  if (tool === "edit_whiteboard") return { label: "Edited whiteboard", Icon: Pencil };
+  if (tool === "edit_board") return { label: "Edited board", Icon: ClipboardList };
+  if (tool === "edit_document") return { label: "Edited document", Icon: Pencil };
+  if (tool === "edit_spreadsheet") return { label: "Edited spreadsheet", Icon: ClipboardList };
   return { label: tool, Icon: Sparkles };
 }
 
