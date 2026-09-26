@@ -1467,13 +1467,27 @@ export const CreateSpreadsheetBody = zod.object({
   "recipient": zod.string().nullish()
 })
 
-export const createSpreadsheetResponseDataColumnCountMax = 40;
+export const createSpreadsheetResponseDataColumnCountMax = 16384;
 
 export const createSpreadsheetResponseDataRowsItemItemMax = 4000;
 
-export const createSpreadsheetResponseDataRowsItemMax = 40;
+export const createSpreadsheetResponseDataRowsItemMax = 16384;
 
-export const createSpreadsheetResponseDataRowsMax = 1000;
+export const createSpreadsheetResponseDataRowsMax = 1048576;
+
+export const createSpreadsheetResponseDataWorkbookItemIdMax = 120;
+
+export const createSpreadsheetResponseDataWorkbookItemNameMax = 31;
+
+export const createSpreadsheetResponseDataWorkbookMax = 255;
+
+export const createSpreadsheetResponseDataMacrosItemIdMax = 120;
+
+export const createSpreadsheetResponseDataMacrosItemNameMax = 80;
+
+export const createSpreadsheetResponseDataMacrosItemOperationsMax = 200;
+
+export const createSpreadsheetResponseDataMacrosMax = 25;
 
 
 
@@ -1482,9 +1496,18 @@ export const CreateSpreadsheetResponse = zod.object({
   "title": zod.string(),
   "data": zod.object({
   "kind": zod.enum(['spreadsheet']),
-  "version": zod.literal(1),
-  "columnCount": zod.number().int().min(1).max(createSpreadsheetResponseDataColumnCountMax),
-  "rows": zod.array(zod.array(zod.string().max(createSpreadsheetResponseDataRowsItemItemMax)).min(1).max(createSpreadsheetResponseDataRowsItemMax)).min(1).max(createSpreadsheetResponseDataRowsMax)
+  "version": zod.union([zod.literal(1),zod.literal(2)]),
+  "columnCount": zod.number().int().min(1).max(createSpreadsheetResponseDataColumnCountMax).optional(),
+  "rows": zod.array(zod.array(zod.string().max(createSpreadsheetResponseDataRowsItemItemMax)).min(1).max(createSpreadsheetResponseDataRowsItemMax)).min(1).max(createSpreadsheetResponseDataRowsMax).optional(),
+  "workbook": zod.array(zod.object({
+  "id": zod.string().max(createSpreadsheetResponseDataWorkbookItemIdMax),
+  "name": zod.string().min(1).max(createSpreadsheetResponseDataWorkbookItemNameMax)
+})).min(1).max(createSpreadsheetResponseDataWorkbookMax).optional(),
+  "macros": zod.array(zod.object({
+  "id": zod.string().max(createSpreadsheetResponseDataMacrosItemIdMax),
+  "name": zod.string().min(1).max(createSpreadsheetResponseDataMacrosItemNameMax),
+  "operations": zod.array(zod.record(zod.string(), zod.unknown())).max(createSpreadsheetResponseDataMacrosItemOperationsMax)
+})).max(createSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
   "scope": zod.enum(['shared', 'direct']),
@@ -1501,13 +1524,27 @@ export const GetSpreadsheetParams = zod.object({
   "spreadsheetId": zod.coerce.string()
 })
 
-export const getSpreadsheetResponseDataColumnCountMax = 40;
+export const getSpreadsheetResponseDataColumnCountMax = 16384;
 
 export const getSpreadsheetResponseDataRowsItemItemMax = 4000;
 
-export const getSpreadsheetResponseDataRowsItemMax = 40;
+export const getSpreadsheetResponseDataRowsItemMax = 16384;
 
-export const getSpreadsheetResponseDataRowsMax = 1000;
+export const getSpreadsheetResponseDataRowsMax = 1048576;
+
+export const getSpreadsheetResponseDataWorkbookItemIdMax = 120;
+
+export const getSpreadsheetResponseDataWorkbookItemNameMax = 31;
+
+export const getSpreadsheetResponseDataWorkbookMax = 255;
+
+export const getSpreadsheetResponseDataMacrosItemIdMax = 120;
+
+export const getSpreadsheetResponseDataMacrosItemNameMax = 80;
+
+export const getSpreadsheetResponseDataMacrosItemOperationsMax = 200;
+
+export const getSpreadsheetResponseDataMacrosMax = 25;
 
 
 
@@ -1516,9 +1553,18 @@ export const GetSpreadsheetResponse = zod.object({
   "title": zod.string(),
   "data": zod.object({
   "kind": zod.enum(['spreadsheet']),
-  "version": zod.literal(1),
-  "columnCount": zod.number().int().min(1).max(getSpreadsheetResponseDataColumnCountMax),
-  "rows": zod.array(zod.array(zod.string().max(getSpreadsheetResponseDataRowsItemItemMax)).min(1).max(getSpreadsheetResponseDataRowsItemMax)).min(1).max(getSpreadsheetResponseDataRowsMax)
+  "version": zod.union([zod.literal(1),zod.literal(2)]),
+  "columnCount": zod.number().int().min(1).max(getSpreadsheetResponseDataColumnCountMax).optional(),
+  "rows": zod.array(zod.array(zod.string().max(getSpreadsheetResponseDataRowsItemItemMax)).min(1).max(getSpreadsheetResponseDataRowsItemMax)).min(1).max(getSpreadsheetResponseDataRowsMax).optional(),
+  "workbook": zod.array(zod.object({
+  "id": zod.string().max(getSpreadsheetResponseDataWorkbookItemIdMax),
+  "name": zod.string().min(1).max(getSpreadsheetResponseDataWorkbookItemNameMax)
+})).min(1).max(getSpreadsheetResponseDataWorkbookMax).optional(),
+  "macros": zod.array(zod.object({
+  "id": zod.string().max(getSpreadsheetResponseDataMacrosItemIdMax),
+  "name": zod.string().min(1).max(getSpreadsheetResponseDataMacrosItemNameMax),
+  "operations": zod.array(zod.record(zod.string(), zod.unknown())).max(getSpreadsheetResponseDataMacrosItemOperationsMax)
+})).max(getSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
   "scope": zod.enum(['shared', 'direct']),
@@ -1537,13 +1583,27 @@ export const UpdateSpreadsheetParams = zod.object({
 
 export const updateSpreadsheetBodyTitleMax = 120;
 
-export const updateSpreadsheetBodyDataColumnCountMax = 40;
+export const updateSpreadsheetBodyDataColumnCountMax = 16384;
 
 export const updateSpreadsheetBodyDataRowsItemItemMax = 4000;
 
-export const updateSpreadsheetBodyDataRowsItemMax = 40;
+export const updateSpreadsheetBodyDataRowsItemMax = 16384;
 
-export const updateSpreadsheetBodyDataRowsMax = 1000;
+export const updateSpreadsheetBodyDataRowsMax = 1048576;
+
+export const updateSpreadsheetBodyDataWorkbookItemIdMax = 120;
+
+export const updateSpreadsheetBodyDataWorkbookItemNameMax = 31;
+
+export const updateSpreadsheetBodyDataWorkbookMax = 255;
+
+export const updateSpreadsheetBodyDataMacrosItemIdMax = 120;
+
+export const updateSpreadsheetBodyDataMacrosItemNameMax = 80;
+
+export const updateSpreadsheetBodyDataMacrosItemOperationsMax = 200;
+
+export const updateSpreadsheetBodyDataMacrosMax = 25;
 
 
 
@@ -1551,19 +1611,42 @@ export const UpdateSpreadsheetBody = zod.object({
   "title": zod.string().min(1).max(updateSpreadsheetBodyTitleMax).optional(),
   "data": zod.object({
   "kind": zod.enum(['spreadsheet']),
-  "version": zod.literal(1),
-  "columnCount": zod.number().int().min(1).max(updateSpreadsheetBodyDataColumnCountMax),
-  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetBodyDataRowsItemItemMax)).min(1).max(updateSpreadsheetBodyDataRowsItemMax)).min(1).max(updateSpreadsheetBodyDataRowsMax)
+  "version": zod.union([zod.literal(1),zod.literal(2)]),
+  "columnCount": zod.number().int().min(1).max(updateSpreadsheetBodyDataColumnCountMax).optional(),
+  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetBodyDataRowsItemItemMax)).min(1).max(updateSpreadsheetBodyDataRowsItemMax)).min(1).max(updateSpreadsheetBodyDataRowsMax).optional(),
+  "workbook": zod.array(zod.object({
+  "id": zod.string().max(updateSpreadsheetBodyDataWorkbookItemIdMax),
+  "name": zod.string().min(1).max(updateSpreadsheetBodyDataWorkbookItemNameMax)
+})).min(1).max(updateSpreadsheetBodyDataWorkbookMax).optional(),
+  "macros": zod.array(zod.object({
+  "id": zod.string().max(updateSpreadsheetBodyDataMacrosItemIdMax),
+  "name": zod.string().min(1).max(updateSpreadsheetBodyDataMacrosItemNameMax),
+  "operations": zod.array(zod.record(zod.string(), zod.unknown())).max(updateSpreadsheetBodyDataMacrosItemOperationsMax)
+})).max(updateSpreadsheetBodyDataMacrosMax).optional()
 }).optional()
 })
 
-export const updateSpreadsheetResponseDataColumnCountMax = 40;
+export const updateSpreadsheetResponseDataColumnCountMax = 16384;
 
 export const updateSpreadsheetResponseDataRowsItemItemMax = 4000;
 
-export const updateSpreadsheetResponseDataRowsItemMax = 40;
+export const updateSpreadsheetResponseDataRowsItemMax = 16384;
 
-export const updateSpreadsheetResponseDataRowsMax = 1000;
+export const updateSpreadsheetResponseDataRowsMax = 1048576;
+
+export const updateSpreadsheetResponseDataWorkbookItemIdMax = 120;
+
+export const updateSpreadsheetResponseDataWorkbookItemNameMax = 31;
+
+export const updateSpreadsheetResponseDataWorkbookMax = 255;
+
+export const updateSpreadsheetResponseDataMacrosItemIdMax = 120;
+
+export const updateSpreadsheetResponseDataMacrosItemNameMax = 80;
+
+export const updateSpreadsheetResponseDataMacrosItemOperationsMax = 200;
+
+export const updateSpreadsheetResponseDataMacrosMax = 25;
 
 
 
@@ -1572,9 +1655,18 @@ export const UpdateSpreadsheetResponse = zod.object({
   "title": zod.string(),
   "data": zod.object({
   "kind": zod.enum(['spreadsheet']),
-  "version": zod.literal(1),
-  "columnCount": zod.number().int().min(1).max(updateSpreadsheetResponseDataColumnCountMax),
-  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetResponseDataRowsItemItemMax)).min(1).max(updateSpreadsheetResponseDataRowsItemMax)).min(1).max(updateSpreadsheetResponseDataRowsMax)
+  "version": zod.union([zod.literal(1),zod.literal(2)]),
+  "columnCount": zod.number().int().min(1).max(updateSpreadsheetResponseDataColumnCountMax).optional(),
+  "rows": zod.array(zod.array(zod.string().max(updateSpreadsheetResponseDataRowsItemItemMax)).min(1).max(updateSpreadsheetResponseDataRowsItemMax)).min(1).max(updateSpreadsheetResponseDataRowsMax).optional(),
+  "workbook": zod.array(zod.object({
+  "id": zod.string().max(updateSpreadsheetResponseDataWorkbookItemIdMax),
+  "name": zod.string().min(1).max(updateSpreadsheetResponseDataWorkbookItemNameMax)
+})).min(1).max(updateSpreadsheetResponseDataWorkbookMax).optional(),
+  "macros": zod.array(zod.object({
+  "id": zod.string().max(updateSpreadsheetResponseDataMacrosItemIdMax),
+  "name": zod.string().min(1).max(updateSpreadsheetResponseDataMacrosItemNameMax),
+  "operations": zod.array(zod.record(zod.string(), zod.unknown())).max(updateSpreadsheetResponseDataMacrosItemOperationsMax)
+})).max(updateSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
   "scope": zod.enum(['shared', 'direct']),

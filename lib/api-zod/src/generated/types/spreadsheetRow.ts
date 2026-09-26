@@ -8,7 +8,7 @@
 
 /**
  * @minItems 1
- * @maxItems 40
+ * @maxItems 16384
  * @items.maxLength 4000
  */
 export type SpreadsheetRow = string[];

@@ -6,6 +6,10 @@ import {
   applySpreadsheetAssistantEdits,
   isSpreadsheetRecordData,
   parseSpreadsheetData,
+  spreadsheetGridSize,
+  spreadsheetPreviewRows,
+  spreadsheetSheetNames,
+  MAX_SPREADSHEET_DATA_BYTES,
   type SpreadsheetAssistantEdits,
 } from "./spreadsheetOperations";
 import {
@@ -78,11 +82,12 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "read_collaboration_artifact",
-      description: "Read an accessible artifact by id before editing. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Spreadsheet rows and board/whiteboard items can be paged with offset and limit.",
+      description: "Read an accessible artifact by id before editing. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Spreadsheet rows and board/whiteboard items can be paged with offset and limit; set sheetName to read another worksheet.",
       parameters: {
         type: "object",
         properties: {
           artifactId: { type: "string" },
+          sheetName: { type: "string", maxLength: 31 },
           query: { type: "string", maxLength: 120 },
           offset: { type: "integer", minimum: 0 },
           limit: { type: "integer", minimum: 1, maximum: 50 },
@@ -165,7 +170,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "edit_spreadsheet",
-      description: "Edit cells, append rows/columns, or rename an accessible Spreadsheet. Cell coordinates and row indexes are zero-based. Read the sheet first; use existing row/column indexes and never overwrite unrelated cells.",
+      description: "Edit cells, append rows/columns, or rename an accessible Spreadsheet. Cell coordinates and row indexes are zero-based. Set sheetName for another worksheet. A value beginning with = is saved as a formula.",
       parameters: {
         type: "object",
         properties: {
@@ -174,6 +179,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
             type: "object",
             properties: {
               title: { type: "string", maxLength: 120 },
+              sheetName: { type: "string", maxLength: 31 },
               cells: {
                 type: "array",
                 maxItems: 50,
@@ -182,7 +188,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
                   properties: {
                     row: { type: "integer", minimum: 0 },
                     column: { type: "integer", minimum: 0 },
-                    value: { type: "string", maxLength: 4000 },
+                    value: { type: "string", maxLength: 32767 },
                   },
                   required: ["row", "column", "value"],
                 },
@@ -190,7 +196,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
               appendRows: {
                 type: "array",
                 maxItems: 50,
-                items: { type: "array", items: { type: "string", maxLength: 4000 }, maxItems: 40 },
+                items: { type: "array", items: { type: "string", maxLength: 32767 }, maxItems: 16384 },
               },
               appendColumns: {
                 type: "array",
@@ -198,7 +204,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
                 items: {
                   type: "object",
                   properties: {
-                    values: { type: "array", items: { type: "string", maxLength: 4000 }, maxItems: 1000 },
+                    values: { type: "array", items: { type: "string", maxLength: 32767 }, maxItems: 1000 },
                   },
                   required: ["values"],
                 },
@@ -327,12 +333,22 @@ function spreadsheetReadView(row: ArtifactRow, args: Record<string, unknown>): T
   const data = parseSpreadsheetData(row.data);
   if (!data) return toolFailure("The stored spreadsheet data is invalid.");
   const query = clippedText(args.query, 120).trim().toLowerCase();
-  const rowOffset = safeNumber(args.offset, 0, 0, data.rows.length);
+  const requestedSheet = clippedText(args.sheetName, 31).trim() || undefined;
+  const dimensions = spreadsheetGridSize(data);
+  const rowOffset = safeNumber(args.offset, 0, 0, Math.max(0, dimensions.rows - 1));
   const rowLimit = safeNumber(args.limit, 25, 1, 50);
-  const columnOffset = safeNumber(args.columnOffset, 0, 0, data.columnCount - 1);
+  const columnOffset = safeNumber(args.columnOffset, 0, 0, Math.max(0, dimensions.columns - 1));
   const columnLimit = safeNumber(args.columnLimit, 20, 1, 40);
-  const selected = data.rows
-    .map((cells, rowIndex) => ({ cells, rowIndex }))
+  const view = spreadsheetPreviewRows(data, {
+    sheetName: requestedSheet,
+    offset: rowOffset,
+    limit: rowLimit,
+    columnOffset,
+    columnLimit,
+  });
+  if (!view) return toolFailure("The requested worksheet was not found.");
+  const selected = view.rows
+    .map((cells, index) => ({ cells, rowIndex: rowOffset + index }))
     .filter(({ cells, rowIndex }) =>
       rowIndex >= rowOffset &&
       (!query || cells.some((cell) => cell.toLowerCase().includes(query))),
@@ -348,13 +364,21 @@ function spreadsheetReadView(row: ArtifactRow, args: Record<string, unknown>): T
       id: row.id,
       kind: "spreadsheet",
       title: row.title,
-      rowCount: data.rows.length,
-      columnCount: data.columnCount,
-      headers: data.rows[0].map((cell) => cell.slice(0, 300)),
+      sheetName: view.sheetName,
+      sheetNames: spreadsheetSheetNames(data),
+      rowCount: view.rowCount,
+      columnCount: view.columnCount,
+      headers: spreadsheetPreviewRows(data, {
+        sheetName: view.sheetName,
+        offset: 0,
+        limit: 1,
+        columnOffset,
+        columnLimit,
+      })?.rows[0] ?? [],
       rowOffset,
       columnOffset,
       rows: selected,
-      truncated: selected.length > 0 && selected[selected.length - 1].rowIndex < data.rows.length - 1,
+      truncated: rowOffset + rowLimit < view.rowCount,
     }),
     activity: { tool: "read_collaboration_artifact", detail: `Spreadsheet "${row.title.slice(0, 40)}"` },
   };
@@ -443,8 +467,10 @@ function parseSpreadsheetEdits(value: unknown): { edits?: SpreadsheetAssistantEd
   }
   const input = value as Record<string, unknown>;
   if (input.title !== undefined && typeof input.title !== "string") return { error: "The spreadsheet title must be text." };
+  if (input.sheetName !== undefined && typeof input.sheetName !== "string") return { error: "The worksheet name must be text." };
   const edits: SpreadsheetAssistantEdits = {};
   if (typeof input.title === "string") edits.title = input.title;
+  if (typeof input.sheetName === "string") edits.sheetName = input.sheetName;
   if (input.cells !== undefined) {
     if (!Array.isArray(input.cells) || input.cells.some((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return true;
@@ -537,7 +563,7 @@ async function editSpreadsheet(
     const applied = applySpreadsheetAssistantEdits(current, parsedEdits.edits!);
     if (!applied.ok) return applied;
     const serialized = JSON.stringify(applied.data);
-    if (Buffer.byteLength(serialized, "utf8") > 1_500_000) {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_SPREADSHEET_DATA_BYTES) {
       return { ok: false as const, error: "That spreadsheet is too large to save." };
     }
     const [updated] = await tx.update(interviewWhiteboardsTable)
@@ -548,11 +574,13 @@ async function editSpreadsheet(
       })
       .where(eq(interviewWhiteboardsTable.id, row.id))
       .returning();
+    const dimensions = spreadsheetGridSize(applied.data);
     return {
       ok: true as const,
       title: updated.title,
-      rowCount: applied.data.rows.length,
-      columnCount: applied.data.columnCount,
+      rowCount: dimensions.rows,
+      columnCount: dimensions.columns,
+      sheetCount: dimensions.sheets,
     };
   });
   if (!result.ok) return toolFailure(result.error);

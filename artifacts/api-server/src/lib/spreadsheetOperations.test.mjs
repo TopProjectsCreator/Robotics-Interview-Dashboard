@@ -5,30 +5,39 @@ import {
   isSpreadsheetRecordData,
   parseSpreadsheetData,
   applySpreadsheetAssistantEdits,
+  spreadsheetPreviewRows,
 } from "./spreadsheetOperations.ts";
 
-test("new spreadsheets start as an editable rectangular grid", () => {
+test("new spreadsheets start as a multi-sheet workbook with a sparse grid", () => {
   const data = initialSpreadsheetData();
 
   assert.equal(data.kind, "spreadsheet");
-  assert.equal(data.version, 1);
-  assert.equal(data.columnCount, 8);
-  assert.equal(data.rows.length, 20);
-  assert.ok(data.rows.every((row) => row.length === 8 && row.every((cell) => cell === "")));
+  assert.equal(data.version, 2);
+  assert.equal(data.workbook.length, 1);
+  assert.equal(data.workbook[0].name, "Sheet1");
+  assert.equal(data.workbook[0].row, 1000);
+  assert.equal(data.workbook[0].column, 26);
+  assert.deepEqual(data.workbook[0].celldata, []);
   assert.deepEqual(parseSpreadsheetData(JSON.stringify(data)), data);
 });
 
-test("spreadsheet validation rejects ragged and oversized cell data", () => {
+test("spreadsheet validation rejects invalid workbook coordinates, duplicate sheets, and unsafe macros", () => {
   const base = initialSpreadsheetData();
 
-  assert.equal(parseSpreadsheetData({ ...base, rows: [["a"], ["a", "b"]] }), null);
   assert.equal(parseSpreadsheetData({
     ...base,
-    rows: [[...Array(8).fill("x"), "extra"]],
+    workbook: [
+      { id: "one", name: "Roster", celldata: [] },
+      { id: "two", name: "roster", celldata: [] },
+    ],
   }), null);
   assert.equal(parseSpreadsheetData({
     ...base,
-    rows: [[...Array(7).fill(""), "x".repeat(4001)]],
+    workbook: [{ id: "one", name: "Roster", celldata: [{ r: 1_048_576, c: 0, v: { v: "outside" } }] }],
+  }), null);
+  assert.equal(parseSpreadsheetData({
+    ...base,
+    macros: [{ id: "bad", name: "Unsafe", operations: [{ op: "runJavaScript", source: "alert(1)" }] }],
   }), null);
   assert.equal(parseSpreadsheetData("{not json"), null);
 });
@@ -84,4 +93,73 @@ test("assistant spreadsheet edits reject out-of-range cells and oversized grids"
     applySpreadsheetAssistantEdits(current, { appendRows: [["a", "b"]] }),
     { ok: false, error: "Each appended row must contain text values that fit the current columns." },
   );
+});
+
+test("assistant edits retain workbook formatting, formulas, charts, and macros", () => {
+  const current = initialSpreadsheetData();
+  current.workbook[0].celldata = [
+    { r: 0, c: 0, v: { v: "Name", bg: "#ddeeff" } },
+    { r: 0, c: 1, v: { v: "Points", bl: 1 } },
+    { r: 1, c: 0, v: { v: "Ari" } },
+    { r: 1, c: 1, v: { v: 4 } },
+  ];
+  current.workbook[0].charts = [{
+    id: "chart-1",
+    title: "Points",
+    type: "bar",
+    startRow: 0,
+    endRow: 1,
+    startColumn: 0,
+    endColumn: 1,
+  }];
+  current.macros = [{
+    id: "macro-1",
+    name: "Add total",
+    operations: [{
+      op: "setCell",
+      sheetId: "sheet-1",
+      row: 2,
+      column: 1,
+      value: "=SUM(B2:B3)",
+      formula: true,
+    }],
+  }];
+
+  const result = applySpreadsheetAssistantEdits(current, {
+    sheetName: "Sheet1",
+    cells: [{ row: 2, column: 1, value: "=SUM(B2:B2)" }],
+    appendRows: [["Bea", "7"]],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.version, 2);
+  assert.deepEqual(result.data.workbook[0].charts, current.workbook[0].charts);
+  assert.deepEqual(result.data.macros, current.macros);
+  const formula = result.data.workbook[0].celldata.find((cell) => cell.r === 2 && cell.c === 1);
+  assert.equal(formula.v.f, "=SUM(B2:B2)");
+  assert.equal(result.data.workbook[0].celldata.find((cell) => cell.r === 0 && cell.c === 0).v.bg, "#ddeeff");
+  assert.deepEqual(spreadsheetPreviewRows(result.data, { limit: 4, columnLimit: 3 }).rows.slice(0, 3), [
+    ["Name", "Points", ""],
+    ["Ari", "4", ""],
+    ["", "=SUM(B2:B2)", ""],
+  ]);
+  assert.deepEqual(spreadsheetPreviewRows(result.data, { offset: 3, limit: 1, columnLimit: 3 }).rows, [
+    ["Bea", "7", ""],
+  ]);
+});
+
+test("legacy spreadsheet records remain readable and assistant-editable", () => {
+  const legacy = {
+    kind: "spreadsheet",
+    version: 1,
+    columnCount: 2,
+    rows: [["Name", "Status"], ["Ari", "Queued"]],
+  };
+  assert.deepEqual(parseSpreadsheetData(legacy), legacy);
+  const edited = applySpreadsheetAssistantEdits(legacy, {
+    cells: [{ row: 1, column: 1, value: "Ready" }],
+  });
+  assert.equal(edited.ok, true);
+  assert.equal(edited.data.version, 1);
+  assert.equal(edited.data.rows[1][1], "Ready");
 });

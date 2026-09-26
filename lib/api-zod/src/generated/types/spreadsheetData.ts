@@ -7,6 +7,8 @@
  */
 import type { SpreadsheetDataKind } from './spreadsheetDataKind';
 import type { SpreadsheetDataVersion } from './spreadsheetDataVersion';
+import type { SpreadsheetDataWorkbookItem } from './spreadsheetDataWorkbookItem';
+import type { SpreadsheetMacro } from './spreadsheetMacro';
 import type { SpreadsheetRow } from './spreadsheetRow';
 
 export interface SpreadsheetData {
@@ -14,12 +16,19 @@ export interface SpreadsheetData {
   version: SpreadsheetDataVersion;
   /**
      * @minimum 1
-     * @maximum 40
+     * @maximum 16384
      */
-  columnCount: number;
+  columnCount?: number;
   /**
      * @minItems 1
-     * @maxItems 1000
+     * @maxItems 1048576
      */
-  rows: SpreadsheetRow[];
+  rows?: SpreadsheetRow[];
+  /**
+     * @minItems 1
+     * @maxItems 255
+     */
+  workbook?: SpreadsheetDataWorkbookItem[];
+  /** @maxItems 25 */
+  macros?: SpreadsheetMacro[];
 }

@@ -923,7 +923,7 @@ export interface BoardOperationInput {
 
 /**
  * @minItems 1
- * @maxItems 40
+ * @maxItems 16384
  * @items.maxLength 4000
  */
 export type SpreadsheetRow = string[];
@@ -940,21 +940,54 @@ export type SpreadsheetDataVersion = typeof SpreadsheetDataVersion[keyof typeof 
 
 export const SpreadsheetDataVersion = {
   NUMBER_1: 1,
+  NUMBER_2: 2,
 } as const;
+
+export type SpreadsheetDataWorkbookItem = {
+  /** @maxLength 120 */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 31
+     */
+  name: string;
+  [key: string]: unknown;
+ };
+
+export type SpreadsheetMacroOperationsItem = { [key: string]: unknown };
+
+export interface SpreadsheetMacro {
+  /** @maxLength 120 */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxItems 200 */
+  operations: SpreadsheetMacroOperationsItem[];
+}
 
 export interface SpreadsheetData {
   kind: SpreadsheetDataKind;
   version: SpreadsheetDataVersion;
   /**
      * @minimum 1
-     * @maximum 40
+     * @maximum 16384
      */
-  columnCount: number;
+  columnCount?: number;
   /**
      * @minItems 1
-     * @maxItems 1000
+     * @maxItems 1048576
      */
-  rows: SpreadsheetRow[];
+  rows?: SpreadsheetRow[];
+  /**
+     * @minItems 1
+     * @maxItems 255
+     */
+  workbook?: SpreadsheetDataWorkbookItem[];
+  /** @maxItems 25 */
+  macros?: SpreadsheetMacro[];
 }
 
 export type SpreadsheetScope = typeof SpreadsheetScope[keyof typeof SpreadsheetScope];

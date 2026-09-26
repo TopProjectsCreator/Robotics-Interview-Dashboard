@@ -1,0 +1,64 @@
+.spreadsheet-workbook {
+  color-scheme: light;
+}
+
+.spreadsheet-workbook .fortune-sheet-container {
+  min-height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.spreadsheet-workbook .fortune-toolbar,
+.spreadsheet-workbook .fortune-sheet-area,
+.spreadsheet-workbook .fortune-sheet-list,
+.spreadsheet-workbook .fortune-sheettab-container,
+.spreadsheet-workbook .fortune-name-box-container {
+  border-color: hsl(var(--border));
+}
+
+.spreadsheet-workbook .fortune-toolbar {
+  overflow-x: auto;
+}
+
+.dark .spreadsheet-workbook {
+  color-scheme: dark;
+}
+
+.dark .spreadsheet-workbook .fortune-sheet-container,
+.dark .spreadsheet-workbook .fortune-toolbar,
+.dark .spreadsheet-workbook .fortune-sheet-area,
+.dark .spreadsheet-workbook .fortune-sheet-list,
+.dark .spreadsheet-workbook .fortune-sheettab-container,
+.dark .spreadsheet-workbook .fortune-name-box-container,
+.dark .spreadsheet-workbook .fortune-toolbar-combo-popup,
+.dark .spreadsheet-workbook .fortune-sheet-container-menu-hide {
+  color: #e5e7eb;
+  border-color: #374151;
+  background-color: #111827;
+}
+
+.dark .spreadsheet-workbook .fortune-toolbar-button:hover,
+.dark .spreadsheet-workbook .fortune-toolbar-combo-button:hover,
+.dark .spreadsheet-workbook .fortune-sheet-list-item:hover,
+.dark .spreadsheet-workbook .fortune-sheettab-button:hover {
+  background-color: #263244;
+}
+
+.dark .spreadsheet-workbook .fortune-toolbar input,
+.dark .spreadsheet-workbook .fortune-toolbar select,
+.dark .spreadsheet-workbook .fortune-name-box-container input,
+.dark .spreadsheet-workbook .luckysheet-input-box,
+.dark .spreadsheet-workbook .luckysheet-input-box-inner {
+  color: #f3f4f6;
+  border-color: #4b5563;
+  background-color: #111827;
+}
+
+/* FortuneSheet paints the cell grid to canvas with fixed light defaults. */
+.dark .spreadsheet-workbook canvas {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+
+.dark .spreadsheet-workbook .fortune-sheet-overlay {
+  color: #f3f4f6;
+}

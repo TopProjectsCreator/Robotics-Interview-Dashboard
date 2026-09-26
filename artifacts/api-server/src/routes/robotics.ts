@@ -100,7 +100,12 @@ import { logger } from "../lib/logger";
 import { pushRealtimeHint } from "../lib/realtime";
 import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "../lib/whiteboardCollaboration";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "../lib/boardOperations";
-import { initialSpreadsheetData, isSpreadsheetRecordData, parseSpreadsheetData } from "../lib/spreadsheetOperations";
+import {
+  initialSpreadsheetData,
+  isSpreadsheetRecordData,
+  MAX_SPREADSHEET_DATA_BYTES,
+  parseSpreadsheetData,
+} from "../lib/spreadsheetOperations";
 import { captureSnapshot, diffSnapshot, listSnapshots, restoreSnapshot } from "../lib/snapshots";
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
@@ -2895,7 +2900,7 @@ router.post("/spreadsheets", requireAdmin, async (req, res): Promise<void> => {
   const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const data = JSON.stringify(initialSpreadsheetData());
-  if (Buffer.byteLength(data, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+  if (Buffer.byteLength(data, "utf8") > MAX_SPREADSHEET_DATA_BYTES) {
     res.status(413).json({ error: "That spreadsheet is too large to save." });
     return;
   }
@@ -2948,7 +2953,7 @@ router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Pro
   }
   const requestedData = parsed.data.data === undefined ? null : parseSpreadsheetData(parsed.data.data);
   if (parsed.data.data !== undefined && !requestedData) {
-    res.status(400).json({ error: "Spreadsheet rows must match the column count and contain valid cell text." });
+    res.status(400).json({ error: "Spreadsheet data must contain a valid workbook or legacy sheet." });
     return;
   }
 
@@ -2965,7 +2970,7 @@ router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Pro
 
     const nextData = requestedData ?? currentData;
     const serializedData = JSON.stringify(nextData);
-    if (Buffer.byteLength(serializedData, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+    if (Buffer.byteLength(serializedData, "utf8") > MAX_SPREADSHEET_DATA_BYTES) {
       return { ok: false as const, status: 413, error: "That spreadsheet is too large to save." };
     }
     const [updated] = await tx.update(interviewWhiteboardsTable)

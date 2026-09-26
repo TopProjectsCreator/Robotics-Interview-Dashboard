@@ -11,4 +11,5 @@ export type SpreadsheetDataVersion = typeof SpreadsheetDataVersion[keyof typeof 
 
 export const SpreadsheetDataVersion = {
   NUMBER_1: 1,
+  NUMBER_2: 2,
 } as const;
