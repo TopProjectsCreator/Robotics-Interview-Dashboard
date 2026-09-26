@@ -17,7 +17,14 @@
 }
 
 .spreadsheet-workbook .fortune-toolbar {
-  overflow-x: auto;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+
+.spreadsheet-workbook .fortune-toolbar > * {
+  flex-shrink: 0;
 }
 
 .dark .spreadsheet-workbook {
