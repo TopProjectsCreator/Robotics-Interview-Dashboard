@@ -53,7 +53,7 @@ export function AssistantModelPicker({
         </SelectTrigger>
         <SelectContent
           position="popper"
-          align="end"
+          align="start"
           className="assistant-model-menu"
         >
           {options.map((option) => (

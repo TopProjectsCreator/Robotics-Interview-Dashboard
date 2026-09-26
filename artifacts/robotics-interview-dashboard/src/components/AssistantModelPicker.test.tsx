@@ -23,6 +23,7 @@ describe("AssistantModelPicker", () => {
     expect(picker).toHaveTextContent("openrouter/free");
 
     fireEvent.keyDown(picker, { key: "ArrowDown" });
+    expect(await screen.findByRole("listbox")).toHaveAttribute("data-align", "start");
     fireEvent.click(await screen.findByRole("option", { name: "New provider model" }));
     expect(onChange).toHaveBeenCalledWith("provider/new-model");
   });
