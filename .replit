@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
+modules = ["nodejs-24", "python-base-3.13", "postgresql-16", "rust-stable"]
 
 [deployment]
 router = "application"
@@ -21,7 +21,7 @@ timeoutMs = 120000
 
 [nix]
 channel = "stable-25_05"
-packages = ["libGL", "xorg.libX11", "expat"]
+packages = ["libGL", "xorg.libX11", "expat", "nano"]
 
 [objectStorage]
 defaultBucketID = "replit-objstore-8be2f692-0196-4838-bf87-c7f56c292fcb"
