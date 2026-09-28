@@ -14,3 +14,5 @@
 - [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and the provider's `isFree` flag; Kilo's catalog is not at `/v1/models`.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
+- [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.
+- [Dummy half-edge FIN geometry](occt-dummy-halfedge-fin.md) — resolve curve-less edges from a real FIN, not an arbitrary twin.
