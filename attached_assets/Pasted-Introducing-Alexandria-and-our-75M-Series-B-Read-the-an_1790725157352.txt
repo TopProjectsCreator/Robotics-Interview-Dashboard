@@ -1,0 +1,119 @@
+Introducing Alexandria and our $75M Series B. Read the announcement →
+Get started
+Ready to build?
+Start getting Web Data for free and scale seamlessly as your project expands. No credit card needed.
+
+Are you an AI agent? See setup options
+Table of Contents
+How Firecrawl Keyless makes building easier
+Try it today
+Introducing Firecrawl Keyless: Search, scrape, and interact without an API key
+Eric Ciarla
+Jun 16, 2026
+Setting up a web data API usually starts with a signup form. Create an account, generate a key, paste it into an env file, write your first line of code. That's friction before you've built anything.
+
+Today we're launching Firecrawl Keyless. Search, scrape, and interact with the web without an API key. Every developer gets 1,000 free credits a month, automatically. Sign up only when you need more.
+
+With Firecrawl Keyless, you can:
+
+Search the web for live results with full-page content
+Scrape any URL for clean markdown, including JavaScript-heavy pages
+Interact with pages to click, fill forms, paginate, and navigate dynamic sites
+Live today across our MCP, CLI, and API.
+
+How Firecrawl Keyless makes building easier
+Agents work without setup
+For coding agents, this matters even more. Connect Claude Code, Cursor, OpenClaw, Hermes Agent, OpenCode, or any other MCP-compatible host, and the agent starts scraping and searching immediately. No human in the loop to generate a key and paste it into config.
+
+# Add Firecrawl MCP to Claude Code - no key needed
+claude mcp add --transport http firecrawl https://mcp.firecrawl.dev/v2/mcp
+Demos and prototypes that don't break
+API keys fail at the worst moment: a hackathon demo, a workshop, a side project picked up months later. Keyless removes that class of failures for projects where 1,000 credits a month is plenty.
+
+Try it today
+Firecrawl Keyless is live across every surface:
+
+MCP - point any MCP-compatible client at https://mcp.firecrawl.dev/v2/mcp
+CLI - run npx firecrawl-cli@latest and start scraping
+API - call the Firecrawl REST endpoints directly, no Authorization header required
+You get 1,000 free credits per month, every month. When you outgrow it, sign up and bring your own key.
+
+Get started with Firecrawl Keyless · Read the docs
+
+Get started
+Ready to build?
+Start getting web context for free and scale seamlessly as your project expands. No credit card needed.
+Are you an AI agent? See setup options
+Eric Ciarla
+@ericciarla
+Cofounder of Firecrawl
+About the Author
+Eric Ciarla is a co-founder of Firecrawl. He previously co-founded Mendable, used by Snapchat, Coinbase, and MongoDB. He's been building products in the AI and data space since 2022.
+More articles by Eric Ciarla
+How to Create an llms.txt File for Any Website
+Introducing /agent: Gather Data Wherever It Lives on the Web
+Introducing Firecrawl web-agent: Build and Deploy Your Own Web Research Agent
+Introducing Spark 1 Pro and Spark 1 Mini
+FireGEO: Complete SaaS Template for GEO Tools
+Introducing AnyDoc and pdf-inspector: Firecrawl's open-source document parsing stack
+What Are the Best Codex Plugins to Install in 2026
+Best MCP Servers for Gemini CLI in 2026
+Branding Format v2: Improved Logo Extraction
+Browser Sandbox: Secure Environments for Agents to Interact with the Web
+The easiest way to get
+data from the web
+Backed by
+Y Combinator
+Linkedin
+Github
+YouTube
+SOC II · Type 2
+AICPA
+SOC 2
+X (Twitter)
+Instagram
+Discord
+Products
+Alexandria
+Web Search API
+Web Scrape API
+Browser Interaction
+Web Crawling API
+Document Parsing API
+Web Monitoring
+Developer Index
+Research Index
+Use Cases
+Deep research
+Smarter AI chats
+AI agent tools
+Onboarding
+Lead enrichment
+Resources
+Pricing
+Getting started
+API Reference
+Integrations
+Examples
+SDKs
+Playground
+Templates
+Free Tools
+Benchmarks
+Firecrawl Alternatives
+Web Extraction Glossary
+Changelog
+Company
+About
+Blog
+Press & Brand
+Careers
+Discord
+Ambassadors
+Affiliates
+Student program
+Security
+© 2026 Firecrawl
+Terms of Service
+Privacy Policy
+Report Abuse

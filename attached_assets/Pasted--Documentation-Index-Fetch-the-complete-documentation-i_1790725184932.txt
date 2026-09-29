@@ -1,0 +1,112 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.tavily.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Try Tavily Without an API Key
+
+> Use Tavily Search and Extract for free, with zero setup. No account, no API key, no configuration. Keyless responses are identical to keyed responses.
+
+Drop Tavily into an agent or script in seconds. When you're ready for production, swap in an API key. No code changes required.
+
+## Why Tavily?
+
+Tavily is an AI search engine optimized for agent consumption. Built-in tools like `web_search` and `web_fetch` return raw HTML or shallow snippets, so your agent spends tokens parsing, filtering, and guessing what's relevant. Tavily Search returns clean, ranked, and scored results optimized for LLM consumption. Tavily Extract pulls structured content from any URL without dealing with JavaScript rendering or HTML cleanup. The result: fewer tokens, better context, more reliable agent behavior.
+
+Use Tavily Search and Extract for free, with zero setup. No account, no API key, no configuration. Your agent gets real results immediately and can upgrade to an API key whenever you need higher limits.
+
+<Note>
+  **Free, with a clear upgrade path.** Keyless access is free and rate-limited, ideal for exploration and light use. Hit the cap and you don't have to pay: sign up for a free API key (1,000 credits/month, no credit card) and swap it in. No code changes required.
+</Note>
+
+<Info>
+  **Same results, same schema.** Keyless responses are identical to keyed responses. Your agent can't tell the difference on success.
+</Info>
+
+## Direct API
+
+Send a request with the `X-Tavily-Access-Mode: keyless` header. That's it.
+
+<CodeGroup>
+  ```bash Search theme={null}
+  curl -X POST https://api.tavily.com/search \
+    -H "Content-Type: application/json" \
+    -H "X-Tavily-Access-Mode: keyless" \
+    -d '{"query": "latest AI news", "max_results": 3}'
+  ```
+
+  ```bash Extract theme={null}
+  curl -X POST https://api.tavily.com/extract \
+    -H "Content-Type: application/json" \
+    -H "X-Tavily-Access-Mode: keyless" \
+    -d '{"urls": ["https://www.tavily.com"]}'
+  ```
+</CodeGroup>
+
+The response follows the standard Tavily response schema. See the [API Reference](/documentation/api-reference/endpoint/search) for details.
+
+## MCP Server
+
+Connect to the [Tavily Remote MCP](/documentation/mcp) with the keyless header. Your agent gets `tavily-search` and `tavily-extract` tools with zero configuration.
+
+```bash Claude Code theme={null}
+claude mcp add tavily-remote-mcp --transport http https://mcp.tavily.com/mcp/ \
+  --header "X-Tavily-Access-Mode: keyless"
+```
+
+The header is required — without it the server asks your client to sign in. Clients that only accept a URL can't send it; use an API key with those.
+
+### Agent-installable prompt
+
+Paste this into any AI assistant to let it set up Tavily itself:
+
+```text theme={null}
+Set up the Tavily MCP server so you can search the web and extract content from URLs. Follow these steps:
+
+1. Detect which platform you're running on (Claude Code, Cursor, Windsurf, Claude Desktop, etc.)
+2. Install the Tavily MCP server using the correct method for your platform:
+   - Server URL: https://mcp.tavily.com/mcp/
+   - Transport: Streamable HTTP
+   - Headers: `X-Tavily-Access-Mode: keyless` (required, selects free keyless access)
+   - Authentication: no API key or account needed
+3. Verify the server is connected and you have access to the tavily-search and tavily-extract tools.
+4. Run a test search (e.g. "Tavily API features for search, extract, crawl, and research") to confirm you get real results from a live source.
+5. Report back whether setup succeeded.
+```
+
+## Supported endpoints
+
+| Endpoint | Keyless | Notes |
+| - | - | - |
+| `/search` | Yes | Full search with all parameters |
+| `/extract` | Yes | Content extraction from URLs |
+
+## Rate limits
+
+Keyless access is free but rate-limited. When you hit the limit, [sign up](https://app.tavily.com) for a free API key to keep going. Pass it as a Bearer token and nothing else changes:
+
+```bash theme={null}
+curl -X POST https://api.tavily.com/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer tvly-YOUR_API_KEY" \
+  -d '{"query": "latest AI news"}'
+```
+
+<Info>
+  When you hit a limit, Tavily returns natural-language instructions telling your agent what happened and how to continue.
+</Info>
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="Do keyless and keyed responses look different?">
+    No. Success responses are identical, with the same fields and the same schema. Your agent can switch from keyless to keyed without changing how it parses responses.
+  </Accordion>
+
+  <Accordion title="Can I use keyless and an API key together?">
+    If you send both `X-Tavily-Access-Mode: keyless` and a valid `Authorization: Bearer` header, the API key takes precedence. The request uses your account's limits, not the keyless budget.
+  </Accordion>
+
+  <Accordion title="What if I need /crawl, /map, or /research?">
+    These endpoints require an API key. [Sign up](https://app.tavily.com) to access them. You get 1,000 free credits monthly.
+  </Accordion>
+</AccordionGroup>
