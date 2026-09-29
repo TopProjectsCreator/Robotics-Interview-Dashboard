@@ -4,6 +4,7 @@ import { getStoredAuthToken } from "../authSession";
 import { ChatGlbViewer } from "./ChatGlbViewer";
 
 const PARASOLID_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+const PARASOLID_PREVIEW_TIMEOUT_MS = 60_000;
 
 type ChatParasolidViewerProps = {
   name: string;
@@ -20,17 +21,21 @@ function parasolidFormat(name: string): "x-t" | "x-b" | null {
 export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Building a private 3D preview…");
+  const [partialPreview, setPartialPreview] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let active = true;
     let createdUrl: string | null = null;
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 65_000);
+    const timeoutId = window.setTimeout(() => controller.abort(), PARASOLID_PREVIEW_TIMEOUT_MS);
     const format = parasolidFormat(name);
 
     setPreviewUrl(null);
     setError(null);
+    setPartialPreview(false);
+    setStatus("Loading the stored Parasolid file…");
 
     void (async () => {
       try {
@@ -38,10 +43,18 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
 
         const sourceResponse = await fetch(src, { signal: controller.signal });
         if (!sourceResponse.ok) throw new Error("Couldn't load the stored CAD file.");
+        const contentLengthHeader = sourceResponse.headers.get("Content-Length");
+        const contentLength = contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
+        if (Number.isFinite(contentLength) && contentLength > PARASOLID_PREVIEW_MAX_BYTES) {
+          throw new Error("Inline previews are limited to 50 MB. Download the CAD file instead.");
+        }
         const sourceFile = await sourceResponse.blob();
         if (sourceFile.size > PARASOLID_PREVIEW_MAX_BYTES) {
           throw new Error("Inline previews are limited to 50 MB. Download the CAD file instead.");
         }
+        setStatus(sourceFile.size > 25 * 1024 * 1024
+          ? "Large CAD file detected. Building its preview may take a little longer…"
+          : "Building a private 3D preview…");
 
         const token = getStoredAuthToken();
         const headers: Record<string, string> = {
@@ -70,6 +83,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
 
         const preview = await response.blob();
         if (!preview.size) throw new Error("The converter returned an empty preview.");
+        setPartialPreview(response.headers.get("X-Parasolid-Preview-Partial") === "true");
         createdUrl = URL.createObjectURL(preview);
         if (active) setPreviewUrl(createdUrl);
         else URL.revokeObjectURL(createdUrl);
@@ -77,7 +91,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
         if (!active) return;
         setError(
           caught instanceof Error && caught.name === "AbortError"
-            ? "Preview conversion took too long. Download the CAD file instead."
+            ? "Preview conversion took too long. Try again or download the CAD file."
             : caught instanceof Error
               ? caught.message
               : "Couldn't create an inline preview. Download the CAD file instead.",
@@ -95,6 +109,11 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
 
   if (previewUrl) {
     return <div className="my-2 max-w-xl" data-testid="chat-parasolid-attachment">
+      {partialPreview && (
+        <p className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200" role="status">
+          Some source geometry could not be included in this preview. The original Parasolid is available to download.
+        </p>
+      )}
       <ChatGlbViewer name={name} src={previewUrl} />
       <div className="flex justify-end px-2">
         <a href={src} download={name} className="text-xs font-semibold text-[#16869a] underline underline-offset-2 dark:text-[#75c4cf]">
@@ -110,7 +129,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
     </figcaption>
     <div className="flex flex-wrap items-center justify-between gap-3 p-3">
       <p className="text-xs text-[#718189] dark:text-[#a8bac8]" role={error ? "alert" : "status"}>
-        {error ?? "Building a private 3D preview…"}
+        {error ?? status}
       </p>
       <div className="flex shrink-0 items-center gap-3">
         {error && (

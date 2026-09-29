@@ -45,15 +45,35 @@ function supabase(): SupabaseClient {
 }
 
 let ensuredBucket: Promise<void> | null = null;
+const MAX_STORAGE_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 function ensureBucket(): Promise<void> {
   if (!ensuredBucket) {
     ensuredBucket = (async () => {
       const bucket = storageBucket();
-      const { error } = await supabase().storage.createBucket(bucket, { public: false });
+      const storage = supabase().storage;
+      const { error } = await storage.createBucket(bucket, {
+        public: false,
+        fileSizeLimit: MAX_STORAGE_UPLOAD_BYTES,
+      });
       // "already exists" is the happy path on warm starts.
       if (error && !/already exists|duplicate/i.test(error.message)) {
         throw new Error(`Could not create Supabase storage bucket "${bucket}": ${error.message}`);
+      }
+      if (error) {
+        const { data: existing, error: lookupError } = await storage.getBucket(bucket);
+        if (lookupError || !existing) {
+          throw new Error(`Could not inspect Supabase storage bucket "${bucket}": ${lookupError?.message ?? 'unknown error'}`);
+        }
+        if (typeof existing.file_size_limit === 'number' && existing.file_size_limit < MAX_STORAGE_UPLOAD_BYTES) {
+          const { error: updateError } = await storage.updateBucket(bucket, {
+            public: false,
+            fileSizeLimit: MAX_STORAGE_UPLOAD_BYTES,
+          });
+          if (updateError) {
+            throw new Error(`Could not increase the upload limit for storage bucket "${bucket}": ${updateError.message}`);
+          }
+        }
       }
     })().catch((error: unknown) => {
       ensuredBucket = null;

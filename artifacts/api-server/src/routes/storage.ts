@@ -40,6 +40,8 @@ function hasAuthenticatedSession(
  * returned signed URL. Requires auth so public callers cannot mint
  * write-capable URLs.
  */
+const SIGNED_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
 router.post(
   '/storage/uploads/request-url',
   async (req: Request, res: Response) => {
@@ -52,6 +54,10 @@ router.post(
     const parsed = RequestUploadUrlBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Missing or invalid required fields' });
+      return;
+    }
+    if (parsed.data.size > SIGNED_UPLOAD_MAX_BYTES) {
+      res.status(413).json({ error: 'File too big (max 200 MB)' });
       return;
     }
 
@@ -79,9 +85,9 @@ router.post(
  *
  * Upload a chat attachment through the API server (same-origin), which stores
  * it in Supabase Storage with the service key and returns the object path.
- * Used by chat attachments so browsers never PUT directly to Supabase —
- * some networks/firewalls block those cross-origin uploads. Requires auth.
- * Body is raw media/document bytes (max 100 MB).
+ * Used for ordinary chat files so browsers avoid cross-origin uploads.
+ * Large Parasolid files use the authenticated signed-URL route above.
+ * Requires auth. Body is raw media/document bytes (max 100 MB).
  */
 const CHAT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const PARASOLID_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
@@ -231,6 +237,9 @@ router.post(
       });
 
       const glb = await readFile(join(outputPath, 'preview.glb'));
+      const previewReport = JSON.parse(
+        await readFile(join(outputPath, 'preview-report.json'), 'utf8'),
+      ) as { partial?: unknown };
       if (glb.length > PARASOLID_PREVIEW_MAX_OUTPUT_BYTES || !isValidGlb(glb)) {
         throw new Error('The local converter returned an invalid or oversized preview');
       }
@@ -240,6 +249,7 @@ router.post(
         .setHeader('Content-Type', 'model/gltf-binary')
         .setHeader('Content-Length', String(glb.length))
         .setHeader('Cache-Control', 'private, no-store')
+        .setHeader('X-Parasolid-Preview-Partial', previewReport.partial === true ? 'true' : 'false')
         .send(glb);
     } catch (error) {
       req.log.warn({ err: error, sourceFormat }, 'Parasolid preview conversion failed');

@@ -2559,6 +2559,7 @@ function reportDiag(message: string, context: string) {
   } catch { /* diagnostics must never break the app */ }
 }
 const CHAT_MAX_FILE_BYTES = 100 * 1024 * 1024;
+const CHAT_MAX_PARASOLID_FILE_BYTES = 200 * 1024 * 1024;
 const CHAT_FILE_ACCEPT = [
   "image/*",
   "video/*",
@@ -2822,6 +2823,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatItemsRef = useRef<InterviewChatMessage[]>([]);
   chatItemsRef.current = chatItems;
   const sendChat = useSendInterviewChat();
+  const chatAttachmentUpload = useRequestUploadUrl();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
   const togglePin = useToggleChatMessagePin();
@@ -3075,7 +3077,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       for (const file of picked) {
         const type = chatFileType(file);
         if (!type) { setChatImageError(`"${file.name}" is not a supported attachment.`); return; }
-        if (file.size > CHAT_MAX_FILE_BYTES) { setChatImageError(`"${file.name}" is too big (max 100 MB).`); return; }
+        const maxFileBytes = chatFileType(file) === "model/x-parasolid"
+          ? CHAT_MAX_PARASOLID_FILE_BYTES
+          : CHAT_MAX_FILE_BYTES;
+        if (file.size > maxFileBytes) {
+          const maxMegabytes = Math.floor(maxFileBytes / (1024 * 1024));
+          setChatImageError(`"${file.name}" is too big (max ${maxMegabytes} MB).`);
+          return;
+        }
         let id: string;
         try {
           id = crypto.randomUUID();
@@ -3509,24 +3518,57 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
         let objectId = "";
         try {
+          const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
           const controller = new AbortController();
-          const abortTimer = setTimeout(() => controller.abort(), 45000);
+          const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
+          const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
           let response: Response;
           try {
-            response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
-              method: "POST",
-              headers: { "Content-Type": prepared.type },
-              body: prepared.blob,
-              credentials: "include",
-              signal: controller.signal,
-            });
+            if (useSignedUpload) {
+              const requested = await chatAttachmentUpload.mutateAsync({
+                data: {
+                  name: prepared.name,
+                  size: prepared.blob.size,
+                  contentType: prepared.type,
+                },
+              });
+              const sameOriginUpload = (() => {
+                try {
+                  return new URL(requested.uploadURL, window.location.href).origin === window.location.origin;
+                } catch {
+                  return false;
+                }
+              })();
+              response = await fetch(requested.uploadURL, {
+                method: "PUT",
+                headers: { "Content-Type": prepared.type },
+                body: prepared.blob,
+                ...(sameOriginUpload ? { credentials: "include" as const } : {}),
+                signal: controller.signal,
+              });
+              if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
+              objectId = requested.objectPath.replace(/^\/objects\//, "");
+              if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+            } else {
+              response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
+                method: "POST",
+                headers: { "Content-Type": prepared.type },
+                body: prepared.blob,
+                credentials: "include",
+                signal: controller.signal,
+              });
+            }
           } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") fail("Upload timed out after 45 seconds. Try again on a faster connection.");
+            if (error instanceof Error && error.name === "AbortError") {
+              fail(useSignedUpload
+                ? "CAD upload timed out after 10 minutes. Try again on a faster connection."
+                : "Upload timed out after 45 seconds. Try again on a faster connection.");
+            }
             throw error;
           } finally {
             clearTimeout(abortTimer);
           }
-          if (!response.ok) {
+          if (!useSignedUpload && !response.ok) {
             let detail = "";
             try {
               const parsed = await response.json() as { error?: unknown };
@@ -3534,9 +3576,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             } catch { /* ignore parse errors */ }
             fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
           }
-          const parsed = await response.json() as { objectPath?: unknown };
-          objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
-          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+          if (!useSignedUpload) {
+            const parsed = await response.json() as { objectPath?: unknown };
+            objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
+            if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+          }
         } catch (error) {
           if (error instanceof Error && error.message.startsWith("USER:")) throw error;
           fail("Upload failed (network). Try again.");
