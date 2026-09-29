@@ -16,3 +16,4 @@
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.
 - [Dummy half-edge FIN geometry](occt-dummy-halfedge-fin.md) — resolve curve-less edges from a real FIN, not an arbitrary twin.
+- [Tailwind dev CSS refresh](tailwind-dev-css-refresh.md) — if new page utilities are missing after HMR, compare the generated CSS and restart the existing Vite workflow before rewriting styles.
