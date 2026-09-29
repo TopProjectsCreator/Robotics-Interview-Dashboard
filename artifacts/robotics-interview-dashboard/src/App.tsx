@@ -95,10 +95,10 @@ type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 function Logo({ dark = false }: { dark?: boolean }) {
   return <div className="flex items-center gap-2.5" data-testid="brand-robotics">
-    <span className={`relative flex h-9 w-9 items-center justify-center rounded-xl ${dark ? "bg-[#f8c84a] text-[#182232]" : "bg-[#163247] text-[#f8c84a]"}`}>
+    <span className={`relative flex h-9 w-9 items-center justify-center rounded-xl ${dark ? "bg-[#f8c84a] text-[#182232]" : "bg-[#163247] text-[#f8c84a] dark:bg-[#f8c84a] dark:text-[#182232]"}`}>
       <CircleDot size={20} strokeWidth={2.4} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" />
     </span>
-    <span className={`leading-none ${dark ? "text-white" : "text-[#182232]"}`}><b className="block text-[15px] tracking-[.18em]">ROBOTICS</b><small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">Tryout control</small></span>
+    <span className={`leading-none ${dark ? "text-white" : "text-[#182232] dark:text-white"}`}><b className="block text-[15px] tracking-[.18em]">ROBOTICS</b><small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">Team 23442</small></span>
   </div>;
 }
 
@@ -1402,7 +1402,7 @@ function Login() {
     setError("");
     const normalizedEventPassword = eventPassword.trim();
     if (!normalizedEventPassword) {
-      setError("Enter the event passcode to continue.");
+      setError("Enter the team access code to continue.");
       return;
     }
     setEventPassword(normalizedEventPassword);
@@ -1444,7 +1444,7 @@ function Login() {
             setError("Password not set. Choose a different password.");
             return;
           }
-          setError(passwordSafetyErrorMessage(issue) ?? "The event passcode was rejected. Go back and re-enter it exactly, then continue.");
+          setError(passwordSafetyErrorMessage(issue) ?? "The team access code was rejected. Check it and try again.");
         },
       },
     );
@@ -1460,7 +1460,7 @@ function Login() {
     }
     login.mutate(
       { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-      { onSuccess: finishLogin, onError: () => setError("The event passcode or personal password is incorrect.") },
+      { onSuccess: finishLogin, onError: () => setError("The team access code or personal password is incorrect.") },
     );
   };
 
@@ -1491,7 +1491,7 @@ function Login() {
             setError("Password not saved. Choose a different password.");
             return;
           }
-          setError(passwordSafetyErrorMessage(issue) ?? "Could not add that interviewer. Check the event passcode or name.");
+          setError(passwordSafetyErrorMessage(issue) ?? "Could not add that team member. Check the team access code and name.");
         },
       },
     );
@@ -1500,7 +1500,7 @@ function Login() {
   const submitNewInterviewer = (event: React.FormEvent) => {
     event.preventDefault();
     if (!newName.trim()) {
-      setError("Enter an interviewer name.");
+      setError("Enter a team member name.");
       return;
     }
     setError("");
@@ -1525,31 +1525,111 @@ function Login() {
   };
 
   const stepLabel = step === "event" ? "Step 1 of 3" : step === "interviewer" ? "Step 2 of 3" : "Step 3 of 3";
-  const heading = step === "event" ? "Enter the event passcode." : step === "interviewer" ? "Who are you?" : step === "add" ? "Add an interviewer." : selected ? `Sign in as ${selected.displayName}.` : `Set up ${newName}.`;
+  const heading = step === "event" ? "Enter your team access code." : step === "interviewer" ? "Who are you?" : step === "add" ? "Add a team member." : selected ? `Sign in as ${selected.displayName}.` : `Set up ${newName}.`;
   const description = step === "event"
-    ? "This passcode opens the interviewer sign-in flow."
+    ? "Use your team access code to continue to the robotics workspace."
     : step === "interviewer"
-      ? "Choose your existing interviewer account, or add a new one."
+      ? "Choose your team account, or add a team member."
       : step === "add"
-        ? "Add the name first. You’ll choose a personal password next."
+        ? "Add the name first. You’ll choose an account password next."
         : selected?.hasPassword
-          ? "Enter your personal password to open the control room."
-          : "This interviewer does not have a password yet. Choose one now.";
+          ? "Enter your password to open the robotics workspace."
+          : "This account does not have a password yet. Choose one now.";
 
-  return <main className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white">
-    <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" /><div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
-    <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">
-      <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20"><Logo dark /><div><p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines / Team 23442</p><h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">Build the<br /><span className="text-[#f8c84a]">next team.</span></h1><p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">A quiet control room for sharp eyes, honest signals, and the people ready to build.</p></div><div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]"><span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Interviewer access</span></div></section>
-      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><div className="flex items-center justify-between"><Badge tone="teal">Interviewer access</Badge><span className="mono text-[10px] font-semibold uppercase tracking-[.14em] text-[#7c8c91]">{stepLabel}</span></div><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{heading}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{description}</p>
-        {step === "event" && <form onSubmit={continueFromEvent} className="mt-9 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{error && <p className="text-sm text-[#b34a42]" data-testid="login-error">{error}</p>}<button disabled={!eventPassword.trim()} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">Continue <ArrowRight size={17} /></button></form>}
-        {step === "interviewer" && <div className="mt-8 space-y-3">{interviewers.isLoading && <p className="rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c]">Loading interviewer accounts…</p>}{interviewers.data?.items.map(item => <button key={item.id} type="button" onClick={() => chooseInterviewer(item.id)} data-testid={`button-choose-interviewer-${item.displayName.toLowerCase().replaceAll(" ", "-")}`} className="flex w-full items-center justify-between rounded-xl border border-[#cbd7da] bg-white px-4 py-4 text-left transition hover:border-[#16869a] hover:bg-[#f3fbfa]"><span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91]">{item.hasPassword ? "Personal password ready" : "Password setup required"}</span></span><ChevronRight size={18} className="text-[#16869a]" /></button>)}<button type="button" onClick={() => { setNewName(""); setError(""); setStep("add"); }} data-testid="button-add-interviewer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 py-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa]"><Plus size={17} /> Add interviewer</button>{error && <p className="text-sm text-[#b34a42]" data-testid="login-error">{error}</p>}</div>}
-        {step === "add" && <form onSubmit={submitNewInterviewer} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer name</span><input ref={inputRef} autoFocus autoComplete="name" value={newName} onChange={event => setNewName(event.target.value)} data-testid="input-new-interviewer-name" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" placeholder="e.g. Jordan Lee" /></label>{error && <p className="text-sm text-[#b34a42]" data-testid="login-error">{error}</p>}<button disabled={!newName.trim()} data-testid="button-continue-add-interviewer" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">Continue <ArrowRight size={17} /></button></form>}
-        {step === "password" && <form onSubmit={selected ? submitPassword : submitNewPassword} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input ref={inputRef} autoFocus type="password" autoComplete={selected?.hasPassword ? "current-password" : "new-password"} value={personalPassword} onChange={event => setPersonalPassword(event.target.value)} data-testid="input-personal-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{error && <p className="text-sm text-[#b34a42]" data-testid="login-error">{error}</p>}<button disabled={busy || !personalPassword} data-testid="button-personal-password" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room…" : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Create password and enter <ArrowRight size={17} /></>}</button></form>}
-        {step !== "event" && <button type="button" onClick={back} className="mt-5 flex w-full items-center justify-center gap-1 py-2 text-sm font-semibold text-[#527079]"><RotateCcw size={14} /> Back</button>}
-        <div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />The event passcode is required before interviewer access. Personal passwords are private to each interviewer.</div>
-      </div></section>
-    </div>
-  </main>;
+  return (
+    <main className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white">
+      <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" />
+      <div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
+      <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">
+        <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20">
+          <Logo dark />
+          <div>
+            <p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines robotics · PLMS</p>
+            <h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">
+              One team.<br />
+              <span className="text-[#f8c84a]">Build together.</span>
+            </h1>
+            <p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">
+              A shared home for our people, projects, conversations, and everything we build together.
+            </p>
+          </div>
+          <div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]">
+            <span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Team workspace</span>
+          </div>
+        </section>
+
+        <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] dark:bg-[#142630] dark:text-[#e5edf3] sm:px-14">
+          <div className="mb-12 lg:hidden">
+            <Logo />
+            <p className="mt-4 max-w-[350px] text-sm leading-6 text-[#63747c] dark:text-[#a4bbc3]">
+              A shared home for Wolverines robotics.
+            </p>
+          </div>
+          <div className="mx-auto w-full max-w-[350px]">
+            <div className="flex items-center justify-between gap-3">
+              <Badge tone="teal">Team workspace</Badge>
+              <span className="mono text-[10px] font-semibold uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#91a8b1]">{stepLabel}</span>
+            </div>
+            <h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{heading}</h2>
+            <p className="mt-3 text-sm leading-6 text-[#63747c] dark:text-[#a4bbc3]">{description}</p>
+
+            {step === "event" && (
+              <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span>
+                  <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
+                </label>
+                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+                <button disabled={!eventPassword.trim()} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">Continue <ArrowRight size={17} /></button>
+              </form>
+            )}
+
+            {step === "interviewer" && (
+              <div className="mt-8 space-y-3">
+                {interviewers.isLoading && <p className="rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#a4bbc3]">Loading team accounts…</p>}
+                {interviewers.data?.items.map(item => (
+                  <button key={item.id} type="button" onClick={() => chooseInterviewer(item.id)} data-testid={`button-choose-interviewer-${item.displayName.toLowerCase().replaceAll(" ", "-")}`} className="flex w-full items-center justify-between rounded-xl border border-[#cbd7da] bg-white px-4 py-4 text-left transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#395563] dark:bg-[#1b303b] dark:hover:bg-[#203b47]">
+                    <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
+                    <ChevronRight size={18} className="text-[#16869a]" />
+                  </button>
+                ))}
+                <button type="button" onClick={() => { setNewName(""); setError(""); setStep("add"); }} data-testid="button-add-interviewer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 py-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#47747c] dark:text-[#80d2ca] dark:hover:bg-[#203b47]"><Plus size={17} /> Add team member</button>
+                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+              </div>
+            )}
+
+            {step === "add" && (
+              <form onSubmit={submitNewInterviewer} className="mt-8 space-y-5">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team member name</span>
+                  <input ref={inputRef} autoFocus autoComplete="name" value={newName} onChange={event => setNewName(event.target.value)} data-testid="input-new-interviewer-name" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="e.g. Jordan Lee" />
+                </label>
+                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+                <button disabled={!newName.trim()} data-testid="button-continue-add-interviewer" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">Continue <ArrowRight size={17} /></button>
+              </form>
+            )}
+
+            {step === "password" && (
+              <form onSubmit={selected ? submitPassword : submitNewPassword} className="mt-8 space-y-5">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Account password</span>
+                  <input ref={inputRef} autoFocus type="password" autoComplete={selected?.hasPassword ? "current-password" : "new-password"} value={personalPassword} onChange={event => setPersonalPassword(event.target.value)} data-testid="input-personal-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
+                </label>
+                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+                <button disabled={busy || !personalPassword} data-testid="button-personal-password" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Signing in…" : selected?.hasPassword ? <>Continue to workspace <ArrowRight size={17} /></> : <>Create password and continue <ArrowRight size={17} /></>}</button>
+              </form>
+            )}
+
+            {step !== "event" && <button type="button" onClick={back} className="mt-5 flex w-full items-center justify-center gap-1 py-2 text-sm font-semibold text-[#527079] dark:text-[#a4bbc3]"><RotateCcw size={14} /> Back</button>}
+            <div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289] dark:border-[#314955] dark:text-[#a4bbc3]">
+              <ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />
+              The team access code protects this workspace. Each person signs in with a private password.
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }
 
 function Shell({ children }: { children: ReactNode }) {
