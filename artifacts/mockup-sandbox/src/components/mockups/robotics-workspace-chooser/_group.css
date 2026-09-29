@@ -1,0 +1,194 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root {
+  --background: 216 38% 96%;
+  --foreground: 220 25% 16%;
+  --border: 215 25% 86%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 25% 16%;
+  --card-border: 215 25% 87%;
+  --sidebar: 220 31% 14%;
+  --sidebar-foreground: 214 25% 86%;
+  --sidebar-border: 220 22% 24%;
+  --sidebar-primary: 42 91% 62%;
+  --sidebar-primary-foreground: 220 32% 13%;
+  --sidebar-accent: 220 26% 20%;
+  --sidebar-accent-foreground: 214 25% 95%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 25% 16%;
+  --primary: 190 76% 37%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 215 26% 91%;
+  --secondary-foreground: 220 25% 21%;
+  --muted: 215 26% 92%;
+  --muted-foreground: 216 13% 44%;
+  --accent: 42 91% 62%;
+  --accent-foreground: 220 32% 13%;
+  --destructive: 4 72% 49%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 215 22% 80%;
+  --ring: 190 76% 37%;
+  --chart-1: 190 76% 37%;
+  --chart-2: 42 91% 62%;
+  --chart-3: 220 48% 49%;
+  --chart-4: 151 52% 43%;
+  --chart-5: 4 72% 49%;
+  --app-font-sans: "Space Grotesk", sans-serif;
+  --app-font-mono: "DM Mono", monospace;
+  --radius: .75rem;
+  --elevate-1: rgba(14, 29, 45, .04);
+  --elevate-2: rgba(14, 29, 45, .08);
+  --document-shell: #edf2f1;
+  --document-header: #fbfcfa;
+  --document-toolbar: #fbfcfa;
+  --document-paper: #fffefa;
+  --document-foreground: #183a4b;
+  --document-body-text: #263f49;
+  --document-heading: #183a4b;
+  --document-muted: #7c8c91;
+  --document-border: #d8e3e2;
+  --document-divider: #edf1f1;
+  --document-toolbar-text: #52666e;
+  --document-toolbar-hover: #e8f3f1;
+  --document-toolbar-active: #dff2ef;
+  --document-toolbar-active-text: #106d7a;
+  --document-blockquote: #567079;
+  --document-inline-code-bg: #e8f0ef;
+  --document-inline-code-text: #116c79;
+  --document-code-bg: #183a4b;
+  --document-code-text: #eff8f6;
+  --document-footer: #91a2a2;
+  --document-accent: #16869a;
+  --document-error-bg: #fff4f2;
+  --document-error-border: #efc9c5;
+  --document-close-bg: #fbfcfa;
+  --document-close-hover: #f1f6f5;
+  --document-caret: #16869a;
+  --document-page-shadow: 0 13px 35px rgba(31, 64, 72, .12), 0 2px 5px rgba(31, 64, 72, .06);
+  --document-header-shadow: 0 2px 10px rgba(24, 58, 75, .07);
+  --shared-document-card-bg: #f1f5ff;
+  --shared-document-card-border: #c8d5f0;
+  --shared-document-card-hover: #e9efff;
+  --shared-document-card-hover-border: #6686c7;
+  --shared-document-card-text: #183a4b;
+  --shared-document-card-accent: #3f5f9f;
+  --shared-document-card-muted: #43596d;
+  --shared-document-card-icon-bg: #fff;
+  --shared-document-card-icon: #5576b8;
+  --chat-mention-bg: #e2f4f0;
+  --chat-mention-text: #0e6570;
+  --chat-mention-border: #9ecdc9;
+  --chat-mention-tooltip-bg: #173a47;
+  --chat-mention-tooltip-text: #f5fbfc;
+  --chat-mention-tooltip-muted: #bfced3;
+  --chat-mention-avatar-bg: #d9f0ec;
+  --chat-mention-avatar-text: #0d6470;
+  --chat-mention-attention-bg: #fff8e5;
+  --chat-mention-attention-border: #dfb444;
+  --chat-mention-attention-text: #79580e;
+  --chat-mention-attention-glow: rgba(223, 180, 68, .18);
+  --chat-reply-bg: #eef8f7;
+  --chat-reply-border: #b9dddd;
+  --chat-reply-accent: #106d7a;
+  --chat-reply-text: #52666e;
+  --chat-reply-close: #527079;
+  --chat-reply-close-hover-bg: #fff1ef;
+  --chat-reply-close-hover-text: #a34d46;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 220 32% 7%;
+  --foreground: 210 20% 90%;
+  --border: 215 20% 22%;
+  --card: 218 28% 11%;
+  --card-foreground: 210 20% 90%;
+  --card-border: 215 20% 22%;
+  --popover: 218 28% 11%;
+  --popover-foreground: 210 20% 90%;
+  --primary: 190 55% 55%;
+  --primary-foreground: 220 32% 8%;
+  --secondary: 215 22% 18%;
+  --secondary-foreground: 210 18% 88%;
+  --muted: 215 22% 16%;
+  --muted-foreground: 214 14% 62%;
+  --accent: 215 22% 18%;
+  --accent-foreground: 210 20% 90%;
+  --input: 215 20% 26%;
+  --ring: 190 60% 55%;
+  --document-shell: #0b141b;
+  --document-header: #121f28;
+  --document-toolbar: #14232d;
+  --document-paper: #172731;
+  --document-foreground: #e5edf2;
+  --document-body-text: #dce6eb;
+  --document-heading: #f0f4f6;
+  --document-muted: #aabac2;
+  --document-border: #2b3f4b;
+  --document-divider: #304450;
+  --document-toolbar-text: #bdcbd2;
+  --document-toolbar-hover: #203844;
+  --document-toolbar-active: #1c3c43;
+  --document-toolbar-active-text: #9bdbe2;
+  --document-blockquote: #a9bbc4;
+  --document-inline-code-bg: #203943;
+  --document-inline-code-text: #9bdbe2;
+  --document-code-bg: #0b141b;
+  --document-code-text: #e6edf1;
+  --document-footer: #9aabb4;
+  --document-accent: #6fc3cf;
+  --document-error-bg: #351f22;
+  --document-error-border: #61383a;
+  --document-close-bg: #172731;
+  --document-close-hover: #203844;
+  --document-caret: #6fc3cf;
+  --document-page-shadow: 0 13px 35px rgba(0, 0, 0, .24), 0 2px 5px rgba(0, 0, 0, .18);
+  --document-header-shadow: 0 2px 16px rgba(0, 0, 0, .22);
+  --shared-document-card-bg: #162833;
+  --shared-document-card-border: #35515d;
+  --shared-document-card-hover: #1d3441;
+  --shared-document-card-hover-border: #6c98a5;
+  --shared-document-card-text: #e5edf2;
+  --shared-document-card-accent: #a9c0f0;
+  --shared-document-card-muted: #b6c4cd;
+  --shared-document-card-icon-bg: #203844;
+  --shared-document-card-icon: #a9c0f0;
+  --chat-mention-bg: #183840;
+  --chat-mention-text: #a8e7e2;
+  --chat-mention-border: #3b7475;
+  --chat-mention-tooltip-bg: #0b161c;
+  --chat-mention-tooltip-text: #edf7f9;
+  --chat-mention-tooltip-muted: #adbec6;
+  --chat-mention-avatar-bg: #21434b;
+  --chat-mention-avatar-text: #a8e7e2;
+  --chat-mention-attention-bg: #302814;
+  --chat-mention-attention-border: #b58a2f;
+  --chat-mention-attention-text: #f0d77c;
+  --chat-mention-attention-glow: rgba(226, 185, 83, .2);
+  --chat-reply-bg: #142b35;
+  --chat-reply-border: #355663;
+  --chat-reply-accent: #81d0da;
+  --chat-reply-text: #d1dde1;
+  --chat-reply-close: #aabdc5;
+  --chat-reply-close-hover-bg: #40221f;
+  --chat-reply-close-hover-text: #f1aaa4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--app-font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.mono {
+  font-family: var(--app-font-mono);
+}
