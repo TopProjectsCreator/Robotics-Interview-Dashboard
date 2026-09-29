@@ -93,6 +93,7 @@ import type {
   PartsCatalogItem,
   PartsCatalogList,
   PartsCatalogSearch,
+  PartsCatalogSyncResponse,
   PartsDashboard,
   PartsRobot,
   PartsRobotAllocation,
@@ -6178,7 +6179,7 @@ export const getSearchPartsCatalogUrl = (params: SearchPartsCatalogParams,) => {
 }
 
 /**
- * @summary Search a vendor's public catalog
+ * @summary Search public supplier catalogs
  */
 export const searchPartsCatalog = async (params: SearchPartsCatalogParams, options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogSearch> => {
 
@@ -6225,7 +6226,7 @@ export type SearchPartsCatalogQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary Search a vendor's public catalog
+ * @summary Search public supplier catalogs
  */
 
 export function useSearchPartsCatalog<TData = Awaited<ReturnType<typeof searchPartsCatalog>>, TError = ErrorType<ErrorResponse>>(
@@ -6245,6 +6246,77 @@ export function useSearchPartsCatalog<TData = Awaited<ReturnType<typeof searchPa
 
 
 
+
+export const getSyncPartsCatalogUrl = () => {
+
+
+
+
+  return `/api/parts/catalog/sync`
+}
+
+/**
+ * @summary Sync verified public supplier product feeds
+ */
+export const syncPartsCatalog = async ( options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogSyncResponse> => {
+
+  return customFetch<PartsCatalogSyncResponse>(getSyncPartsCatalogUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSyncPartsCatalogMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncPartsCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncPartsCatalog>>, TError,void, TContext> => {
+
+const mutationKey = ['syncPartsCatalog'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncPartsCatalog>>, void> = () => {
+
+
+          return  syncPartsCatalog(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncPartsCatalogMutationResult = NonNullable<Awaited<ReturnType<typeof syncPartsCatalog>>>
+
+    export type SyncPartsCatalogMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Sync verified public supplier product feeds
+ */
+export const useSyncPartsCatalog = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncPartsCatalog>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncPartsCatalog>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSyncPartsCatalogMutationOptions(options));
+    }
 
 export const getImportPartsCatalogUrl = () => {
 

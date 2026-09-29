@@ -1,16 +1,15 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowUpRight,
   Boxes,
   Check,
-  Download,
   ExternalLink,
-  FileUp,
   Loader2,
   Package,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   Users,
@@ -20,14 +19,13 @@ import {
   getGetPartsDashboardQueryKey,
   getListPartsCatalogQueryKey,
   searchPartsCatalog,
+  useSyncPartsCatalog,
   useCreatePartsCatalogItem,
   useCreatePartsRobot,
   useGetPartsDashboard,
-  useImportPartsCatalog,
   useListPartsCatalog,
   useSetPartsRobotAllocation,
   useUpdatePartsCatalogStock,
-  type PartsCatalogImportItem,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
   type PartsVendor,
@@ -53,89 +51,6 @@ function errorMessage(error: unknown, fallback: string): string {
     if (typeof response?.data?.error === "string") return response.data.error;
   }
   return fallback;
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let value = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
-        value += '"';
-        index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        value += character;
-      }
-    } else if (character === '"' && value.length === 0) {
-      quoted = true;
-    } else if (character === ",") {
-      row.push(value.trim());
-      value = "";
-    } else if (character === "\n" || character === "\r") {
-      if (character === "\r" && text[index + 1] === "\n") index += 1;
-      row.push(value.trim());
-      if (row.some((cell) => cell.length > 0)) rows.push(row);
-      row = [];
-      value = "";
-    } else {
-      value += character;
-    }
-  }
-  row.push(value.trim());
-  if (row.some((cell) => cell.length > 0)) rows.push(row);
-  return rows;
-}
-
-function normalizeHeader(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function csvCatalogRows(text: string, vendorKey: string): PartsCatalogImportItem[] {
-  const rows = parseCsv(text);
-  if (rows.length < 2) throw new Error("The CSV needs a header row and at least one part.");
-  const headers = rows[0].map(normalizeHeader);
-  const column = (...names: string[]) => headers.findIndex((header) => names.includes(header));
-  const nameColumn = column("name", "title", "product", "productname", "itemname");
-  if (nameColumn < 0) throw new Error("Add a name or product-name column to the CSV.");
-  const skuColumn = column("sku", "partnumber", "partno", "itemnumber", "mfrpartnumber");
-  const keyColumn = column("externalkey", "productid", "itemid", "id");
-  const categoryColumn = column("category", "type", "producttype");
-  const descriptionColumn = column("description", "details");
-  const urlColumn = column("producturl", "url", "link", "productlink");
-  const imageColumn = column("imageurl", "image", "imagelink");
-  const quantityColumn = column("quantityowned", "quantity", "stock", "onhand");
-
-  return rows.slice(1).flatMap((cells, index) => {
-    const name = cells[nameColumn]?.trim();
-    if (!name) return [];
-    const read = (cellIndex: number) =>
-      cellIndex < 0 ? undefined : cells[cellIndex]?.trim() || undefined;
-    const quantityText = read(quantityColumn);
-    let quantityOwned: number | undefined;
-    if (quantityText !== undefined) {
-      quantityOwned = Number(quantityText);
-      if (!Number.isInteger(quantityOwned) || quantityOwned < 0) {
-        throw new Error(`Row ${index + 2} has an invalid quantity.`);
-      }
-    }
-    return [{
-      vendorKey,
-      name,
-      ...(read(keyColumn) ? { externalKey: read(keyColumn) } : {}),
-      ...(read(skuColumn) ? { sku: read(skuColumn) } : {}),
-      ...(read(categoryColumn) ? { category: read(categoryColumn) } : {}),
-      ...(read(descriptionColumn) ? { description: read(descriptionColumn) } : {}),
-      ...(read(urlColumn) ? { productUrl: read(urlColumn) } : {}),
-      ...(read(imageColumn) ? { imageUrl: read(imageColumn) } : {}),
-      ...(quantityOwned !== undefined ? { quantityOwned } : {}),
-    }];
-  });
 }
 
 function formatQuantity(value: number): string {
@@ -336,7 +251,6 @@ export default function PartsPage() {
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryVendor, setInventoryVendor] = useState("");
   const [pageSize, setPageSize] = useState(100);
-  const [searchVendor, setSearchVendor] = useState("");
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PartsCatalogSearchResult[]>([]);
   const [lastSearch, setLastSearch] = useState("");
@@ -345,10 +259,6 @@ export default function PartsPage() {
   const [addedUrls, setAddedUrls] = useState<Set<string>>(() => new Set());
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
-  const [importVendor, setImportVendor] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
-  const [importInputKey, setImportInputKey] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -357,8 +267,8 @@ export default function PartsPage() {
     offset: 0,
   });
   const createItemMutation = useCreatePartsCatalogItem();
+  const syncMutation = useSyncPartsCatalog();
   const createRobotMutation = useCreatePartsRobot();
-  const importMutation = useImportPartsCatalog();
   const stockMutation = useUpdatePartsCatalogStock();
   const allocationMutation = useSetPartsRobotAllocation();
   const vendors = dashboardQuery.data?.vendors ?? [];
@@ -375,22 +285,64 @@ export default function PartsPage() {
     ]);
   };
 
+  const syncPublicCatalogs = async () => {
+    setNotice(null);
+    try {
+      const result = await syncMutation.mutateAsync();
+      await refreshParts();
+      const synced = result.vendors.filter((vendor) => vendor.status === "synced").length;
+      const incomplete = result.vendors.filter((vendor) => vendor.status === "incomplete").length;
+      const unavailable = result.vendors.filter((vendor) => vendor.status === "unavailable").length;
+      const searchOnly = result.vendors.filter((vendor) => vendor.status === "search_only").length;
+      const syncedNames = result.vendors
+        .filter((vendor) => vendor.status === "synced")
+        .map((vendor) => vendor.vendorName);
+      const incompleteNames = result.vendors
+        .filter((vendor) => vendor.status === "incomplete")
+        .map((vendor) => vendor.vendorName);
+      const unavailableNames = result.vendors
+        .filter((vendor) => vendor.status === "unavailable")
+        .map((vendor) => vendor.vendorName);
+      const searchOnlyNames = result.vendors
+        .filter((vendor) => vendor.status === "search_only")
+        .map((vendor) => vendor.vendorName);
+      const details = [
+        `Public feeds fully paginated: ${syncedNames.join(", ") || "none"}.`,
+        incomplete > 0 ? `Pagination did not finish for: ${incompleteNames.join(", ")}.` : "",
+        unavailable > 0 ? `Feeds unavailable: ${unavailableNames.join(", ")}.` : "",
+        searchOnly > 0
+          ? `No verified public full-catalog feed: ${searchOnlyNames.join(", ")}. They remain available in global search.`
+          : "",
+        "A completed feed sync covers only products exposed by that public feed.",
+      ].filter(Boolean);
+      setNotice({
+        kind: synced > 0 ? "success" : "error",
+        text: `Catalog sync finished: ${formatQuantity(result.totalItems)} product variants from ${synced} fully paginated public feed(s) (${formatQuantity(result.created)} new, ${formatQuantity(result.updated)} refreshed). ${details.join(" ")}`,
+      });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(error, "Unable to sync public supplier catalogs."),
+      });
+    }
+  };
+
   const runSearch = async (event: FormEvent) => {
     event.preventDefault();
-    if (!searchVendor || searchText.trim().length < 2) {
-      setSearchError("Choose a vendor and enter at least two characters.");
+    if (searchText.trim().length < 2) {
+      setSearchError("Enter at least two characters.");
       return;
     }
     setSearchBusy(true);
     setSearchError("");
     setSearchResults([]);
-    setLastSearch(`${vendors.find((vendor) => vendor.key === searchVendor)?.name ?? "Vendor"} · ${searchText.trim()}`);
+    setLastSearch(searchText.trim());
     try {
-      const result = await searchPartsCatalog({ vendorKey: searchVendor, q: searchText.trim() });
+      const result = await searchPartsCatalog({ q: searchText.trim() });
       setSearchResults(result.results);
-      if (result.results.length === 0) setSearchError("No public catalog results found. Try a different term or import a vendor export.");
+      if (result.results.length === 0) setSearchError("No matching public supplier pages were found. Try a different search.");
     } catch (error) {
-      setSearchError(errorMessage(error, "The vendor catalog search is unavailable right now."));
+      setSearchError(errorMessage(error, "Keyless supplier search is unavailable right now."));
     } finally {
       setSearchBusy(false);
     }
@@ -400,7 +352,7 @@ export default function PartsPage() {
     try {
       await createItemMutation.mutateAsync({
         data: {
-          vendorKey: searchVendor,
+          vendorKey: result.vendorKey,
           name: result.title,
           description: result.description || null,
           productUrl: result.url,
@@ -452,63 +404,6 @@ export default function PartsPage() {
     }
   };
 
-  const importCsv = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!importVendor) {
-      setNotice({ kind: "error", text: "Choose the vendor for this catalog file first." });
-      setImportInputKey((key) => key + 1);
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      setNotice({ kind: "error", text: "CSV files must be 25 MB or smaller." });
-      setImportInputKey((key) => key + 1);
-      return;
-    }
-    setImportBusy(true);
-    setNotice(null);
-    try {
-      const items = csvCatalogRows(await file.text(), importVendor);
-      if (items.length === 0) throw new Error("No named catalog items were found in the CSV.");
-      let created = 0;
-      let updated = 0;
-      for (let index = 0; index < items.length; index += 500) {
-        const result = await importMutation.mutateAsync({
-          data: { items: items.slice(index, index + 500) },
-        });
-        created += result.created;
-        updated += result.updated;
-      }
-      setNotice({
-        kind: "success",
-        text: `Import complete: ${formatQuantity(created)} new and ${formatQuantity(updated)} updated catalog items.`,
-      });
-      await refreshParts();
-    } catch (error) {
-      setNotice({
-        kind: "error",
-        text: errorMessage(error, "Catalog import failed. Any earlier batches were kept."),
-      });
-    } finally {
-      setImportBusy(false);
-      setImportInputKey((key) => key + 1);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const downloadTemplate = () => {
-    const blob = new Blob(
-      ["name,sku,externalKey,category,description,productUrl,imageUrl,quantityOwned\n"],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "parts-catalog-template.csv";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
   const dashboard = dashboardQuery.data;
   const isMutating =
     createItemMutation.isPending ||
@@ -526,14 +421,19 @@ export default function PartsPage() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Parts & inventory</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Search all 19 listed suppliers, track owned stock, and reserve parts for each robot.
-              Import an official CSV when you need a complete vendor export.
+              Search all 19 suppliers, sync verified public catalogs, track owned stock, and reserve parts for each robot.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={downloadTemplate}>
-              <Download size={16} aria-hidden="true" />
-              CSV template
+            <Button
+              variant="outline"
+              disabled={syncMutation.isPending}
+              onClick={() => void syncPublicCatalogs()}
+            >
+              {syncMutation.isPending
+                ? <Loader2 className="animate-spin" size={16} aria-hidden="true" />
+                : <RefreshCw size={16} aria-hidden="true" />}
+              {syncMutation.isPending ? "Syncing catalogs…" : "Sync public catalogs"}
             </Button>
             <Button onClick={() => setTab("search")}>
               <Search size={16} aria-hidden="true" />
@@ -670,36 +570,13 @@ export default function PartsPage() {
               <section className="space-y-4" aria-label="Search supplier catalogs">
                 <Card className="border-border bg-card">
                   <CardHeader>
-                    <CardTitle className="text-base">Find a supplier part</CardTitle>
+                    <CardTitle className="text-base">Search all suppliers</CardTitle>
                     <CardDescription>
-                      Search public vendor pages. Search results are indexed listings, not a guaranteed complete SKU export.
-                      Use the CSV import for complete vendor-provided catalogs.
+                      Search public product pages across all 19 suppliers. Results link to the supplier source and are not a complete SKU export.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <form onSubmit={runSearch} className="grid gap-3 md:grid-cols-[minmax(220px,0.8fr)_minmax(260px,1fr)_auto]">
-                      <label className="text-sm font-medium">
-                        Supplier
-                        <select
-                          value={searchVendor}
-                          onChange={(event) => {
-                            setSearchVendor(event.target.value);
-                            setSearchResults([]);
-                            setSearchError("");
-                          }}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          required
-                        >
-                          <option value="">Choose a supplier</option>
-                          {VENDOR_GROUPS.map((group) => (
-                            <optgroup key={group} label={group}>
-                              {vendors.filter((vendor) => vendor.group === group).map((vendor) => (
-                                <option key={vendor.key} value={vendor.key}>{vendor.name}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      </label>
+                    <form onSubmit={runSearch} className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto]">
                       <label className="text-sm font-medium">
                         Part, SKU, or material
                         <Input
@@ -710,16 +587,11 @@ export default function PartsPage() {
                           className="mt-1 h-10"
                         />
                       </label>
-                      <Button type="submit" className="self-end" disabled={searchBusy || searchText.trim().length < 2 || !searchVendor}>
+                      <Button type="submit" className="self-end" disabled={searchBusy || searchText.trim().length < 2}>
                         {searchBusy ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
                         Search
                       </Button>
                     </form>
-                    {importVendor && (
-                      <p className="text-xs text-muted-foreground">
-                        CSV import vendor: <strong className="text-foreground">{vendors.find((vendor) => vendor.key === importVendor)?.name}</strong>
-                      </p>
-                    )}
                     {searchError && (
                       <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
                         <AlertCircle className="mt-0.5 shrink-0" size={16} /> {searchError}
@@ -728,21 +600,15 @@ export default function PartsPage() {
                   </CardContent>
                 </Card>
 
-                {vendors.find((vendor) => vendor.key === searchVendor)?.catalogMode === "custom_fabrication" && (
-                  <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
-                    This supplier provides custom fabrication. Search its public pages for materials and services, then save each ordered design as a tracked part.
-                  </div>
-                )}
-
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} /> Searching {vendors.find((vendor) => vendor.key === searchVendor)?.name}…
+                    <Loader2 className="animate-spin" size={16} /> Searching all 19 suppliers…
                   </div>
                 )}
 
                 {lastSearch && searchResults.length > 0 && (
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{searchResults.length} result(s) for {lastSearch}</span>
+                    <span>{searchResults.length} result(s) for “{lastSearch}” across all suppliers</span>
                     <span>Open the supplier page to confirm SKU, options, and availability.</span>
                   </div>
                 )}
@@ -754,6 +620,7 @@ export default function PartsPage() {
                         <CardContent className="flex h-full flex-col gap-3 p-4">
                           <div className="min-w-0">
                             <h3 className="font-medium text-foreground">{result.title}</h3>
+                            <Badge variant="secondary" className="mt-2">{result.vendorName}</Badge>
                             <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{result.description || "Open the supplier page for product details."}</p>
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
@@ -822,46 +689,6 @@ export default function PartsPage() {
                         </select>
                       </label>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <label className="text-sm font-medium">
-                        Import vendor
-                        <select
-                          value={importVendor}
-                          onChange={(event) => setImportVendor(event.target.value)}
-                          className="mt-1 h-10 min-w-48 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="">Choose supplier</option>
-                          {VENDOR_GROUPS.map((group) => (
-                            <optgroup key={group} label={group}>
-                              {vendors.filter((vendor) => vendor.group === group).map((vendor) => (
-                                <option key={vendor.key} value={vendor.key}>{vendor.name}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="self-end">
-                        <input
-                          key={importInputKey}
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".csv,text/csv"
-                          className="sr-only"
-                          aria-label="Choose a supplier CSV catalog"
-                          onChange={(event) => void importCsv(event)}
-                          disabled={importBusy}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={!importVendor || importBusy}
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          {importBusy ? <Loader2 className="animate-spin" size={16} /> : <FileUp size={16} />}
-                          {importBusy ? "Importing…" : "Import CSV"}
-                        </Button>
-                      </div>
-                    </div>
                   </CardContent>
                 </Card>
 
@@ -884,7 +711,7 @@ export default function PartsPage() {
                       <span className="rounded-2xl bg-primary/10 p-3 text-primary"><Package size={24} /></span>
                       <h2 className="mt-4 font-semibold text-foreground">No saved parts yet</h2>
                       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                        Search a supplier catalog or import an official CSV to add parts to the team inventory.
+                        Sync available public catalogs or search across all suppliers to add parts to the team inventory.
                       </p>
                       <Button className="mt-4" onClick={() => setTab("search")}>
                         <Search size={16} /> Find supplier parts

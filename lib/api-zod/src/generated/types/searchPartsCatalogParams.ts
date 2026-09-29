@@ -7,7 +7,7 @@
  */
 
 export type SearchPartsCatalogParams = {
-vendorKey: string;
+vendorKey?: string;
 /**
  * @minLength 2
  * @maxLength 120

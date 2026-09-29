@@ -7,6 +7,8 @@
  */
 
 export interface PartsCatalogSearchResult {
+  vendorKey: string;
+  vendorName: string;
   title: string;
   url: string;
   description: string;

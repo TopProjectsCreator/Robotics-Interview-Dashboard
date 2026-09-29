@@ -91,6 +91,8 @@ export interface PartsCatalogList {
 }
 
 export interface PartsCatalogSearchResult {
+  vendorKey: string;
+  vendorName: string;
   title: string;
   url: string;
   description: string;
@@ -99,9 +101,37 @@ export interface PartsCatalogSearchResult {
 }
 
 export interface PartsCatalogSearch {
-  vendorKey: string;
   query: string;
   results: PartsCatalogSearchResult[];
+}
+
+export type PartsCatalogSyncVendorStatus = typeof PartsCatalogSyncVendorStatus[keyof typeof PartsCatalogSyncVendorStatus];
+
+
+export const PartsCatalogSyncVendorStatus = {
+  synced: 'synced',
+  search_only: 'search_only',
+  unavailable: 'unavailable',
+  incomplete: 'incomplete',
+} as const;
+
+export interface PartsCatalogSyncVendor {
+  vendorKey: string;
+  vendorName: string;
+  status: PartsCatalogSyncVendorStatus;
+  itemCount: number;
+  created: number;
+  updated: number;
+  /** @nullable */
+  source: string | null;
+  message: string;
+}
+
+export interface PartsCatalogSyncResponse {
+  vendors: PartsCatalogSyncVendor[];
+  totalItems: number;
+  created: number;
+  updated: number;
 }
 
 export interface CreatePartsCatalogItemInput {
@@ -1584,7 +1614,7 @@ offset?: number;
 };
 
 export type SearchPartsCatalogParams = {
-vendorKey: string;
+vendorKey?: string;
 /**
  * @minLength 2
  * @maxLength 120

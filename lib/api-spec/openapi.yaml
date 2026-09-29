@@ -1512,11 +1512,11 @@ paths:
     get:
       operationId: searchPartsCatalog
       tags: [parts]
-      summary: Search a vendor's public catalog
+      summary: Search public supplier catalogs
       parameters:
         - name: vendorKey
           in: query
-          required: true
+          required: false
           schema:
             type: string
         - name: q
@@ -1535,6 +1535,24 @@ paths:
                 $ref: "#/components/schemas/PartsCatalogSearch"
         "502":
           description: Catalog search is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/sync:
+    post:
+      operationId: syncPartsCatalog
+      tags: [parts]
+      summary: Sync verified public supplier product feeds
+      responses:
+        "200":
+          description: Public catalog feed sync summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogSyncResponse"
+        "500":
+          description: Catalog synchronization failed
           content:
             application/json:
               schema:
@@ -1853,8 +1871,12 @@ components:
           type: integer
     PartsCatalogSearchResult:
       type: object
-      required: [title, url, description]
+      required: [vendorKey, vendorName, title, url, description]
       properties:
+        vendorKey:
+          type: string
+        vendorName:
+          type: string
         title:
           type: string
         url:
@@ -1866,16 +1888,50 @@ components:
           type: [string, "null"]
     PartsCatalogSearch:
       type: object
-      required: [vendorKey, query, results]
+      required: [query, results]
       properties:
-        vendorKey:
-          type: string
         query:
           type: string
         results:
           type: array
           items:
             $ref: "#/components/schemas/PartsCatalogSearchResult"
+    PartsCatalogSyncVendor:
+      type: object
+      required: [vendorKey, vendorName, status, itemCount, created, updated, source, message]
+      properties:
+        vendorKey:
+          type: string
+        vendorName:
+          type: string
+        status:
+          type: string
+          enum: [synced, search_only, unavailable, incomplete]
+        itemCount:
+          type: integer
+        created:
+          type: integer
+        updated:
+          type: integer
+        source:
+          type: ["string", "null"]
+          format: uri
+        message:
+          type: string
+    PartsCatalogSyncResponse:
+      type: object
+      required: [vendors, totalItems, created, updated]
+      properties:
+        vendors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsCatalogSyncVendor"
+        totalItems:
+          type: integer
+        created:
+          type: integer
+        updated:
+          type: integer
     CreatePartsCatalogItemInput:
       type: object
       required: [vendorKey, name]

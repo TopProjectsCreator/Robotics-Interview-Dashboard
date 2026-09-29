@@ -2359,7 +2359,7 @@ export const CreatePartsCatalogItemResponse = zod.object({
 
 
 /**
- * @summary Search a vendor's public catalog
+ * @summary Search public supplier catalogs
  */
 export const searchPartsCatalogQueryQMin = 2;
 export const searchPartsCatalogQueryQMax = 120;
@@ -2367,19 +2367,40 @@ export const searchPartsCatalogQueryQMax = 120;
 
 
 export const SearchPartsCatalogQueryParams = zod.object({
-  "vendorKey": zod.coerce.string(),
+  "vendorKey": zod.coerce.string().optional(),
   "q": zod.coerce.string().min(searchPartsCatalogQueryQMin).max(searchPartsCatalogQueryQMax)
 })
 
 export const SearchPartsCatalogResponse = zod.object({
-  "vendorKey": zod.string(),
   "query": zod.string(),
   "results": zod.array(zod.object({
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
   "title": zod.string(),
   "url": zod.string().url(),
   "description": zod.string(),
   "sku": zod.string().nullish()
 }))
+})
+
+
+/**
+ * @summary Sync verified public supplier product feeds
+ */
+export const SyncPartsCatalogResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "status": zod.enum(['synced', 'search_only', 'unavailable', 'incomplete']),
+  "itemCount": zod.number().int(),
+  "created": zod.number().int(),
+  "updated": zod.number().int(),
+  "source": zod.string().url().nullable(),
+  "message": zod.string()
+})),
+  "totalItems": zod.number().int(),
+  "created": zod.number().int(),
+  "updated": zod.number().int()
 })
 
 

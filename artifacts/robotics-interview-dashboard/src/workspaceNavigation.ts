@@ -1,4 +1,4 @@
-export type WorkspaceArea = "overview" | "interview" | "chat";
+export type WorkspaceArea = "overview" | "interview" | "chat" | "parts";
 export type WorkspaceNavIcon =
   | "interview"
   | "chat"
@@ -19,6 +19,7 @@ export type WorkspaceNavItem = {
 const WORKSPACE_LINKS: WorkspaceNavItem[] = [
   { href: "/interview", label: "Interview", iconKey: "interview", kind: "workspace" },
   { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
+  { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
 ];
 
 const INTERVIEW_LINKS: WorkspaceNavItem[] = [
@@ -27,7 +28,6 @@ const INTERVIEW_LINKS: WorkspaceNavItem[] = [
   { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section" },
   { href: "/big-screen", label: "Big screen", iconKey: "bigScreen", kind: "section" },
   { href: "/interview/assistant", label: "AI assistant", iconKey: "assistant", kind: "section" },
-  { href: "/parts", label: "Parts", iconKey: "parts", kind: "section" },
 ];
 
 const CHAT_LINKS: WorkspaceNavItem[] = [
@@ -38,6 +38,7 @@ export function workspaceAreaForPath(location: string): WorkspaceArea {
   const path = location.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
 
   if (path === "/dashboard") return "overview";
+  if (path === "/parts" || path.startsWith("/parts/")) return "parts";
   if (
     path === "/chat" ||
     path.startsWith("/chat/") ||
@@ -54,5 +55,6 @@ export function workspaceAreaForPath(location: string): WorkspaceArea {
 export function getWorkspaceNavigation(area: WorkspaceArea): WorkspaceNavItem[] {
   if (area === "overview") return WORKSPACE_LINKS;
   if (area === "interview") return [...WORKSPACE_LINKS, ...INTERVIEW_LINKS];
-  return [...WORKSPACE_LINKS, ...CHAT_LINKS];
+  if (area === "chat") return [...WORKSPACE_LINKS, ...CHAT_LINKS];
+  return WORKSPACE_LINKS;
 }

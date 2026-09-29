@@ -17,3 +17,4 @@
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.
 - [Dummy half-edge FIN geometry](occt-dummy-halfedge-fin.md) — resolve curve-less edges from a real FIN, not an arbitrary twin.
 - [Tailwind dev CSS refresh](tailwind-dev-css-refresh.md) — if new page utilities are missing after HMR, compare the generated CSS and restart the existing Vite workflow before rewriting styles.
+- [Parts source coverage](parts-source-coverage.md) — search hits are discovery only; mark a vendor fully synced only after its official feed paginates to a verified end.

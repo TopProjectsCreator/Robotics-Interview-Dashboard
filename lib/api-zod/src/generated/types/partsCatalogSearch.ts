@@ -8,7 +8,6 @@
 import type { PartsCatalogSearchResult } from './partsCatalogSearchResult';
 
 export interface PartsCatalogSearch {
-  vendorKey: string;
   query: string;
   results: PartsCatalogSearchResult[];
 }
