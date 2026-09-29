@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 cad-convert.workspace = true
+cad-export.workspace = true
 cad-tess.workspace = true
 cad-ir.workspace = true
 cad-alloc.workspace = true

@@ -1,7 +1,17 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { getStoredAuthToken } from "../authSession";
 import { ChatGlbViewer } from "./ChatGlbViewer";
+import {
+  parseProgressiveCadPreviewManifest,
+  type ProgressiveCadPreviewManifest,
+} from "./progressiveCadPreview";
+
+const ChatProgressiveGlbViewer = lazy(() =>
+  import("./ChatProgressiveGlbViewer").then((module) => ({
+    default: module.ChatProgressiveGlbViewer,
+  })),
+);
 
 const PARASOLID_XT_PREVIEW_MAX_BYTES = 200 * 1024 * 1024;
 const PARASOLID_XB_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
@@ -24,6 +34,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Building a private 3D preview…");
   const [partialPreview, setPartialPreview] = useState(false);
+  const [progressivePreview, setProgressivePreview] = useState<ProgressiveCadPreviewManifest | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
@@ -36,6 +47,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
     setPreviewUrl(null);
     setError(null);
     setPartialPreview(false);
+    setProgressivePreview(null);
     setStatus("Loading the stored Parasolid file…");
 
     void (async () => {
@@ -58,7 +70,7 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
           throw new Error(`Inline previews are limited to ${maxLabel}. Download the CAD file instead.`);
         }
         setStatus(sourceFile.size > 50 * 1024 * 1024
-          ? "Large X_T model detected. High-detail preview conversion may take several minutes…"
+          ? "Large X_T model detected. Building a coarse overview and exact detail tiles…"
           : "Building a private 3D preview…");
 
         const token = getStoredAuthToken();
@@ -86,6 +98,15 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
           throw new Error(message);
         }
 
+        if (format === "x-t" && sourceFile.size > 50 * 1024 * 1024) {
+          const manifest = parseProgressiveCadPreviewManifest(await response.json());
+          if (active) {
+            setProgressivePreview(manifest);
+            setStatus("Coarse overview ready; exact geometry loads as you zoom.");
+          }
+          return;
+        }
+
         const preview = await response.blob();
         if (!preview.size) throw new Error("The converter returned an empty preview.");
         setPartialPreview(response.headers.get("X-Parasolid-Preview-Partial") === "true");
@@ -111,6 +132,23 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
   }, [name, src, retryKey]);
+
+  if (progressivePreview) {
+    return <div className="my-2 max-w-xl" data-testid="chat-parasolid-attachment">
+      <Suspense fallback={<p className="rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#718189] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]" role="status">Loading the progressive 3D viewer…</p>}>
+        <ChatProgressiveGlbViewer
+          name={name}
+          previewId={progressivePreview.previewId}
+          tiles={progressivePreview.tiles}
+        />
+      </Suspense>
+      <div className="flex justify-end px-2">
+        <a href={src} download={name} className="text-xs font-semibold text-[#16869a] underline underline-offset-2 dark:text-[#75c4cf]">
+          Download original Parasolid
+        </a>
+      </div>
+    </div>;
+  }
 
   if (previewUrl) {
     return <div className="my-2 max-w-xl" data-testid="chat-parasolid-attachment">

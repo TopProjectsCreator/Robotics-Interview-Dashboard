@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatParasolidViewer } from "./ChatParasolidViewer";
 
 vi.mock("@google/model-viewer", () => ({}));
+vi.mock("./ChatProgressiveGlbViewer", () => ({
+  ChatProgressiveGlbViewer: ({ name }: { name: string }) => (
+    <div data-testid="chat-progressive-glb-attachment">{name}</div>
+  ),
+}));
 
 const NativeURL = globalThis.URL;
 let requests: { url: string; init?: RequestInit }[] = [];
@@ -76,12 +81,24 @@ describe("ChatParasolidViewer", () => {
     } as Response;
 
     installFetchMock(
-      () => new Response(new Blob(["glb"]), { status: 200 }),
+      () => new Response(JSON.stringify({
+        previewId: "00000000-0000-4000-8000-000000000000",
+        overviewBytes: 4096,
+        detailBytes: 1024,
+        triangles: 12,
+        tiles: [{
+          id: "g0",
+          bytes: 1024,
+          triangles: 12,
+          center: [0, 0, 0],
+          radius: 1,
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
       () => sourceResponse,
     );
     render(<ChatParasolidViewer name="large-assembly.x_t" src="blob:original-model" />);
 
-    await screen.findByTestId("chat-glb-attachment");
+    await screen.findByTestId("chat-progressive-glb-attachment");
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[1].init?.body).toBe(sourceFile);
     expect((requests[1].init?.headers as Record<string, string>)["X-Parasolid-Format"]).toBe("x-t");

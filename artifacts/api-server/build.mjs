@@ -127,7 +127,17 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   const nativeSourceDir = path.resolve(artifactDir, "native/cadconvert");
   execFileSync(
     "cargo",
-    ["build", "--release", "--locked", "--package", "cad-cli", "--bin", "cadconvert"],
+    [
+      "build",
+      "--release",
+      "--locked",
+      "--package",
+      "cad-cli",
+      "--bin",
+      "cadconvert",
+      "--bin",
+      "cadprogressive",
+    ],
     {
       cwd: nativeSourceDir,
       stdio: "inherit",
@@ -143,6 +153,10 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   await mkdir(nativeDistDir, { recursive: true });
   await copyFile(nativeBinary, copiedNativeBinary);
   await chmod(copiedNativeBinary, 0o755);
+  const progressiveBinary = path.join(nativeSourceDir, "target/release/cadprogressive");
+  const copiedProgressiveBinary = path.join(nativeDistDir, "cadprogressive");
+  await copyFile(progressiveBinary, copiedProgressiveBinary);
+  await chmod(copiedProgressiveBinary, 0o755);
 }
 
 buildAll().catch((err) => {

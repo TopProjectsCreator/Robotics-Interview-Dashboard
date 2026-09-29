@@ -63,6 +63,7 @@ version = "0.3.0"
 dependencies = [
  "cad-alloc",
  "cad-convert",
+ "cad-export",
  "cad-ir",
  "cad-tess",
 ]

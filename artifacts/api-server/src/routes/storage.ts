@@ -2,6 +2,7 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
+import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
@@ -97,14 +98,119 @@ const PARASOLID_PYTHON_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 const PARASOLID_XT_PREVIEW_MAX_BYTES = 200 * 1024 * 1024;
 const PARASOLID_PREVIEW_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
 const PARASOLID_PREVIEW_TIMEOUT_MS = 6 * 60_000;
+const PARASOLID_PROGRESSIVE_PREVIEW_TIMEOUT_MS = 10 * 60_000;
 const PARASOLID_PREVIEW_MAX_CONCURRENT = 1;
 let activeParasolidPreviews = 0;
 const PARASOLID_PREVIEW_WORKER_PATH = fileURLToPath(
   new URL('./parasolidPreviewWorker.py', import.meta.url),
 );
-const PARASOLID_PREVIEW_CADCONVERT_PATH = fileURLToPath(
-  new URL('./native/cadconvert', import.meta.url),
+const PARASOLID_PREVIEW_CADPROGRESSIVE_PATH = fileURLToPath(
+  new URL('./native/cadprogressive', import.meta.url),
 );
+const PARASOLID_PROGRESSIVE_MAX_OUTPUT_BYTES = 384 * 1024 * 1024;
+const PARASOLID_PROGRESSIVE_TTL_MS = 30 * 60_000;
+const PARASOLID_PROGRESSIVE_MAX_CACHED_PREVIEWS = 2;
+type ProgressiveTile = {
+  id: string;
+  bytes: number;
+  triangles: number;
+  center: [number, number, number];
+  radius: number;
+};
+type ProgressivePreviewFiles = {
+  root: string;
+  expiresAt: number;
+  tileIds: Set<string>;
+};
+const progressivePreviewFiles = new Map<string, ProgressivePreviewFiles>();
+
+function removeProgressivePreview(previewId: string): void {
+  const cached = progressivePreviewFiles.get(previewId);
+  if (!cached) return;
+  progressivePreviewFiles.delete(previewId);
+  void rm(cached.root, { recursive: true, force: true }).catch(() => undefined);
+}
+
+function pruneProgressivePreviews(): void {
+  const now = Date.now();
+  for (const [previewId, cached] of progressivePreviewFiles) {
+    if (cached.expiresAt <= now) removeProgressivePreview(previewId);
+  }
+}
+
+const progressivePreviewSweep = setInterval(pruneProgressivePreviews, 60_000);
+progressivePreviewSweep.unref();
+
+function parseProgressiveManifest(value: unknown): {
+  overviewBytes: number;
+  detailBytes: number;
+  triangles: number;
+  tiles: ProgressiveTile[];
+} {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Progressive converter returned an invalid manifest');
+  }
+  const manifest = value as Record<string, unknown>;
+  const integer = (candidate: unknown) =>
+    typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= 0;
+  if (
+    manifest.version !== 1 ||
+    !integer(manifest.overviewBytes) ||
+    manifest.overviewBytes === 0 ||
+    !integer(manifest.detailBytes) ||
+    !integer(manifest.triangles) ||
+    !Array.isArray(manifest.tiles) ||
+    manifest.tiles.length === 0 ||
+    manifest.tiles.length > 4096
+  ) {
+    throw new Error('Progressive converter returned an incomplete manifest');
+  }
+  const tiles = manifest.tiles.map((candidate): ProgressiveTile => {
+    if (!candidate || typeof candidate !== 'object') {
+      throw new Error('Progressive converter returned an invalid tile');
+    }
+    const tile = candidate as Record<string, unknown>;
+    if (
+      typeof tile.id !== 'string' ||
+      !/^g\d+$/.test(tile.id) ||
+      !integer(tile.bytes) ||
+      tile.bytes === 0 ||
+      !integer(tile.triangles) ||
+      !Array.isArray(tile.center) ||
+      tile.center.length !== 3 ||
+      !tile.center.every((coordinate) => typeof coordinate === 'number' && Number.isFinite(coordinate)) ||
+      typeof tile.radius !== 'number' ||
+      !Number.isFinite(tile.radius) ||
+      tile.radius < 0
+    ) {
+      throw new Error('Progressive converter returned an invalid tile');
+    }
+    return {
+      id: tile.id,
+      bytes: tile.bytes as number,
+      triangles: tile.triangles as number,
+      center: tile.center as [number, number, number],
+      radius: tile.radius,
+    };
+  });
+  if (new Set(tiles.map((tile) => tile.id)).size !== tiles.length) {
+    throw new Error('Progressive converter returned duplicate tile IDs');
+  }
+  const detailBytes = tiles.reduce((total, tile) => total + tile.bytes, 0);
+  if (detailBytes !== manifest.detailBytes) {
+    throw new Error('Progressive converter returned inconsistent detail sizes');
+  }
+  const triangles = tiles.reduce((total, tile) => total + tile.triangles, 0);
+  if (!Number.isSafeInteger(triangles) || triangles !== manifest.triangles) {
+    throw new Error('Progressive converter returned inconsistent triangle counts');
+  }
+  return {
+    overviewBytes: manifest.overviewBytes as number,
+    detailBytes,
+    triangles: manifest.triangles as number,
+    tiles,
+  };
+}
 const CHAT_UPLOAD_CONTENT_TYPES = [
   'image/*',
   'video/*',
@@ -216,6 +322,7 @@ router.post(
   express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
     let data = req.body as Buffer | undefined;
+    let retainTempRoot = false;
     const formatHeader = req.get('x-parasolid-format')?.toLowerCase();
     const sourceFormat = formatHeader === 'x-t' || formatHeader === 'x-b' ? formatHeader : null;
 
@@ -258,13 +365,25 @@ router.post(
       let glbPath: string;
       let partial = false;
       if (useCadconvert) {
-        glbPath = join(tempRoot, 'preview.glb');
+        pruneProgressivePreviews();
+        const progressiveDir = join(tempRoot, 'progressive');
         const output = await new Promise<string>((resolve, reject) => {
           execFile(
-            PARASOLID_PREVIEW_CADCONVERT_PATH,
-            [inputPath, glbPath, '-q', 'plain', '--sag', '0.01', '--angle', '8', '--progress'],
+            PARASOLID_PREVIEW_CADPROGRESSIVE_PATH,
+            [
+              inputPath,
+              progressiveDir,
+              '--sag',
+              '0.01',
+              '--angle',
+              '8',
+              '--overview-sag',
+              '0.8',
+              '--overview-angle',
+              '20',
+            ],
             {
-              timeout: PARASOLID_PREVIEW_TIMEOUT_MS,
+              timeout: PARASOLID_PROGRESSIVE_PREVIEW_TIMEOUT_MS,
               maxBuffer: 4 * 1024 * 1024,
               windowsHide: true,
               env: {
@@ -280,7 +399,58 @@ router.post(
           );
         });
         requireCompleteCadconvertFaceSummary(output);
+        const rawManifest = JSON.parse(
+          await readFile(join(progressiveDir, 'manifest.json'), 'utf8'),
+        ) as unknown;
+        const manifest = parseProgressiveManifest(rawManifest);
+        const totalBytes = manifest.overviewBytes + manifest.detailBytes;
+        if (totalBytes > PARASOLID_PROGRESSIVE_MAX_OUTPUT_BYTES) {
+          throw new Error('The progressive converter returned an oversized preview');
+        }
+        const overviewPath = join(progressiveDir, 'overview.glb');
+        const overviewStat = await stat(overviewPath);
+        if (
+          overviewStat.size !== manifest.overviewBytes ||
+          !(await isValidGlbFile(overviewPath, overviewStat.size))
+        ) {
+          throw new Error('The progressive converter returned an invalid overview GLB');
+        }
+        for (const tile of manifest.tiles) {
+          const tilePath = join(progressiveDir, 'tiles', `${tile.id}.glb`);
+          const tileStat = await stat(tilePath);
+          if (
+            tileStat.size !== tile.bytes ||
+            !(await isValidGlbFile(tilePath, tileStat.size))
+          ) {
+            throw new Error(`The progressive converter returned an invalid tile ${tile.id}`);
+          }
+        }
+
+        while (progressivePreviewFiles.size >= PARASOLID_PROGRESSIVE_MAX_CACHED_PREVIEWS) {
+          const oldestId = progressivePreviewFiles.keys().next().value;
+          if (!oldestId) break;
+          removeProgressivePreview(oldestId);
+        }
+        const previewId = randomUUID();
+        progressivePreviewFiles.set(previewId, {
+          root: tempRoot,
+          expiresAt: Date.now() + PARASOLID_PROGRESSIVE_TTL_MS,
+          tileIds: new Set(manifest.tiles.map((tile) => tile.id)),
+        });
+        retainTempRoot = true;
+        res
+          .status(200)
+          .setHeader('Cache-Control', 'private, no-store')
+          .json({
+            previewId,
+            overviewBytes: manifest.overviewBytes,
+            detailBytes: manifest.detailBytes,
+            triangles: manifest.triangles,
+            tiles: manifest.tiles,
+          });
+        return;
       } else {
+        glbPath = join(tempRoot, 'preview.glb');
         await new Promise<void>((resolve, reject) => {
           execFile(
             'python',
@@ -331,10 +501,75 @@ router.post(
     } finally {
       activeParasolidPreviews -= 1;
       if (tempRoot) {
-        await rm(tempRoot, { recursive: true, force: true }).catch((error) => {
-          req.log.warn({ err: error }, 'Could not remove temporary Parasolid preview files');
-        });
+        if (!retainTempRoot) {
+          await rm(tempRoot, { recursive: true, force: true }).catch((error) => {
+            req.log.warn({ err: error }, 'Could not remove temporary Parasolid preview files');
+          });
+        }
       }
+    }
+  },
+);
+
+router.get(
+  '/storage/parasolid-preview/:previewId/overview',
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    pruneProgressivePreviews();
+    const previewId = Array.isArray(req.params.previewId)
+      ? req.params.previewId[0]
+      : req.params.previewId;
+    const cached = progressivePreviewFiles.get(previewId);
+    if (!cached) {
+      res.status(404).json({ error: 'This progressive CAD preview has expired' });
+      return;
+    }
+    cached.expiresAt = Date.now() + PARASOLID_PROGRESSIVE_TTL_MS;
+    const overviewPath = join(cached.root, 'progressive', 'overview.glb');
+    try {
+      const overviewStat = await stat(overviewPath);
+      res
+        .status(200)
+        .setHeader('Content-Type', 'model/gltf-binary')
+        .setHeader('Content-Length', String(overviewStat.size))
+        .setHeader('Cache-Control', 'private, no-store');
+      await pipeline(createReadStream(overviewPath), res);
+    } catch (error) {
+      req.log.warn({ err: error, previewId }, 'Could not serve progressive CAD overview');
+      if (!res.headersSent) res.status(404).json({ error: 'Preview overview not found' });
+    }
+  },
+);
+
+router.get(
+  '/storage/parasolid-preview/:previewId/tiles/:tileId',
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    pruneProgressivePreviews();
+    const previewId = Array.isArray(req.params.previewId)
+      ? req.params.previewId[0]
+      : req.params.previewId;
+    const tileId = Array.isArray(req.params.tileId)
+      ? req.params.tileId[0]
+      : req.params.tileId;
+    const cached = progressivePreviewFiles.get(previewId);
+    if (!cached || !cached.tileIds.has(tileId) || !/^g\d+$/.test(tileId)) {
+      res.status(404).json({ error: 'This progressive CAD detail tile was not found' });
+      return;
+    }
+    cached.expiresAt = Date.now() + PARASOLID_PROGRESSIVE_TTL_MS;
+    const tilePath = join(cached.root, 'progressive', 'tiles', `${tileId}.glb`);
+    try {
+      const tileStat = await stat(tilePath);
+      res
+        .status(200)
+        .setHeader('Content-Type', 'model/gltf-binary')
+        .setHeader('Content-Length', String(tileStat.size))
+        .setHeader('Cache-Control', 'private, no-store');
+      await pipeline(createReadStream(tilePath), res);
+    } catch (error) {
+      req.log.warn({ err: error, previewId, tileId }, 'Could not serve progressive CAD tile');
+      if (!res.headersSent) res.status(404).json({ error: 'Preview detail tile not found' });
     }
   },
 );
