@@ -36,6 +36,8 @@ Required runtime services and secrets:
 - Kilo's OpenAI-compatible OpenRouter route for assistant answers; Pollinations for generated images
 - Supabase Storage (private bucket) for roster uploads and profile photos
 
+Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled local converter used for large X_T chat previews.
+
 ## Where things live
 
 - `lib/api-spec/openapi.yaml` — source-of-truth API contract

@@ -1,9 +1,10 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { copyFile, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -122,6 +123,26 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     path.resolve(artifactDir, "src/lib/parasolidPreviewWorker.py"),
     path.join(distDir, "parasolidPreviewWorker.py"),
   );
+
+  const nativeSourceDir = path.resolve(artifactDir, "native/cadconvert");
+  execFileSync(
+    "cargo",
+    ["build", "--release", "--locked", "--package", "cad-cli", "--bin", "cadconvert"],
+    {
+      cwd: nativeSourceDir,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+      },
+    },
+  );
+  const nativeDistDir = path.join(distDir, "native");
+  const nativeBinary = path.join(nativeSourceDir, "target/release/cadconvert");
+  const copiedNativeBinary = path.join(nativeDistDir, "cadconvert");
+  await mkdir(nativeDistDir, { recursive: true });
+  await copyFile(nativeBinary, copiedNativeBinary);
+  await chmod(copiedNativeBinary, 0o755);
 }
 
 buildAll().catch((err) => {

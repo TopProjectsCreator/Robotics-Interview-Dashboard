@@ -20,12 +20,14 @@ function installBrowserObjectUrlMock() {
 
 function installFetchMock(
   previewResponse: Response | (() => Response) = () => new Response(new Blob(["glb"]), { status: 200 }),
+  sourceResponse: () => Response = () =>
+    new Response(new Blob(["private model bytes"], { type: "model/x-parasolid" }), { status: 200 }),
 ) {
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push({ url, init });
     if (url === "blob:original-model") {
-      return new Response(new Blob(["private model bytes"], { type: "model/x-parasolid" }), { status: 200 });
+      return sourceResponse();
     }
     if (url.includes("api/storage/parasolid-preview")) {
       return typeof previewResponse === "function" ? previewResponse() : previewResponse;
@@ -61,6 +63,42 @@ describe("ChatParasolidViewer", () => {
     expect(requests[1].init?.credentials).toBe("include");
     expect((requests[1].init?.headers as Record<string, string>)["X-Parasolid-Format"]).toBe(expectedFormat);
     expect(screen.getByRole("link", { name: "Download original Parasolid" })).toHaveAttribute("href", "blob:original-model");
+  });
+
+  it("sends a 173 MB X_T file through the private inline-preview route", async () => {
+    const sourceBytes = 173 * 1024 * 1024;
+    const sourceFile = new Blob(["private model bytes"], { type: "model/x-parasolid" });
+    Object.defineProperty(sourceFile, "size", { value: sourceBytes });
+    const sourceResponse = {
+      ok: true,
+      headers: new Headers({ "Content-Length": String(sourceBytes) }),
+      blob: async () => sourceFile,
+    } as Response;
+
+    installFetchMock(
+      () => new Response(new Blob(["glb"]), { status: 200 }),
+      () => sourceResponse,
+    );
+    render(<ChatParasolidViewer name="large-assembly.x_t" src="blob:original-model" />);
+
+    await screen.findByTestId("chat-glb-attachment");
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[1].init?.body).toBe(sourceFile);
+    expect((requests[1].init?.headers as Record<string, string>)["X-Parasolid-Format"]).toBe("x-t");
+  });
+
+  it("keeps the 50 MB preview limit for X_B files", async () => {
+    const sourceBytes = 51 * 1024 * 1024;
+    const sourceResponse = {
+      ok: true,
+      headers: new Headers({ "Content-Length": String(sourceBytes) }),
+      blob: async () => new Blob(["private model bytes"], { type: "model/x-parasolid" }),
+    } as Response;
+    installFetchMock(undefined, () => sourceResponse);
+    render(<ChatParasolidViewer name="large-assembly.x_b" src="blob:original-model" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("50 MB");
+    expect(requests).toHaveLength(1);
   });
 
   it("keeps the original download and lets the user retry after a conversion error", async () => {

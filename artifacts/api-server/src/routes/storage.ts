@@ -3,12 +3,15 @@ import {
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
 import { execFile } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
+import { requireCompleteCadconvertFaceSummary } from '../lib/cadconvertPreview';
 import {
   ObjectNotFoundError,
   ObjectStorageService,
@@ -90,13 +93,17 @@ router.post(
  * Requires auth. Body is raw media/document bytes (max 100 MB).
  */
 const CHAT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
-const PARASOLID_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
-const PARASOLID_PREVIEW_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-const PARASOLID_PREVIEW_TIMEOUT_MS = 60_000;
-const PARASOLID_PREVIEW_MAX_CONCURRENT = 2;
+const PARASOLID_PYTHON_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+const PARASOLID_XT_PREVIEW_MAX_BYTES = 200 * 1024 * 1024;
+const PARASOLID_PREVIEW_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+const PARASOLID_PREVIEW_TIMEOUT_MS = 6 * 60_000;
+const PARASOLID_PREVIEW_MAX_CONCURRENT = 1;
 let activeParasolidPreviews = 0;
 const PARASOLID_PREVIEW_WORKER_PATH = fileURLToPath(
   new URL('./parasolidPreviewWorker.py', import.meta.url),
+);
+const PARASOLID_PREVIEW_CADCONVERT_PATH = fileURLToPath(
+  new URL('./native/cadconvert', import.meta.url),
 );
 const CHAT_UPLOAD_CONTENT_TYPES = [
   'image/*',
@@ -130,6 +137,20 @@ function isValidGlb(data: Buffer): boolean {
     data.toString('ascii', 0, 4) === 'glTF' &&
     data.readUInt32LE(4) === 2 &&
     data.readUInt32LE(8) === data.length;
+}
+async function isValidGlbFile(filePath: string, fileSize: number): Promise<boolean> {
+  if (fileSize < 20) return false;
+  const file = await open(filePath, 'r');
+  try {
+    const header = Buffer.alloc(12);
+    const { bytesRead } = await file.read(header, 0, header.length, 0);
+    return bytesRead === header.length &&
+      header.toString('ascii', 0, 4) === 'glTF' &&
+      header.readUInt32LE(4) === 2 &&
+      header.readUInt32LE(8) === fileSize;
+  } finally {
+    await file.close();
+  }
 }
 function isValidStl(data: Buffer): boolean {
   if (data.length >= 84) {
@@ -185,16 +206,16 @@ router.post(
 /**
  * POST /storage/parasolid-preview
  *
- * Convert a private Parasolid attachment with the local parasolid-kit parser.
- * Input and generated previews stay on this server; the GLB is temporary and
- * is returned only to the authenticated requester.
+ * Convert a private Parasolid attachment locally. Large X_T files use the
+ * bundled strict-tolerance CAD converter; smaller files and X_B retain the
+ * existing local worker. The temporary GLB is returned only to the requester.
  */
 router.post(
   '/storage/parasolid-preview',
   requireAdmin,
-  express.raw({ type: 'model/x-parasolid', limit: '50mb' }),
+  express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
-    const data = req.body as Buffer | undefined;
+    let data = req.body as Buffer | undefined;
     const formatHeader = req.get('x-parasolid-format')?.toLowerCase();
     const sourceFormat = formatHeader === 'x-t' || formatHeader === 'x-b' ? formatHeader : null;
 
@@ -206,8 +227,15 @@ router.post(
       res.status(400).json({ error: 'No Parasolid model data received' });
       return;
     }
-    if (data.length > PARASOLID_PREVIEW_MAX_BYTES) {
-      res.status(413).json({ error: 'Inline previews are limited to 50 MB; download the CAD file instead' });
+    const inputBytes = data.length;
+    const formatLimit = sourceFormat === 'x-t'
+      ? PARASOLID_XT_PREVIEW_MAX_BYTES
+      : PARASOLID_PYTHON_PREVIEW_MAX_BYTES;
+    if (inputBytes > formatLimit) {
+      const limitLabel = sourceFormat === 'x-t' ? '200 MB' : '50 MB';
+      res.status(413).json({
+        error: `Inline ${sourceFormat === 'x-t' ? 'X_T' : 'X_B'} previews are limited to ${limitLabel}; download the CAD file instead`,
+      });
       return;
     }
     if (activeParasolidPreviews >= PARASOLID_PREVIEW_MAX_CONCURRENT) {
@@ -222,37 +250,74 @@ router.post(
       const inputPath = join(tempRoot, sourceFormat === 'x-t' ? 'source.x_t' : 'source.x_b');
       const outputPath = join(tempRoot, 'preview');
       await writeFile(inputPath, data, { mode: 0o600 });
+      data = undefined;
+      req.body = undefined;
 
-      await new Promise<void>((resolve, reject) => {
-        execFile(
-          'python',
-          [PARASOLID_PREVIEW_WORKER_PATH, inputPath, outputPath],
-          {
-            timeout: PARASOLID_PREVIEW_TIMEOUT_MS,
-            maxBuffer: 256 * 1024,
-            windowsHide: true,
-          },
-          (error) => error ? reject(error) : resolve(),
-        );
-      });
+      const useCadconvert = sourceFormat === 'x-t' &&
+        inputBytes > PARASOLID_PYTHON_PREVIEW_MAX_BYTES;
+      let glbPath: string;
+      let partial = false;
+      if (useCadconvert) {
+        glbPath = join(tempRoot, 'preview.glb');
+        const output = await new Promise<string>((resolve, reject) => {
+          execFile(
+            PARASOLID_PREVIEW_CADCONVERT_PATH,
+            [inputPath, glbPath, '-q', 'plain', '--sag', '0.01', '--angle', '8', '--progress'],
+            {
+              timeout: PARASOLID_PREVIEW_TIMEOUT_MS,
+              maxBuffer: 4 * 1024 * 1024,
+              windowsHide: true,
+              env: {
+                ...process.env,
+                RAYON_NUM_THREADS: '2',
+                XT_NO_COONS: '1',
+              },
+            },
+            (error, stdout, stderr) => {
+              if (error) reject(error);
+              else resolve(`${stdout}\n${stderr}`);
+            },
+          );
+        });
+        requireCompleteCadconvertFaceSummary(output);
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          execFile(
+            'python',
+            [PARASOLID_PREVIEW_WORKER_PATH, inputPath, outputPath],
+            {
+              timeout: PARASOLID_PREVIEW_TIMEOUT_MS,
+              maxBuffer: 256 * 1024,
+              windowsHide: true,
+            },
+            (error) => error ? reject(error) : resolve(),
+          );
+        });
+        const previewReport = JSON.parse(
+          await readFile(join(outputPath, 'preview-report.json'), 'utf8'),
+        ) as { partial?: unknown };
+        partial = previewReport.partial === true;
+        glbPath = join(outputPath, 'preview.glb');
+      }
 
-      const glb = await readFile(join(outputPath, 'preview.glb'));
-      const previewReport = JSON.parse(
-        await readFile(join(outputPath, 'preview-report.json'), 'utf8'),
-      ) as { partial?: unknown };
-      if (glb.length > PARASOLID_PREVIEW_MAX_OUTPUT_BYTES || !isValidGlb(glb)) {
+      const glbStat = await stat(glbPath);
+      if (
+        glbStat.size > PARASOLID_PREVIEW_MAX_OUTPUT_BYTES ||
+        !(await isValidGlbFile(glbPath, glbStat.size))
+      ) {
         throw new Error('The local converter returned an invalid or oversized preview');
       }
 
       res
         .status(200)
         .setHeader('Content-Type', 'model/gltf-binary')
-        .setHeader('Content-Length', String(glb.length))
+        .setHeader('Content-Length', String(glbStat.size))
         .setHeader('Cache-Control', 'private, no-store')
-        .setHeader('X-Parasolid-Preview-Partial', previewReport.partial === true ? 'true' : 'false')
-        .send(glb);
+        .setHeader('X-Parasolid-Preview-Partial', partial ? 'true' : 'false');
+      await pipeline(createReadStream(glbPath), res);
     } catch (error) {
       req.log.warn({ err: error, sourceFormat }, 'Parasolid preview conversion failed');
+      if (res.headersSent) return;
       const workerError = error as NodeJS.ErrnoException & { killed?: boolean };
       const timedOut = workerError.killed || workerError.code === 'ETIMEDOUT';
       const unavailable = workerError.code === 'ENOENT';

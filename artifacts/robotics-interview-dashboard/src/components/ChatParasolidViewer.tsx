@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { getStoredAuthToken } from "../authSession";
 import { ChatGlbViewer } from "./ChatGlbViewer";
 
-const PARASOLID_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
-const PARASOLID_PREVIEW_TIMEOUT_MS = 60_000;
+const PARASOLID_XT_PREVIEW_MAX_BYTES = 200 * 1024 * 1024;
+const PARASOLID_XB_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+const PARASOLID_PREVIEW_TIMEOUT_MS = 10 * 60_000;
 
 type ChatParasolidViewerProps = {
   name: string;
@@ -43,17 +44,21 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
 
         const sourceResponse = await fetch(src, { signal: controller.signal });
         if (!sourceResponse.ok) throw new Error("Couldn't load the stored CAD file.");
+        const maxBytes = format === "x-t"
+          ? PARASOLID_XT_PREVIEW_MAX_BYTES
+          : PARASOLID_XB_PREVIEW_MAX_BYTES;
+        const maxLabel = format === "x-t" ? "200 MB" : "50 MB";
         const contentLengthHeader = sourceResponse.headers.get("Content-Length");
         const contentLength = contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
-        if (Number.isFinite(contentLength) && contentLength > PARASOLID_PREVIEW_MAX_BYTES) {
-          throw new Error("Inline previews are limited to 50 MB. Download the CAD file instead.");
+        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+          throw new Error(`Inline previews are limited to ${maxLabel}. Download the CAD file instead.`);
         }
         const sourceFile = await sourceResponse.blob();
-        if (sourceFile.size > PARASOLID_PREVIEW_MAX_BYTES) {
-          throw new Error("Inline previews are limited to 50 MB. Download the CAD file instead.");
+        if (sourceFile.size > maxBytes) {
+          throw new Error(`Inline previews are limited to ${maxLabel}. Download the CAD file instead.`);
         }
-        setStatus(sourceFile.size > 25 * 1024 * 1024
-          ? "Large CAD file detected. Building its preview may take a little longer…"
+        setStatus(sourceFile.size > 50 * 1024 * 1024
+          ? "Large X_T model detected. High-detail preview conversion may take several minutes…"
           : "Building a private 3D preview…");
 
         const token = getStoredAuthToken();

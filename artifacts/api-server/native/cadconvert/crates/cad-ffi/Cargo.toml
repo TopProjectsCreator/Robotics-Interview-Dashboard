@@ -1,0 +1,27 @@
+[package]
+name = "cad-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C ABI for the CAD converter, for P/Invoke and other foreign callers"
+
+[lib]
+# Not "cadconvert". On Windows that builds cadconvert.dll, and the .NET package
+# beside it is CadConvert.dll — the same name to a case-insensitive filesystem.
+# Copying the native library next to the managed one then overwrote it, and
+# every test died on "Could not load file or assembly 'CadConvert'". Linux and
+# macOS never saw it: there the file is libcadconvert.so.
+name = "cadconvert_native"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+# On by default, and off for a Rust caller who links the `rlib` and has already
+# chosen an allocator of their own — a library that sets one decides for its
+# whole process, which is defensible in a `cdylib` and rude in an `rlib`.
+default = ["mimalloc"]
+mimalloc = ["dep:cad-alloc"]
+
+[dependencies]
+cad-convert.workspace = true
+cad-tess.workspace = true
+cad-alloc = { workspace = true, optional = true }
