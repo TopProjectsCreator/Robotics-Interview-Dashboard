@@ -119,6 +119,16 @@ export const SetupInterviewerPasswordResponse = zod.object({
 
 
 /**
+ * @summary Delete an interviewer account and remove it from queue labels
+ */
+export const DeleteInterviewerParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+export const DeleteInterviewerResponse = zod.void()
+
+
+/**
  * @summary Change or remove an interviewer password
  */
 export const UpdateInterviewerPasswordParams = zod.object({

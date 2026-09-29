@@ -246,6 +246,23 @@ router.post("/auth/interviewers/passwords/reset-all", requireAdmin, async (req, 
   res.json(ResetAllInterviewerPasswordsResponse.parse({ message: "All interviewer passwords were reset. Each interviewer must set up a new password." }));
 });
 
+router.delete("/auth/interviewers/:interviewerId", requireAdmin, async (req, res): Promise<void> => {
+  const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
+  if (!interviewerId) {
+    res.status(400).json({ error: "Interviewer id required" });
+    return;
+  }
+  const account = await accountById(interviewerId);
+  if (!account) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  await db.delete(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId));
+  const labels = await getInterviewSettings();
+  await updateQueueLabels(labels.filter((label) => normalizeInterviewerName(label) !== account.normalizedName));
+  res.status(204).end();
+});
+
 router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {

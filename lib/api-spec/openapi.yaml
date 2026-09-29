@@ -171,6 +171,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PasswordSafetyError"
+  /auth/interviewers/{interviewerId}:
+    delete:
+      operationId: deleteInterviewer
+      tags: [auth]
+      summary: Delete an interviewer account and remove it from queue labels
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Interviewer deleted
+        "404":
+          description: Interviewer not found
   /auth/interviewers/{interviewerId}/password:
     patch:
       operationId: updateInterviewerPassword

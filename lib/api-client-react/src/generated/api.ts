@@ -663,6 +663,77 @@ export const useSetupInterviewerPassword = <TError = ErrorType<PasswordSafetyErr
       return useMutation(getSetupInterviewerPasswordMutationOptions(options));
     }
 
+export const getDeleteInterviewerUrl = (interviewerId: string,) => {
+
+
+
+
+  return `/api/auth/interviewers/${interviewerId}`
+}
+
+/**
+ * @summary Delete an interviewer account and remove it from queue labels
+ */
+export const deleteInterviewer = async (interviewerId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteInterviewerUrl(interviewerId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteInterviewerMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteInterviewer>>, TError,{interviewerId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteInterviewer>>, TError,{interviewerId: string}, TContext> => {
+
+const mutationKey = ['deleteInterviewer'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteInterviewer>>, {interviewerId: string}> = (props) => {
+          const {interviewerId} = props ?? {};
+
+          return  deleteInterviewer(interviewerId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteInterviewerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteInterviewer>>>
+
+    export type DeleteInterviewerMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete an interviewer account and remove it from queue labels
+ */
+export const useDeleteInterviewer = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteInterviewer>>, TError,{interviewerId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteInterviewer>>,
+        TError,
+        {interviewerId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteInterviewerMutationOptions(options));
+    }
+
 export const getUpdateInterviewerPasswordUrl = (interviewerId: string,) => {
 
 
