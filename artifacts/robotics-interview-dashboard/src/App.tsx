@@ -70,6 +70,11 @@ import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
+import {
+  getWorkspaceNavigation,
+  workspaceAreaForPath,
+  type WorkspaceNavIcon,
+} from "./workspaceNavigation";
 
 const queryClient = new QueryClient();
 const categories = ["advance", "hold", "decline", "unranked"];
@@ -1617,8 +1622,88 @@ function Shell({ children }: { children: ReactNode }) {
   }, [broadcasts.data, dismissedBroadcasts]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Redirect to="/auth" />;
-  const nav = [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }, { href: "/applicants", label: "Applicants", icon: UsersRound }, { href: "/queue", label: "Interview queue", icon: ClipboardList }, { href: "/chat", label: "Chat", icon: MessageSquare }, { href: "/attendance", label: "Attendance", icon: ClipboardCheck }, { href: "/big-screen", label: "Big screen", icon: MonitorCheck }, { href: "/assistant", label: "AI assistant", icon: Bot }];
-  return <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}><aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}><div className="px-3"><Logo dark /></div><div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Event command</div><nav className="space-y-1">{nav.map(({ href, label, icon: I }) => <Link key={href} href={href} data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`} onClick={() => setMobileNav(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${location.startsWith(href) ? "bg-[#f8c84a] text-[#1d2c36]" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"}`}><I size={18} /><span>{label}</span>{href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}</Link>)}</nav>{displayPromoVisible && <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4"><button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button><div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div><p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and interview bay.</p><Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link></div>}<button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button></aside><div className="lg:pl-[248px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9"><button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button><div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div><div className="flex items-center gap-2"><button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} /><ThemeToggle /><div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div><AccountMenu onOpenSettings={() => setSettingsOpen(true)} /></div></header><main className="mx-auto max-w-[1500px] p-5 lg:p-9">{settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}{children}</main>{pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}</div></div>;
+  const workspaceArea = workspaceAreaForPath(location);
+  const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
+    interview: ClipboardList,
+    chat: MessageSquare,
+    applicants: UsersRound,
+    queue: ClipboardList,
+    attendance: ClipboardCheck,
+    bigScreen: MonitorCheck,
+    assistant: Bot,
+  };
+  const nav = getWorkspaceNavigation(workspaceArea).map((item) => ({
+    ...item,
+    icon: navIcons[item.iconKey],
+  }));
+  return (
+    <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
+      <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="px-3"><Logo dark /></div>
+        <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
+        <nav className="space-y-1" aria-label="Workspace navigation">
+          {nav.map(({ href, label, icon: Icon, kind }) => {
+            const active = kind === "workspace"
+              ? (href === "/interview" ? workspaceArea === "interview" : workspaceArea === "chat")
+              : location === href ||
+                location.startsWith(`${href}/`) ||
+                (href === "/chat" && location.startsWith("/spreadsheets/"));
+            return (
+              <Link
+                key={href}
+                href={href}
+                data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`}
+                onClick={() => setMobileNav(false)}
+                aria-current={active ? "page" : undefined}
+                className={`flex items-center gap-3 text-sm font-medium transition ${
+                  kind === "workspace"
+                    ? "rounded-full px-4 py-2.5"
+                    : "ml-2 rounded-xl px-3 py-2.5"
+                } ${
+                  active
+                    ? kind === "workspace"
+                      ? "bg-[#f8c84a] text-[#1d2c36]"
+                      : "bg-[#243d4d] text-white"
+                    : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
+                }`}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {href === "/queue" && <span className="ml-auto h-2 w-2 rounded-full bg-[#f8c84a]" />}
+              </Link>
+            );
+          })}
+        </nav>
+        {workspaceArea === "interview" && displayPromoVisible && (
+          <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4">
+            <button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button>
+            <div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div>
+            <p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and the event workspace.</p>
+            <Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link>
+          </div>
+        )}
+        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
+      </aside>
+      <div className="lg:pl-[248px]">
+        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
+          <button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button>
+          <div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div>
+          <div className="flex items-center gap-2">
+            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button>
+            <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
+            <ThemeToggle />
+            <div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div>
+            <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
+          </div>
+        </header>
+        <main className="mx-auto max-w-[1500px] p-5 lg:p-9">
+          {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+          {children}
+        </main>
+        {pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}
+      </div>
+    </div>
+  );
 }
 
 function PageHeading({ eyebrow, title, detail, action, stacked = false }: { eyebrow: string; title: string; detail?: string; action?: ReactNode; stacked?: boolean }) {
@@ -1780,7 +1865,43 @@ function CustomCharts() {
   return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with your co-coordinator."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
-function Dashboard() {
+function WorkspaceOverview() {
+  return (
+    <div className="fade-up min-h-[calc(100dvh-160px)] rounded-3xl bg-[#f3f6f5] p-1 text-[#182232] dark:bg-[#111e27] dark:text-[#e5edf3]">
+      <PageHeading
+        eyebrow="Coordinator workspace"
+        title="Choose a workspace"
+        detail="Open a workspace to continue."
+      />
+      <div
+        className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[#dce5e5] bg-white p-1.5 shadow-[0_3px_12px_rgba(26,49,60,.06)] dark:border-[#2a3f52] dark:bg-[#172a3a]"
+        role="group"
+        aria-label="Choose a workspace"
+      >
+        <Link
+          href="/interview"
+          data-testid="link-workspace-interview"
+          className="inline-flex items-center gap-2 rounded-full bg-[#f8c84a] px-5 py-3 text-sm font-semibold text-[#1d2c36] transition hover:bg-[#efbb2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#172a3a]"
+        >
+          <ClipboardList size={16} />
+          Interview
+          <ArrowRight size={15} />
+        </Link>
+        <Link
+          href="/chat"
+          data-testid="link-workspace-chat"
+          className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[#52666e] transition hover:bg-[#eef3f2] hover:text-[#183a4b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:text-[#c5d3da] dark:hover:bg-[#243d4d] dark:hover:text-white dark:focus-visible:ring-offset-[#172a3a]"
+        >
+          <MessageSquare size={16} />
+          Chat
+          <ArrowRight size={15} />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function InterviewOverview() {
   const summary = useGetDashboardSummary({ query: { queryKey: getGetDashboardSummaryQueryKey() } });
   const roster = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
   const usage = useGetSystemUsage({ query: { queryKey: getGetSystemUsageQueryKey() } });
@@ -4842,9 +4963,9 @@ function ErrorCodeRoute({ params }: { params: { code?: string } }) {
 function ChatPage() {
   const list = useListApplicants({ sort: "queue" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "queue" }) } });
   const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
-  return <div className="fade-up"><PageHeading eyebrow="Interviewer channel / full page" title="Team chat." detail="The same shared interviewer channel from the queue, full height. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Chat workspace" title="Team chat" detail="Use the shared team channel. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
 }
-function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><Dashboard /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route><Route path="/interview"><Shell><InterviewOverview /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export { MarkdownContent, renderInlineMarkdown };
 export default App;
