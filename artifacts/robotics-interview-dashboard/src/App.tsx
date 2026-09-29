@@ -57,6 +57,7 @@ import NotFound from "@/pages/not-found";
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
+import PartsPage from "@/pages/PartsPage";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 import { WhiteboardEditor } from "./components/WhiteboardEditor";
@@ -1713,6 +1714,7 @@ function Shell({ children }: { children: ReactNode }) {
     attendance: ClipboardCheck,
     bigScreen: MonitorCheck,
     assistant: Bot,
+    parts: Box,
   };
   const nav = getWorkspaceNavigation(workspaceArea).map((item) => ({
     ...item,
@@ -5123,7 +5125,31 @@ function ChatPage() {
   const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
   return <div className="fade-up"><PageHeading eyebrow="Chat workspace" title="Team chat" detail="Use the shared team channel. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
 }
-function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={PublicDashboard} /><Route path="/interview-landing" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route><Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/interview"><Shell><InterviewOverview /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function Router() {
+  return (
+    <ErrorBoundary FallbackComponent={CrashFallback}>
+      <Switch>
+        <Route path="/" component={PublicDashboard} />
+        <Route path="/interview-landing" component={Landing} />
+        <Route path="/auth" component={Login} />
+        <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
+        <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>
+        <Route path="/interview"><Shell><InterviewOverview /></Shell></Route>
+        <Route path="/applicants"><Shell><Applicants /></Shell></Route>
+        <Route path="/queue"><Shell><Queue /></Shell></Route>
+        <Route path="/chat"><Shell><ChatPage /></Shell></Route>
+        <Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route>
+        <Route path="/attendance"><Shell><AttendancePage /></Shell></Route>
+        <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>
+        <Route path="/parts"><Shell><PartsPage /></Shell></Route>
+        <Route path="/display" component={Display} />
+        <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
+        <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>
+        <Route component={NotFound} />
+      </Switch>
+    </ErrorBoundary>
+  );
+}
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export { MarkdownContent, renderInlineMarkdown };
 export default App;

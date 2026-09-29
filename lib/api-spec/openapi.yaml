@@ -1445,6 +1445,226 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantHistory"
+  /parts/dashboard:
+    get:
+      operationId: getPartsDashboard
+      tags: [parts]
+      summary: Get parts dashboard totals, vendors, and robots
+      responses:
+        "200":
+          description: Parts dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsDashboard"
+  /parts/catalog:
+    get:
+      operationId: listPartsCatalog
+      tags: [parts]
+      summary: List saved catalog items and inventory allocations
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: vendorKey
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Parts catalog page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogList"
+    post:
+      operationId: createPartsCatalogItem
+      tags: [parts]
+      summary: Save a catalog part and its starting stock quantity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePartsCatalogItemInput"
+      responses:
+        "201":
+          description: Saved catalog item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogItem"
+  /parts/catalog/search:
+    get:
+      operationId: searchPartsCatalog
+      tags: [parts]
+      summary: Search a vendor's public catalog
+      parameters:
+        - name: vendorKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+      responses:
+        "200":
+          description: Public catalog search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogSearch"
+        "502":
+          description: Catalog search is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/import:
+    post:
+      operationId: importPartsCatalog
+      tags: [parts]
+      summary: Import catalog items from a vendor export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsCatalogImportInput"
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogImportResponse"
+  /parts/catalog/{partId}/stock:
+    patch:
+      operationId: updatePartsCatalogStock
+      tags: [parts]
+      summary: Update the owned quantity of a catalog item
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsStockUpdateInput"
+      responses:
+        "200":
+          description: Updated inventory item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogItem"
+        "409":
+          description: Owned quantity cannot be less than allocated quantity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/robots:
+    post:
+      operationId: createPartsRobot
+      tags: [parts]
+      summary: Add a robot to the parts workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsRobotInput"
+      responses:
+        "201":
+          description: Created robot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobot"
+  /parts/robots/{robotId}:
+    patch:
+      operationId: updatePartsRobot
+      tags: [parts]
+      summary: Rename a robot
+      parameters:
+        - name: robotId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsRobotInput"
+      responses:
+        "200":
+          description: Updated robot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobot"
+  /parts/robots/{robotId}/parts/{partId}:
+    put:
+      operationId: setPartsRobotAllocation
+      tags: [parts]
+      summary: Set the number of catalog items assigned to a robot
+      description: Set quantity to zero to remove the assignment. Total allocations cannot exceed owned stock.
+      parameters:
+        - name: robotId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsRobotAllocationInput"
+      responses:
+        "200":
+          description: Updated robot allocation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobotAllocation"
+        "409":
+          description: Allocation exceeds owned stock
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     ApplicantId:
@@ -1508,6 +1728,244 @@ components:
       schema:
         type: integer
   schemas:
+    PartsVendor:
+      type: object
+      required: [key, name, group, website, catalogMode]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        group:
+          type: string
+          enum: [General Parts, Specific Parts, Machining Companies]
+        website:
+          type: string
+          format: uri
+        catalogMode:
+          type: string
+          enum: [products, custom_fabrication]
+    PartsRobot:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PartsRobotAllocation:
+      type: object
+      required: [robotId, robotName, partId, quantity]
+      properties:
+        robotId:
+          type: string
+        robotName:
+          type: string
+        partId:
+          type: string
+        quantity:
+          type: integer
+          minimum: 0
+    PartsCatalogItem:
+      type: object
+      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        vendorKey:
+          type: string
+        vendorName:
+          type: string
+        name:
+          type: string
+        sku:
+          type: [string, "null"]
+        category:
+          type: [string, "null"]
+        description:
+          type: [string, "null"]
+        productUrl:
+          type: [string, "null"]
+          format: uri
+        imageUrl:
+          type: [string, "null"]
+          format: uri
+        quantityOwned:
+          type: integer
+          minimum: 0
+        quantityAssigned:
+          type: integer
+          minimum: 0
+        quantityAvailable:
+          type: integer
+          minimum: 0
+        allocations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsRobotAllocation"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PartsDashboard:
+      type: object
+      required: [vendors, robots, summary]
+      properties:
+        vendors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsVendor"
+        robots:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsRobot"
+        summary:
+          type: object
+          required: [vendorCount, catalogItems, ownedUnits, assignedUnits, availableUnits]
+          properties:
+            vendorCount:
+              type: integer
+            catalogItems:
+              type: integer
+            ownedUnits:
+              type: integer
+            assignedUnits:
+              type: integer
+            availableUnits:
+              type: integer
+    PartsCatalogList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsCatalogItem"
+        total:
+          type: integer
+    PartsCatalogSearchResult:
+      type: object
+      required: [title, url, description]
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        description:
+          type: string
+        sku:
+          type: [string, "null"]
+    PartsCatalogSearch:
+      type: object
+      required: [vendorKey, query, results]
+      properties:
+        vendorKey:
+          type: string
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsCatalogSearchResult"
+    CreatePartsCatalogItemInput:
+      type: object
+      required: [vendorKey, name]
+      properties:
+        vendorKey:
+          type: string
+        name:
+          type: string
+        sku:
+          type: [string, "null"]
+        category:
+          type: [string, "null"]
+        description:
+          type: [string, "null"]
+        productUrl:
+          type: [string, "null"]
+          format: uri
+        imageUrl:
+          type: [string, "null"]
+          format: uri
+        quantityOwned:
+          type: integer
+          minimum: 0
+          default: 0
+    PartsCatalogImportItem:
+      type: object
+      required: [vendorKey, name]
+      properties:
+        vendorKey:
+          type: string
+        name:
+          type: string
+        externalKey:
+          type: string
+        sku:
+          type: [string, "null"]
+        category:
+          type: [string, "null"]
+        description:
+          type: [string, "null"]
+        productUrl:
+          type: [string, "null"]
+          format: uri
+        imageUrl:
+          type: [string, "null"]
+          format: uri
+        quantityOwned:
+          type: integer
+          minimum: 0
+    PartsCatalogImportInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/PartsCatalogImportItem"
+    PartsCatalogImportResponse:
+      type: object
+      required: [created, updated]
+      properties:
+        created:
+          type: integer
+        updated:
+          type: integer
+    PartsStockUpdateInput:
+      type: object
+      required: [quantityOwned]
+      properties:
+        quantityOwned:
+          type: integer
+          minimum: 0
+    PartsRobotInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    PartsRobotAllocationInput:
+      type: object
+      required: [quantity]
+      properties:
+        quantity:
+          type: integer
+          minimum: 0
+          maximum: 100000
     HealthStatus:
       type: object
       properties:

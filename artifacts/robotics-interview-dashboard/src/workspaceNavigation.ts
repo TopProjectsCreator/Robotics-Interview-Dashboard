@@ -6,7 +6,8 @@ export type WorkspaceNavIcon =
   | "queue"
   | "attendance"
   | "bigScreen"
-  | "assistant";
+  | "assistant"
+  | "parts";
 
 export type WorkspaceNavItem = {
   href: string;
@@ -26,6 +27,7 @@ const INTERVIEW_LINKS: WorkspaceNavItem[] = [
   { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section" },
   { href: "/big-screen", label: "Big screen", iconKey: "bigScreen", kind: "section" },
   { href: "/interview/assistant", label: "AI assistant", iconKey: "assistant", kind: "section" },
+  { href: "/parts", label: "Parts", iconKey: "parts", kind: "section" },
 ];
 
 const CHAT_LINKS: WorkspaceNavItem[] = [

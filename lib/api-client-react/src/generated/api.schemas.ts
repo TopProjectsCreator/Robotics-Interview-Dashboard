@@ -5,6 +5,174 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type PartsVendorGroup = typeof PartsVendorGroup[keyof typeof PartsVendorGroup];
+
+
+export const PartsVendorGroup = {
+  General_Parts: 'General Parts',
+  Specific_Parts: 'Specific Parts',
+  Machining_Companies: 'Machining Companies',
+} as const;
+
+export type PartsVendorCatalogMode = typeof PartsVendorCatalogMode[keyof typeof PartsVendorCatalogMode];
+
+
+export const PartsVendorCatalogMode = {
+  products: 'products',
+  custom_fabrication: 'custom_fabrication',
+} as const;
+
+export interface PartsVendor {
+  key: string;
+  name: string;
+  group: PartsVendorGroup;
+  website: string;
+  catalogMode: PartsVendorCatalogMode;
+}
+
+export interface PartsRobot {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PartsRobotAllocation {
+  robotId: string;
+  robotName: string;
+  partId: string;
+  /** @minimum 0 */
+  quantity: number;
+}
+
+export interface PartsCatalogItem {
+  id: string;
+  vendorKey: string;
+  vendorName: string;
+  name: string;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  category: string | null;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  productUrl: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  /** @minimum 0 */
+  quantityOwned: number;
+  /** @minimum 0 */
+  quantityAssigned: number;
+  /** @minimum 0 */
+  quantityAvailable: number;
+  allocations: PartsRobotAllocation[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PartsDashboardSummary = {
+  vendorCount: number;
+  catalogItems: number;
+  ownedUnits: number;
+  assignedUnits: number;
+  availableUnits: number;
+};
+
+export interface PartsDashboard {
+  vendors: PartsVendor[];
+  robots: PartsRobot[];
+  summary: PartsDashboardSummary;
+}
+
+export interface PartsCatalogList {
+  items: PartsCatalogItem[];
+  total: number;
+}
+
+export interface PartsCatalogSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  /** @nullable */
+  sku?: string | null;
+}
+
+export interface PartsCatalogSearch {
+  vendorKey: string;
+  query: string;
+  results: PartsCatalogSearchResult[];
+}
+
+export interface CreatePartsCatalogItemInput {
+  vendorKey: string;
+  name: string;
+  /** @nullable */
+  sku?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  productUrl?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @minimum 0 */
+  quantityOwned?: number;
+}
+
+export interface PartsCatalogImportItem {
+  vendorKey: string;
+  name: string;
+  externalKey?: string;
+  /** @nullable */
+  sku?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  productUrl?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @minimum 0 */
+  quantityOwned?: number;
+}
+
+export interface PartsCatalogImportInput {
+  /**
+     * @minItems 1
+     * @maxItems 500
+     */
+  items: PartsCatalogImportItem[];
+}
+
+export interface PartsCatalogImportResponse {
+  created: number;
+  updated: number;
+}
+
+export interface PartsStockUpdateInput {
+  /** @minimum 0 */
+  quantityOwned: number;
+}
+
+export interface PartsRobotInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+}
+
+export interface PartsRobotAllocationInput {
+  /**
+     * @minimum 0
+     * @maximum 100000
+     */
+  quantity: number;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -1399,5 +1567,28 @@ before?: BeforeParameter;
  * Max messages per page (1-100, default 30).
  */
 limit?: ChatLimitParameter;
+};
+
+export type ListPartsCatalogParams = {
+search?: string;
+vendorKey?: string;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type SearchPartsCatalogParams = {
+vendorKey: string;
+/**
+ * @minLength 2
+ * @maxLength 120
+ */
+q: string;
 };
 

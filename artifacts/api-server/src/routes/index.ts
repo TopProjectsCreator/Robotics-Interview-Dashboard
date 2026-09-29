@@ -7,6 +7,7 @@ import presenceRouter from "./presence";
 import broadcastsRouter from "./broadcasts";
 import eventsRouter from "./events";
 import systemRouter from "./system";
+import partsRouter from "./parts";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(presenceRouter);
 router.use(broadcastsRouter);
 router.use(eventsRouter);
 router.use(systemRouter);
+router.use(partsRouter);
 
 export default router;

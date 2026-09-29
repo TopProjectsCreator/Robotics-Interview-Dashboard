@@ -2223,3 +2223,313 @@ export const GetAssistantConversationMessagesResponse = zod.object({
 })
 
 
+/**
+ * @summary Get parts dashboard totals, vendors, and robots
+ */
+export const GetPartsDashboardResponse = zod.object({
+  "vendors": zod.array(zod.object({
+  "key": zod.string(),
+  "name": zod.string(),
+  "group": zod.enum(['General Parts', 'Specific Parts', 'Machining Companies']),
+  "website": zod.string().url(),
+  "catalogMode": zod.enum(['products', 'custom_fabrication'])
+})),
+  "robots": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "summary": zod.object({
+  "vendorCount": zod.number().int(),
+  "catalogItems": zod.number().int(),
+  "ownedUnits": zod.number().int(),
+  "assignedUnits": zod.number().int(),
+  "availableUnits": zod.number().int()
+})
+})
+
+
+/**
+ * @summary List saved catalog items and inventory allocations
+ */
+export const listPartsCatalogQueryLimitDefault = 100;
+export const listPartsCatalogQueryLimitMax = 500;
+
+export const listPartsCatalogQueryOffsetDefault = 0;
+export const listPartsCatalogQueryOffsetMin = 0;
+
+
+
+export const ListPartsCatalogQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "vendorKey": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(listPartsCatalogQueryLimitMax).default(listPartsCatalogQueryLimitDefault),
+  "offset": zod.coerce.number().int().min(listPartsCatalogQueryOffsetMin).default(listPartsCatalogQueryOffsetDefault)
+})
+
+export const listPartsCatalogResponseItemsItemQuantityOwnedMin = 0;
+
+export const listPartsCatalogResponseItemsItemQuantityAssignedMin = 0;
+
+export const listPartsCatalogResponseItemsItemQuantityAvailableMin = 0;
+
+export const listPartsCatalogResponseItemsItemAllocationsItemQuantityMin = 0;
+
+
+
+export const ListPartsCatalogResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "quantityOwned": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(listPartsCatalogResponseItemsItemAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
+  "total": zod.number().int()
+})
+
+
+/**
+ * @summary Save a catalog part and its starting stock quantity
+ */
+export const createPartsCatalogItemBodyQuantityOwnedDefault = 0;
+export const createPartsCatalogItemBodyQuantityOwnedMin = 0;
+
+
+
+export const CreatePartsCatalogItemBody = zod.object({
+  "vendorKey": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "productUrl": zod.string().url().nullish(),
+  "imageUrl": zod.string().url().nullish(),
+  "quantityOwned": zod.number().int().min(createPartsCatalogItemBodyQuantityOwnedMin).default(createPartsCatalogItemBodyQuantityOwnedDefault)
+})
+
+export const createPartsCatalogItemResponseQuantityOwnedMin = 0;
+
+export const createPartsCatalogItemResponseQuantityAssignedMin = 0;
+
+export const createPartsCatalogItemResponseQuantityAvailableMin = 0;
+
+export const createPartsCatalogItemResponseAllocationsItemQuantityMin = 0;
+
+
+
+export const CreatePartsCatalogItemResponse = zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "quantityOwned": zod.number().int().min(createPartsCatalogItemResponseQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(createPartsCatalogItemResponseQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(createPartsCatalogItemResponseQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(createPartsCatalogItemResponseAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Search a vendor's public catalog
+ */
+export const searchPartsCatalogQueryQMin = 2;
+export const searchPartsCatalogQueryQMax = 120;
+
+
+
+export const SearchPartsCatalogQueryParams = zod.object({
+  "vendorKey": zod.coerce.string(),
+  "q": zod.coerce.string().min(searchPartsCatalogQueryQMin).max(searchPartsCatalogQueryQMax)
+})
+
+export const SearchPartsCatalogResponse = zod.object({
+  "vendorKey": zod.string(),
+  "query": zod.string(),
+  "results": zod.array(zod.object({
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "description": zod.string(),
+  "sku": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Import catalog items from a vendor export
+ */
+export const importPartsCatalogBodyItemsItemQuantityOwnedMin = 0;
+
+export const importPartsCatalogBodyItemsMax = 500;
+
+
+
+export const ImportPartsCatalogBody = zod.object({
+  "items": zod.array(zod.object({
+  "vendorKey": zod.string(),
+  "name": zod.string(),
+  "externalKey": zod.string().optional(),
+  "sku": zod.string().nullish(),
+  "category": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "productUrl": zod.string().url().nullish(),
+  "imageUrl": zod.string().url().nullish(),
+  "quantityOwned": zod.number().int().min(importPartsCatalogBodyItemsItemQuantityOwnedMin).optional()
+})).min(1).max(importPartsCatalogBodyItemsMax)
+})
+
+export const ImportPartsCatalogResponse = zod.object({
+  "created": zod.number().int(),
+  "updated": zod.number().int()
+})
+
+
+/**
+ * @summary Update the owned quantity of a catalog item
+ */
+export const UpdatePartsCatalogStockParams = zod.object({
+  "partId": zod.coerce.string()
+})
+
+export const updatePartsCatalogStockBodyQuantityOwnedMin = 0;
+
+
+
+export const UpdatePartsCatalogStockBody = zod.object({
+  "quantityOwned": zod.number().int().min(updatePartsCatalogStockBodyQuantityOwnedMin)
+})
+
+export const updatePartsCatalogStockResponseQuantityOwnedMin = 0;
+
+export const updatePartsCatalogStockResponseQuantityAssignedMin = 0;
+
+export const updatePartsCatalogStockResponseQuantityAvailableMin = 0;
+
+export const updatePartsCatalogStockResponseAllocationsItemQuantityMin = 0;
+
+
+
+export const UpdatePartsCatalogStockResponse = zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "quantityOwned": zod.number().int().min(updatePartsCatalogStockResponseQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(updatePartsCatalogStockResponseQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(updatePartsCatalogStockResponseQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(updatePartsCatalogStockResponseAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Add a robot to the parts workspace
+ */
+export const createPartsRobotBodyNameMax = 80;
+
+
+
+export const CreatePartsRobotBody = zod.object({
+  "name": zod.string().min(1).max(createPartsRobotBodyNameMax)
+})
+
+export const CreatePartsRobotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Rename a robot
+ */
+export const UpdatePartsRobotParams = zod.object({
+  "robotId": zod.coerce.string()
+})
+
+export const updatePartsRobotBodyNameMax = 80;
+
+
+
+export const UpdatePartsRobotBody = zod.object({
+  "name": zod.string().min(1).max(updatePartsRobotBodyNameMax)
+})
+
+export const UpdatePartsRobotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * Set quantity to zero to remove the assignment. Total allocations cannot exceed owned stock.
+ * @summary Set the number of catalog items assigned to a robot
+ */
+export const SetPartsRobotAllocationParams = zod.object({
+  "robotId": zod.coerce.string(),
+  "partId": zod.coerce.string()
+})
+
+export const setPartsRobotAllocationBodyQuantityMin = 0;
+export const setPartsRobotAllocationBodyQuantityMax = 100000;
+
+
+
+export const SetPartsRobotAllocationBody = zod.object({
+  "quantity": zod.number().int().min(setPartsRobotAllocationBodyQuantityMin).max(setPartsRobotAllocationBodyQuantityMax)
+})
+
+export const setPartsRobotAllocationResponseQuantityMin = 0;
+
+
+
+export const SetPartsRobotAllocationResponse = zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(setPartsRobotAllocationResponseQuantityMin)
+})
+
+
