@@ -12,7 +12,7 @@ describe("workspace navigation", () => {
   });
 
   it("shows interview navigation only inside interview routes", () => {
-    for (const path of ["/interview", "/applicants", "/queue", "/attendance", "/big-screen"]) {
+    for (const path of ["/interview", "/interview/assistant", "/applicants", "/queue", "/attendance", "/big-screen"]) {
       expect(workspaceAreaForPath(path)).toBe("interview");
     }
     expect(getWorkspaceNavigation("interview").map(({ label }) => label)).toEqual([
@@ -22,7 +22,10 @@ describe("workspace navigation", () => {
       "Interview queue",
       "Attendance",
       "Big screen",
+      "AI assistant",
     ]);
+    expect(getWorkspaceNavigation("interview").find(({ label }) => label === "AI assistant")?.href)
+      .toBe("/interview/assistant");
   });
 
   it("keeps team chat, the assistant, and chat documents in the chat area", () => {
@@ -34,5 +37,7 @@ describe("workspace navigation", () => {
       "Chat",
       "AI assistant",
     ]);
+    expect(getWorkspaceNavigation("chat").find(({ label }) => label === "AI assistant")?.href)
+      .toBe("/assistant");
   });
 });

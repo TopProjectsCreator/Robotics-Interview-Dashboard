@@ -25,6 +25,7 @@ const INTERVIEW_LINKS: WorkspaceNavItem[] = [
   { href: "/queue", label: "Interview queue", iconKey: "queue", kind: "section" },
   { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section" },
   { href: "/big-screen", label: "Big screen", iconKey: "bigScreen", kind: "section" },
+  { href: "/interview/assistant", label: "AI assistant", iconKey: "assistant", kind: "section" },
 ];
 
 const CHAT_LINKS: WorkspaceNavItem[] = [

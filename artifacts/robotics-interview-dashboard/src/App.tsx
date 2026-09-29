@@ -975,6 +975,7 @@ function useFullscreen() {
 const PRESENCE_PAGE_LABELS: Record<string, string> = {
   "/": "Login",
   "/dashboard": "Overview",
+  "/interview/assistant": "AI assistant",
   "/applicants": "Applicants",
   "/queue": "Interview queue",
   "/attendance": "Attendance",
@@ -1873,28 +1874,40 @@ function WorkspaceOverview() {
         title="Choose a workspace"
         detail="Open a workspace to continue."
       />
-      <div
-        className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[#dce5e5] bg-white p-1.5 shadow-[0_3px_12px_rgba(26,49,60,.06)] dark:border-[#2a3f52] dark:bg-[#172a3a]"
-        role="group"
-        aria-label="Choose a workspace"
-      >
+      <div className="grid gap-5 md:grid-cols-2" role="group" aria-label="Choose a workspace">
         <Link
           href="/interview"
           data-testid="link-workspace-interview"
-          className="inline-flex items-center gap-2 rounded-full bg-[#f8c84a] px-5 py-3 text-sm font-semibold text-[#1d2c36] transition hover:bg-[#efbb2f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#172a3a]"
+          className="group relative isolate flex min-h-[280px] flex-col justify-between overflow-hidden rounded-3xl border border-[#263e50] bg-[#172a3a] p-7 text-white shadow-[0_8px_28px_rgba(23,42,58,.12)] transition hover:-translate-y-1 hover:bg-[#1d3545] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 md:min-h-[clamp(24rem,55vh,34rem)] md:p-8 dark:border-[#31495b]"
         >
-          <ClipboardList size={16} />
-          Interview
-          <ArrowRight size={15} />
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 z-0 h-64 w-64 rounded-full border border-white/10" />
+          <span aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 z-0 h-48 w-48 rounded-full border border-white/10" />
+          <span className="relative z-10 flex items-start justify-between">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f8c84a] text-[#182232]">
+              <ClipboardList size={25} />
+            </span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition group-hover:bg-[#f8c84a] group-hover:text-[#182232]">
+              <ArrowRight size={19} className="transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </span>
+          <span className="relative z-10 text-3xl font-semibold tracking-[-.04em] md:text-4xl">Interview</span>
         </Link>
         <Link
           href="/chat"
           data-testid="link-workspace-chat"
-          className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-[#52666e] transition hover:bg-[#eef3f2] hover:text-[#183a4b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:text-[#c5d3da] dark:hover:bg-[#243d4d] dark:hover:text-white dark:focus-visible:ring-offset-[#172a3a]"
+          className="group relative isolate flex min-h-[280px] flex-col justify-between overflow-hidden rounded-3xl border border-[#b9d9d7] bg-[#e8f5f2] p-7 text-[#183a4b] shadow-[0_8px_28px_rgba(26,49,60,.07)] transition hover:-translate-y-1 hover:border-[#16869a] hover:bg-[#def1ed] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 md:min-h-[clamp(24rem,55vh,34rem)] md:p-8 dark:border-[#2a5663] dark:bg-[#173443] dark:text-[#e5edf3] dark:hover:bg-[#1c4050]"
         >
-          <MessageSquare size={16} />
-          Chat
-          <ArrowRight size={15} />
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 z-0 h-64 w-64 rounded-full border border-[#16869a]/15 dark:border-[#73c9bf]/15" />
+          <span aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 z-0 h-48 w-48 rounded-full border border-[#16869a]/15 dark:border-[#73c9bf]/15" />
+          <span className="relative z-10 flex items-start justify-between">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#16869a] text-white dark:bg-[#39a89e]">
+              <MessageSquare size={25} />
+            </span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#183a4b]/[0.06] text-[#183a4b] transition group-hover:bg-[#16869a] group-hover:text-white dark:bg-white/10 dark:text-white dark:group-hover:bg-[#39a89e]">
+              <ArrowRight size={19} className="transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </span>
+          <span className="relative z-10 text-3xl font-semibold tracking-[-.04em] md:text-4xl">Chat</span>
         </Link>
       </div>
     </div>
@@ -4965,7 +4978,7 @@ function ChatPage() {
   const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
   return <div className="fade-up"><PageHeading eyebrow="Chat workspace" title="Team chat" detail="Use the shared team channel. Type @ai for an applicant-aware response." /><InterviewChatPanel applicantIds={applicantIds} tall /></div>;
 }
-function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route><Route path="/interview"><Shell><InterviewOverview /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
+function Router() { return <ErrorBoundary FallbackComponent={CrashFallback}><Switch><Route path="/" component={Landing} /><Route path="/auth" component={Login} /><Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route><Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/interview"><Shell><InterviewOverview /></Shell></Route><Route path="/applicants"><Shell><Applicants /></Shell></Route><Route path="/queue"><Shell><Queue /></Shell></Route><Route path="/chat"><Shell><ChatPage /></Shell></Route><Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route><Route path="/attendance"><Shell><AttendancePage /></Shell></Route><Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route><Route path="/display" component={Display} /><Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route><Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route><Route component={NotFound} /></Switch></ErrorBoundary>; }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
 export { MarkdownContent, renderInlineMarkdown };
 export default App;
