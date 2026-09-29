@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
+import { access, chmod, constants, copyFile, mkdir, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -125,38 +125,61 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   );
 
   const nativeSourceDir = path.resolve(artifactDir, "native/cadconvert");
-  execFileSync(
-    "cargo",
-    [
-      "build",
-      "--release",
-      "--locked",
-      "--package",
-      "cad-cli",
-      "--bin",
-      "cadconvert",
-      "--bin",
-      "cadprogressive",
-    ],
-    {
-      cwd: nativeSourceDir,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+  try {
+    execFileSync(
+      "cargo",
+      [
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "cad-cli",
+        "--bin",
+        "cadconvert",
+        "--bin",
+        "cadprogressive",
+      ],
+      {
+        cwd: nativeSourceDir,
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+        },
       },
-    },
-  );
+    );
+  } catch (err) {
+    // Render's Node image (and other hosts) have no Rust toolchain. The
+    // parasolid preview endpoint needs these binaries, but the rest of the
+    // API does not — skip instead of failing the whole build. A real cargo
+    // failure (broken code) still throws below when the binaries are absent
+    // only if cargo exists; missing toolchain is the only tolerated case.
+    if (err?.code !== "ENOENT") throw err;
+    console.warn(
+      "cargo not found — skipping native cadconvert binaries (parasolid preview will be unavailable)",
+    );
+  }
   const nativeDistDir = path.join(distDir, "native");
-  const nativeBinary = path.join(nativeSourceDir, "target/release/cadconvert");
-  const copiedNativeBinary = path.join(nativeDistDir, "cadconvert");
   await mkdir(nativeDistDir, { recursive: true });
-  await copyFile(nativeBinary, copiedNativeBinary);
-  await chmod(copiedNativeBinary, 0o755);
-  const progressiveBinary = path.join(nativeSourceDir, "target/release/cadprogressive");
-  const copiedProgressiveBinary = path.join(nativeDistDir, "cadprogressive");
-  await copyFile(progressiveBinary, copiedProgressiveBinary);
-  await chmod(copiedProgressiveBinary, 0o755);
+  await copyIfExists(
+    path.join(nativeSourceDir, "target/release/cadconvert"),
+    path.join(nativeDistDir, "cadconvert"),
+  );
+  await copyIfExists(
+    path.join(nativeSourceDir, "target/release/cadprogressive"),
+    path.join(nativeDistDir, "cadprogressive"),
+  );
+}
+
+async function copyIfExists(source, destination) {
+  try {
+    await access(source, constants.R_OK);
+  } catch {
+    console.warn(`Skipping missing native binary: ${source}`);
+    return;
+  }
+  await copyFile(source, destination);
+  await chmod(destination, 0o755);
 }
 
 buildAll().catch((err) => {
