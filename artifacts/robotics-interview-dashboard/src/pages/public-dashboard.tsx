@@ -306,7 +306,11 @@ export default function PublicDashboard() {
         }
         .dark .public-dashboard::before { background: radial-gradient(circle at 76% 7%, rgba(45,117,103,.22), transparent 24%), linear-gradient(180deg, #102f36 0%, var(--pd-paper) 82%); }
         .dark .pd-preview-ribbon, .dark .pd-button-secondary { background: rgba(18,42,50,.72); }
-        .dark .pd-brand-mark, .dark .pd-command-card, .dark .pd-display-preview, .dark .pd-cta { color: #eaf6f0; }
+        .dark .pd-brand-mark { background: #153642; color: var(--pd-yellow); }
+        .dark .pd-nav-link-primary, .dark .pd-button-primary { border-color: #335963; background: #153642; color: #eff8f4 !important; }
+        .dark .pd-command-card, .dark .pd-cta { background: #153642; color: #eaf6f0; }
+        .dark .pd-display-preview { color: #eaf6f0; }
+        .dark .pd-cta .pd-button-primary { border-color: transparent; background: var(--pd-yellow); color: #153642 !important; }
         .dark .pd-brand, .dark .pd-hero h1, .dark .pd-section-heading h2, .dark .pd-panel-title h3, .dark .pd-stat strong, .dark .pd-ring-copy strong, .dark .pd-metric-row strong, .dark .pd-signal-card strong, .dark .pd-principle strong, .dark .pd-cta h2 { color: var(--pd-ink); }
         .dark .pd-ring::before { background: var(--pd-surface); }
         .dark .pd-progress { background: #29454b; }
