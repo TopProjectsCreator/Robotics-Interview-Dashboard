@@ -25,6 +25,7 @@ import {
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
 import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
+import { catalogSearchVariants } from "../lib/partsSearchTerms";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -574,6 +575,10 @@ async function searchWithTavily(
   query: string,
   allowedVendors: VendorConfig[],
 ): Promise<PublicCatalogSearchCandidate[]> {
+  const searchVariants = catalogSearchVariants(query);
+  const expandedQuery = searchVariants.length > 1
+    ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
+    : query;
   const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: {
@@ -581,7 +586,7 @@ async function searchWithTavily(
       "X-Tavily-Access-Mode": "keyless",
     },
     body: JSON.stringify({
-      query: `Official robotics parts and product pages matching: ${query}`,
+      query: `Official supplier product pages matching: ${expandedQuery}`,
       search_depth: "basic",
       max_results: 20,
       include_domains: allowedVendors.map((vendor) => vendor.domain),
@@ -625,6 +630,10 @@ async function searchWithExa(
   allowedVendors: VendorConfig[],
 ): Promise<PublicCatalogSearchCandidate[]> {
   const vendorScope = allowedVendors.map((vendor) => `${vendor.name} (${vendor.domain})`).join("; ");
+  const searchVariants = catalogSearchVariants(query);
+  const expandedQuery = searchVariants.length > 1
+    ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
+    : query;
   const response = await fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
     method: "POST",
     headers: {
@@ -638,7 +647,7 @@ async function searchWithExa(
       params: {
         name: "web_search_exa",
         arguments: {
-          query: `Official supplier product pages matching "${query}" from ${vendorScope}`,
+          query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
           objective:
             "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
           numResults: 20,
@@ -750,6 +759,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
   );
+  const searchPatterns = catalogSearchVariants(query).map((term) => `%${term}%`);
   const storedProducts = await pool.query(
     `select c."vendor_key" as "vendorKey", c."name", c."sku", c."description",
             c."product_url" as "url"
@@ -757,13 +767,14 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
      where c."vendor_key" = any($1::text[])
        and c."product_url" is not null
        and (
-         c."name" ilike $2
-         or coalesce(c."sku", '') ilike $2
-         or coalesce(c."description", '') ilike $2
+          c."name" ilike any($2::text[])
+          or coalesce(c."sku", '') ilike any($2::text[])
+          or coalesce(c."category", '') ilike any($2::text[])
+          or coalesce(c."description", '') ilike any($2::text[])
        )
      order by lower(c."name")
      limit 500`,
-    [allowedVendors.map((item) => item.key), `%${query}%`],
+    [allowedVendors.map((item) => item.key), searchPatterns],
   );
   const storedCandidates = storedProducts.rows.flatMap((row) => {
     const itemUrl = typeof row.url === "string" ? row.url : null;
@@ -787,7 +798,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
 
   const seen = new Set<string>();
   const byVendor = new Map(allowedVendors.map((item) => [item.key, [] as PublicCatalogSearchCandidate[]]));
-  for (const result of [...combined, ...storedCandidates]) {
+  for (const result of [...storedCandidates, ...combined]) {
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
     const bucket = byVendor.get(result.vendorKey);
@@ -796,7 +807,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
     bucket.push(result);
   }
   const candidates: PublicCatalogSearchCandidate[] = [];
-  const candidatesPerVendor = vendor ? 24 : 3;
+  const candidatesPerVendor = vendor ? 24 : 8;
   for (let rank = 0; rank < candidatesPerVendor; rank += 1) {
     for (const allowedVendor of allowedVendors) {
       const candidate = byVendor.get(allowedVendor.key)?.[rank];
@@ -1111,20 +1122,38 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
 }
 
 async function collectPublicVendorCatalog(vendor: VendorConfig) {
+  const feedUrl = vendor.publicProductFeedUrl ??
+    new URL("/products.json", `https://${vendor.domain}`).toString();
+  const feedVendor = { ...vendor, publicProductFeedUrl: feedUrl };
+  let firstPage: Record<string, unknown>[] | null = null;
+
   if (!vendor.publicProductFeedUrl) {
-    return {
-      vendor,
-      status: "search_only" as const,
-      records: [] as CatalogFeedRecord[],
-      message: "No verified public full-catalog feed is available; global supplier search remains available.",
-    };
+    try {
+      firstPage = await fetchShopifyProductPage(feedVendor, 1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const noPublicFeed =
+        /Product feed returned (401|403|404|405|406|410)\./.test(message) ||
+        /did not return a Shopify product list|redirected outside the supplier website|invalid JSON/i.test(message) ||
+        error instanceof SyntaxError;
+      return {
+        vendor,
+        status: noPublicFeed ? ("search_only" as const) : ("unavailable" as const),
+        records: [] as CatalogFeedRecord[],
+        message: noPublicFeed
+          ? "No supplier-owned public Shopify catalog feed is available; global supplier search remains available."
+          : "The supplier's standard public catalog endpoint could not be checked; global supplier search remains available.",
+      };
+    }
   }
 
   const records = new Map<string, CatalogFeedRecord>();
   const seenProducts = new Set<string>();
   let reachedEnd = false;
   for (let page = 1; page <= MAX_PUBLIC_FEED_PAGES; page += 1) {
-    const products = await fetchShopifyProductPage(vendor, page);
+    const products = page === 1 && firstPage !== null
+      ? firstPage
+      : await fetchShopifyProductPage(feedVendor, page);
     if (products.length === 0) {
       reachedEnd = true;
       break;
@@ -1138,7 +1167,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
       if (id && seenProducts.has(id)) continue;
       if (id) seenProducts.add(id);
       newProducts += 1;
-      for (const record of catalogRecordsFromShopifyProduct(vendor, product)) {
+      for (const record of catalogRecordsFromShopifyProduct(feedVendor, product)) {
         records.set(record.externalKey, record);
       }
     }
@@ -1149,7 +1178,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
     }
   }
   return {
-    vendor,
+    vendor: feedVendor,
     status: reachedEnd ? ("synced" as const) : ("incomplete" as const),
     records: [...records.values()],
     message: reachedEnd
@@ -1227,8 +1256,15 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       clauses.push(`c."vendor_key" = $${values.length}`);
     }
     if (search) {
-      values.push(`%${search}%`);
-      clauses.push(`(c."name" ilike $${values.length} or coalesce(c."sku", '') ilike $${values.length})`);
+      const searchPatterns = catalogSearchVariants(search).map((term) => `%${term}%`);
+      values.push(searchPatterns);
+      const patternArray = `$${values.length}::text[]`;
+      clauses.push(
+        `(c."name" ilike any(${patternArray})
+          or coalesce(c."sku", '') ilike any(${patternArray})
+          or coalesce(c."category", '') ilike any(${patternArray})
+          or coalesce(c."description", '') ilike any(${patternArray}))`,
+      );
     }
     const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
     const [countResult, rows] = await Promise.all([

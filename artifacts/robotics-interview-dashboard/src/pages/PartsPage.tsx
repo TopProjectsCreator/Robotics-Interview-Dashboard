@@ -326,6 +326,7 @@ export default function PartsPage() {
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PartsCatalogSearchResult[]>([]);
   const [lastSearch, setLastSearch] = useState("");
+  const [savedSearchOffset, setSavedSearchOffset] = useState(0);
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
@@ -337,6 +338,17 @@ export default function PartsPage() {
     vendorKey: inventoryVendor || undefined,
     limit: pageSize,
     offset: 0,
+  });
+  const savedSearchParams = {
+    search: lastSearch.trim() || undefined,
+    limit: 100,
+    offset: savedSearchOffset,
+  };
+  const savedCatalogSearchQuery = useListPartsCatalog(savedSearchParams, {
+    query: {
+      queryKey: getListPartsCatalogQueryKey(savedSearchParams),
+      enabled: lastSearch.trim().length >= 2,
+    },
   });
   const createItemMutation = useCreatePartsCatalogItem();
   const syncMutation = useSyncPartsCatalog();
@@ -428,12 +440,13 @@ export default function PartsPage() {
     setSearchBusy(true);
     setSearchError("");
     setSearchResults([]);
+    setSavedSearchOffset(0);
     setLastSearch(searchText.trim());
     try {
       const result = await searchPartsCatalog({ q: searchText.trim() });
       setSearchResults(result.results);
       if (result.results.length === 0) {
-        setSearchError("No matching supplier product pages with a verified image and price were found. Try another search.");
+        setSearchError("No live product-page discoveries with verified details were found. Check the synced catalog matches below.");
       }
     } catch (error) {
       setSearchError(errorMessage(error, "Keyless supplier search is unavailable right now."));
@@ -824,6 +837,120 @@ export default function PartsPage() {
                   </CardContent>
                 </Card>
 
+                {lastSearch && (
+                  <Card className="border-primary/25 bg-card" data-testid="card-synced-catalog-matches">
+                    <CardContent className="space-y-4 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h2 className="font-semibold text-foreground">Synced catalog matches</h2>
+                          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                            These are every matching part currently indexed from public supplier feeds or saved inventory, including common metric size spellings. This list is separate from live web discoveries.
+                          </p>
+                        </div>
+                        {savedCatalogSearchQuery.data && (
+                          <span className="text-sm font-medium text-foreground" data-testid="status-synced-catalog-total">
+                            {formatQuantity(savedCatalogSearchQuery.data.total)} total
+                          </span>
+                        )}
+                      </div>
+
+                      {savedCatalogSearchQuery.isLoading && (
+                        <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
+                          <Loader2 className="animate-spin" size={16} /> Searching synced catalogs…
+                        </div>
+                      )}
+
+                      {savedCatalogSearchQuery.isError && (
+                        <p role="alert" className="text-sm text-destructive">
+                          Could not search the synced parts catalog.
+                        </p>
+                      )}
+
+                      {savedCatalogSearchQuery.data?.total === 0 && !savedCatalogSearchQuery.isLoading && (
+                        <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="max-w-2xl text-sm text-muted-foreground">
+                            No matching items are indexed yet. Sync the available public supplier feeds to load their full catalogs; the live results below do not enumerate every SKU.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={syncMutation.isPending}
+                            onClick={() => void syncPublicCatalogs()}
+                            data-testid="button-sync-catalogs-from-search"
+                          >
+                            {syncMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                            {syncMutation.isPending ? "Syncing…" : "Sync public catalogs"}
+                          </Button>
+                        </div>
+                      )}
+
+                      {savedCatalogSearchQuery.data?.items.map((item) => (
+                        <article
+                          key={item.id}
+                          className="rounded-lg border border-border bg-background p-3"
+                          data-testid={`card-synced-part-${item.id}`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <h3 className="font-medium text-foreground" data-testid={`text-synced-part-name-${item.id}`}>{item.name}</h3>
+                              <p className="mt-1 text-sm text-muted-foreground" data-testid={`text-synced-part-details-${item.id}`}>
+                                {item.vendorName}
+                                {item.sku ? ` · SKU ${item.sku}` : ""}
+                                {item.category ? ` · ${item.category}` : ""}
+                              </p>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              In catalog · {formatQuantity(item.quantityOwned)} owned
+                            </span>
+                          </div>
+                          {item.description && (
+                            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{item.description}</p>
+                          )}
+                          {item.productUrl && (
+                            <a
+                              className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+                              href={item.productUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              data-testid={`link-supplier-page-${item.id}`}
+                            >
+                              Open supplier product page
+                            </a>
+                          )}
+                        </article>
+                      ))}
+
+                      {savedCatalogSearchQuery.data && savedCatalogSearchQuery.data.total > 100 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm text-muted-foreground">
+                            Showing {savedSearchOffset + 1}–{Math.min(savedSearchOffset + 100, savedCatalogSearchQuery.data.total)} of {formatQuantity(savedCatalogSearchQuery.data.total)}
+                          </span>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={savedSearchOffset === 0 || savedCatalogSearchQuery.isFetching}
+                              onClick={() => setSavedSearchOffset((offset) => Math.max(0, offset - 100))}
+                              data-testid="button-synced-catalog-previous-page"
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={savedSearchOffset + 100 >= savedCatalogSearchQuery.data.total || savedCatalogSearchQuery.isFetching}
+                              onClick={() => setSavedSearchOffset((offset) => offset + 100)}
+                              data-testid="button-synced-catalog-next-page"
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
@@ -832,13 +959,13 @@ export default function PartsPage() {
 
                 {lastSearch && searchResults.length > 0 && (
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{searchResults.length} verified product result(s) for “{lastSearch}”</span>
+                    <span>{searchResults.length} live verified product-page discovery result(s) for “{lastSearch}”</span>
                     <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
                   </div>
                 )}
                 {lastSearch && (
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Search checks all 19 suppliers, but results are not a complete SKU listing. It shows only official product pages with verified details; public-catalog sync is available only for suppliers that expose a feed.
+                    Live web results are discovery samples, not complete SKU listings. The synced catalog list above shows all matching records currently indexed; complete coverage still depends on each supplier exposing a verifiable public catalog feed.
                   </p>
                 )}
                 <div className="grid gap-3 lg:grid-cols-2">
