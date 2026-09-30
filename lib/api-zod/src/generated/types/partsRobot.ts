@@ -5,12 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { PartsRobotPreview } from './partsRobotPreview';
 
 export interface PartsRobot {
   id: string;
   name: string;
-  preview: PartsRobotPreview | null;
   createdAt: Date;
   updatedAt: Date;
 }

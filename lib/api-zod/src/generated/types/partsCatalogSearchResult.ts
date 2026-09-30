@@ -14,19 +14,10 @@ export interface PartsCatalogSearchResult {
   description: string;
   /** @nullable */
   sku: string | null;
-  /** @nullable */
-  imageUrl: string | null;
-  /**
-     * @nullable
-     * @pattern ^\d{1,9}(\.\d{1,4})?$
-     */
-  price: string | null;
-  /**
-     * @nullable
-     * @pattern ^[A-Z]{3}$
-     */
-  currency: string | null;
+  imageUrl: string;
+  /** @pattern ^\d{1,9}(\.\d{1,4})?$ */
+  price: string;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
   priceIsStartingAt: boolean;
-  /** Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals. */
-  inStock: boolean;
 }
