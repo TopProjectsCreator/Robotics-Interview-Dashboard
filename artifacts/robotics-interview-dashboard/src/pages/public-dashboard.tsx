@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CircleDot,
   Cpu,
+  Boxes,
   LayoutDashboard,
   Menu,
   MessageSquare,
@@ -330,7 +331,7 @@ export default function PublicDashboard() {
             ))}
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2" data-testid="grid-product-entry-cards">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="grid-product-entry-cards">
             <article
               className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
               data-testid="card-interview-entry"
@@ -376,6 +377,30 @@ export default function PublicDashboard() {
                 data-testid="link-chat-entry"
               >
                 Explore chat <ArrowRight size={14} />
+              </Link>
+            </article>
+
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              data-testid="card-parts-entry"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#a5dfb8] dark:bg-[#203f49]">
+                  <Boxes size={17} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">Parts & inventory</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
+                    Discover supplier listings, track team stock, and reserve parts for robot builds.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/parts-landing"
+                className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
+                data-testid="link-parts-entry"
+              >
+                Explore parts <ArrowRight size={14} />
               </Link>
             </article>
           </div>
