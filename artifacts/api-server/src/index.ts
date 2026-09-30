@@ -66,6 +66,7 @@ async function ensureSchema(): Promise<void> {
 
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
     `alter table "dashboard_charts" add column if not exists "x_axis" text`,
     `alter table "dashboard_charts" add column if not exists "y_axis" text`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,

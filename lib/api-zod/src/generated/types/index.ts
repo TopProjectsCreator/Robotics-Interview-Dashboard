@@ -99,6 +99,8 @@ export * from './interviewChatScope';
 export * from './interviewerAccount';
 export * from './interviewerAccountList';
 export * from './interviewerPasswordUpdateInput';
+export * from './interviewerRoleUpdateInput';
+export * from './interviewerRoleUpdateInputRole';
 export * from './interviewStatusParameter';
 export * from './interviewWhiteboard';
 export * from './interviewWhiteboardInput';

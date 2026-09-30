@@ -48,6 +48,7 @@ export const LoginResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
+  "role": zod.string().optional().describe('coordinator or interviewer'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -59,6 +60,7 @@ export const GetSessionResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
+  "role": zod.string().optional().describe('coordinator or interviewer'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -70,7 +72,8 @@ export const ListInterviewersResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
-  "hasPassword": zod.boolean()
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
 }))
 })
 
@@ -93,7 +96,8 @@ export const CreateInterviewerBody = zod.object({
 export const CreateInterviewerResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
-  "hasPassword": zod.boolean()
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
 })
 
 
@@ -114,7 +118,8 @@ export const SetupInterviewerPasswordBody = zod.object({
 export const SetupInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
-  "hasPassword": zod.boolean()
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
 })
 
 
@@ -126,6 +131,25 @@ export const DeleteInterviewerParams = zod.object({
 })
 
 export const DeleteInterviewerResponse = zod.void()
+
+
+/**
+ * @summary Change an interviewer role (coordinators only)
+ */
+export const UpdateInterviewerRoleParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+export const UpdateInterviewerRoleBody = zod.object({
+  "role": zod.enum(['coordinator', 'interviewer'])
+})
+
+export const UpdateInterviewerRoleResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+})
 
 
 /**
@@ -148,7 +172,8 @@ export const UpdateInterviewerPasswordBody = zod.object({
 export const UpdateInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
-  "hasPassword": zod.boolean()
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
 })
 
 

@@ -10,4 +10,6 @@ export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
+  /** coordinator has full access; interviewer is restricted to chat and read-only roster */
+  role: string;
 }

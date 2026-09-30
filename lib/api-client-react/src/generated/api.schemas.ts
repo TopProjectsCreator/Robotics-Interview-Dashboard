@@ -295,6 +295,8 @@ export interface AuthSession {
   authenticated: boolean;
   label?: string;
   interviewerId?: string;
+  /** coordinator or interviewer */
+  role?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }
@@ -303,6 +305,8 @@ export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
+  /** coordinator has full access; interviewer is restricted to chat and read-only roster */
+  role: string;
 }
 
 export interface InterviewerAccountList {
@@ -330,6 +334,18 @@ export interface InterviewerPasswordUpdateInput {
   password: string | null;
   /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
   confirmLowExposure?: boolean;
+}
+
+export type InterviewerRoleUpdateInputRole = typeof InterviewerRoleUpdateInputRole[keyof typeof InterviewerRoleUpdateInputRole];
+
+
+export const InterviewerRoleUpdateInputRole = {
+  coordinator: 'coordinator',
+  interviewer: 'interviewer',
+} as const;
+
+export interface InterviewerRoleUpdateInput {
+  role: InterviewerRoleUpdateInputRole;
 }
 
 export interface EventPasswordInput {

@@ -149,6 +149,35 @@ export function requireAdmin(
   });
 }
 
+export function requireCoordinator(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    db.select({ role: interviewerAccountsTable.role })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1)
+      .then(([account]) => {
+        if (account?.role !== "coordinator") {
+          res.status(403).json({ error: "Coordinators only" });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        req.log.error({ err: error }, "Coordinator role check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+  });
+}
+
 export function setAdminCookie(res: Response, session: string): void {
   const request = res.req;
   const forwardedProto = request.get("x-forwarded-proto")?.split(",")[0]?.trim();

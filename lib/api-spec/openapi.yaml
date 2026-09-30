@@ -190,6 +190,35 @@ paths:
           description: Interviewer deleted
         "404":
           description: Interviewer not found
+  /auth/interviewers/{interviewerId}/role:
+    patch:
+      operationId: updateInterviewerRole
+      tags: [auth]
+      summary: Change an interviewer role (coordinators only)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewerRoleUpdateInput"
+      responses:
+        "200":
+          description: Updated interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+        "404":
+          description: Interviewer not found
   /auth/interviewers/{interviewerId}/password:
     patch:
       operationId: updateInterviewerPassword
@@ -2139,12 +2168,15 @@ components:
           type: string
         interviewerId:
           type: string
+        role:
+          type: string
+          description: "coordinator or interviewer"
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
     InterviewerAccount:
       type: object
-      required: [id, displayName, hasPassword]
+      required: [id, displayName, hasPassword, role]
       properties:
         id:
           type: string
@@ -2152,6 +2184,9 @@ components:
           type: string
         hasPassword:
           type: boolean
+        role:
+          type: string
+          description: "coordinator has full access; interviewer is restricted to chat and read-only roster"
     InterviewerAccountList:
       type: object
       required: [items]
@@ -2189,6 +2224,13 @@ components:
         confirmLowExposure:
           type: boolean
           description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    InterviewerRoleUpdateInput:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [coordinator, interviewer]
     EventPasswordInput:
       type: object
       required: [eventPassword]

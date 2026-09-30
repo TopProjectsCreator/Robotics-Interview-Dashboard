@@ -83,6 +83,7 @@ import type {
   InterviewerAccount,
   InterviewerAccountList,
   InterviewerPasswordUpdateInput,
+  InterviewerRoleUpdateInput,
   ListApplicantsParams,
   ListInterviewWhiteboardsParams,
   ListPartsCatalogParams,
@@ -747,6 +748,78 @@ export const useDeleteInterviewer = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteInterviewerMutationOptions(options));
+    }
+
+export const getUpdateInterviewerRoleUrl = (interviewerId: string,) => {
+
+
+
+
+  return `/api/auth/interviewers/${interviewerId}/role`
+}
+
+/**
+ * @summary Change an interviewer role (coordinators only)
+ */
+export const updateInterviewerRole = async (interviewerId: string,
+    interviewerRoleUpdateInput: InterviewerRoleUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getUpdateInterviewerRoleUrl(interviewerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewerRoleUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateInterviewerRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerRole>>, TError,{interviewerId: string;data: BodyType<InterviewerRoleUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerRole>>, TError,{interviewerId: string;data: BodyType<InterviewerRoleUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateInterviewerRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInterviewerRole>>, {interviewerId: string;data: BodyType<InterviewerRoleUpdateInput>}> = (props) => {
+          const {interviewerId,data} = props ?? {};
+
+          return  updateInterviewerRole(interviewerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateInterviewerRoleMutationResult = NonNullable<Awaited<ReturnType<typeof updateInterviewerRole>>>
+    export type UpdateInterviewerRoleMutationBody = BodyType<InterviewerRoleUpdateInput>
+    export type UpdateInterviewerRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Change an interviewer role (coordinators only)
+ */
+export const useUpdateInterviewerRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerRole>>, TError,{interviewerId: string;data: BodyType<InterviewerRoleUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateInterviewerRole>>,
+        TError,
+        {interviewerId: string;data: BodyType<InterviewerRoleUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateInterviewerRoleMutationOptions(options));
     }
 
 export const getUpdateInterviewerPasswordUrl = (interviewerId: string,) => {

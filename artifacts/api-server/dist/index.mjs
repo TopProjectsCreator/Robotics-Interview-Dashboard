@@ -54765,6 +54765,7 @@ var init_interviewerAccounts = __esm({
       displayName: text("display_name").notNull(),
       normalizedName: text("normalized_name").notNull().unique(),
       passwordHash: text("password_hash"),
+      role: text("role").notNull().default("coordinator"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
       updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => /* @__PURE__ */ new Date())
     });
@@ -76489,19 +76490,22 @@ var LoginResponse = objectType({
   "authenticated": booleanType(),
   "label": stringType().optional(),
   "interviewerId": stringType().optional(),
+  "role": stringType().optional().describe("coordinator or interviewer"),
   "token": stringType().optional().describe("Session token for embedded clients that cannot use third-party cookies")
 });
 var GetSessionResponse = objectType({
   "authenticated": booleanType(),
   "label": stringType().optional(),
   "interviewerId": stringType().optional(),
+  "role": stringType().optional().describe("coordinator or interviewer"),
   "token": stringType().optional().describe("Session token for embedded clients that cannot use third-party cookies")
 });
 var ListInterviewersResponse = objectType({
   "items": arrayType(objectType({
     "id": stringType(),
     "displayName": stringType(),
-    "hasPassword": booleanType()
+    "hasPassword": booleanType(),
+    "role": stringType().describe("coordinator has full access; interviewer is restricted to chat and read-only roster")
   }))
 });
 var CreateInterviewerBody = objectType({
@@ -76513,7 +76517,8 @@ var CreateInterviewerBody = objectType({
 var CreateInterviewerResponse = objectType({
   "id": stringType(),
   "displayName": stringType(),
-  "hasPassword": booleanType()
+  "hasPassword": booleanType(),
+  "role": stringType().describe("coordinator has full access; interviewer is restricted to chat and read-only roster")
 });
 var SetupInterviewerPasswordBody = objectType({
   "interviewerId": stringType(),
@@ -76524,12 +76529,25 @@ var SetupInterviewerPasswordBody = objectType({
 var SetupInterviewerPasswordResponse = objectType({
   "id": stringType(),
   "displayName": stringType(),
-  "hasPassword": booleanType()
+  "hasPassword": booleanType(),
+  "role": stringType().describe("coordinator has full access; interviewer is restricted to chat and read-only roster")
 });
 var DeleteInterviewerParams = objectType({
   "interviewerId": coerce.string()
 });
 var DeleteInterviewerResponse = voidType();
+var UpdateInterviewerRoleParams = objectType({
+  "interviewerId": coerce.string()
+});
+var UpdateInterviewerRoleBody = objectType({
+  "role": enumType(["coordinator", "interviewer"])
+});
+var UpdateInterviewerRoleResponse = objectType({
+  "id": stringType(),
+  "displayName": stringType(),
+  "hasPassword": booleanType(),
+  "role": stringType().describe("coordinator has full access; interviewer is restricted to chat and read-only roster")
+});
 var UpdateInterviewerPasswordParams = objectType({
   "interviewerId": coerce.string()
 });
@@ -76541,7 +76559,8 @@ var UpdateInterviewerPasswordBody = objectType({
 var UpdateInterviewerPasswordResponse = objectType({
   "id": stringType(),
   "displayName": stringType(),
-  "hasPassword": booleanType()
+  "hasPassword": booleanType(),
+  "role": stringType().describe("coordinator has full access; interviewer is restricted to chat and read-only roster")
 });
 var ResetAllInterviewerPasswordsBody = objectType({
   "eventPassword": stringType().min(1)
@@ -78171,6 +78190,25 @@ function requireAdmin(req, res, next) {
     res.status(503).json({ error: "Authentication unavailable" });
   });
 }
+function requireCoordinator(req, res, next) {
+  requireAdmin(req, res, () => {
+    const interviewerId = req.interviewerId;
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    db.select({ role: interviewerAccountsTable.role }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1).then(([account]) => {
+      if (account?.role !== "coordinator") {
+        res.status(403).json({ error: "Coordinators only" });
+        return;
+      }
+      next();
+    }).catch((error40) => {
+      req.log.error({ err: error40 }, "Coordinator role check failed");
+      res.status(503).json({ error: "Authentication unavailable" });
+    });
+  });
+}
 function setAdminCookie(res, session) {
   const request = res.req;
   const forwardedProto = request.get("x-forwarded-proto")?.split(",")[0]?.trim();
@@ -78388,7 +78426,8 @@ async function syncInterviewerAccounts(labels) {
         id: randomUUID2(),
         displayName,
         normalizedName,
-        passwordHash: null
+        passwordHash: null,
+        role: "interviewer"
       }).returning();
       if (created) byName.set(normalizedName, created);
     }
@@ -79409,7 +79448,7 @@ function passwordHashMatches(password, encoded) {
   }
 }
 function publicAccount(account) {
-  return { id: account.id, displayName: account.displayName, hasPassword: Boolean(account.passwordHash) };
+  return { id: account.id, displayName: account.displayName, hasPassword: Boolean(account.passwordHash), role: account.role };
 }
 router3.get("/auth/interviewers", async (_req, res) => {
   const accounts = await syncInterviewerAccounts(await getInterviewSettings());
@@ -79437,7 +79476,8 @@ router3.post("/auth/interviewers", async (req, res) => {
     id: randomBytes2(16).toString("hex"),
     displayName,
     normalizedName,
-    passwordHash: hashPassword(parsed.data.password)
+    passwordHash: hashPassword(parsed.data.password),
+    role: "interviewer"
   }).returning();
   if (!account) {
     res.status(500).json({ error: "Could not create interviewer." });
@@ -79473,7 +79513,7 @@ router3.post("/auth/interviewers/setup", async (req, res) => {
   }
   res.json(SetupInterviewerPasswordResponse.parse(publicAccount(updated)));
 });
-router3.patch("/auth/interviewers/:interviewerId/password", requireAdmin, async (req, res) => {
+router3.patch("/auth/interviewers/:interviewerId/password", requireCoordinator, async (req, res) => {
   const params2 = UpdateInterviewerPasswordParams.safeParse(req.params);
   if (!params2.success) {
     res.status(400).json({ error: "Interviewer is required." });
@@ -79501,7 +79541,7 @@ router3.patch("/auth/interviewers/:interviewerId/password", requireAdmin, async 
   }
   res.json(UpdateInterviewerPasswordResponse.parse(publicAccount(updated)));
 });
-router3.post("/auth/interviewers/passwords/reset-all", requireAdmin, async (req, res) => {
+router3.post("/auth/interviewers/passwords/reset-all", requireCoordinator, async (req, res) => {
   const parsed = ResetAllInterviewerPasswordsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "The event passcode is required." });
@@ -79514,7 +79554,7 @@ router3.post("/auth/interviewers/passwords/reset-all", requireAdmin, async (req,
   await db.update(interviewerAccountsTable).set({ passwordHash: null, updatedAt: /* @__PURE__ */ new Date() });
   res.json(ResetAllInterviewerPasswordsResponse.parse({ message: "All interviewer passwords were reset. Each interviewer must set up a new password." }));
 });
-router3.delete("/auth/interviewers/:interviewerId", requireAdmin, async (req, res) => {
+router3.delete("/auth/interviewers/:interviewerId", requireCoordinator, async (req, res) => {
   const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
   if (!interviewerId) {
     res.status(400).json({ error: "Interviewer id required" });
@@ -79529,6 +79569,30 @@ router3.delete("/auth/interviewers/:interviewerId", requireAdmin, async (req, re
   const labels = await getInterviewSettings();
   await updateQueueLabels(labels.filter((label) => normalizeInterviewerName(label) !== account.normalizedName));
   res.status(204).end();
+});
+router3.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async (req, res) => {
+  const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
+  const role = req.body?.role;
+  if (!interviewerId || role !== "coordinator" && role !== "interviewer") {
+    res.status(400).json({ error: "Interviewer id and a valid role are required" });
+    return;
+  }
+  const selfId = req.interviewerId;
+  if (selfId === interviewerId) {
+    res.status(400).json({ error: "You cannot change your own role" });
+    return;
+  }
+  const account = await accountById(interviewerId);
+  if (!account) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const [updated] = await db.update(interviewerAccountsTable).set({ role, updatedAt: /* @__PURE__ */ new Date() }).where(eq(interviewerAccountsTable.id, interviewerId)).returning();
+  if (!updated) {
+    res.status(500).json({ error: "Could not update role." });
+    return;
+  }
+  res.json(UpdateInterviewerRoleResponse.parse(publicAccount(updated)));
 });
 router3.post("/auth/login", async (req, res) => {
   const parsed = LoginBody.safeParse(req.body);
@@ -79569,7 +79633,7 @@ router3.get("/auth/session", async (req, res) => {
     res.json(GetSessionResponse.parse({ authenticated: false }));
     return;
   }
-  res.json(GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id }));
+  res.json(GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role }));
 });
 router3.post("/auth/logout", (req, res) => {
   const session = requestAdminSession(req);
@@ -111388,10 +111452,10 @@ function dashboardChartResponse(chart) {
     updatedAt: chart.updatedAt.toISOString()
   };
 }
-router4.get("/snapshots", requireAdmin, async (_req, res) => {
+router4.get("/snapshots", requireCoordinator, async (_req, res) => {
   res.json(ListSnapshotsResponse.parse({ items: await listSnapshots() }));
 });
-router4.post("/snapshots", requireAdmin, async (req, res) => {
+router4.post("/snapshots", requireCoordinator, async (req, res) => {
   const parsed = CreateSnapshotBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111400,7 +111464,7 @@ router4.post("/snapshots", requireAdmin, async (req, res) => {
   const created = await captureSnapshot(parsed.data.label ?? "", "coordinator");
   res.status(201).json(CreateSnapshotResponse.parse(created));
 });
-router4.post("/snapshots/:snapshotId/restore", requireAdmin, async (req, res) => {
+router4.post("/snapshots/:snapshotId/restore", requireCoordinator, async (req, res) => {
   const params2 = RestoreSnapshotParams.safeParse(req.params);
   const body = RestoreSnapshotBody.safeParse(req.body ?? {});
   if (!params2.success || !body.success) {
@@ -111438,7 +111502,7 @@ router4.get("/dashboard/charts", requireAdmin, async (req, res) => {
   const charts = await db.select().from(dashboardChartsTable).where(eq(dashboardChartsTable.ownerId, ownerId)).orderBy(asc(dashboardChartsTable.position), asc(dashboardChartsTable.createdAt));
   res.json(ListDashboardChartsResponse.parse({ items: charts.map(dashboardChartResponse) }));
 });
-router4.post("/dashboard/charts", requireAdmin, async (req, res) => {
+router4.post("/dashboard/charts", requireCoordinator, async (req, res) => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) {
     res.status(401).json({ error: "Authentication required" });
@@ -111468,7 +111532,7 @@ router4.post("/dashboard/charts", requireAdmin, async (req, res) => {
   }).returning();
   res.status(201).json(CreateDashboardChartResponse.parse(dashboardChartResponse(created)));
 });
-router4.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res) => {
+router4.patch("/dashboard/charts/:chartId", requireCoordinator, async (req, res) => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) {
     res.status(401).json({ error: "Authentication required" });
@@ -111515,7 +111579,7 @@ router4.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res) => {
   }
   res.json(UpdateDashboardChartResponse.parse(dashboardChartResponse(updated)));
 });
-router4.delete("/dashboard/charts/:chartId", requireAdmin, async (req, res) => {
+router4.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res) => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) {
     res.status(401).json({ error: "Authentication required" });
@@ -111583,7 +111647,7 @@ router4.get("/applicants", requireAdmin, async (req, res) => {
     total: applicants.length
   }));
 });
-router4.post("/applicants/search/ai", requireAdmin, async (req, res) => {
+router4.post("/applicants/search/ai", requireCoordinator, async (req, res) => {
   const parsed = InterpretApplicantSearchBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111652,7 +111716,7 @@ router4.get("/applicants/:id", requireAdmin, async (req, res) => {
   }
   res.json(GetApplicantResponse.parse(applicantResponse(applicant)));
 });
-router4.patch("/applicants/:id", requireAdmin, async (req, res) => {
+router4.patch("/applicants/:id", requireCoordinator, async (req, res) => {
   const params2 = UpdateApplicantParams.safeParse(req.params);
   const body = UpdateApplicantBody.safeParse(req.body);
   if (!params2.success || !body.success) {
@@ -111694,7 +111758,7 @@ router4.patch("/applicants/:id", requireAdmin, async (req, res) => {
   }
   res.json(UpdateApplicantResponse.parse(applicantResponse(result)));
 });
-router4.delete("/applicants/:id", requireAdmin, async (req, res) => {
+router4.delete("/applicants/:id", requireCoordinator, async (req, res) => {
   const params2 = DeleteApplicantParams.safeParse(req.params);
   if (!params2.success) {
     res.status(400).json({ error: "Invalid applicant id" });
@@ -111719,7 +111783,7 @@ function laneForRecommendation(recommendation) {
   if (recommendation === "No") return "decline";
   return "hold";
 }
-router4.post("/applicants/:id/regenerate", requireAdmin, async (req, res) => {
+router4.post("/applicants/:id/regenerate", requireCoordinator, async (req, res) => {
   const params2 = DeleteApplicantParams.safeParse(req.params);
   if (!params2.success) {
     res.status(400).json({ error: "Invalid applicant id" });
@@ -111806,7 +111870,7 @@ ${transcriptText}`
     res.status(limited ? 429 : 503).json({ error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "The evaluation could not be regenerated. Try again." });
   }
 });
-router4.post("/imports/preview", requireAdmin, async (req, res) => {
+router4.post("/imports/preview", requireCoordinator, async (req, res) => {
   const parsed = CommitImportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111826,7 +111890,7 @@ router4.post("/imports/preview", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "The file could not be read from private storage." });
   }
 });
-router4.get("/imports/history", requireAdmin, async (req, res) => {
+router4.get("/imports/history", requireCoordinator, async (req, res) => {
   const history = await db.select().from(importsTable).orderBy(desc(importsTable.createdAt));
   const emptyDiff = { added: 0, updated: 0, unchanged: 0, missingFromUpload: 0 };
   const asCount = (value) => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
@@ -111917,7 +111981,7 @@ async function commitImportFile(objectPath, fileName, rowCount, onlyNew, created
     diff: appliedDiff
   };
 }
-router4.post("/imports", requireAdmin, async (req, res) => {
+router4.post("/imports", requireCoordinator, async (req, res) => {
   const parsed = CommitImportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111939,7 +112003,7 @@ router4.post("/imports", requireAdmin, async (req, res) => {
 router4.get("/queue", requireAdmin, async (_req, res) => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
-router4.post("/queue/advance", requireAdmin, async (req, res) => {
+router4.post("/queue/advance", requireCoordinator, async (req, res) => {
   const parsed = AdvanceQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111960,7 +112024,7 @@ router4.post("/queue/advance", requireAdmin, async (req, res) => {
   }).where(eq(applicantsTable.id, applicant.id));
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
-router4.post("/queue/callback", requireAdmin, async (req, res) => {
+router4.post("/queue/callback", requireCoordinator, async (req, res) => {
   const parsed = CallbackQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -111983,7 +112047,7 @@ router4.post("/queue/callback", requireAdmin, async (req, res) => {
   }).where(eq(applicantsTable.id, applicant.id));
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
-router4.post("/queue/reset", requireAdmin, async (_req, res) => {
+router4.post("/queue/reset", requireCoordinator, async (_req, res) => {
   const applicants = await getApplicants({ sort: "queue" });
   const now = /* @__PURE__ */ new Date();
   for (const [index, applicant] of applicants.entries()) {
@@ -111996,7 +112060,7 @@ router4.post("/queue/reset", requireAdmin, async (_req, res) => {
   }
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
-router4.post("/queue/settings", requireAdmin, async (req, res) => {
+router4.post("/queue/settings", requireCoordinator, async (req, res) => {
   const parsed = UpdateQueueSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -112164,7 +112228,7 @@ router4.get("/whiteboards", requireAdmin, async (req, res) => {
     peer: conversation.peer
   }));
 });
-router4.post("/whiteboards", requireAdmin, async (req, res) => {
+router4.post("/whiteboards", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112231,7 +112295,7 @@ router4.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res) => {
   }
   res.json(GetInterviewWhiteboardByIdResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });
-router4.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res) => {
+router4.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112280,7 +112344,7 @@ function boardResponse(board, conversation) {
     updatedAt: board.updatedAt.toISOString()
   };
 }
-router4.post("/boards", requireAdmin, async (req, res) => {
+router4.post("/boards", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112333,7 +112397,7 @@ router4.get("/boards/:boardId", requireAdmin, async (req, res) => {
   }
   res.json(GetBoardResponse.parse(boardResponse(board, conversation)));
 });
-router4.patch("/boards/:boardId", requireAdmin, async (req, res) => {
+router4.patch("/boards/:boardId", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112373,7 +112437,7 @@ router4.patch("/boards/:boardId", requireAdmin, async (req, res) => {
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
 });
-router4.post("/spreadsheets", requireAdmin, async (req, res) => {
+router4.post("/spreadsheets", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112431,7 +112495,7 @@ router4.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res) => {
   }
   res.json(GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
 });
-router4.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res) => {
+router4.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112526,7 +112590,7 @@ router4.get("/queue/custom-emojis", requireAdmin, async (req, res) => {
     items: items.map(chatCustomEmojiResponse)
   }));
 });
-router4.post("/queue/custom-emojis", requireAdmin, async (req, res) => {
+router4.post("/queue/custom-emojis", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112707,7 +112771,7 @@ router4.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res) 
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
-router4.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res) => {
+router4.post("/queue/chat/:messageId/pin", requireCoordinator, async (req, res) => {
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   if (!messageId) {
     res.status(400).json({ error: "Message id required" });
@@ -112729,7 +112793,7 @@ router4.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res) => {
     pinnedAt: pinnedAt?.toISOString() ?? null
   }));
 });
-router4.patch("/queue/chat/:messageId", requireAdmin, async (req, res) => {
+router4.patch("/queue/chat/:messageId", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112769,7 +112833,7 @@ router4.patch("/queue/chat/:messageId", requireAdmin, async (req, res) => {
   pushRealtimeHint("interview_chat_messages");
   res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation)));
 });
-router4.delete("/queue/chat/:messageId", requireAdmin, async (req, res) => {
+router4.delete("/queue/chat/:messageId", requireCoordinator, async (req, res) => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : void 0;
   if (!account) {
@@ -112807,7 +112871,7 @@ router4.delete("/queue/chat/:messageId", requireAdmin, async (req, res) => {
   pushRealtimeHint("interview_chat_messages");
   res.status(204).end();
 });
-router4.post("/queue/reorder", requireAdmin, async (req, res) => {
+router4.post("/queue/reorder", requireCoordinator, async (req, res) => {
   const parsed = ReorderQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -112879,7 +112943,7 @@ router4.get("/display/settings", requireAdmin, async (_req, res) => {
   }
   res.json(GetDisplaySettingsResponse.parse(displaySettingsResponse(row)));
 });
-router4.post("/display/settings", requireAdmin, async (req, res) => {
+router4.post("/display/settings", requireCoordinator, async (req, res) => {
   const parsed = UpdateDisplaySettingsBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid display settings" });
@@ -112922,7 +112986,7 @@ router4.get("/seating/settings", requireAdmin, async (_req, res) => {
     updatedAt: (row?.updatedAt ?? /* @__PURE__ */ new Date()).toISOString()
   }));
 });
-router4.post("/seating/settings", requireAdmin, async (req, res) => {
+router4.post("/seating/settings", requireCoordinator, async (req, res) => {
   const parsed = UpdateSeatingSettingsBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid seating settings" });
@@ -112947,7 +113011,7 @@ router4.post("/seating/settings", requireAdmin, async (req, res) => {
   );
   res.json(UpdateSeatingSettingsResponse.parse(seatingSettingsResponse(row)));
 });
-router4.post("/seating/assign", requireAdmin, async (req, res) => {
+router4.post("/seating/assign", requireCoordinator, async (req, res) => {
   const parsed = AssignSeatBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid seat assignment" });
@@ -112972,7 +113036,7 @@ router4.post("/seating/assign", requireAdmin, async (req, res) => {
   }
   res.json(AssignSeatResponse.parse(applicantResponse(seated)));
 });
-router4.post("/assistant/ask", requireAdmin, async (req, res) => {
+router4.post("/assistant/ask", requireCoordinator, async (req, res) => {
   const parsed = AskAssistantBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -113254,7 +113318,7 @@ ${executed.imageMarkdown}`;
     return;
   }
 });
-router4.post("/assistant/ask/stream", requireAdmin, async (req, res) => {
+router4.post("/assistant/ask/stream", requireCoordinator, async (req, res) => {
   const parsed = AskAssistantBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -113579,7 +113643,7 @@ Now answer the coordinator's original question directly: report ONLY what the to
     res.end();
   }
 });
-router4.post("/assistant/images", requireAdmin, async (req, res) => {
+router4.post("/assistant/images", requireCoordinator, async (req, res) => {
   const parsed = GenerateAssistantImageBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -113618,7 +113682,7 @@ function assistantModelSelectionInstructions(modelIds) {
   }
   return `Only change models when the coordinator explicitly asks to switch or choose one. Then call set_assistant_model with an exact id from this list, and use that model for the rest of this answer. The browser will remember the selected model for later requests. Do not mention model pricing or tiers unless asked. Available model ids: ${modelIds.join(", ")}`;
 }
-router4.get("/assistant/models", requireAdmin, async (req, res) => {
+router4.get("/assistant/models", requireCoordinator, async (req, res) => {
   try {
     const items = (await listFreeAssistantModelIds()).map((id2) => ({ id: id2 }));
     res.json(ListAssistantModelsResponse.parse({ items }));
@@ -113627,10 +113691,10 @@ router4.get("/assistant/models", requireAdmin, async (req, res) => {
     res.status(502).json({ error: "The model list is unavailable right now." });
   }
 });
-router4.get("/assistant/config", requireAdmin, async (_req, res) => {
+router4.get("/assistant/config", requireCoordinator, async (_req, res) => {
   res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
 });
-router4.get("/assistant/conversations", requireAdmin, async (_req, res) => {
+router4.get("/assistant/conversations", requireCoordinator, async (_req, res) => {
   await getOrCreateAssistantConversation();
   const conversations = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt));
   const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable);
@@ -113642,7 +113706,7 @@ router4.get("/assistant/conversations", requireAdmin, async (_req, res) => {
     items: conversations.map((conversation) => assistantConversationResponse(conversation, counts.get(conversation.id) ?? 0))
   }));
 });
-router4.post("/assistant/conversations", requireAdmin, async (req, res) => {
+router4.post("/assistant/conversations", requireCoordinator, async (req, res) => {
   const parsed = CreateAssistantConversationBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -113655,7 +113719,7 @@ router4.post("/assistant/conversations", requireAdmin, async (req, res) => {
   }).returning();
   res.status(201).json(CreateAssistantConversationResponse.parse(assistantConversationResponse(conversation, 0)));
 });
-router4.patch("/assistant/conversations/:conversationId", requireAdmin, async (req, res) => {
+router4.patch("/assistant/conversations/:conversationId", requireCoordinator, async (req, res) => {
   const params2 = RenameAssistantConversationParams.safeParse(req.params);
   const body = RenameAssistantConversationBody.safeParse(req.body);
   if (!params2.success || !body.success) {
@@ -113678,7 +113742,7 @@ router4.patch("/assistant/conversations/:conversationId", requireAdmin, async (r
   const messages = await db.select({ id: assistantMessagesTable.id }).from(assistantMessagesTable).where(eq(assistantMessagesTable.conversationId, conversation.id));
   res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, messages.length)));
 });
-router4.delete("/assistant/conversations/:conversationId", requireAdmin, async (req, res) => {
+router4.delete("/assistant/conversations/:conversationId", requireCoordinator, async (req, res) => {
   const params2 = DeleteAssistantConversationParams.safeParse(req.params);
   if (!params2.success) {
     res.status(400).json({ error: params2.error.message });
@@ -113693,7 +113757,7 @@ router4.delete("/assistant/conversations/:conversationId", requireAdmin, async (
   await db.delete(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversation.id));
   res.status(204).send();
 });
-router4.get("/assistant/conversations/:conversationId/messages", requireAdmin, async (req, res) => {
+router4.get("/assistant/conversations/:conversationId/messages", requireCoordinator, async (req, res) => {
   const params2 = GetAssistantConversationMessagesParams.safeParse(req.params);
   if (!params2.success) {
     res.status(400).json({ error: params2.error.message });
@@ -113717,7 +113781,7 @@ router4.get("/assistant/conversations/:conversationId/messages", requireAdmin, a
     }))
   }));
 });
-router4.get("/assistant/history", requireAdmin, async (_req, res) => {
+router4.get("/assistant/history", requireCoordinator, async (_req, res) => {
   const messages = await db.select().from(assistantMessagesTable).orderBy(asc(assistantMessagesTable.createdAt));
   res.json(GetAssistantHistoryResponse.parse({
     items: messages.map((message) => ({
@@ -113729,7 +113793,7 @@ router4.get("/assistant/history", requireAdmin, async (_req, res) => {
     }))
   }));
 });
-router4.delete("/assistant/history", requireAdmin, async (_req, res) => {
+router4.delete("/assistant/history", requireCoordinator, async (_req, res) => {
   await db.delete(assistantMessagesTable);
   await db.delete(assistantConversationsTable);
   res.status(204).send();
@@ -113978,7 +114042,7 @@ router5.post(
 );
 router5.post(
   "/storage/parasolid-preview",
-  requireAdmin,
+  requireCoordinator,
   import_express5.default.raw({ type: "model/x-parasolid", limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req, res) => {
     let data = req.body;
@@ -114587,6 +114651,7 @@ async function ensureSchema() {
   `);
   const statements = [
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
+    `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
     `alter table "dashboard_charts" add column if not exists "x_axis" text`,
     `alter table "dashboard_charts" add column if not exists "y_axis" text`,
     `alter table "interview_chat_messages" add column if not exists "parent_message_id" text references "interview_chat_messages"("id") on delete cascade`,

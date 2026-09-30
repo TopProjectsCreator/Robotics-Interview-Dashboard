@@ -7,6 +7,7 @@ export const interviewerAccountsTable = pgTable("interviewer_accounts", {
   displayName: text("display_name").notNull(),
   normalizedName: text("normalized_name").notNull().unique(),
   passwordHash: text("password_hash"),
+  role: text("role").notNull().default("coordinator"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
