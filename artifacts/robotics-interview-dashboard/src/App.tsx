@@ -4694,9 +4694,12 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
   if (tool === "list_collaboration_artifacts") return { label: "Listed shared artifacts", Icon: Search };
   if (tool === "read_collaboration_artifact") return { label: "Read artifact", Icon: Search };
+  if (tool === "create_board") return { label: "Created task board", Icon: ClipboardList };
+  if (tool === "create_document") return { label: "Created document", Icon: FileText };
+  if (tool === "create_spreadsheet") return { label: "Created spreadsheet", Icon: FileSpreadsheet };
   if (tool === "create_whiteboard") return { label: "Created whiteboard", Icon: FilePenLine };
   if (tool === "edit_whiteboard") return { label: "Edited whiteboard", Icon: Pencil };
-  if (tool === "edit_board") return { label: "Edited board", Icon: ClipboardList };
+  if (tool === "edit_board") return { label: "Edited task board", Icon: ClipboardList };
   if (tool === "edit_document") return { label: "Edited document", Icon: Pencil };
   if (tool === "edit_spreadsheet") return { label: "Edited spreadsheet", Icon: ClipboardList };
   return { label: tool, Icon: Sparkles };
