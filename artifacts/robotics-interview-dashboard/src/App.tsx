@@ -803,6 +803,11 @@ function MarkdownContent({
       blocks.push(<hr key={`rule-${key++}`} className="border-[#dce9e8]" />);
       return;
     }
+    if (/^(?:!\[[^\]]*\]|\[[^\]]+\])\(\/api\/storage\/objects\/[^)]+\)$/.test(trimmed)) {
+      flush();
+      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople)}</div>);
+      return;
+    }
     if (orderedItems.length || unorderedItems.length) flushLists();
     paragraph.push(trimmed);
     });
@@ -5241,5 +5246,5 @@ function Router() {
   );
 }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
-export { MarkdownContent, renderInlineMarkdown };
+export { InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;
