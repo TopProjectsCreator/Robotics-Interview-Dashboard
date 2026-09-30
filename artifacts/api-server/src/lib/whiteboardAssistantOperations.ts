@@ -11,13 +11,19 @@ export type WhiteboardOperation = {
   fontSize?: number;
   strokeColor?: string;
   backgroundColor?: string;
+  imageUrl?: string;
+  imageDataUrl?: string;
+  imageMimeType?: string;
 };
 
-export function parseWhiteboardOperations(value: unknown): { operations?: WhiteboardOperation[]; error?: string } {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 30) {
-    return { error: "Provide 1 to 30 whiteboard operations." };
+export function parseWhiteboardOperations(
+  value: unknown,
+  maxOperations = 30,
+): { operations?: WhiteboardOperation[]; error?: string } {
+  if (!Array.isArray(value) || value.length < 1 || value.length > maxOperations) {
+    return { error: `Provide 1 to ${maxOperations} whiteboard operations.` };
   }
-  const allowed = new Set(["add_text", "add_rectangle", "add_ellipse", "add_arrow", "update_text", "delete_element"]);
+  const allowed = new Set(["add_text", "add_rectangle", "add_ellipse", "add_arrow", "add_image", "update_text", "delete_element"]);
   const operations: WhiteboardOperation[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each whiteboard operation must be an object." };
@@ -32,6 +38,10 @@ export function parseWhiteboardOperations(value: unknown): { operations?: Whiteb
     if (operation.elementId !== undefined && typeof operation.elementId !== "string") return { error: "Whiteboard element ids must be text." };
     if (operation.strokeColor !== undefined && typeof operation.strokeColor !== "string") return { error: "Stroke colors must be text." };
     if (operation.backgroundColor !== undefined && typeof operation.backgroundColor !== "string") return { error: "Fill colors must be text." };
+    if (operation.imageUrl !== undefined && typeof operation.imageUrl !== "string") return { error: "Image URLs must be text." };
+    if (operation.type === "add_image" && (typeof operation.imageUrl !== "string" || !operation.imageUrl.trim())) {
+      return { error: "Adding an image requires the URL returned by generate_image." };
+    }
     operations.push(operation as WhiteboardOperation);
   }
   return { operations };
@@ -78,8 +88,8 @@ function newWhiteboardElement(
   if (text.length > 4000) return "Whiteboard text must be 4,000 characters or fewer.";
   const fontSize = safeNumber(operation.fontSize, 20, 12, 72);
   const dimensions = textDimensions(text, fontSize);
-  const width = operation.width ?? (type === "text" ? dimensions.width : 180);
-  const height = operation.height ?? (type === "text" ? dimensions.height : 100);
+  const width = operation.width ?? (type === "text" ? dimensions.width : type === "image" ? 640 : 180);
+  const height = operation.height ?? (type === "text" ? dimensions.height : type === "image" ? 360 : 100);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 10 || height < 10 || width > 4000 || height > 4000) {
     return "Shape width and height must be between 10 and 4,000.";
   }
@@ -137,25 +147,60 @@ function newWhiteboardElement(
       elbowed: false,
     };
   }
+  if (type === "image") {
+    return {
+      ...common,
+      fileId: randomUUID().replaceAll("-", ""),
+      status: "saved",
+      scale: [1, 1],
+      crop: null,
+    };
+  }
   return common;
 }
 
 export function applyWhiteboardOperations(
   elements: Record<string, unknown>[],
   operations: WhiteboardOperation[],
-): { elements?: Record<string, unknown>[]; error?: string; changed?: number } {
+  files: Record<string, unknown> = {},
+): { elements?: Record<string, unknown>[]; files?: Record<string, unknown>; error?: string; changed?: number } {
   const next = elements.map((element) => ({ ...element }));
+  const nextFiles = { ...files };
   let changed = 0;
   for (const operation of operations) {
     if (operation.type === "add_text" || operation.type === "add_rectangle" ||
-      operation.type === "add_ellipse" || operation.type === "add_arrow") {
+      operation.type === "add_ellipse" || operation.type === "add_arrow" || operation.type === "add_image") {
       if (operation.type === "add_text" && !operation.text?.trim()) return { error: "New whiteboard text cannot be empty." };
+      if (operation.type === "add_image") {
+        const validMimeTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+        if (
+          typeof operation.imageMimeType !== "string" ||
+          !validMimeTypes.has(operation.imageMimeType) ||
+          typeof operation.imageDataUrl !== "string" ||
+          operation.imageDataUrl.length > 1_100_000 ||
+          !operation.imageDataUrl.startsWith(`data:${operation.imageMimeType};base64,`)
+        ) {
+          return { error: "The generated image is missing, too large, or has an unsupported format." };
+        }
+      }
       const shapeType = operation.type === "add_text" ? "text"
         : operation.type === "add_rectangle" ? "rectangle"
-          : operation.type === "add_ellipse" ? "ellipse" : "arrow";
+          : operation.type === "add_ellipse" ? "ellipse"
+            : operation.type === "add_arrow" ? "arrow" : "image";
       const element = newWhiteboardElement(shapeType, operation);
       if (typeof element === "string") return { error: element };
       next.push(element);
+      if (operation.type === "add_image") {
+        const fileId = element.fileId;
+        if (typeof fileId !== "string") return { error: "The generated image could not be attached." };
+        nextFiles[fileId] = {
+          id: fileId,
+          mimeType: operation.imageMimeType,
+          dataURL: operation.imageDataUrl,
+          created: Date.now(),
+          lastRetrieved: Date.now(),
+        };
+      }
       changed += 1;
       continue;
     }
@@ -193,5 +238,33 @@ export function applyWhiteboardOperations(
       changed += 1;
     }
   }
-  return { elements: next, changed };
+  return { elements: next, files: nextFiles, changed };
+}
+
+export function buildTextListWhiteboardOperations(title: string, entries: string[]): WhiteboardOperation[] {
+  const columns = 3;
+  const rowsPerColumn = Math.max(1, Math.ceil(entries.length / columns));
+  return [
+    {
+      type: "add_text",
+      text: `${title} · ${entries.length}`,
+      x: 80,
+      y: 48,
+      fontSize: 32,
+      strokeColor: "#183a4b",
+    },
+    ...entries.map((text, index) => ({
+      type: "add_text",
+      text,
+      x: 80 + Math.floor(index / rowsPerColumn) * 380,
+      y: 120 + (index % rowsPerColumn) * 48,
+      fontSize: 20,
+      strokeColor: "#1e1e1e",
+    })),
+  ];
+}
+
+export function generatedImageObjectPath(imageUrl: string): string | null {
+  const match = /^\/api\/storage\/objects\/generated\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(imageUrl.trim());
+  return match ? `/objects/generated/${match[1]}` : null;
 }

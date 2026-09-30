@@ -1,6 +1,8 @@
-import { desc, eq } from "drizzle-orm";
-import { db, interviewWhiteboardsTable } from "@workspace/db";
+import { randomUUID } from "node:crypto";
+import { asc, desc, eq } from "drizzle-orm";
+import { applicantsTable, db, interviewWhiteboardsTable } from "@workspace/db";
 import { UpdateBoardBody } from "@workspace/api-zod";
+import { ObjectStorageService } from "./objectStorage";
 import { applyBoardOperation, parseBoardData } from "./boardOperations";
 import {
   applySpreadsheetAssistantEdits,
@@ -20,8 +22,15 @@ import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "./whiteboa
 import { pushRealtimeHint } from "./realtime";
 import {
   applyWhiteboardOperations,
+  buildTextListWhiteboardOperations,
+  generatedImageObjectPath,
   parseWhiteboardOperations,
+  type WhiteboardOperation,
 } from "./whiteboardAssistantOperations";
+
+const objectStorageService = new ObjectStorageService();
+const MAX_ASSISTANT_WHITEBOARD_BYTES = 1_500_000;
+const MAX_ROSTER_ENTRIES = 1_000;
 
 type ArtifactRow = typeof interviewWhiteboardsTable.$inferSelect;
 type ArtifactKind = "whiteboard" | "board" | "document" | "spreadsheet";
@@ -30,6 +39,7 @@ type ArtifactAccessCheck = (row: Pick<ArtifactRow, "conversationScope" | "conver
 export const ASSISTANT_ARTIFACT_TOOL_NAMES = new Set([
   "list_collaboration_artifacts",
   "read_collaboration_artifact",
+  "create_whiteboard",
   "edit_whiteboard",
   "edit_board",
   "edit_document",
@@ -101,8 +111,28 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "create_whiteboard",
+      description: "Create a new shared Excalidraw whiteboard. For a roster of all applicants, set includeAllApplicantNames to true; the server adds every applicant name without exposing emails or other applicant details. For another text list, supply entries.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", maxLength: 120 },
+          entries: {
+            type: "array",
+            maxItems: 500,
+            items: { type: "string", maxLength: 200 },
+          },
+          includeAllApplicantNames: { type: "boolean" },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "edit_whiteboard",
-      description: "Edit an accessible Excalidraw whiteboard. Add text, rectangles, ellipses, or arrows; update or delete an existing text/scene element by id. Provide concise operations and read the board first. Do not clear or delete content unless explicitly asked.",
+      description: "Edit an accessible Excalidraw whiteboard. Add text, rectangles, ellipses, arrows, or an image returned by generate_image; update or delete an existing text/scene element by id. Provide concise operations and read the board first. Do not clear or delete content unless explicitly asked.",
       parameters: {
         type: "object",
         properties: {
@@ -115,9 +145,10 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["add_text", "add_rectangle", "add_ellipse", "add_arrow", "update_text", "delete_element"] },
+                type: { type: "string", enum: ["add_text", "add_rectangle", "add_ellipse", "add_arrow", "add_image", "update_text", "delete_element"] },
                 elementId: { type: "string" },
                 text: { type: "string", maxLength: 4000 },
+                imageUrl: { type: "string", maxLength: 300, description: "Exact image URL returned by generate_image; only app-stored generated images are accepted." },
                 x: { type: "number" },
                 y: { type: "number" },
                 width: { type: "number" },
@@ -607,6 +638,35 @@ async function editWhiteboard(
   if (args.title !== undefined && !title) return toolFailure("Whiteboard titles cannot be empty.");
   if (title && title.length > 120) return toolFailure("Whiteboard titles must be 120 characters or fewer.");
 
+  const resolvedOperations: WhiteboardOperation[] = [];
+  for (const operation of parsedOperations.operations) {
+    if (operation.type !== "add_image") {
+      resolvedOperations.push(operation);
+      continue;
+    }
+    const imagePath = generatedImageObjectPath(operation.imageUrl ?? "");
+    if (!imagePath) {
+      return toolFailure("Only the stored image URL returned by generate_image can be added to a whiteboard.");
+    }
+    try {
+      const image = await objectStorageService.downloadObject(imagePath);
+      const mimeType = image.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+      if (
+        image.data.byteLength > 800_000 ||
+        !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(mimeType)
+      ) {
+        return toolFailure("The generated image is too large or uses an unsupported format.");
+      }
+      resolvedOperations.push({
+        ...operation,
+        imageDataUrl: `data:${mimeType};base64,${image.data.toString("base64")}`,
+        imageMimeType: mimeType,
+      });
+    } catch {
+      return toolFailure("That generated image is no longer available in storage. Generate it again, then add it to the whiteboard.");
+    }
+  }
+
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select().from(interviewWhiteboardsTable)
       .where(eq(interviewWhiteboardsTable.id, whiteboardId))
@@ -625,13 +685,17 @@ async function editWhiteboard(
     const elements = scene.elements.filter((element): element is Record<string, unknown> =>
       Boolean(element) && typeof element === "object",
     );
-    const applied = applyWhiteboardOperations(elements, parsedOperations.operations!);
+    const files = scene.files && typeof scene.files === "object" && !Array.isArray(scene.files)
+      ? scene.files as Record<string, unknown>
+      : {};
+    const applied = applyWhiteboardOperations(elements, resolvedOperations, files);
     if (!applied.elements) return { ok: false as const, error: applied.error ?? "The scene edit could not be applied." };
     const serialized = mergeWhiteboardDataForSave(row.id, JSON.stringify({
       ...scene,
       elements: applied.elements,
+      files: applied.files ?? files,
     }));
-    if (Buffer.byteLength(serialized, "utf8") > 1_500_000) {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_ASSISTANT_WHITEBOARD_BYTES) {
       return { ok: false as const, error: "This whiteboard is too large to save." };
     }
     const [updated] = await tx.update(interviewWhiteboardsTable)
@@ -693,6 +757,67 @@ async function editDocument(
   };
 }
 
+async function createWhiteboard(
+  args: Record<string, unknown>,
+  displayName: string,
+): Promise<ToolOutcome> {
+  const title = clippedText(args.title, 120).trim();
+  const includeAllApplicantNames = args.includeAllApplicantNames === true;
+  if (!title) return toolFailure("A whiteboard title is required.");
+  if (includeAllApplicantNames && args.entries !== undefined) {
+    return toolFailure("Choose either all applicant names or a supplied entries list, not both.");
+  }
+
+  let entries: string[];
+  if (includeAllApplicantNames) {
+    const applicants = await db.select({ name: applicantsTable.name })
+      .from(applicantsTable)
+      .orderBy(asc(applicantsTable.name))
+      .limit(MAX_ROSTER_ENTRIES + 1);
+    if (applicants.length > MAX_ROSTER_ENTRIES) {
+      return toolFailure(`There are more than ${MAX_ROSTER_ENTRIES} applicants. Narrow the roster before creating a whiteboard.`);
+    }
+    entries = applicants.map((applicant) => applicant.name);
+  } else if (Array.isArray(args.entries)) {
+    if (args.entries.length < 1 || args.entries.length > 500) {
+      return toolFailure("Provide 1 to 500 text entries.");
+    }
+    if (args.entries.some((entry) => typeof entry !== "string" || !entry.trim() || entry.length > 200)) {
+      return toolFailure("Each whiteboard entry must contain 1 to 200 characters.");
+    }
+    entries = args.entries.map((entry) => (entry as string).trim());
+  } else {
+    return toolFailure("Provide entries or set includeAllApplicantNames to true.");
+  }
+  if (entries.length === 0) return toolFailure("There are no applicants to add to the whiteboard.");
+
+  const operations = buildTextListWhiteboardOperations(title, entries);
+  const applied = applyWhiteboardOperations([], operations);
+  if (!applied.elements) return toolFailure(applied.error ?? "The whiteboard could not be created.");
+  const data = JSON.stringify({ elements: applied.elements, appState: {}, files: applied.files ?? {} });
+  if (Buffer.byteLength(data, "utf8") > MAX_ASSISTANT_WHITEBOARD_BYTES) {
+    return toolFailure("This list is too large for one whiteboard.");
+  }
+  const [row] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title,
+    data,
+    createdBy: displayName,
+    conversationScope: "shared",
+    conversationPeer: null,
+  }).returning();
+  pushRealtimeHint("interview_whiteboards");
+  return {
+    content: JSON.stringify({
+      ok: true,
+      whiteboardId: row.id,
+      title: row.title,
+      entryCount: entries.length,
+    }),
+    activity: { tool: "create_whiteboard", detail: `"${row.title.slice(0, 45)}" · ${entries.length} entries` },
+  };
+}
+
 export async function runAssistantArtifactTool(
   name: string,
   args: Record<string, unknown>,
@@ -703,6 +828,7 @@ export async function runAssistantArtifactTool(
   if (name === "read_collaboration_artifact") {
     return readArtifact({ ...args, displayName }, canAccess);
   }
+  if (name === "create_whiteboard") return createWhiteboard(args, displayName);
   if (name === "edit_whiteboard") return editWhiteboard(args, displayName, canAccess);
   if (name === "edit_board") return editBoard(args, displayName, canAccess);
   if (name === "edit_document") return editDocument(args, displayName);
