@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
@@ -44,9 +44,9 @@ import {
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, getStoredAuthToken, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -80,7 +80,45 @@ import {
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
 
-export const queryClient = new QueryClient();
+const sessionQueryKey = getGetSessionQueryKey();
+const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
+
+function isExpiredSessionError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("status" in error) || error.status !== 401) return false;
+  const url = "url" in error && typeof error.url === "string" ? error.url : "";
+  const path = url ? new URL(url, window.location.origin).pathname : "";
+  // These endpoints are deliberately available before sign-in; a wrong
+  // password or event passcode must not invalidate an existing session.
+  if (/\/api\/auth\/(?:interviewers\/?$|interviewers\/setup$|login$)/.test(path)) return false;
+  return true;
+}
+
+function expireSessionOnError(error: unknown) {
+  if (isExpiredSessionError(error)) clearUserScopedRecords(queryClient);
+}
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => !isExpiredSessionError(error) && failureCount < 3,
+    },
+  },
+  queryCache: new QueryCache({
+    onSuccess: (data, query) => {
+      if (
+        isSessionQuery(query.queryKey) &&
+        data !== null &&
+        typeof data === "object" &&
+        "authenticated" in data &&
+        data.authenticated === false
+      ) {
+        clearUserScopedRecords(queryClient);
+      }
+    },
+    onError: expireSessionOnError,
+  }),
+  mutationCache: new MutationCache({ onError: expireSessionOnError }),
+});
 const categories = ["advance", "hold", "decline", "unranked"];
 const statuses = ["queued", "in_progress", "completed"];
 type BrowserSpeechResult = { 0?: { transcript?: string } };
@@ -1330,7 +1368,13 @@ function LegacyLogin() {
   useEffect(() => {
     if (!selectedId && interviewers.data?.items[0]) setSelectedId(interviewers.data.items[0].id);
   }, [interviewers.data, selectedId]);
-  const finishLogin = (response: { token?: string }) => { storeAuthToken(response.token); qc.invalidateQueries({ queryKey: getGetSessionQueryKey() }); setLocation("/dashboard"); };
+  const finishLogin = (response: AuthSession) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    storeAuthToken(token);
+    qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    setLocation("/dashboard");
+  };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const selected = interviewers.data?.items.find(item => item.id === selectedId);
@@ -1420,8 +1464,10 @@ function Login() {
     return () => window.cancelAnimationFrame(frame);
   }, [step]);
 
-  const finishLogin = (response: { token?: string }) => {
-    storeAuthToken(response.token);
+  const finishLogin = (response: AuthSession) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
     setLocation("/dashboard");
   };

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App, { queryClient } from "@/App";
 import { AUTH_TOKEN_STORAGE_KEY } from "@/authSession";
+import { getGetInterviewChatQueryKey, getGetSessionQueryKey } from "@workspace/api-client-react";
 import ChatLanding from "./chat-landing";
 import PublicDashboard from "./public-dashboard";
 
@@ -123,6 +124,16 @@ function jsonResponse(payload: unknown): Response {
     status: 200,
     headers: { get: () => "application/json" } as unknown as Headers,
     text: async () => JSON.stringify(payload),
+  } as Response;
+}
+
+function unauthorizedResponse(): Response {
+  return {
+    ok: false,
+    status: 401,
+    statusText: "Unauthorized",
+    headers: { get: () => "application/json" } as unknown as Headers,
+    text: async () => JSON.stringify({ error: "Session revoked" }),
   } as Response;
 }
 
@@ -408,5 +419,199 @@ describe("public chat discovery", () => {
     );
     expect(network.eventSourceConstructor).not.toHaveBeenCalled();
     expect(network.webSocketConstructor).not.toHaveBeenCalled();
+  });
+
+  it("clears private records and closes realtime when the server expires a session", async () => {
+    window.history.replaceState({}, "", "/chat");
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "expired-session-token");
+    window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+    let expired = false;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse(expired ? { authenticated: false } : signedInSession);
+      if (path === "/api/applicants") {
+        return jsonResponse({
+          items: [{
+            id: "session-expiry-applicant",
+            name: applicantCanary,
+            grade: "10",
+            age: null,
+            gender: null,
+            aiScore: 0,
+            aiRecommendation: "",
+            aiSummary: "",
+            aiStrengths: "",
+            aiConcerns: "",
+            roboticsExperience: "",
+            commit10Hours: "",
+            parentVolunteer: "",
+            interviewStatus: "queued",
+            category: "unranked",
+            rank: 1,
+            notes: "",
+            queuePosition: 1,
+          }],
+          total: 1,
+        });
+      }
+      if (path === "/api/queue/chat") {
+        return jsonResponse({
+          scope: "shared",
+          peer: null,
+          items: [{
+            id: "session-expiry-chat",
+            author: "Test Interviewer",
+            message: chatCanary,
+            scope: "shared",
+            peer: null,
+            createdAt: new Date(0).toISOString(),
+          }],
+        });
+      }
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.getElementById("chat-message-session-expiry-chat")?.textContent).toContain(chatCanary);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .toContain(applicantCanary);
+    });
+    await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
+
+    expired = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/auth");
+      expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .not.toContain(applicantCanary);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .not.toContain(chatCanary);
+    });
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+    expect(document.body.textContent).not.toContain(applicantCanary);
+    expect(document.body.textContent).not.toContain(chatCanary);
+    expect(queryClient.getQueryCache().getAll().every((query) =>
+      JSON.stringify(query.queryKey) === JSON.stringify(getGetSessionQueryKey()),
+    )).toBe(true);
+  });
+
+  it("expires the session and drops cached records when a private request is rejected", async () => {
+    window.history.replaceState({}, "", "/chat");
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "revoked-session-token");
+    window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+    let rejectPrivateRequest = false;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse(signedInSession);
+      if (path === "/api/queue/chat" && rejectPrivateRequest) return unauthorizedResponse();
+      if (path === "/api/queue/chat") {
+        return jsonResponse({
+          scope: "shared",
+          peer: null,
+          items: [{
+            id: "rejected-request-chat",
+            author: "Test Interviewer",
+            message: chatCanary,
+            scope: "shared",
+            peer: null,
+            createdAt: new Date(0).toISOString(),
+          }],
+        });
+      }
+      if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(document.getElementById("chat-message-rejected-request-chat")?.textContent).toContain(chatCanary));
+    await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
+
+    rejectPrivateRequest = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/auth");
+      expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .not.toContain(chatCanary);
+    });
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+    expect(document.body.textContent).not.toContain(chatCanary);
+  });
+
+  it("does not carry cached records into a different interviewer's sign-in", async () => {
+    window.history.replaceState({}, "", "/auth");
+    const oldAccountCanary = "PreviousInterviewerPrivateCanary";
+    queryClient.setQueryData(getGetSessionQueryKey(), { authenticated: false }, { updatedAt: Date.now() + 60_000 });
+    queryClient.setQueryData(getGetInterviewChatQueryKey(), {
+      scope: "shared",
+      peer: null,
+      items: [{ id: "old-account-message", message: oldAccountCanary }],
+    });
+
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "interviewer-b", displayName: "Interviewer B", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") {
+        return jsonResponse({
+          authenticated: true,
+          interviewerId: "interviewer-b",
+          label: "Interviewer B",
+          token: "interviewer-b-token",
+        });
+      }
+      if (path === "/api/auth/session") {
+        return jsonResponse({
+          authenticated: true,
+          interviewerId: "interviewer-b",
+          label: "Interviewer B",
+        });
+      }
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(queryClient.getQueryData(getGetInterviewChatQueryKey())).toBeDefined();
+    fireEvent.change(screen.getByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-b"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/dashboard");
+      expect(queryClient.getQueryData(getGetSessionQueryKey())).toMatchObject({
+        authenticated: true,
+        interviewerId: "interviewer-b",
+        label: "Interviewer B",
+      });
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .not.toContain(oldAccountCanary);
+    });
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("interviewer-b-token");
+    expect(document.body.textContent).not.toContain(oldAccountCanary);
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 });
