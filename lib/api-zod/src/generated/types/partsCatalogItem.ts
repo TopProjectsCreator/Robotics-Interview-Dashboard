@@ -22,6 +22,17 @@ export interface PartsCatalogItem {
   productUrl: string | null;
   /** @nullable */
   imageUrl: string | null;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency: string | null;
   /** @minimum 0 */
   quantityOwned: number;
   /** @minimum 0 */

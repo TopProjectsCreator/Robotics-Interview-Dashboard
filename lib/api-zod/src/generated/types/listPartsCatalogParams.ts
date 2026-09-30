@@ -10,6 +10,10 @@ export type ListPartsCatalogParams = {
 search?: string;
 vendorKey?: string;
 /**
+ * Return only catalog items entered manually by the team.
+ */
+manualOnly?: boolean;
+/**
  * @minimum 1
  * @maximum 500
  */

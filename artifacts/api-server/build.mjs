@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { access, chmod, constants, copyFile, mkdir, rm } from "node:fs/promises";
+import { access, chmod, constants, copyFile, mkdir } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -13,7 +13,9 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
-  await rm(distDir, { recursive: true, force: true });
+  // Keep existing output while building. Concurrent workflow restarts can
+  // overlap during the native Rust build; clearing dist here can delete the
+  // entry bundle another build has already emitted.
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],

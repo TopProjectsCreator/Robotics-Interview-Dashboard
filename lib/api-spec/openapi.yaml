@@ -613,6 +613,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UploadResponse"
+  /storage/parts-robot-previews:
+    post:
+      operationId: uploadPartsRobotPreviewFile
+      tags: [parts]
+      summary: Upload a validated private robot preview file
+      parameters:
+        - name: fileName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: contentType
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              $ref: "#/components/schemas/PartsRobotPreviewFile"
+      responses:
+        "201":
+          description: Stored private preview file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobotPreviewUpload"
+        "400":
+          description: Invalid or unsupported preview file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /queue:
     get:
       operationId: getQueue
@@ -1500,6 +1535,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: manualOnly
+          in: query
+          description: Return only catalog items entered manually by the team.
+          schema:
+            type: boolean
         - name: limit
           in: query
           schema:
@@ -1647,6 +1687,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/{partId}/cost:
+    patch:
+      operationId: updatePartsCatalogCost
+      tags: [parts]
+      summary: Update or clear the saved unit cost of a catalog item
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsCatalogCostUpdate"
+      responses:
+        "200":
+          description: Updated catalog item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogItem"
+        "404":
+          description: Catalog item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/{partId}/price-snapshots:
+    post:
+      operationId: createPartsPriceSnapshot
+      tags: [parts]
+      summary: Save a supplier price snapshot without changing the saved cost
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsPriceSnapshotInput"
+      responses:
+        "201":
+          description: Saved supplier price snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsPriceSnapshot"
+        "404":
+          description: Catalog item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/robots:
     post:
       operationId: createPartsRobot
@@ -1689,6 +1789,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PartsRobot"
+  /parts/robots/{robotId}/details:
+    get:
+      operationId: getPartsRobotDetails
+      tags: [parts]
+      summary: Get a robot's allocated parts, saved costs, and supplier quotes
+      parameters:
+        - name: robotId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Robot build details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobotBuildDetails"
+        "404":
+          description: Robot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/robots/{robotId}/preview:
+    patch:
+      operationId: updatePartsRobotPreview
+      tags: [parts]
+      summary: Attach a private preview file to a robot
+      parameters:
+        - name: robotId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsRobotPreviewInput"
+      responses:
+        "200":
+          description: Updated robot preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobot"
+        "404":
+          description: Robot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/robots/{robotId}/parts/{partId}:
     put:
       operationId: setPartsRobotAllocation
@@ -1819,12 +1973,16 @@ components:
           description: Configured supplier-owned public product feed, if available.
     PartsRobot:
       type: object
-      required: [id, name, createdAt, updatedAt]
+      required: [id, name, preview, createdAt, updatedAt]
       properties:
         id:
           type: string
         name:
           type: string
+        preview:
+          oneOf:
+            - $ref: "#/components/schemas/PartsRobotPreview"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -1846,7 +2004,7 @@ components:
           minimum: 0
     PartsCatalogItem:
       type: object
-      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
+      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, unitCost, costCurrency, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1868,6 +2026,13 @@ components:
         imageUrl:
           type: [string, "null"]
           format: uri
+        unitCost:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 99999999.99
+        costCurrency:
+          type: [string, "null"]
+          pattern: '^[A-Z]{3}$'
         quantityOwned:
           type: integer
           minimum: 0
@@ -2103,6 +2268,159 @@ components:
           type: integer
           minimum: 0
           maximum: 100000
+    PartsRobotPreview:
+      type: object
+      required: [objectPath, fileName, contentType]
+      properties:
+        objectPath:
+          type: string
+          pattern: '^/objects/[A-Za-z0-9-]{8,128}$'
+        fileName:
+          type: string
+          maxLength: 255
+        contentType:
+          type: string
+    PartsRobotPreviewInput:
+      type: object
+      required: [objectPath, fileName, contentType]
+      properties:
+        objectPath:
+          type: string
+          pattern: '^/objects/[A-Za-z0-9-]{8,128}$'
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        contentType:
+          type: string
+          description: MIME type for a supported image or CAD preview file.
+    PartsRobotPreviewFile:
+      type: string
+      format: binary
+    PartsRobotPreviewUpload:
+      type: object
+      required: [objectPath]
+      properties:
+        objectPath:
+          type: string
+          pattern: '^/objects/[A-Za-z0-9-]{8,128}$'
+    PartsCatalogCostUpdate:
+      type: object
+      required: [unitCost, costCurrency]
+      properties:
+        unitCost:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 99999999.99
+        costCurrency:
+          type: [string, "null"]
+          pattern: '^[A-Z]{3}$'
+    PartsPriceSnapshotInput:
+      type: object
+      required: [unitPrice, currency, sourceUrl, isStartingAt]
+      properties:
+        unitPrice:
+          type: number
+          minimum: 0
+          maximum: 99999999.99
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        sourceUrl:
+          type: string
+          format: uri
+        isStartingAt:
+          type: boolean
+    PartsPriceSnapshot:
+      type: object
+      required: [id, partId, vendorKey, vendorName, sourceUrl, unitPrice, currency, capturedAt, isStartingAt, isStale]
+      properties:
+        id:
+          type: string
+        partId:
+          type: string
+        vendorKey:
+          type: string
+        vendorName:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        unitPrice:
+          type: number
+          minimum: 0
+          maximum: 99999999.99
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        capturedAt:
+          type: string
+          format: date-time
+        isStartingAt:
+          type: boolean
+        isStale:
+          type: boolean
+    PartsRobotBuildPart:
+      type: object
+      required: [partId, name, vendorKey, vendorName, sku, productUrl, quantity, unitCost, costCurrency, lineTotal, priceSnapshots]
+      properties:
+        partId:
+          type: string
+        name:
+          type: string
+        vendorKey:
+          type: string
+        vendorName:
+          type: string
+        sku:
+          type: [string, "null"]
+        productUrl:
+          type: [string, "null"]
+          format: uri
+        quantity:
+          type: integer
+          minimum: 0
+        unitCost:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 99999999.99
+        costCurrency:
+          type: [string, "null"]
+          pattern: '^[A-Z]{3}$'
+        lineTotal:
+          type: [number, "null"]
+          minimum: 0
+        priceSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsPriceSnapshot"
+    PartsRobotCostSubtotal:
+      type: object
+      required: [currency, amount]
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        amount:
+          type: number
+          minimum: 0
+    PartsRobotBuildDetails:
+      type: object
+      required: [robot, parts, subtotalsByCurrency, unpricedPartCount]
+      properties:
+        robot:
+          $ref: "#/components/schemas/PartsRobot"
+        parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsRobotBuildPart"
+        subtotalsByCurrency:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsRobotCostSubtotal"
+        unpricedPartCount:
+          type: integer
+          minimum: 0
     HealthStatus:
       type: object
       properties:
