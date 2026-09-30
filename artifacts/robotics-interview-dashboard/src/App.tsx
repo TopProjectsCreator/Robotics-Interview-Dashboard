@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -1384,7 +1384,24 @@ function Login() {
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const interviewers = useListInterviewers({
-    query: { queryKey: getListInterviewersQueryKey(), enabled: step !== "event" },
+    query: {
+      queryKey: getListInterviewersQueryKey(),
+      enabled: step !== "event",
+      retry: false,
+      queryFn: async ({ signal }) => {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 5000);
+        const abortFromQuery = () => controller.abort(signal.reason);
+        if (signal.aborted) abortFromQuery();
+        else signal.addEventListener("abort", abortFromQuery, { once: true });
+        try {
+          return await listInterviewers({ signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeout);
+          signal.removeEventListener("abort", abortFromQuery);
+        }
+      },
+    },
   });
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
@@ -1597,6 +1614,19 @@ function Login() {
             {step === "interviewer" && (
               <div className="mt-8 space-y-3">
                 {interviewers.isLoading && <p className="rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#a4bbc3]">Loading team accounts…</p>}
+                {interviewers.isError && !interviewers.data && (
+                  <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e5c4bf] bg-white px-4 py-4 text-sm text-[#8b3d36] dark:border-[#70423f] dark:bg-[#1b303b] dark:text-[#ffaaa1]">
+                    <span>Could not load team accounts. Check your connection and try again.</span>
+                    <button
+                      type="button"
+                      onClick={() => void interviewers.refetch()}
+                      disabled={interviewers.isFetching}
+                      className="rounded-lg border border-current px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
                 {interviewers.data?.items.map(item => (
                   <button key={item.id} type="button" onClick={() => chooseInterviewer(item.id)} data-testid={`button-choose-interviewer-${item.displayName.toLowerCase().replaceAll(" ", "-")}`} className="flex w-full items-center justify-between rounded-xl border border-[#cbd7da] bg-white px-4 py-4 text-left transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#395563] dark:bg-[#1b303b] dark:hover:bg-[#203b47]">
                     <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
