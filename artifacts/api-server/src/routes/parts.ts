@@ -630,6 +630,29 @@ function toPublicCatalogSearchResult(
   };
 }
 
+function createSerializedSearchQueue(minimumIntervalMs: number) {
+  let pending = Promise.resolve();
+  let nextAllowedAt = 0;
+  return function run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = pending.then(async () => {
+      const waitMs = Math.max(0, nextAllowedAt - Date.now());
+      if (waitMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+      }
+      nextAllowedAt = Date.now() + minimumIntervalMs;
+      return operation();
+    });
+    pending = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+}
+
+const tavilySearchQueue = createSerializedSearchQueue(1_000);
+const exaSearchQueue = createSerializedSearchQueue(1_000);
+
 async function searchWithTavily(
   query: string,
   allowedVendors: VendorConfig[],
@@ -638,20 +661,22 @@ async function searchWithTavily(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Tavily-Access-Mode": "keyless",
-    },
-    body: JSON.stringify({
-      query: `Official supplier product pages matching: ${expandedQuery}`,
-      search_depth: "basic",
-      max_results: 20,
-      include_domains: allowedVendors.map((vendor) => vendor.domain),
+  const response = await tavilySearchQueue(() =>
+    fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Tavily-Access-Mode": "keyless",
+      },
+      body: JSON.stringify({
+        query: `Official supplier product pages matching: ${expandedQuery}`,
+        search_depth: "basic",
+        max_results: 20,
+        include_domains: allowedVendors.map((vendor) => vendor.domain),
+      }),
+      signal: AbortSignal.timeout(10_000),
     }),
-    signal: AbortSignal.timeout(20_000),
-  });
+  );
   if (!response.ok) throw new Error(`Tavily search returned ${response.status}`);
   const payload: unknown = await response.json();
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
@@ -693,28 +718,30 @@ async function searchWithExa(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: `parts-${Date.now()}`,
-      method: "tools/call",
-      params: {
-        name: "web_search_exa",
-        arguments: {
-          query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
-          objective:
-            "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
-          numResults: 30,
-        },
+  const response = await exaSearchQueue(() =>
+    fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
       },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `parts-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: "web_search_exa",
+          arguments: {
+            query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
+            objective:
+              "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
+            numResults: 30,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(10_000),
     }),
-    signal: AbortSignal.timeout(25_000),
-  });
+  );
   if (!response.ok) throw new Error(`Exa search returned ${response.status}`);
   const envelope = parseSseResponse(await response.text());
   if (!isRecord(envelope) || !isRecord(envelope.result) || envelope.result.isError) {
@@ -826,11 +853,14 @@ async function searchPublicCatalog(
   for (let index = 0; index < allowedVendors.length; index += 4) {
     vendorGroups.push(allowedVendors.slice(index, index + 4));
   }
+  const focusedTavilyVendors = vendor
+    ? allowedVendors
+    : allowedVendors.filter((item) => item.publicProductFeedUrl);
   const providerRequests = options.includePartialDetails
-    ? allowedVendors.flatMap((item) => [
-        searchWithTavily(query, [item]),
-        searchWithExa(query, [item]),
-      ])
+    ? [
+        ...vendorGroups.map((group) => searchWithExa(query, group)),
+        ...focusedTavilyVendors.map((item) => searchWithTavily(query, [item])),
+      ]
     : vendorGroups.flatMap((group) => [
         searchWithTavily(query, group),
         searchWithExa(query, group),
