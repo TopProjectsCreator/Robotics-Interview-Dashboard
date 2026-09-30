@@ -117,6 +117,7 @@ import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { authenticatedInterviewerId, requestAdminSession, requireAdmin } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
 import { getIpStats } from "../lib/presence";
 import {
@@ -3231,11 +3232,16 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
           typeof (a as { detail?: unknown }).detail === "string")
         .slice(0, 10)
     : [];
-  const isAssistantMessage = parsed.data.author.trim() === "AI assistant";
-  if (isAssistantMessage && parsed.data.conversationAuthor?.trim().toLocaleLowerCase() !== account.displayName.toLocaleLowerCase()) {
-    res.status(403).json({ error: "Assistant messages must be tied to the signed-in interviewer." });
+  const authorizationFailure = assistantChatPostAuthorizationFailure(
+    parsed.data.author,
+    parsed.data.conversationAuthor,
+    account.displayName,
+  );
+  if (authorizationFailure) {
+    res.status(authorizationFailure.status).json({ error: authorizationFailure.error });
     return;
   }
+  const isAssistantMessage = parsed.data.author.trim() === "AI assistant";
   const [message] = await db.insert(interviewChatMessagesTable).values({
     id: randomUUID(),
     author: isAssistantMessage ? "AI assistant" : account.displayName,
