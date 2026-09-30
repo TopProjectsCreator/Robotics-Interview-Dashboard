@@ -5,7 +5,11 @@ import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App, { queryClient } from "@/App";
-import { AUTH_TOKEN_STORAGE_KEY } from "@/authSession";
+import {
+  AUTH_SESSION_CHANNEL_NAME,
+  AUTH_SESSION_END_STORAGE_KEY,
+  AUTH_TOKEN_STORAGE_KEY,
+} from "@/authSession";
 import { getGetInterviewChatQueryKey, getGetSessionQueryKey } from "@workspace/api-client-react";
 import ChatLanding from "./chat-landing";
 import PublicDashboard from "./public-dashboard";
@@ -69,6 +73,34 @@ const privateRecordCanaries = [
   "PRIVATE_PRESENCE_RECORD_CANARY",
   "PRIVATE_COLLABORATION_RECORD_CANARY",
 ];
+
+class MockBroadcastChannel {
+  static channels = new Set<MockBroadcastChannel>();
+  private listeners = new Set<(event: MessageEvent) => void>();
+
+  constructor(readonly name: string) {
+    MockBroadcastChannel.channels.add(this);
+  }
+
+  addEventListener(_type: string, listener: (event: MessageEvent) => void) {
+    this.listeners.add(listener);
+  }
+
+  removeEventListener(_type: string, listener: (event: MessageEvent) => void) {
+    this.listeners.delete(listener);
+  }
+
+  postMessage(data: unknown) {
+    for (const channel of MockBroadcastChannel.channels) {
+      if (channel === this || channel.name !== this.name) continue;
+      for (const listener of channel.listeners) listener({ data } as MessageEvent);
+    }
+  }
+
+  close() {
+    MockBroadcastChannel.channels.delete(this);
+  }
+}
 
 const privateRecordsResponse = {
   ok: true,
@@ -140,7 +172,9 @@ function unauthorizedResponse(): Response {
 afterEach(() => {
   queryClient.clear();
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_SESSION_END_STORAGE_KEY);
   window.localStorage.removeItem("robotics-workspace-settings");
+  MockBroadcastChannel.channels.clear();
   vi.unstubAllGlobals();
   document.documentElement.classList.remove("dark");
   window.history.replaceState({}, "", "/");
@@ -379,6 +413,7 @@ describe("public chat discovery", () => {
       }
       expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
       expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+      expect(window.localStorage.getItem(AUTH_SESSION_END_STORAGE_KEY)).toContain('"session-ended"');
       expect(document.body.textContent).not.toContain(applicantCanary);
       expect(document.body.textContent).not.toContain(chatCanary);
 
@@ -396,6 +431,77 @@ describe("public chat discovery", () => {
       expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
       expect(document.body.textContent).not.toContain(applicantCanary);
       expect(document.body.textContent).not.toContain(chatCanary);
+    },
+  );
+
+  it.each([
+    { sessionType: "cookie", token: null, transport: "BroadcastChannel" },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "BroadcastChannel" },
+    { sessionType: "cookie", token: null, transport: "storage event" },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "storage event" },
+  ])(
+    "clears private data and closes realtime in another tab for a $sessionType session via $transport",
+    async ({ token, transport }) => {
+      window.history.replaceState({}, "", "/chat");
+      if (token) window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+      window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+      if (transport === "BroadcastChannel") vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
+      else vi.stubGlobal("BroadcastChannel", undefined);
+
+      const network = stubNetworkTransports(async (input) => {
+        const path = requestPath(input);
+        if (path === "/api/auth/session") return jsonResponse(signedInSession);
+        if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+        if (path === "/api/queue/chat") {
+          return jsonResponse({
+            scope: "shared",
+            peer: null,
+            items: [{
+              id: "cross-tab-private-message",
+              author: "Test Interviewer",
+              message: "CrossTabPrivateRecordCanary",
+              scope: "shared",
+              peer: null,
+              createdAt: new Date(0).toISOString(),
+            }],
+          });
+        }
+        if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+        if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+        if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+        return jsonResponse({});
+      });
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(document.getElementById("chat-message-cross-tab-private-message")?.textContent)
+          .toContain("CrossTabPrivateRecordCanary");
+      });
+      await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
+
+      const message = { type: "session-ended", id: `remote-${transport}-${token ?? "cookie"}`, source: "another-tab" };
+      await act(async () => {
+        if (transport === "BroadcastChannel") {
+          const sender = new MockBroadcastChannel(AUTH_SESSION_CHANNEL_NAME);
+          sender.postMessage(message);
+          sender.close();
+        } else {
+          window.dispatchEvent(new StorageEvent("storage", {
+            key: AUTH_SESSION_END_STORAGE_KEY,
+            newValue: JSON.stringify(message),
+          }));
+        }
+      });
+
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/auth");
+        expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+          .not.toContain("CrossTabPrivateRecordCanary");
+      });
+      expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+      expect(document.body.textContent).not.toContain("CrossTabPrivateRecordCanary");
     },
   );
 

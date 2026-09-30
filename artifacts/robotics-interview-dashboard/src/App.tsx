@@ -46,7 +46,7 @@ import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, clearUserScopedRecords, getStoredAuthToken, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, getStoredAuthToken, listenForAuthSessionEnd, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -1764,6 +1764,10 @@ function Shell({ children }: { children: ReactNode }) {
   usePresenceHeartbeat(session.data?.authenticated === true, location);
   useRealtimeSync(session.data?.authenticated === true);
   const qc = useQueryClient();
+  useEffect(() => listenForAuthSessionEnd(() => {
+    clearUserScopedRecords(qc);
+    setLocation("/auth");
+  }), [qc, setLocation]);
   const broadcasts = useGetMyBroadcasts({
     query: {
       queryKey: getGetMyBroadcastsQueryKey(),
