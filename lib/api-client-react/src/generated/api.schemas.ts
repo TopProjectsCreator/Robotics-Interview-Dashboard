@@ -52,11 +52,117 @@ export interface PartsVendor {
   publicProductFeedUrl?: string | null;
 }
 
+export interface PartsRobotPreview {
+  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
+  objectPath: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  fileName: string;
+  /** @maxLength 100 */
+  contentType: string;
+}
+
 export interface PartsRobot {
   id: string;
   name: string;
+  preview: PartsRobotPreview | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PartsRobotPreviewInput {
+  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
+  objectPath: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  fileName: string;
+  /** @maxLength 100 */
+  contentType: string;
+}
+
+export interface PartsRobotPreviewUpload {
+  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
+  objectPath: string;
+}
+
+export interface PartsPriceSnapshot {
+  id: string;
+  partId: string;
+  vendorKey: string;
+  vendorName: string;
+  sourceUrl: string;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     */
+  unitPrice: number;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  capturedAt: string;
+  isStartingAt: boolean;
+  isStale: boolean;
+}
+
+export interface PartsPriceSnapshotInput {
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     */
+  unitPrice: number;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  /** @maxLength 2000 */
+  sourceUrl: string;
+  isStartingAt: boolean;
+}
+
+export interface PartsRobotBuildPart {
+  partId: string;
+  name: string;
+  vendorKey: string;
+  vendorName: string;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  productUrl: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  lineTotal: number | null;
+  priceSnapshots: PartsPriceSnapshot[];
+}
+
+export type PartsRobotDetailsSubtotalsByCurrencyItem = {
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  /** @minimum 0 */
+  amount: number;
+};
+
+export interface PartsRobotDetails {
+  robot: PartsRobot;
+  parts: PartsRobotBuildPart[];
+  subtotalsByCurrency: PartsRobotDetailsSubtotalsByCurrencyItem[];
+  /** @minimum 0 */
+  unpricedPartCount: number;
 }
 
 export interface PartsRobotAllocation {
@@ -82,6 +188,17 @@ export interface PartsCatalogItem {
   productUrl: string | null;
   /** @nullable */
   imageUrl: string | null;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost?: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency?: string | null;
   /** @minimum 0 */
   quantityOwned: number;
   /** @minimum 0 */
@@ -248,6 +365,20 @@ export interface PartsRobotInput {
      * @maxLength 80
      */
   name: string;
+}
+
+export interface PartsCostUpdateInput {
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency: string | null;
 }
 
 export interface PartsRobotAllocationInput {
@@ -1688,5 +1819,16 @@ limit?: number;
  * @minimum 0
  */
 offset?: number;
+};
+
+export type UploadPartsRobotPreviewFileParams = {
+/**
+ * @maxLength 255
+ */
+fileName: string;
+/**
+ * @maxLength 100
+ */
+contentType: string;
 };
 

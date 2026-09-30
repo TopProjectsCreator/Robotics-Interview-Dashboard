@@ -36,6 +36,7 @@ async function ensureSchema(): Promise<void> {
     "parts_inventory",
     "parts_robots",
     "parts_robot_allocations",
+    "parts_supplier_price_snapshots",
     "presence_heartbeats",
     "revoked_sessions",
     "seating_settings",
@@ -82,15 +83,48 @@ async function ensureSchema(): Promise<void> {
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
+    `alter table "parts_catalog_items" add column if not exists "unit_cost" numeric(10,2)`,
+    `alter table "parts_catalog_items" add column if not exists "cost_currency" text`,
+    `do $parts_cost$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_catalog_saved_cost_valid') then
+         alter table "parts_catalog_items" add constraint "parts_catalog_saved_cost_valid"
+           check (("unit_cost" is null and "cost_currency" is null)
+             or ("unit_cost" >= 0 and "unit_cost" <= 99999999.99
+               and "cost_currency" is not null and "cost_currency" ~ '^[A-Z]{3}$'));
+       end if;
+     end $parts_cost$`,
     `create unique index if not exists "parts_catalog_vendor_external_key_unique" on "parts_catalog_items" ("vendor_key", "external_key")`,
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
     `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
     `insert into "parts_catalog_sync_state" ("id") values ('global') on conflict ("id") do nothing`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "parts_robots" add column if not exists "preview_object_path" text`,
+    `alter table "parts_robots" add column if not exists "preview_file_name" text`,
+    `alter table "parts_robots" add column if not exists "preview_content_type" text`,
+    `do $robot_preview$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_robots_preview_metadata_valid') then
+         alter table "parts_robots" add constraint "parts_robots_preview_metadata_valid"
+           check (("preview_object_path" is null and "preview_file_name" is null and "preview_content_type" is null)
+             or ("preview_object_path" ~ '^/objects/[A-Za-z0-9-]{8,128}$'
+               and "preview_file_name" is not null and "preview_content_type" is not null
+               and length("preview_file_name") between 1 and 255
+               and length("preview_content_type") between 1 and 100));
+       end if;
+     end $robot_preview$`,
     `create unique index if not exists "parts_robots_normalized_name_unique" on "parts_robots" (lower("name"))`,
     `create table if not exists "parts_robot_allocations" ("id" text primary key, "robot_id" text not null references "parts_robots"("id") on delete cascade, "part_id" text not null references "parts_catalog_items"("id") on delete cascade, "quantity" integer not null check ("quantity" > 0), "updated_at" timestamptz not null default now())`,
     `create unique index if not exists "parts_robot_allocations_robot_part_unique" on "parts_robot_allocations" ("robot_id", "part_id")`,
+    `create table if not exists "parts_supplier_price_snapshots" (
+       "id" text primary key,
+       "part_id" text not null references "parts_catalog_items"("id") on delete cascade,
+       "unit_price" numeric(10,2) not null check ("unit_price" >= 0 and "unit_price" <= 99999999.99),
+       "currency" text not null check ("currency" ~ '^[A-Z]{3}$'),
+       "source_url" text not null check (length("source_url") between 1 and 2000),
+       "captured_at" timestamptz not null default now(),
+       "is_starting_at" boolean not null default false
+     )`,
+    `create index if not exists "parts_price_snapshots_part_captured_idx" on "parts_supplier_price_snapshots" ("part_id", "captured_at" desc)`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {

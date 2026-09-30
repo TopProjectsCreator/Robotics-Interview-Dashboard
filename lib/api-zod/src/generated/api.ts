@@ -2226,6 +2226,13 @@ export const GetAssistantConversationMessagesResponse = zod.object({
 /**
  * @summary Get parts dashboard totals, vendors, and robots
  */
+export const getPartsDashboardResponseRobotsItemPreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const getPartsDashboardResponseRobotsItemPreviewOneFileNameMax = 255;
+
+export const getPartsDashboardResponseRobotsItemPreviewOneContentTypeMax = 100;
+
+
+
 export const GetPartsDashboardResponse = zod.object({
   "vendors": zod.array(zod.object({
   "key": zod.string(),
@@ -2240,6 +2247,11 @@ export const GetPartsDashboardResponse = zod.object({
   "robots": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(getPartsDashboardResponseRobotsItemPreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(getPartsDashboardResponseRobotsItemPreviewOneFileNameMax),
+  "contentType": zod.string().max(getPartsDashboardResponseRobotsItemPreviewOneContentTypeMax)
+}),zod.null()]),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })),
@@ -2272,6 +2284,10 @@ export const ListPartsCatalogQueryParams = zod.object({
   "offset": zod.coerce.number().int().min(listPartsCatalogQueryOffsetMin).default(listPartsCatalogQueryOffsetDefault)
 })
 
+export const listPartsCatalogResponseItemsItemUnitCostMin = 0;
+export const listPartsCatalogResponseItemsItemUnitCostMax = 99999999.99;
+
+export const listPartsCatalogResponseItemsItemCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const listPartsCatalogResponseItemsItemQuantityOwnedMin = 0;
 
 export const listPartsCatalogResponseItemsItemQuantityAssignedMin = 0;
@@ -2293,6 +2309,8 @@ export const ListPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "unitCost": zod.number().min(listPartsCatalogResponseItemsItemUnitCostMin).max(listPartsCatalogResponseItemsItemUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(listPartsCatalogResponseItemsItemCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityOwnedMin),
   "quantityAssigned": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityAssignedMin),
   "quantityAvailable": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityAvailableMin),
@@ -2328,6 +2346,10 @@ export const CreatePartsCatalogItemBody = zod.object({
   "quantityOwned": zod.number().int().min(createPartsCatalogItemBodyQuantityOwnedMin).default(createPartsCatalogItemBodyQuantityOwnedDefault)
 })
 
+export const createPartsCatalogItemResponseUnitCostMin = 0;
+export const createPartsCatalogItemResponseUnitCostMax = 99999999.99;
+
+export const createPartsCatalogItemResponseCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const createPartsCatalogItemResponseQuantityOwnedMin = 0;
 
 export const createPartsCatalogItemResponseQuantityAssignedMin = 0;
@@ -2348,6 +2370,8 @@ export const CreatePartsCatalogItemResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "unitCost": zod.number().min(createPartsCatalogItemResponseUnitCostMin).max(createPartsCatalogItemResponseUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(createPartsCatalogItemResponseCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(createPartsCatalogItemResponseQuantityOwnedMin),
   "quantityAssigned": zod.number().int().min(createPartsCatalogItemResponseQuantityAssignedMin),
   "quantityAvailable": zod.number().int().min(createPartsCatalogItemResponseQuantityAvailableMin),
@@ -2385,6 +2409,10 @@ export const SearchPartsCatalogQueryParams = zod.object({
 
 export const searchPartsCatalogResponseResultsItemPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,4})?$');
 export const searchPartsCatalogResponseResultsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const searchPartsCatalogResponseCatalogItemsItemUnitCostMin = 0;
+export const searchPartsCatalogResponseCatalogItemsItemUnitCostMax = 99999999.99;
+
+export const searchPartsCatalogResponseCatalogItemsItemCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const searchPartsCatalogResponseCatalogItemsItemQuantityOwnedMin = 0;
 
 export const searchPartsCatalogResponseCatalogItemsItemQuantityAssignedMin = 0;
@@ -2420,6 +2448,8 @@ export const SearchPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "unitCost": zod.number().min(searchPartsCatalogResponseCatalogItemsItemUnitCostMin).max(searchPartsCatalogResponseCatalogItemsItemUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(searchPartsCatalogResponseCatalogItemsItemCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityOwnedMin),
   "quantityAssigned": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityAssignedMin),
   "quantityAvailable": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityAvailableMin),
@@ -2503,6 +2533,10 @@ export const UpdatePartsCatalogStockBody = zod.object({
   "quantityOwned": zod.number().int().min(updatePartsCatalogStockBodyQuantityOwnedMin)
 })
 
+export const updatePartsCatalogStockResponseUnitCostMin = 0;
+export const updatePartsCatalogStockResponseUnitCostMax = 99999999.99;
+
+export const updatePartsCatalogStockResponseCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const updatePartsCatalogStockResponseQuantityOwnedMin = 0;
 
 export const updatePartsCatalogStockResponseQuantityAssignedMin = 0;
@@ -2523,6 +2557,8 @@ export const UpdatePartsCatalogStockResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "unitCost": zod.number().min(updatePartsCatalogStockResponseUnitCostMin).max(updatePartsCatalogStockResponseUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(updatePartsCatalogStockResponseCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(updatePartsCatalogStockResponseQuantityOwnedMin),
   "quantityAssigned": zod.number().int().min(updatePartsCatalogStockResponseQuantityAssignedMin),
   "quantityAvailable": zod.number().int().min(updatePartsCatalogStockResponseQuantityAvailableMin),
@@ -2548,9 +2584,21 @@ export const CreatePartsRobotBody = zod.object({
   "name": zod.string().min(1).max(createPartsRobotBodyNameMax)
 })
 
+export const createPartsRobotResponsePreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const createPartsRobotResponsePreviewOneFileNameMax = 255;
+
+export const createPartsRobotResponsePreviewOneContentTypeMax = 100;
+
+
+
 export const CreatePartsRobotResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(createPartsRobotResponsePreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(createPartsRobotResponsePreviewOneFileNameMax),
+  "contentType": zod.string().max(createPartsRobotResponsePreviewOneContentTypeMax)
+}),zod.null()]),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -2571,11 +2619,259 @@ export const UpdatePartsRobotBody = zod.object({
   "name": zod.string().min(1).max(updatePartsRobotBodyNameMax)
 })
 
+export const updatePartsRobotResponsePreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const updatePartsRobotResponsePreviewOneFileNameMax = 255;
+
+export const updatePartsRobotResponsePreviewOneContentTypeMax = 100;
+
+
+
 export const UpdatePartsRobotResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(updatePartsRobotResponsePreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(updatePartsRobotResponsePreviewOneFileNameMax),
+  "contentType": zod.string().max(updatePartsRobotResponsePreviewOneContentTypeMax)
+}),zod.null()]),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get an authenticated robot build bill of materials and costing
+ */
+export const GetPartsRobotDetailsParams = zod.object({
+  "robotId": zod.coerce.string()
+})
+
+export const getPartsRobotDetailsResponseRobotPreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const getPartsRobotDetailsResponseRobotPreviewOneFileNameMax = 255;
+
+export const getPartsRobotDetailsResponseRobotPreviewOneContentTypeMax = 100;
+
+
+export const getPartsRobotDetailsResponsePartsItemUnitCostMin = 0;
+export const getPartsRobotDetailsResponsePartsItemUnitCostMax = 99999999.99;
+
+export const getPartsRobotDetailsResponsePartsItemCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsRobotDetailsResponsePartsItemLineTotalMin = 0;
+
+export const getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemUnitPriceMin = 0;
+export const getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemUnitPriceMax = 99999999.99;
+
+export const getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsRobotDetailsResponseSubtotalsByCurrencyItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsRobotDetailsResponseSubtotalsByCurrencyItemAmountMin = 0;
+
+export const getPartsRobotDetailsResponseUnpricedPartCountMin = 0;
+
+
+
+export const GetPartsRobotDetailsResponse = zod.object({
+  "robot": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(getPartsRobotDetailsResponseRobotPreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(getPartsRobotDetailsResponseRobotPreviewOneFileNameMax),
+  "contentType": zod.string().max(getPartsRobotDetailsResponseRobotPreviewOneContentTypeMax)
+}),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "parts": zod.array(zod.object({
+  "partId": zod.string(),
+  "name": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "sku": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "quantity": zod.number().int().min(1),
+  "unitCost": zod.number().min(getPartsRobotDetailsResponsePartsItemUnitCostMin).max(getPartsRobotDetailsResponsePartsItemUnitCostMax).nullable(),
+  "costCurrency": zod.string().regex(getPartsRobotDetailsResponsePartsItemCostCurrencyRegExp).nullable(),
+  "lineTotal": zod.number().min(getPartsRobotDetailsResponsePartsItemLineTotalMin).nullable(),
+  "priceSnapshots": zod.array(zod.object({
+  "id": zod.string(),
+  "partId": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "sourceUrl": zod.string().url(),
+  "unitPrice": zod.number().min(getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemUnitPriceMin).max(getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemUnitPriceMax),
+  "currency": zod.string().regex(getPartsRobotDetailsResponsePartsItemPriceSnapshotsItemCurrencyRegExp),
+  "capturedAt": zod.coerce.date(),
+  "isStartingAt": zod.boolean(),
+  "isStale": zod.boolean()
+}))
+})),
+  "subtotalsByCurrency": zod.array(zod.object({
+  "currency": zod.string().regex(getPartsRobotDetailsResponseSubtotalsByCurrencyItemCurrencyRegExp),
+  "amount": zod.number().min(getPartsRobotDetailsResponseSubtotalsByCurrencyItemAmountMin)
+})),
+  "unpricedPartCount": zod.number().int().min(getPartsRobotDetailsResponseUnpricedPartCountMin)
+})
+
+
+/**
+ * @summary Attach or replace a private robot preview file
+ */
+export const UpdatePartsRobotPreviewParams = zod.object({
+  "robotId": zod.coerce.string()
+})
+
+export const updatePartsRobotPreviewBodyObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const updatePartsRobotPreviewBodyFileNameMax = 255;
+
+export const updatePartsRobotPreviewBodyContentTypeMax = 100;
+
+
+
+export const UpdatePartsRobotPreviewBody = zod.object({
+  "objectPath": zod.string().regex(updatePartsRobotPreviewBodyObjectPathRegExp),
+  "fileName": zod.string().min(1).max(updatePartsRobotPreviewBodyFileNameMax),
+  "contentType": zod.string().max(updatePartsRobotPreviewBodyContentTypeMax)
+})
+
+export const updatePartsRobotPreviewResponsePreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const updatePartsRobotPreviewResponsePreviewOneFileNameMax = 255;
+
+export const updatePartsRobotPreviewResponsePreviewOneContentTypeMax = 100;
+
+
+
+export const UpdatePartsRobotPreviewResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(updatePartsRobotPreviewResponsePreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(updatePartsRobotPreviewResponsePreviewOneFileNameMax),
+  "contentType": zod.string().max(updatePartsRobotPreviewResponsePreviewOneContentTypeMax)
+}),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update the saved unit cost basis for a catalog part
+ */
+export const UpdatePartsCatalogCostParams = zod.object({
+  "partId": zod.coerce.string()
+})
+
+export const updatePartsCatalogCostBodyUnitCostMin = 0;
+export const updatePartsCatalogCostBodyUnitCostMax = 99999999.99;
+
+export const updatePartsCatalogCostBodyCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+
+
+export const UpdatePartsCatalogCostBody = zod.object({
+  "unitCost": zod.number().min(updatePartsCatalogCostBodyUnitCostMin).max(updatePartsCatalogCostBodyUnitCostMax).nullable(),
+  "costCurrency": zod.string().regex(updatePartsCatalogCostBodyCostCurrencyRegExp).nullable()
+})
+
+export const updatePartsCatalogCostResponseUnitCostMin = 0;
+export const updatePartsCatalogCostResponseUnitCostMax = 99999999.99;
+
+export const updatePartsCatalogCostResponseCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogCostResponseQuantityOwnedMin = 0;
+
+export const updatePartsCatalogCostResponseQuantityAssignedMin = 0;
+
+export const updatePartsCatalogCostResponseQuantityAvailableMin = 0;
+
+export const updatePartsCatalogCostResponseAllocationsItemQuantityMin = 0;
+
+
+
+export const UpdatePartsCatalogCostResponse = zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "unitCost": zod.number().min(updatePartsCatalogCostResponseUnitCostMin).max(updatePartsCatalogCostResponseUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(updatePartsCatalogCostResponseCostCurrencyRegExp).nullish(),
+  "quantityOwned": zod.number().int().min(updatePartsCatalogCostResponseQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(updatePartsCatalogCostResponseQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(updatePartsCatalogCostResponseQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(updatePartsCatalogCostResponseAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Save a dated supplier quote snapshot without changing saved costs
+ */
+export const CreatePartsPriceSnapshotParams = zod.object({
+  "partId": zod.coerce.string()
+})
+
+export const createPartsPriceSnapshotBodyUnitPriceMin = 0;
+export const createPartsPriceSnapshotBodyUnitPriceMax = 99999999.99;
+
+export const createPartsPriceSnapshotBodyCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const createPartsPriceSnapshotBodySourceUrlMax = 2000;
+
+
+
+export const CreatePartsPriceSnapshotBody = zod.object({
+  "unitPrice": zod.number().min(createPartsPriceSnapshotBodyUnitPriceMin).max(createPartsPriceSnapshotBodyUnitPriceMax),
+  "currency": zod.string().regex(createPartsPriceSnapshotBodyCurrencyRegExp),
+  "sourceUrl": zod.string().url().max(createPartsPriceSnapshotBodySourceUrlMax),
+  "isStartingAt": zod.boolean()
+})
+
+export const createPartsPriceSnapshotResponseUnitPriceMin = 0;
+export const createPartsPriceSnapshotResponseUnitPriceMax = 99999999.99;
+
+export const createPartsPriceSnapshotResponseCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+
+
+export const CreatePartsPriceSnapshotResponse = zod.object({
+  "id": zod.string(),
+  "partId": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "sourceUrl": zod.string().url(),
+  "unitPrice": zod.number().min(createPartsPriceSnapshotResponseUnitPriceMin).max(createPartsPriceSnapshotResponseUnitPriceMax),
+  "currency": zod.string().regex(createPartsPriceSnapshotResponseCurrencyRegExp),
+  "capturedAt": zod.coerce.date(),
+  "isStartingAt": zod.boolean(),
+  "isStale": zod.boolean()
+})
+
+
+/**
+ * @summary Upload a private robot image or supported CAD preview file
+ */
+export const uploadPartsRobotPreviewFileQueryFileNameMax = 255;
+
+export const uploadPartsRobotPreviewFileQueryContentTypeMax = 100;
+
+
+
+export const UploadPartsRobotPreviewFileQueryParams = zod.object({
+  "fileName": zod.coerce.string().max(uploadPartsRobotPreviewFileQueryFileNameMax),
+  "contentType": zod.coerce.string().max(uploadPartsRobotPreviewFileQueryContentTypeMax)
+})
+
+export const uploadPartsRobotPreviewFileResponseObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+
+
+export const UploadPartsRobotPreviewFileResponse = zod.object({
+  "objectPath": zod.string().regex(uploadPartsRobotPreviewFileResponseObjectPathRegExp)
 })
 
 

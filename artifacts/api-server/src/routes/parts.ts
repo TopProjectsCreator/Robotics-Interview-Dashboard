@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import {
+  CreatePartsPriceSnapshotBody,
+  CreatePartsPriceSnapshotParams,
+  CreatePartsPriceSnapshotResponse,
   CreatePartsCatalogItemBody,
   CreatePartsCatalogItemResponse,
   CreatePartsRobotBody,
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
+  GetPartsRobotDetailsParams,
+  GetPartsRobotDetailsResponse,
   ImportPartsCatalogBody,
   ImportPartsCatalogResponse,
   ListPartsCatalogResponse,
@@ -17,9 +22,15 @@ import {
   UpdatePartsCatalogStockBody,
   UpdatePartsCatalogStockParams,
   UpdatePartsCatalogStockResponse,
+  UpdatePartsCatalogCostBody,
+  UpdatePartsCatalogCostParams,
+  UpdatePartsCatalogCostResponse,
   UpdatePartsRobotBody,
   UpdatePartsRobotParams,
   UpdatePartsRobotResponse,
+  UpdatePartsRobotPreviewBody,
+  UpdatePartsRobotPreviewParams,
+  UpdatePartsRobotPreviewResponse,
   type AssistantActivity,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
@@ -39,8 +50,19 @@ import {
   type VendorConfig,
 } from "../lib/partsVendors";
 import { logger } from "../lib/logger";
+import {
+  calculateLineTotal,
+  isPriceSnapshotStale,
+  isValidCurrencyCode,
+  isValidMoneyAmount,
+  moneyFromDatabase,
+  summarizeSavedCosts,
+} from "../lib/partsCosting";
+import { partsPreviewKind } from "../lib/partsRobotPreview";
+import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
+const objectStorageService = new ObjectStorageService();
 type PoolClient = {
   query: (
     statement: string,
@@ -277,9 +299,15 @@ function isoDate(value: Date | string): string {
 }
 
 function mapRobot(row: Record<string, unknown>) {
+  const objectPath = typeof row.previewObjectPath === "string" ? row.previewObjectPath : null;
+  const fileName = typeof row.previewFileName === "string" ? row.previewFileName : null;
+  const contentType = typeof row.previewContentType === "string" ? row.previewContentType : null;
   return {
     id: String(row.id),
     name: String(row.name),
+    preview: objectPath && fileName && contentType
+      ? { objectPath, fileName, contentType }
+      : null,
     createdAt: isoDate(row.createdAt as Date | string),
     updatedAt: isoDate(row.updatedAt as Date | string),
   };
@@ -288,6 +316,10 @@ function mapRobot(row: Record<string, unknown>) {
 function mapCatalogRow(row: Record<string, unknown>) {
   const quantityOwned = Number(row.quantityOwned ?? 0);
   const quantityAssigned = Number(row.quantityAssigned ?? 0);
+  const unitCost = moneyFromDatabase(row.unitCost);
+  const costCurrency = unitCost !== null && isValidCurrencyCode(row.costCurrency)
+    ? row.costCurrency
+    : null;
   const vendorKey = String(row.vendorKey);
   const vendor = vendorByKey.get(vendorKey);
   let allocations = row.allocations;
@@ -308,6 +340,8 @@ function mapCatalogRow(row: Record<string, unknown>) {
     description: (row.description as string | null) ?? null,
     productUrl: (row.productUrl as string | null) ?? null,
     imageUrl: (row.imageUrl as string | null) ?? null,
+    unitCost: costCurrency ? unitCost : null,
+    costCurrency,
     quantityOwned,
     quantityAssigned,
     quantityAvailable: Math.max(0, quantityOwned - quantityAssigned),
@@ -326,7 +360,8 @@ async function queryCatalogRows(
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
-            c."image_url" as "imageUrl", c."created_at" as "createdAt",
+             c."image_url" as "imageUrl", c."unit_cost" as "unitCost",
+             c."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
             coalesce(i."quantity_owned", 0)::int as "quantityOwned",
             coalesce(sum(a."quantity"), 0)::int as "quantityAssigned",
@@ -862,12 +897,10 @@ async function searchPublicCatalog(
         ...focusedTavilyVendors.map((item) => searchWithTavily(query, [item])),
       ]
     : vendorGroups.flatMap((group) => [
-        searchWithTavily(query, group),
-        searchWithExa(query, group),
-      ]);
-  const providerResults = await Promise.allSettled(
-    providerRequests,
-  );
+      searchWithTavily(query, group),
+      searchWithExa(query, group),
+    ]);
+  const providerResults = await Promise.allSettled(providerRequests);
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
   );
@@ -969,7 +1002,10 @@ export async function runAssistantPartsTool(
     }
     if (name === "list_parts_robots") {
       const rows = await pool.query(
-        `select "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
          from "parts_robots" order by lower("name")`,
       );
       const robots = rows.rows.map(mapRobot);
@@ -1382,7 +1418,10 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
   try {
     const [robotsResult, totalsResult] = await Promise.all([
       pool.query(
-        `select "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
          from "parts_robots" order by lower("name")`,
       ),
       pool.query(
@@ -1719,6 +1758,220 @@ router.patch("/parts/catalog/:partId/stock", requireAdmin, async (req, res): Pro
   }
 });
 
+router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsCatalogCostParams.safeParse(req.params);
+  const body = UpdatePartsCatalogCostBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "The saved unit cost is invalid." });
+    return;
+  }
+  const { unitCost, costCurrency } = body.data;
+  if (
+    (unitCost === null) !== (costCurrency === null) ||
+    (unitCost !== null && !isValidMoneyAmount(unitCost)) ||
+    (costCurrency !== null && !isValidCurrencyCode(costCurrency))
+  ) {
+    res.status(400).json({ error: "Enter both a valid amount and a three-letter currency, or clear both." });
+    return;
+  }
+  try {
+    const updated = await pool.query(
+      `update "parts_catalog_items"
+       set "unit_cost" = $2, "cost_currency" = $3, "updated_at" = now()
+       where "id" = $1
+       returning "id"`,
+      [params.data.partId, unitCost, costCurrency],
+    );
+    if (updated.rowCount === 0) {
+      res.status(404).json({ error: "Catalog item not found." });
+      return;
+    }
+    const savedItem = await getCatalogItem(params.data.partId);
+    res.json(UpdatePartsCatalogCostResponse.parse(savedItem));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts saved cost update failed");
+    res.status(500).json({ error: "Unable to update the saved unit cost." });
+  }
+});
+
+router.post(
+  "/parts/catalog/:partId/price-snapshots",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = CreatePartsPriceSnapshotParams.safeParse(req.params);
+    const body = CreatePartsPriceSnapshotBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "The supplier quote details are invalid." });
+      return;
+    }
+    try {
+      const partResult = await pool.query(
+        `select "vendor_key" as "vendorKey" from "parts_catalog_items" where "id" = $1`,
+        [params.data.partId],
+      );
+      if (partResult.rowCount === 0) {
+        res.status(404).json({ error: "Catalog item not found." });
+        return;
+      }
+      const vendorKey = String(partResult.rows[0].vendorKey);
+      const vendor = vendorForKey(vendorKey);
+      const sourceUrl = validateVendorUrl(body.data.sourceUrl, vendor);
+      if (!sourceUrl || !isValidCurrencyCode(body.data.currency) || !isValidMoneyAmount(body.data.unitPrice)) {
+        res.status(400).json({ error: "Choose a valid price, currency, and source on the item's supplier domain." });
+        return;
+      }
+      const saved = await pool.query(
+        `insert into "parts_supplier_price_snapshots"
+           ("id", "part_id", "unit_price", "currency", "source_url", "is_starting_at")
+         values ($1, $2, $3, $4, $5, $6)
+         returning "id", "part_id" as "partId", "unit_price" as "unitPrice",
+                   "currency", "source_url" as "sourceUrl",
+                   "captured_at" as "capturedAt", "is_starting_at" as "isStartingAt"`,
+        [
+          randomUUID(),
+          params.data.partId,
+          body.data.unitPrice,
+          body.data.currency,
+          sourceUrl,
+          body.data.isStartingAt,
+        ],
+      );
+      const row = saved.rows[0];
+      res.status(201).json(CreatePartsPriceSnapshotResponse.parse({
+        id: String(row.id),
+        partId: String(row.partId),
+        vendorKey,
+        vendorName: vendor.name,
+        sourceUrl: String(row.sourceUrl),
+        unitPrice: moneyFromDatabase(row.unitPrice),
+        currency: String(row.currency),
+        capturedAt: isoDate(row.capturedAt as Date | string),
+        isStartingAt: Boolean(row.isStartingAt),
+        isStale: false,
+      }));
+    } catch (error) {
+      if (error instanceof BadInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Supplier quote snapshot save failed");
+      res.status(500).json({ error: "Unable to save the supplier quote snapshot." });
+    }
+  },
+);
+
+router.get(
+  "/parts/robots/:robotId/details",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = GetPartsRobotDetailsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: "The robot ID is invalid." });
+      return;
+    }
+    try {
+      const robotResult = await pool.query(
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
+         from "parts_robots" where "id" = $1`,
+        [params.data.robotId],
+      );
+      if (robotResult.rowCount === 0) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+      const allocationResult = await pool.query(
+        `select c."id" as "partId", c."name", c."vendor_key" as "vendorKey",
+                c."sku", c."product_url" as "productUrl",
+                c."unit_cost" as "unitCost", c."cost_currency" as "costCurrency",
+                a."quantity"
+         from "parts_robot_allocations" a
+         join "parts_catalog_items" c on c."id" = a."part_id"
+         where a."robot_id" = $1
+         order by lower(c."name"), c."id"`,
+        [params.data.robotId],
+      );
+      const partIds = allocationResult.rows.map((row) => String(row.partId));
+      const snapshotResult = partIds.length === 0
+        ? { rows: [] as Record<string, any>[] }
+        : await pool.query(
+            `select s."id", s."part_id" as "partId", s."unit_price" as "unitPrice",
+                    s."currency", s."source_url" as "sourceUrl",
+                    s."captured_at" as "capturedAt",
+                    s."is_starting_at" as "isStartingAt",
+                    c."vendor_key" as "vendorKey"
+             from "parts_supplier_price_snapshots" s
+             join "parts_catalog_items" c on c."id" = s."part_id"
+             where s."part_id" = any($1::text[])
+             order by s."captured_at" desc`,
+            [partIds],
+          );
+      const now = Date.now();
+      const snapshotsByPart = new Map<string, unknown[]>();
+      for (const row of snapshotResult.rows) {
+        const vendorKey = String(row.vendorKey);
+        const vendor = vendorByKey.get(vendorKey);
+        const partId = String(row.partId);
+        const snapshot = {
+          id: String(row.id),
+          partId,
+          vendorKey,
+          vendorName: vendor?.name ?? vendorKey,
+          sourceUrl: String(row.sourceUrl),
+          unitPrice: moneyFromDatabase(row.unitPrice),
+          currency: String(row.currency),
+          capturedAt: isoDate(row.capturedAt as Date | string),
+          isStartingAt: Boolean(row.isStartingAt),
+          isStale: isPriceSnapshotStale(row.capturedAt as Date | string, now),
+        };
+        const snapshots = snapshotsByPart.get(partId) ?? [];
+        snapshots.push(snapshot);
+        snapshotsByPart.set(partId, snapshots);
+      }
+      const parts = allocationResult.rows.map((row) => {
+        const vendorKey = String(row.vendorKey);
+        const vendor = vendorByKey.get(vendorKey);
+        const quantity = Number(row.quantity);
+        const rawUnitCost = moneyFromDatabase(row.unitCost);
+        const costCurrency = rawUnitCost !== null && isValidCurrencyCode(row.costCurrency)
+          ? row.costCurrency
+          : null;
+        const unitCost = costCurrency ? rawUnitCost : null;
+        return {
+          partId: String(row.partId),
+          name: String(row.name),
+          vendorKey,
+          vendorName: vendor?.name ?? vendorKey,
+          sku: (row.sku as string | null) ?? null,
+          productUrl: (row.productUrl as string | null) ?? null,
+          quantity,
+          unitCost,
+          costCurrency,
+          lineTotal: calculateLineTotal(quantity, unitCost, costCurrency),
+          priceSnapshots: snapshotsByPart.get(String(row.partId)) ?? [],
+        };
+      });
+      const savedCostTotals = summarizeSavedCosts(
+        parts.map((part) => ({
+          quantity: part.quantity,
+          unitCost: part.unitCost,
+          currency: part.costCurrency,
+        })),
+      );
+      res.json(GetPartsRobotDetailsResponse.parse({
+        robot: mapRobot(robotResult.rows[0]),
+        parts,
+        ...savedCostTotals,
+      }));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot build details load failed");
+      res.status(500).json({ error: "Unable to load this robot's build details." });
+    }
+  },
+);
+
 router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreatePartsRobotBody.safeParse(req.body);
   if (!parsed.success) {
@@ -1748,6 +2001,67 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
+router.patch(
+  "/parts/robots/:robotId/preview",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = UpdatePartsRobotPreviewParams.safeParse(req.params);
+    const body = UpdatePartsRobotPreviewBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "The robot preview details are invalid." });
+      return;
+    }
+    const preview = body.data;
+    if (
+      !/^\/objects\/[A-Za-z0-9-]{8,128}$/.test(preview.objectPath) ||
+      partsPreviewKind(preview.fileName, preview.contentType) === null
+    ) {
+      res.status(400).json({ error: "Choose a supported private preview file." });
+      return;
+    }
+    try {
+      const result = await withTransaction(async (client) => {
+        const current = await client.query(
+          `select "preview_object_path" as "previewObjectPath"
+           from "parts_robots" where "id" = $1 for update`,
+          [params.data.robotId],
+        );
+        if (current.rowCount === 0) return null;
+        const updated = await client.query(
+          `update "parts_robots"
+           set "preview_object_path" = $2, "preview_file_name" = $3,
+               "preview_content_type" = $4, "updated_at" = now()
+           where "id" = $1
+           returning "id", "name", "preview_object_path" as "previewObjectPath",
+                     "preview_file_name" as "previewFileName",
+                     "preview_content_type" as "previewContentType",
+                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+          [params.data.robotId, preview.objectPath, preview.fileName, preview.contentType],
+        );
+        return {
+          robot: updated.rows[0],
+          previousObjectPath: current.rows[0].previewObjectPath as string | null,
+        };
+      });
+      if (!result) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+      if (result.previousObjectPath && result.previousObjectPath !== preview.objectPath) {
+        try {
+          await objectStorageService.deleteObject(result.previousObjectPath);
+        } catch (error) {
+          req.log.warn({ err: error, objectPath: result.previousObjectPath }, "Replaced robot preview cleanup failed");
+        }
+      }
+      res.json(UpdatePartsRobotPreviewResponse.parse(mapRobot(result.robot)));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview metadata update failed");
+      res.status(500).json({ error: "Unable to update this robot's preview." });
+    }
+  },
+);
+
 router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<void> => {
   const params = UpdatePartsRobotParams.safeParse(req.params);
   const body = UpdatePartsRobotBody.safeParse(req.body);
@@ -1764,7 +2078,10 @@ router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<v
     const result = await pool.query(
       `update "parts_robots" set "name" = $2, "updated_at" = now()
        where "id" = $1
-       returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+       returning "id", "name", "preview_object_path" as "previewObjectPath",
+                 "preview_file_name" as "previewFileName",
+                 "preview_content_type" as "previewContentType",
+                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [params.data.robotId, name],
     );
     if (result.rowCount === 0) {

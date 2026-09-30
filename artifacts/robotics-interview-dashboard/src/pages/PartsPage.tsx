@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -33,6 +33,7 @@ import {
   useUpdatePartsCatalogStock,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
+  type PartsRobot,
   type PartsVendor,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PartsRobotDetailsDialog } from "@/components/PartsRobotDetailsDialog";
 
 type PageTab = "inventory" | "search";
 type Notice = { kind: "success" | "error"; text: string };
@@ -500,6 +502,7 @@ export default function PartsPage() {
   const [customQuantity, setCustomQuantity] = useState("0");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [lastCatalogSync, setLastCatalogSync] = useState<PartsCatalogSyncResult | null>(null);
+  const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -770,6 +773,10 @@ export default function PartsPage() {
   const additionalCatalogSearchItems = catalogSearchItems.filter(
     (item) => !catalogItemHasLiveResult(item, searchResults),
   );
+  const closeRobotDetails = useCallback(() => setSelectedRobot(null), []);
+  const refreshRobotDashboard = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
+  }, [queryClient]);
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-6 bg-background p-4 text-foreground sm:p-6 xl:p-8">
@@ -893,12 +900,25 @@ export default function PartsPage() {
                     No robots yet. Add one to start assigning parts.
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {robots.map((robot) => (
-                      <span key={robot.id} className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-sm">
-                        <span className="size-2 rounded-full bg-primary" />
-                        {robot.name}
-                      </span>
+                      <button
+                        key={robot.id}
+                        type="button"
+                        onClick={() => setSelectedRobot(robot)}
+                        className="group flex min-h-24 flex-col justify-between rounded-xl border border-border bg-background p-4 text-left transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-testid={`card-robot-${robot.id}`}
+                        aria-label={`Open build details for ${robot.name}`}
+                      >
+                        <span className="flex items-center justify-between gap-3">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                            <span className="truncate text-sm font-semibold text-foreground">{robot.name}</span>
+                          </span>
+                          <ArrowUpRight size={15} className="shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+                        </span>
+                        <span className="mt-4 text-xs text-muted-foreground">Open allocated BOM and costs</span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -1555,7 +1575,12 @@ export default function PartsPage() {
             )}
           </>
         ) : null}
-      </div>
+       </div>
+       <PartsRobotDetailsDialog
+         robot={selectedRobot}
+         onClose={closeRobotDetails}
+         onPreviewReplaced={refreshRobotDashboard}
+       />
     </main>
   );
 }

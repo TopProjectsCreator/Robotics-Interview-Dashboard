@@ -1,6 +1,7 @@
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
+  UploadPartsRobotPreviewFileResponse,
 } from '@workspace/api-zod';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -18,6 +19,7 @@ import {
   ObjectStorageService,
 } from '../lib/objectStorage';
 import { requireAdmin } from "../middlewares/adminAuth";
+import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -305,6 +307,44 @@ router.post(
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
       res.status(500).json({ error: 'Upload failed on the server' });
+    }
+  },
+);
+
+/**
+ * POST /storage/parts-robot-previews
+ *
+ * Store a validated image or supported CAD file for the authenticated Parts
+ * workspace. The returned object path remains private and is served only by
+ * the admin-gated /storage/objects route.
+ */
+router.post(
+  '/storage/parts-robot-previews',
+  requireAdmin,
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    if (!data || !Buffer.isBuffer(data)) {
+      res.status(400).json({ error: 'No preview file data received' });
+      return;
+    }
+    const fileName = typeof req.query.fileName === 'string' ? req.query.fileName.trim() : '';
+    const contentType = typeof req.query.contentType === 'string'
+      ? req.query.contentType.trim().toLowerCase()
+      : '';
+    const validationError = validatePartsPreviewFile(fileName, contentType, data);
+    if (validationError) {
+      res.status(
+        validationError.includes('upload limit') ? 413 : 400,
+      ).json({ error: validationError });
+      return;
+    }
+    try {
+      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
+      res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
+    } catch (error) {
+      req.log.error({ err: error }, 'Robot preview upload failed');
+      res.status(500).json({ error: 'Unable to store this robot preview.' });
     }
   },
 );
