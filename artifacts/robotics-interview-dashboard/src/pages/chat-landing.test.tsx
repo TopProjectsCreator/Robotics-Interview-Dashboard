@@ -9,6 +9,8 @@ import {
   AUTH_SESSION_CHANNEL_NAME,
   AUTH_SESSION_END_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
+  DEFAULT_AUTH_RETURN_PATH,
+  getSafeAuthReturnPath,
 } from "@/authSession";
 import {
   getGetInterviewChatQueryKey,
@@ -542,6 +544,7 @@ describe("public chat discovery", () => {
 
         await waitFor(() => {
           expect(window.location.pathname).toBe("/auth");
+          expect(new URLSearchParams(window.location.search).get("returnTo")).toBe("/chat");
           expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
           const cachedPrivateData = JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data));
           expect(cachedPrivateData).not.toContain("CrossTabPrivateRecordCanary");
@@ -559,19 +562,38 @@ describe("public chat discovery", () => {
     },
   );
 
-  it("keeps /chat behind the signed-in workspace shell", async () => {
+  it("returns to /chat after signing in from its protected route", async () => {
     window.history.replaceState({}, "", "/chat");
-    const unauthorizedSession: Response = {
-      ok: true,
-      status: 200,
-      headers: { get: () => "application/json" } as unknown as Headers,
-      text: async () => JSON.stringify({ authenticated: false }),
-    } as Response;
-    const network = stubNetworkTransports(async () => unauthorizedSession);
+    let authenticated = false;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") {
+        return jsonResponse(authenticated ? signedInSession : { authenticated: false });
+      }
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "return-interviewer", displayName: "Return Interviewer", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") {
+        authenticated = true;
+        return jsonResponse({
+          authenticated: true,
+          interviewerId: "return-interviewer",
+          label: "Return Interviewer",
+          token: "return-interviewer-token",
+        });
+      }
+      if (path === "/api/queue/chat") return jsonResponse({ scope: "shared", peer: null, items: [] });
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+      return jsonResponse({});
+    });
 
     render(<App />);
 
     await waitFor(() => expect(window.location.pathname).toBe("/auth"));
+    expect(new URLSearchParams(window.location.search).get("returnTo")).toBe("/chat");
     expect(screen.queryByRole("heading", { name: "Team chat" })).not.toBeInTheDocument();
     expect(screen.queryByText("Coordinator workspace")).not.toBeInTheDocument();
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).not.toContainEqual(
@@ -579,6 +601,16 @@ describe("public chat discovery", () => {
     );
     expect(network.eventSourceConstructor).not.toHaveBeenCalled();
     expect(network.webSocketConstructor).not.toHaveBeenCalled();
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-return-interviewer"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/chat"));
+    expect(await screen.findByRole("heading", { name: "Team chat" })).toBeInTheDocument();
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("return-interviewer-token");
   });
 
   it("does not show a cross-tab notice on ordinary sign-in or invalid-password errors", async () => {
@@ -807,5 +839,23 @@ describe("public chat discovery", () => {
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("interviewer-b-token");
     expect(document.body.textContent).not.toContain(oldAccountCanary);
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
+  });
+});
+
+describe("sign-in return destinations", () => {
+  it("keeps valid workspace routes and their query and hash", () => {
+    expect(getSafeAuthReturnPath("/spreadsheets/board-7?tab=parts#cell-A1"))
+      .toBe("/spreadsheets/board-7?tab=parts#cell-A1");
+  });
+
+  it.each([
+    null,
+    "",
+    "https://outside.example/phishing",
+    "//outside.example/phishing",
+    "/auth",
+    "/not-a-workspace-route",
+  ])("uses the dashboard for an invalid return destination (%s)", (returnTo) => {
+    expect(getSafeAuthReturnPath(returnTo)).toBe(DEFAULT_AUTH_RETURN_PATH);
   });
 });

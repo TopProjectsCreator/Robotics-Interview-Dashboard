@@ -46,7 +46,7 @@ import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -1358,7 +1358,8 @@ function LegacyLogin() {
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
-  useEffect(() => { if (session.data?.authenticated && (location === "/" || location === "/auth")) setLocation("/dashboard"); }, [session.data, location, setLocation]);
+  const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
+  useEffect(() => { if (session.data?.authenticated && (location.split("?")[0] === "/" || location.split("?")[0] === "/auth")) setLocation(returnTo); }, [session.data, location, returnTo, setLocation]);
   useEffect(() => {
     // Browsers may ignore autoFocus in an iframe until the document has
     // mounted, so focus again after the login view is ready.
@@ -1373,7 +1374,7 @@ function LegacyLogin() {
     clearUserScopedRecords(qc, sessionData);
     storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
-    setLocation("/dashboard");
+    setLocation(returnTo);
   };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1455,16 +1456,18 @@ function Login() {
   const create = useCreateInterviewer();
   const selected = teamAccounts.find(item => item.id === selectedId);
   const busy = login.isPending || setup.isPending || create.isPending;
+  const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
 
   useEffect(() => {
     if (consumeAuthSessionEndedByAnotherTab()) setSessionEndedInAnotherTab(true);
   }, []);
 
   useEffect(() => {
-    if (session.data?.authenticated && !sessionEndedInAnotherTab && (location === "/" || location === "/auth")) {
-      setLocation("/dashboard");
+    const route = location.split("?")[0];
+    if (session.data?.authenticated && !sessionEndedInAnotherTab && (route === "/" || route === "/auth")) {
+      setLocation(returnTo);
     }
-  }, [session.data, sessionEndedInAnotherTab, location, setLocation]);
+  }, [session.data, sessionEndedInAnotherTab, location, returnTo, setLocation]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -1476,7 +1479,7 @@ function Login() {
     clearUserScopedRecords(qc, sessionData);
     storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
-    setLocation("/dashboard");
+    setLocation(returnTo);
   };
 
   const continueFromEvent = (event: React.FormEvent) => {
@@ -1783,7 +1786,7 @@ function Shell({ children }: { children: ReactNode }) {
   useEffect(() => listenForAuthSessionEnd(() => {
     markAuthSessionEndedByAnotherTab();
     clearUserScopedRecords(qc);
-    setLocation("/auth");
+    setLocation(getAuthRedirectPath(getCurrentPathWithQuery()));
   }), [qc, setLocation]);
   const broadcasts = useGetMyBroadcasts({
     query: {
@@ -1829,7 +1832,7 @@ function Shell({ children }: { children: ReactNode }) {
     }
   }, [broadcasts.data, dismissedBroadcasts]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
-  if (!session.data?.authenticated) return <Redirect to="/auth" />;
+  if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
   const workspaceArea = workspaceAreaForPath(location);
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,

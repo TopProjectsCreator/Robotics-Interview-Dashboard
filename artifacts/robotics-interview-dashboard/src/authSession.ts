@@ -7,6 +7,57 @@ import {
 export const AUTH_TOKEN_STORAGE_KEY = "robotics_admin_session_token";
 export const AUTH_SESSION_CHANNEL_NAME = "robotics-admin-session";
 export const AUTH_SESSION_END_STORAGE_KEY = "robotics_admin_session_ended";
+export const DEFAULT_AUTH_RETURN_PATH = "/dashboard";
+
+const AUTH_RETURN_ORIGIN = "https://robotics-workspace.invalid";
+const WORKSPACE_RETURN_PATHS = new Set([
+  "/dashboard",
+  "/interview/assistant",
+  "/interview",
+  "/applicants",
+  "/queue",
+  "/chat",
+  "/attendance",
+  "/big-screen",
+  "/parts/assistant",
+  "/parts",
+  "/assistant",
+]);
+
+export function getSafeAuthReturnPath(value: string | null | undefined): string {
+  const candidate = value?.trim();
+  if (
+    !candidate ||
+    !candidate.startsWith("/") ||
+    candidate.startsWith("//") ||
+    candidate.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(candidate)
+  ) {
+    return DEFAULT_AUTH_RETURN_PATH;
+  }
+
+  try {
+    const destination = new URL(candidate, AUTH_RETURN_ORIGIN);
+    const isSpreadsheet = /^\/spreadsheets\/[^/]+$/.test(destination.pathname);
+    if (
+      destination.origin !== AUTH_RETURN_ORIGIN ||
+      (!WORKSPACE_RETURN_PATHS.has(destination.pathname) && !isSpreadsheet)
+    ) {
+      return DEFAULT_AUTH_RETURN_PATH;
+    }
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return DEFAULT_AUTH_RETURN_PATH;
+  }
+}
+
+export function getAuthRedirectPath(currentPath: string): string {
+  return `/auth?returnTo=${encodeURIComponent(getSafeAuthReturnPath(currentPath))}`;
+}
+
+export function getCurrentPathWithQuery(): string {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
 
 type AuthSessionEndMessage = {
   type: "session-ended";
