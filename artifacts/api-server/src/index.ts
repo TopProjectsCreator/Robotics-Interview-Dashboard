@@ -6,6 +6,7 @@ import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { pool, db, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
+import { syncPublicPartsCatalogs } from "./routes/parts";
 
 initRealtime();
 
@@ -31,6 +32,7 @@ async function ensureSchema(): Promise<void> {
     "interviewer_accounts",
     "page_visits",
     "parts_catalog_items",
+    "parts_catalog_sync_state",
     "parts_inventory",
     "parts_robots",
     "parts_robot_allocations",
@@ -81,6 +83,8 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create unique index if not exists "parts_catalog_vendor_external_key_unique" on "parts_catalog_items" ("vendor_key", "external_key")`,
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
+    `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
+    `insert into "parts_catalog_sync_state" ("id") values ('global') on conflict ("id") do nothing`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create unique index if not exists "parts_robots_normalized_name_unique" on "parts_robots" (lower("name"))`,
@@ -106,6 +110,44 @@ async function ensureSchema(): Promise<void> {
   logger.info("Schema check passed");
 }
 
+async function syncPartsCatalogsIfDue(): Promise<void> {
+  const claim = await pool.query(
+    `insert into "parts_catalog_sync_state" ("id", "last_attempted_at")
+     values ('global', now())
+     on conflict ("id") do update set "last_attempted_at" = now()
+     where "parts_catalog_sync_state"."last_attempted_at" is null
+        or "parts_catalog_sync_state"."last_attempted_at" < now() - interval '24 hours'
+     returning "id"`,
+  );
+  if (claim.rowCount === 0) return;
+
+  logger.info("Starting scheduled public supplier catalog sync");
+  try {
+    const summary = await syncPublicPartsCatalogs();
+    await pool.query(
+      `update "parts_catalog_sync_state" set "last_completed_at" = now()
+       where "id" = 'global'`,
+    );
+    logger.info(
+      {
+        vendors: summary.vendors.length,
+        totalItems: summary.totalItems,
+        created: summary.created,
+        updated: summary.updated,
+        availableVendors: summary.vendors.filter((vendor) => vendor.status === "synced").length,
+      },
+      "Scheduled public supplier catalog sync completed",
+    );
+  } catch (error) {
+    await pool.query(
+      `update "parts_catalog_sync_state"
+       set "last_attempted_at" = now() - interval '23 hours'
+       where "id" = 'global'`,
+    );
+    logger.error({ err: error }, "Scheduled public supplier catalog sync failed");
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
@@ -126,8 +168,20 @@ setupWhiteboardCollaboration(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
-  ensureSchema().catch((err) => {
-    logger.error({ err }, "Schema migration failed; exiting");
-    process.exit(1);
-  });
+  ensureSchema()
+    .then(() => {
+      void syncPartsCatalogsIfDue().catch((err) => {
+        logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
+      });
+      const catalogRefreshCheck = setInterval(() => {
+        void syncPartsCatalogsIfDue().catch((err) => {
+          logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
+        });
+      }, 60 * 60 * 1000);
+      catalogRefreshCheck.unref();
+    })
+    .catch((err) => {
+      logger.error({ err }, "Schema migration failed; exiting");
+      process.exit(1);
+    });
 });

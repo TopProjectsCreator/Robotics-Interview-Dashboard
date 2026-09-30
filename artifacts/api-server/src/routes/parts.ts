@@ -1150,10 +1150,24 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
   const records = new Map<string, CatalogFeedRecord>();
   const seenProducts = new Set<string>();
   let reachedEnd = false;
+  const partialCollection = (message: string) => ({
+    vendor: feedVendor,
+    status: "incomplete" as const,
+    records: [...records.values()],
+    message,
+  });
   for (let page = 1; page <= MAX_PUBLIC_FEED_PAGES; page += 1) {
-    const products = page === 1 && firstPage !== null
-      ? firstPage
-      : await fetchShopifyProductPage(feedVendor, page);
+    let products: Record<string, unknown>[];
+    try {
+      products = page === 1 && firstPage !== null
+        ? firstPage
+        : await fetchShopifyProductPage(feedVendor, page);
+    } catch {
+      if (records.size > 0) {
+        return partialCollection("Pagination stopped early; the records collected so far were retained.");
+      }
+      throw new Error("The public product feed stopped before returning catalog records.");
+    }
     if (products.length === 0) {
       reachedEnd = true;
       break;
@@ -1171,7 +1185,12 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
         records.set(record.externalKey, record);
       }
     }
-    if (newProducts === 0) throw new Error("Product feed pagination repeated an earlier page.");
+    if (newProducts === 0) {
+      if (records.size > 0) {
+        return partialCollection("Pagination repeated an earlier page; the records collected so far were retained.");
+      }
+      throw new Error("Product feed pagination repeated an earlier page.");
+    }
     if (products.length < SHOPIFY_PAGE_SIZE) {
       reachedEnd = true;
       break;
@@ -1192,10 +1211,57 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
   return withTransaction(async (client) => {
     let created = 0;
     let updated = 0;
-    for (const record of records) {
-      const saved = await upsertCatalogRecord(client, record);
-      if (saved.created) created += 1;
-      else updated += 1;
+    const batchSize = 500;
+    for (let start = 0; start < records.length; start += batchSize) {
+      const batch = records.slice(start, start + batchSize);
+      const values: unknown[] = [];
+      const rows = batch.map((record, index) => {
+        const offset = index * 9;
+        values.push(
+          randomUUID(),
+          record.vendorKey,
+          record.externalKey,
+          record.name,
+          record.sku,
+          record.category,
+          record.description,
+          record.productUrl,
+          record.imageUrl,
+        );
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`;
+      });
+      const saved = await client.query(
+        `insert into "parts_catalog_items"
+           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url")
+         values ${rows.join(", ")}
+         on conflict ("vendor_key", "external_key") do update set
+           "name" = excluded."name",
+           "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
+           "category" = coalesce(excluded."category", "parts_catalog_items"."category"),
+           "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
+           "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
+           "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+           "updated_at" = now()
+         returning "id", (xmax = 0) as "created"`,
+        values,
+      );
+      for (const row of saved.rows) {
+        if (row.created === true) created += 1;
+        else updated += 1;
+      }
+      if (saved.rows.length > 0) {
+        const inventoryValues: unknown[] = [];
+        const inventoryRows = saved.rows.map((row, index) => {
+          inventoryValues.push(String(row.id), 0);
+          return `($${index * 2 + 1}, $${index * 2 + 2})`;
+        });
+        await client.query(
+          `insert into "parts_inventory" ("part_id", "quantity_owned")
+           values ${inventoryRows.join(", ")}
+           on conflict ("part_id") do nothing`,
+          inventoryValues,
+        );
+      }
     }
     return { created, updated };
   });
@@ -1361,48 +1427,72 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
-router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void> => {
-  try {
-    const collected = await Promise.all(
-      VENDORS.map(async (vendor) => {
-        try {
-          return await collectPublicVendorCatalog(vendor);
-        } catch (error) {
-          req.log.warn({ err: error, vendorKey: vendor.key }, "Public product feed sync failed");
-          return {
-            vendor,
-            status: "unavailable" as const,
-            records: [] as CatalogFeedRecord[],
-            message: "The public product feed could not be retrieved.",
-          };
-        }
-      }),
-    );
-    const vendorResults: CatalogFeedSyncVendor[] = [];
-    for (const collection of collected) {
-      const counts =
-        collection.status === "unavailable" || collection.status === "search_only"
-          ? { created: 0, updated: 0 }
-          : await saveCatalogFeedRecords(collection.records);
-      vendorResults.push({
+export async function syncPublicPartsCatalogs() {
+  const vendorResults = new Array<CatalogFeedSyncVendor>(VENDORS.length);
+  let nextVendorIndex = 0;
+
+  const syncVendor = async (index: number) => {
+    const vendor = VENDORS[index];
+    let collection: Awaited<ReturnType<typeof collectPublicVendorCatalog>>;
+    try {
+      collection = await collectPublicVendorCatalog(vendor);
+    } catch (error) {
+      logger.warn({ err: error, vendorKey: vendor.key }, "Public product feed sync failed");
+      collection = {
+        vendor,
+        status: "unavailable",
+        records: [],
+        message: "The public product feed could not be retrieved.",
+      };
+    }
+    const counts =
+      collection.status === "unavailable" || collection.status === "search_only"
+        ? { created: 0, updated: 0 }
+        : await saveCatalogFeedRecords(collection.records);
+    vendorResults[index] = {
+      vendorKey: collection.vendor.key,
+      vendorName: collection.vendor.name,
+      status: collection.status,
+      itemCount: collection.records.length,
+      created: counts.created,
+      updated: counts.updated,
+      source: collection.vendor.publicProductFeedUrl ?? null,
+      message: collection.message,
+    };
+    logger.info(
+      {
         vendorKey: collection.vendor.key,
-        vendorName: collection.vendor.name,
         status: collection.status,
         itemCount: collection.records.length,
         created: counts.created,
         updated: counts.updated,
-        source: collection.vendor.publicProductFeedUrl ?? null,
-        message: collection.message,
-      });
-    }
-    res.json(
-      SyncPartsCatalogResponse.parse({
-        vendors: vendorResults,
-        totalItems: vendorResults.reduce((sum, item) => sum + item.itemCount, 0),
-        created: vendorResults.reduce((sum, item) => sum + item.created, 0),
-        updated: vendorResults.reduce((sum, item) => sum + item.updated, 0),
-      }),
+      },
+      "Public supplier catalog processed",
     );
+  };
+
+  const worker = async () => {
+    while (true) {
+      const index = nextVendorIndex++;
+      if (index >= VENDORS.length) return;
+      await syncVendor(index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(4, VENDORS.length) }, () => worker()),
+  );
+
+  return SyncPartsCatalogResponse.parse({
+    vendors: vendorResults,
+    totalItems: vendorResults.reduce((sum, item) => sum + item.itemCount, 0),
+    created: vendorResults.reduce((sum, item) => sum + item.created, 0),
+    updated: vendorResults.reduce((sum, item) => sum + item.updated, 0),
+  });
+}
+
+router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    res.json(await syncPublicPartsCatalogs());
   } catch (error) {
     req.log.error({ err: error }, "Public parts catalog synchronization failed");
     res.status(500).json({ error: "Unable to sync public supplier catalogs." });
