@@ -2232,7 +2232,10 @@ export const GetPartsDashboardResponse = zod.object({
   "name": zod.string(),
   "group": zod.enum(['General Parts', 'Specific Parts', 'Machining Companies']),
   "website": zod.string().url(),
-  "catalogMode": zod.enum(['products', 'custom_fabrication'])
+  "catalogMode": zod.enum(['products', 'custom_fabrication']),
+  "catalogSourceUrl": zod.string().url().describe('Official supplier catalog, product feed, or service source.'),
+  "coverageState": zod.enum(['feed_sync_required', 'discovery_only', 'access_restricted', 'custom_fabrication']).describe('Static source coverage classification; a public feed is complete only after sync verifies its final page.'),
+  "publicProductFeedUrl": zod.string().url().nullish().describe('Configured supplier-owned public product feed, if available.')
 })),
   "robots": zod.array(zod.object({
   "id": zod.string(),
@@ -2364,15 +2367,31 @@ export const CreatePartsCatalogItemResponse = zod.object({
 export const searchPartsCatalogQueryQMin = 2;
 export const searchPartsCatalogQueryQMax = 120;
 
+export const searchPartsCatalogQueryLimitDefault = 100;
+export const searchPartsCatalogQueryLimitMax = 100;
+
+export const searchPartsCatalogQueryOffsetDefault = 0;
+export const searchPartsCatalogQueryOffsetMin = 0;
+
 
 
 export const SearchPartsCatalogQueryParams = zod.object({
   "vendorKey": zod.coerce.string().optional(),
-  "q": zod.coerce.string().min(searchPartsCatalogQueryQMin).max(searchPartsCatalogQueryQMax)
+  "q": zod.coerce.string().min(searchPartsCatalogQueryQMin).max(searchPartsCatalogQueryQMax),
+  "limit": zod.coerce.number().int().min(1).max(searchPartsCatalogQueryLimitMax).default(searchPartsCatalogQueryLimitDefault),
+  "offset": zod.coerce.number().int().min(searchPartsCatalogQueryOffsetMin).default(searchPartsCatalogQueryOffsetDefault)
 })
 
 export const searchPartsCatalogResponseResultsItemPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,4})?$');
 export const searchPartsCatalogResponseResultsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const searchPartsCatalogResponseCatalogItemsItemQuantityOwnedMin = 0;
+
+export const searchPartsCatalogResponseCatalogItemsItemQuantityAssignedMin = 0;
+
+export const searchPartsCatalogResponseCatalogItemsItemQuantityAvailableMin = 0;
+
+export const searchPartsCatalogResponseCatalogItemsItemAllocationsItemQuantityMin = 0;
+
 
 
 export const SearchPartsCatalogResponse = zod.object({
@@ -2388,7 +2407,33 @@ export const SearchPartsCatalogResponse = zod.object({
   "price": zod.string().regex(searchPartsCatalogResponseResultsItemPriceRegExp),
   "currency": zod.string().regex(searchPartsCatalogResponseResultsItemCurrencyRegExp),
   "priceIsStartingAt": zod.boolean()
-}))
+})),
+  "catalogItems": zod.array(zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "quantityOwned": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})).describe('Matching saved catalog items from supplier feeds or team inventory, independently paginated from live discoveries.'),
+  "catalogTotal": zod.number().int(),
+  "catalogOffset": zod.number().int(),
+  "catalogLimit": zod.number().int(),
+  "liveSearchStatus": zod.enum(['available', 'unavailable']).describe('Whether current live supplier-page discovery providers responded.')
 })
 
 
@@ -2403,7 +2448,7 @@ export const SyncPartsCatalogResponse = zod.object({
   "itemCount": zod.number().int(),
   "created": zod.number().int(),
   "updated": zod.number().int(),
-  "source": zod.string().url().nullable(),
+  "source": zod.string().url().describe('Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed.'),
   "message": zod.string()
 })),
   "totalItems": zod.number().int(),

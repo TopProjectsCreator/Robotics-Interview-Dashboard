@@ -22,12 +22,34 @@ export const PartsVendorCatalogMode = {
   custom_fabrication: 'custom_fabrication',
 } as const;
 
+/**
+ * Static source coverage classification; a public feed is complete only after sync verifies its final page.
+ */
+export type PartsVendorCoverageState = typeof PartsVendorCoverageState[keyof typeof PartsVendorCoverageState];
+
+
+export const PartsVendorCoverageState = {
+  feed_sync_required: 'feed_sync_required',
+  discovery_only: 'discovery_only',
+  access_restricted: 'access_restricted',
+  custom_fabrication: 'custom_fabrication',
+} as const;
+
 export interface PartsVendor {
   key: string;
   name: string;
   group: PartsVendorGroup;
   website: string;
   catalogMode: PartsVendorCatalogMode;
+  /** Official supplier catalog, product feed, or service source. */
+  catalogSourceUrl: string;
+  /** Static source coverage classification; a public feed is complete only after sync verifies its final page. */
+  coverageState: PartsVendorCoverageState;
+  /**
+     * Configured supplier-owned public product feed, if available.
+     * @nullable
+     */
+  publicProductFeedUrl?: string | null;
 }
 
 export interface PartsRobot {
@@ -106,9 +128,27 @@ export interface PartsCatalogSearchResult {
   priceIsStartingAt: boolean;
 }
 
+/**
+ * Whether current live supplier-page discovery providers responded.
+ */
+export type PartsCatalogSearchLiveSearchStatus = typeof PartsCatalogSearchLiveSearchStatus[keyof typeof PartsCatalogSearchLiveSearchStatus];
+
+
+export const PartsCatalogSearchLiveSearchStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+} as const;
+
 export interface PartsCatalogSearch {
   query: string;
   results: PartsCatalogSearchResult[];
+  /** Matching saved catalog items from supplier feeds or team inventory, independently paginated from live discoveries. */
+  catalogItems: PartsCatalogItem[];
+  catalogTotal: number;
+  catalogOffset: number;
+  catalogLimit: number;
+  /** Whether current live supplier-page discovery providers responded. */
+  liveSearchStatus: PartsCatalogSearchLiveSearchStatus;
 }
 
 export type PartsCatalogSyncVendorStatus = typeof PartsCatalogSyncVendorStatus[keyof typeof PartsCatalogSyncVendorStatus];
@@ -128,8 +168,8 @@ export interface PartsCatalogSyncVendor {
   itemCount: number;
   created: number;
   updated: number;
-  /** @nullable */
-  source: string | null;
+  /** Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed. */
+  source: string;
   message: string;
 }
 
@@ -1626,5 +1666,14 @@ vendorKey?: string;
  * @maxLength 120
  */
 q: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };
 

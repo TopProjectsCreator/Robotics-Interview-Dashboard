@@ -43,6 +43,9 @@ import { Input } from "@/components/ui/input";
 type PageTab = "inventory" | "search";
 type Notice = { kind: "success" | "error"; text: string };
 type PartsOrderLine = { product: PartsCatalogSearchResult; quantity: number };
+type PartsCatalogSyncResult = Awaited<
+  ReturnType<ReturnType<typeof useSyncPartsCatalog>["mutateAsync"]>
+>;
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
 
@@ -332,6 +335,7 @@ export default function PartsPage() {
   const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
+  const [lastCatalogSync, setLastCatalogSync] = useState<PartsCatalogSyncResult | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -393,6 +397,7 @@ export default function PartsPage() {
     setNotice(null);
     try {
       const result = await syncMutation.mutateAsync();
+      setLastCatalogSync(result);
       await refreshParts();
       const synced = result.vendors.filter((vendor) => vendor.status === "synced").length;
       const incomplete = result.vendors.filter((vendor) => vendor.status === "incomplete").length;
@@ -445,7 +450,13 @@ export default function PartsPage() {
     try {
       const result = await searchPartsCatalog({ q: searchText.trim() });
       setSearchResults(result.results);
-      if (result.results.length === 0) {
+      if (result.liveSearchStatus === "unavailable") {
+        setSearchError(
+          result.catalogTotal > 0
+            ? "Live supplier discovery is unavailable right now. Indexed catalog matches are still shown below."
+            : "Live supplier discovery is unavailable right now. Try again shortly.",
+        );
+      } else if (result.results.length === 0 && result.catalogTotal === 0) {
         setSearchError("No live product-page discoveries with verified details were found. Check the synced catalog matches below.");
       }
     } catch (error) {
@@ -700,6 +711,91 @@ export default function PartsPage() {
 
             {tab === "search" ? (
               <section className="space-y-4" aria-label="Search supplier catalogs">
+                <Card className="border-border bg-card" data-testid="card-parts-source-coverage">
+                  <CardHeader>
+                    <CardTitle className="text-base">Supplier catalog coverage</CardTitle>
+                    <CardDescription>
+                      Every supplier has an official source listed. A feed is marked complete only when sync verifies that pagination reached its end; live search results are discovery samples.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-foreground" data-testid="status-parts-source-coverage">
+                      {lastCatalogSync
+                        ? `Last sync: ${lastCatalogSync.vendors.filter((item) => item.status === "synced").length} complete feed(s), ${lastCatalogSync.vendors.filter((item) => item.status === "incomplete").length} incomplete, ${lastCatalogSync.vendors.filter((item) => item.status === "search_only").length} discovery-only, and ${lastCatalogSync.vendors.filter((item) => item.status === "unavailable").length} unavailable.`
+                        : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} public feed(s) await end-of-feed verification; other suppliers remain partial, access-restricted, or custom-fabrication sources.`}
+                    </p>
+                    <details className="rounded-lg border border-border bg-background p-3">
+                      <summary
+                        className="cursor-pointer text-sm font-medium text-foreground"
+                        data-testid="button-show-parts-source-coverage"
+                      >
+                        Show all {vendors.length} supplier sources and coverage states
+                      </summary>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {vendors.map((vendor) => {
+                          const syncResult = lastCatalogSync?.vendors.find(
+                            (item) => item.vendorKey === vendor.key,
+                          );
+                          const stateLabel = syncResult
+                            ? {
+                                synced: "Complete feed",
+                                search_only: "Discovery only",
+                                unavailable: "Source unavailable",
+                                incomplete: "Pagination incomplete",
+                              }[syncResult.status]
+                            : {
+                                feed_sync_required: "Feed needs verification",
+                                discovery_only: "Discovery only",
+                                access_restricted: "Authorized API required",
+                                custom_fabrication: "Custom fabrication",
+                              }[vendor.coverageState];
+                          const stateDetail = syncResult?.message ?? {
+                            feed_sync_required: "A public feed is configured; completeness is confirmed only after sync reaches its end.",
+                            discovery_only: "Official supplier pages are searchable, but a complete public SKU feed has not been verified.",
+                            access_restricted: "The official product API requires approved customer access; public search remains discovery-only.",
+                            custom_fabrication: "Custom fabrication services do not provide a verified, complete stock-SKU catalog.",
+                          }[vendor.coverageState];
+                          return (
+                            <article
+                              key={vendor.key}
+                              className="rounded-md border border-border bg-card p-3"
+                              data-testid={`card-parts-source-${vendor.key}`}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h3 className="font-medium text-foreground">{vendor.name}</h3>
+                                <Badge variant={syncResult?.status === "synced" ? "default" : "secondary"}>
+                                  {stateLabel}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-muted-foreground">{stateDetail}</p>
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                <a
+                                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                                  href={vendor.catalogSourceUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Official source <ExternalLink size={13} aria-hidden="true" />
+                                </a>
+                                {syncResult && (
+                                  <a
+                                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                                    href={syncResult.source}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Feed checked <ExternalLink size={13} aria-hidden="true" />
+                                  </a>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </CardContent>
+                </Card>
+
                 <Card className="border-border bg-card">
                   <CardHeader>
                     <CardTitle className="text-base">Search all suppliers</CardTitle>

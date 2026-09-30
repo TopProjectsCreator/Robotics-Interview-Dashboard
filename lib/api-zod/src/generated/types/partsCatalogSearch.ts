@@ -5,9 +5,18 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PartsCatalogItem } from './partsCatalogItem';
+import type { PartsCatalogSearchLiveSearchStatus } from './partsCatalogSearchLiveSearchStatus';
 import type { PartsCatalogSearchResult } from './partsCatalogSearchResult';
 
 export interface PartsCatalogSearch {
   query: string;
   results: PartsCatalogSearchResult[];
+  /** Matching saved catalog items from supplier feeds or team inventory, independently paginated from live discoveries. */
+  catalogItems: PartsCatalogItem[];
+  catalogTotal: number;
+  catalogOffset: number;
+  catalogLimit: number;
+  /** Whether current live supplier-page discovery providers responded. */
+  liveSearchStatus: PartsCatalogSearchLiveSearchStatus;
 }

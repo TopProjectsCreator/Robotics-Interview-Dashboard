@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PartsVendorCatalogMode } from './partsVendorCatalogMode';
+import type { PartsVendorCoverageState } from './partsVendorCoverageState';
 import type { PartsVendorGroup } from './partsVendorGroup';
 
 export interface PartsVendor {
@@ -14,4 +15,13 @@ export interface PartsVendor {
   group: PartsVendorGroup;
   website: string;
   catalogMode: PartsVendorCatalogMode;
+  /** Official supplier catalog, product feed, or service source. */
+  catalogSourceUrl: string;
+  /** Static source coverage classification; a public feed is complete only after sync verifies its final page. */
+  coverageState: PartsVendorCoverageState;
+  /**
+     * Configured supplier-owned public product feed, if available.
+     * @nullable
+     */
+  publicProductFeedUrl?: string | null;
 }

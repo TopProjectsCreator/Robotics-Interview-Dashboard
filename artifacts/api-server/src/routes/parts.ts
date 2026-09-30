@@ -26,6 +26,14 @@ import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
 import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
 import { catalogSearchVariants } from "../lib/partsSearchTerms";
+import {
+  defaultProductFeedUrl,
+  publicVendors,
+  VENDORS,
+  vendorByKey,
+  vendorOwnsHost,
+  type VendorConfig,
+} from "../lib/partsVendors";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -36,42 +44,6 @@ type PoolClient = {
   ) => Promise<{ rows: Record<string, any>[]; rowCount: number | null }>;
   release: () => void;
 };
-
-type VendorGroup = "General Parts" | "Specific Parts" | "Machining Companies";
-type VendorConfig = {
-  key: string;
-  name: string;
-  group: VendorGroup;
-  website: string;
-  domain: string;
-  catalogMode: "products" | "custom_fabrication";
-  publicProductFeedUrl?: string;
-};
-
-const VENDORS: VendorConfig[] = [
-  { key: "andymark", name: "Andymark", group: "General Parts", website: "https://www.andymark.com/", domain: "andymark.com", catalogMode: "products", publicProductFeedUrl: "https://andymark.com/products.json" },
-  { key: "gobilda", name: "goBILDA", group: "General Parts", website: "https://www.gobilda.com/", domain: "gobilda.com", catalogMode: "products" },
-  { key: "grainger", name: "Grainger", group: "General Parts", website: "https://www.grainger.com/", domain: "grainger.com", catalogMode: "products" },
-  { key: "rev-robotics", name: "REV Robotics", group: "General Parts", website: "https://www.revrobotics.com/", domain: "revrobotics.com", catalogMode: "products" },
-  { key: "servocity", name: "ServoCity", group: "General Parts", website: "https://www.servocity.com/", domain: "servocity.com", catalogMode: "products" },
-  { key: "studica", name: "Studica", group: "General Parts", website: "https://www.studica.com/", domain: "studica.com", catalogMode: "products" },
-  { key: "swyft", name: "Swyft", group: "Specific Parts", website: "https://swyftrobotics.com/", domain: "swyftrobotics.com", catalogMode: "products", publicProductFeedUrl: "https://shop.swyftrobotics.com/products.json" },
-  { key: "ferra", name: "Ferra", group: "Specific Parts", website: "https://ferracomponents.com/", domain: "ferracomponents.com", catalogMode: "products", publicProductFeedUrl: "https://ferracomponents.com/products.json" },
-  { key: "axon-robotics", name: "Axon Robotics", group: "Specific Parts", website: "https://axon-robotics.com/", domain: "axon-robotics.com", catalogMode: "products" },
-  { key: "bwtlink", name: "BWTLink", group: "Specific Parts", website: "https://bwtlink.com/", domain: "bwtlink.com", catalogMode: "products" },
-  { key: "melonbotics", name: "Melonbotics", group: "Specific Parts", website: "https://melonbotics.com/", domain: "melonbotics.com", catalogMode: "products", publicProductFeedUrl: "https://www.melonbotics.com/products.json" },
-  { key: "misumi", name: "Misumi", group: "Specific Parts", website: "https://us.misumi-ec.com/", domain: "misumi-ec.com", catalogMode: "products" },
-  { key: "optii", name: "Optii", group: "Specific Parts", website: "https://optii.com.au/", domain: "optii.com.au", catalogMode: "products", publicProductFeedUrl: "https://optii.com.au/products.json" },
-  { key: "offset-robotics", name: "Offset Robotics", group: "Specific Parts", website: "https://offsetrobotics.com/", domain: "offsetrobotics.com", catalogMode: "products" },
-  { key: "mcmaster-carr", name: "McMaster-Carr", group: "Specific Parts", website: "https://www.mcmaster.com/", domain: "mcmaster.com", catalogMode: "products" },
-  { key: "cncmadness", name: "CNCMadness", group: "Machining Companies", website: "https://cncmadness.com/", domain: "cncmadness.com", catalogMode: "custom_fabrication" },
-  { key: "fabworks", name: "Fabworks", group: "Machining Companies", website: "https://fabworks.com/", domain: "fabworks.com", catalogMode: "custom_fabrication" },
-  { key: "oshcut", name: "Oshcut", group: "Machining Companies", website: "https://www.oshcut.com/", domain: "oshcut.com", catalogMode: "custom_fabrication" },
-  { key: "sendcutsend", name: "SendCutSend", group: "Machining Companies", website: "https://sendcutsend.com/", domain: "sendcutsend.com", catalogMode: "custom_fabrication" },
-];
-
-const vendorByKey = new Map(VENDORS.map((vendor) => [vendor.key, vendor]));
-const publicVendors = VENDORS.map(({ domain: _domain, ...vendor }) => vendor);
 
 class BadInputError extends Error {}
 class StockConflictError extends Error {
@@ -371,6 +343,43 @@ async function queryCatalogRows(
   return result.rows;
 }
 
+async function searchSyncedCatalog(
+  query: string,
+  vendor: VendorConfig | undefined,
+  limit: number,
+  offset: number,
+) {
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  if (vendor) {
+    values.push(vendor.key);
+    clauses.push(`c."vendor_key" = $${values.length}`);
+  }
+  const searchPatterns = catalogSearchVariants(query).map((term) => `%${term}%`);
+  values.push(searchPatterns);
+  const patternArray = `$${values.length}::text[]`;
+  clauses.push(
+    `(c."name" ilike any(${patternArray})
+      or coalesce(c."sku", '') ilike any(${patternArray})
+      or coalesce(c."category", '') ilike any(${patternArray})
+      or coalesce(c."description", '') ilike any(${patternArray}))`,
+  );
+  const whereSql = `where ${clauses.join(" and ")}`;
+  const [countResult, rows] = await Promise.all([
+    pool.query(
+      `select count(*)::int as "total" from "parts_catalog_items" c ${whereSql}`,
+      values,
+    ),
+    queryCatalogRows(whereSql, values, limit, offset),
+  ]);
+  return {
+    items: rows.map(mapCatalogRow),
+    total: Number(countResult.rows[0].total),
+    offset,
+    limit,
+  };
+}
+
 async function getCatalogItem(partId: string) {
   const rows = await queryCatalogRows(`where c."id" = $1`, [partId], 1, 0);
   return rows[0] ? mapCatalogRow(rows[0]) : null;
@@ -413,12 +422,14 @@ export const ASSISTANT_PARTS_TOOLS = [
     type: "function" as const,
     function: {
       name: "search_supplier_parts",
-      description: "Search the 19 listed suppliers using keyless search, then return only official product pages with verified product details, an image, and a supplier-page price. Use this before adding a supplier part.",
+        description: "Search live supplier pages and the synced catalog separately. Synced catalog matches are paginated with limit/offset and may not have verified live prices. Live discoveries require verified supplier-page details. A feed is complete only after sync confirms pagination reached its end.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", minLength: 2, maxLength: 120 },
           vendorKey: { type: "string", maxLength: 100 },
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+            offset: { type: "integer", minimum: 0 },
         },
         required: ["query"],
       },
@@ -759,46 +770,13 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
   );
-  const searchPatterns = catalogSearchVariants(query).map((term) => `%${term}%`);
-  const storedProducts = await pool.query(
-    `select c."vendor_key" as "vendorKey", c."name", c."sku", c."description",
-            c."product_url" as "url"
-     from "parts_catalog_items" c
-     where c."vendor_key" = any($1::text[])
-       and c."product_url" is not null
-       and (
-          c."name" ilike any($2::text[])
-          or coalesce(c."sku", '') ilike any($2::text[])
-          or coalesce(c."category", '') ilike any($2::text[])
-          or coalesce(c."description", '') ilike any($2::text[])
-       )
-     order by lower(c."name")
-     limit 500`,
-    [allowedVendors.map((item) => item.key), searchPatterns],
-  );
-  const storedCandidates = storedProducts.rows.flatMap((row) => {
-    const itemUrl = typeof row.url === "string" ? row.url : null;
-    const itemVendorKey = typeof row.vendorKey === "string" ? row.vendorKey : "";
-    const storedVendor = vendorByKey.get(itemVendorKey);
-    if (!itemUrl || !storedVendor) return [];
-    return [{
-      vendorKey: storedVendor.key,
-      vendorName: storedVendor.name,
-      title: String(row.name ?? storedVendor.name),
-      url: itemUrl,
-      description: String(row.description ?? ""),
-    }];
-  });
-  if (
-    providerResults.every((result) => result.status === "rejected") &&
-    storedCandidates.length === 0
-  ) {
+  if (providerResults.every((result) => result.status === "rejected")) {
     throw new Error("All keyless catalog search providers are unavailable.");
   }
 
   const seen = new Set<string>();
   const byVendor = new Map(allowedVendors.map((item) => [item.key, [] as PublicCatalogSearchCandidate[]]));
-  for (const result of [...storedCandidates, ...combined]) {
+  for (const result of combined) {
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
     const bucket = byVendor.get(result.vendorKey);
@@ -841,7 +819,19 @@ export async function runAssistantPartsTool(
       const vendorKey = cleanText(args.vendorKey, 100);
       if (!query || query.length < 2) return result("Use at least two search characters.", "invalid search");
       if (vendorKey && !vendorByKey.has(vendorKey)) return result("Unsupported supplier.", "unknown vendor");
-      const products = await searchPublicCatalog(query, vendorKey ? vendorByKey.get(vendorKey) : undefined);
+      const vendor = vendorKey ? vendorByKey.get(vendorKey) : undefined;
+      const limitValue = Number(args.limit);
+      const offsetValue = Number(args.offset);
+      const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 50;
+      const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
+      const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset);
+      let products: PublicCatalogSearchResult[] = [];
+      let liveSearchStatus: "available" | "unavailable" = "available";
+      try {
+        products = await searchPublicCatalog(query, vendor);
+      } catch {
+        liveSearchStatus = "unavailable";
+      }
       const items = products.slice(0, 18).map((item) => ({
         vendorKey: item.vendorKey,
         vendorName: item.vendorName,
@@ -854,7 +844,24 @@ export async function runAssistantPartsTool(
         currency: item.currency,
         priceIsStartingAt: item.priceIsStartingAt,
       }));
-      return result(JSON.stringify({ query, catalogIsExhaustive: false, results: items }), `${items.length} verified product page(s)`);
+      const coverage = publicVendors.map((item) => ({
+        vendorKey: item.key,
+        vendorName: item.name,
+        catalogSourceUrl: item.catalogSourceUrl,
+        coverageState: item.coverageState,
+        feedMustReachEndBeforeComplete: item.coverageState === "feed_sync_required",
+      }));
+      return result(
+        JSON.stringify({
+          query,
+          catalogIsExhaustive: false,
+          liveSearchStatus,
+          syncedCatalog,
+          vendorCoverage: coverage,
+          results: items,
+        }),
+        `${syncedCatalog.total} indexed match(es), ${items.length} live discovery result(s)`,
+      );
     }
     if (name === "list_parts_robots") {
       const rows = await pool.query(
@@ -987,17 +994,12 @@ type CatalogFeedSyncVendor = {
   itemCount: number;
   created: number;
   updated: number;
-  source: string | null;
+  source: string;
   message: string;
 };
 
 const SHOPIFY_PAGE_SIZE = 250;
 const MAX_PUBLIC_FEED_PAGES = 50;
-
-function vendorOwnsHost(hostname: string, vendor: VendorConfig) {
-  const normalized = hostname.toLowerCase().replace(/^www\./, "");
-  return normalized === vendor.domain || normalized.endsWith(`.${vendor.domain}`);
-}
 
 async function fetchShopifyProductPage(vendor: VendorConfig, page: number) {
   if (!vendor.publicProductFeedUrl) throw new Error("No verified public product feed.");
@@ -1122,8 +1124,7 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
 }
 
 async function collectPublicVendorCatalog(vendor: VendorConfig) {
-  const feedUrl = vendor.publicProductFeedUrl ??
-    new URL("/products.json", `https://${vendor.domain}`).toString();
+  const feedUrl = defaultProductFeedUrl(vendor);
   const feedVendor = { ...vendor, publicProductFeedUrl: feedUrl };
   let firstPage: Record<string, unknown>[] | null = null;
 
@@ -1139,6 +1140,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
       return {
         vendor,
         status: noPublicFeed ? ("search_only" as const) : ("unavailable" as const),
+        source: feedUrl,
         records: [] as CatalogFeedRecord[],
         message: noPublicFeed
           ? "No supplier-owned public Shopify catalog feed is available; global supplier search remains available."
@@ -1153,6 +1155,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
   const partialCollection = (message: string) => ({
     vendor: feedVendor,
     status: "incomplete" as const,
+    source: feedUrl,
     records: [...records.values()],
     message,
   });
@@ -1164,7 +1167,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
         : await fetchShopifyProductPage(feedVendor, page);
     } catch {
       if (records.size > 0) {
-        return partialCollection("Pagination stopped early; the records collected so far were retained.");
+        return partialCollection("Pagination stopped early; the collected records were retained.");
       }
       throw new Error("The public product feed stopped before returning catalog records.");
     }
@@ -1187,7 +1190,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
     }
     if (newProducts === 0) {
       if (records.size > 0) {
-        return partialCollection("Pagination repeated an earlier page; the records collected so far were retained.");
+        return partialCollection("Pagination repeated an earlier page; the collected records were retained.");
       }
       throw new Error("Product feed pagination repeated an earlier page.");
     }
@@ -1199,6 +1202,7 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
   return {
     vendor: feedVendor,
     status: reachedEnd ? ("synced" as const) : ("incomplete" as const),
+    source: feedUrl,
     records: [...records.values()],
     message: reachedEnd
       ? "The public product feed was paginated to its end."
@@ -1359,17 +1363,34 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     res.status(400).json({ error: "Enter at least two search characters." });
     return;
   }
+  const limitRaw = Number(req.query.limit);
+  const offsetRaw = Number(req.query.offset);
+  const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 100;
+  const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
   const vendor = vendorKey ? vendorByKey.get(vendorKey) : undefined;
   if (vendorKey && !vendor) {
     res.status(400).json({ error: "Choose one of the listed vendors." });
     return;
   }
   try {
-    const results = await searchPublicCatalog(query, vendor);
+    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset);
+    let results: PublicCatalogSearchResult[] = [];
+    let liveSearchStatus: "available" | "unavailable" = "available";
+    try {
+      results = await searchPublicCatalog(query, vendor);
+    } catch (error) {
+      if (syncedCatalog.total === 0) throw error;
+      liveSearchStatus = "unavailable";
+    }
     res.json(
       SearchPartsCatalogResponse.parse({
         query,
         results,
+        catalogItems: syncedCatalog.items,
+        catalogTotal: syncedCatalog.total,
+        catalogOffset: syncedCatalog.offset,
+        catalogLimit: syncedCatalog.limit,
+        liveSearchStatus,
       }),
     );
   } catch (error) {
@@ -1441,6 +1462,7 @@ export async function syncPublicPartsCatalogs() {
       collection = {
         vendor,
         status: "unavailable",
+        source: defaultProductFeedUrl(vendor),
         records: [],
         message: "The public product feed could not be retrieved.",
       };
@@ -1456,7 +1478,7 @@ export async function syncPublicPartsCatalogs() {
       itemCount: collection.records.length,
       created: counts.created,
       updated: counts.updated,
-      source: collection.vendor.publicProductFeedUrl ?? null,
+      source: collection.source,
       message: collection.message,
     };
     logger.info(
@@ -1477,7 +1499,7 @@ export async function syncPublicPartsCatalogs() {
       if (index >= VENDORS.length) return;
       await syncVendor(index);
     }
-  }
+  };
   await Promise.all(
     Array.from({ length: Math.min(4, VENDORS.length) }, () => worker()),
   );

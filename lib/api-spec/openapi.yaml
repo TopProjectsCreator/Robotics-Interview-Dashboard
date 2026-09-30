@@ -1526,6 +1526,19 @@ paths:
             type: string
             minLength: 2
             maxLength: 120
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
           description: Public catalog search results
@@ -1748,7 +1761,7 @@ components:
   schemas:
     PartsVendor:
       type: object
-      required: [key, name, group, website, catalogMode]
+      required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState]
       properties:
         key:
           type: string
@@ -1763,6 +1776,18 @@ components:
         catalogMode:
           type: string
           enum: [products, custom_fabrication]
+        catalogSourceUrl:
+          type: string
+          format: uri
+          description: Official supplier catalog, product feed, or service source.
+        coverageState:
+          type: string
+          enum: [feed_sync_required, discovery_only, access_restricted, custom_fabrication]
+          description: Static source coverage classification; a public feed is complete only after sync verifies its final page.
+        publicProductFeedUrl:
+          type: [string, "null"]
+          format: uri
+          description: Configured supplier-owned public product feed, if available.
     PartsRobot:
       type: object
       required: [id, name, createdAt, updatedAt]
@@ -1899,7 +1924,7 @@ components:
           type: boolean
     PartsCatalogSearch:
       type: object
-      required: [query, results]
+      required: [query, results, catalogItems, catalogTotal, catalogOffset, catalogLimit, liveSearchStatus]
       properties:
         query:
           type: string
@@ -1907,6 +1932,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PartsCatalogSearchResult"
+        catalogItems:
+          type: array
+          description: Matching saved catalog items from supplier feeds or team inventory, independently paginated from live discoveries.
+          items:
+            $ref: "#/components/schemas/PartsCatalogItem"
+        catalogTotal:
+          type: integer
+        catalogOffset:
+          type: integer
+        catalogLimit:
+          type: integer
+        liveSearchStatus:
+          type: string
+          enum: [available, unavailable]
+          description: Whether current live supplier-page discovery providers responded.
     PartsCatalogSyncVendor:
       type: object
       required: [vendorKey, vendorName, status, itemCount, created, updated, source, message]
@@ -1925,8 +1965,9 @@ components:
         updated:
           type: integer
         source:
-          type: ["string", "null"]
+          type: string
           format: uri
+          description: Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed.
         message:
           type: string
     PartsCatalogSyncResponse:

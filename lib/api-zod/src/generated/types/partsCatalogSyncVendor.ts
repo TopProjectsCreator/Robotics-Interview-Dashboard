@@ -14,7 +14,7 @@ export interface PartsCatalogSyncVendor {
   itemCount: number;
   created: number;
   updated: number;
-  /** @nullable */
-  source: string | null;
+  /** Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed. */
+  source: string;
   message: string;
 }
