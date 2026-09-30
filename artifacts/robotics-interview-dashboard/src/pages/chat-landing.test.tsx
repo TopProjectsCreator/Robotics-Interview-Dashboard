@@ -149,6 +149,18 @@ function requestPath(input: RequestInfo | URL) {
   return new URL(input.url, window.location.origin).pathname;
 }
 
+function blockLocalStorageAccess() {
+  const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+  if (!descriptor?.configurable) throw new Error("localStorage cannot be stubbed in this test environment");
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    get() {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    },
+  });
+  return () => Object.defineProperty(window, "localStorage", descriptor);
+}
+
 const privateDataPath = /(?:^|\/)(?:chat|applicants?|presence|events?|whiteboards?|collab(?:oration)?|boards?|documents?|spreadsheets?)(?:\/|$)/i;
 const signedInSession = { authenticated: true, interviewerId: "test-interviewer", label: "Test Interviewer" };
 const applicantCanary = "PrivateApplicantAfterSignoutCanary";
@@ -439,13 +451,14 @@ describe("public chat discovery", () => {
   );
 
   it.each([
-    { sessionType: "cookie", token: null, transport: "BroadcastChannel" },
-    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "BroadcastChannel" },
-    { sessionType: "cookie", token: null, transport: "storage event" },
-    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "storage event" },
+    { sessionType: "cookie", token: null, transport: "BroadcastChannel", storageBlocked: false },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "BroadcastChannel", storageBlocked: false },
+    { sessionType: "cookie", token: null, transport: "storage event", storageBlocked: false },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "storage event", storageBlocked: false },
+    { sessionType: "cookie", token: null, transport: "BroadcastChannel", storageBlocked: true },
   ])(
-    "clears private data and closes realtime in another tab for a $sessionType session via $transport",
-    async ({ token, transport }) => {
+    "clears private data and closes realtime in another tab for a $sessionType session via $transport (storage blocked: $storageBlocked)",
+    async ({ token, transport, storageBlocked }) => {
       window.history.replaceState({}, "", "/chat");
       if (token) window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
       window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
@@ -455,7 +468,31 @@ describe("public chat discovery", () => {
       const network = stubNetworkTransports(async (input) => {
         const path = requestPath(input);
         if (path === "/api/auth/session") return jsonResponse(signedInSession);
-        if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+        if (path === "/api/applicants") {
+          return jsonResponse({
+            items: [{
+              id: "cross-tab-private-applicant",
+              name: "CrossTabPrivateApplicantCanary",
+              grade: "10",
+              age: null,
+              gender: null,
+              aiScore: 0,
+              aiRecommendation: "",
+              aiSummary: "",
+              aiStrengths: "",
+              aiConcerns: "",
+              roboticsExperience: "",
+              commit10Hours: "",
+              parentVolunteer: "",
+              interviewStatus: "queued",
+              category: "unranked",
+              rank: 1,
+              notes: "",
+              queuePosition: 1,
+            }],
+            total: 1,
+          });
+        }
         if (path === "/api/queue/chat") {
           return jsonResponse({
             scope: "shared",
@@ -481,31 +518,41 @@ describe("public chat discovery", () => {
       await waitFor(() => {
         expect(document.getElementById("chat-message-cross-tab-private-message")?.textContent)
           .toContain("CrossTabPrivateRecordCanary");
+        expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+          .toContain("CrossTabPrivateApplicantCanary");
       });
       await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
 
       const message = { type: "session-ended", id: `remote-${transport}-${token ?? "cookie"}`, source: "another-tab" };
-      await act(async () => {
-        if (transport === "BroadcastChannel") {
-          const sender = new MockBroadcastChannel(AUTH_SESSION_CHANNEL_NAME);
-          sender.postMessage(message);
-          sender.close();
-        } else {
-          window.dispatchEvent(new StorageEvent("storage", {
-            key: AUTH_SESSION_END_STORAGE_KEY,
-            newValue: JSON.stringify(message),
-          }));
-        }
-      });
+      const restoreLocalStorage = storageBlocked ? blockLocalStorageAccess() : () => undefined;
+      try {
+        await act(async () => {
+          if (transport === "BroadcastChannel") {
+            const sender = new MockBroadcastChannel(AUTH_SESSION_CHANNEL_NAME);
+            sender.postMessage(message);
+            sender.close();
+          } else {
+            window.dispatchEvent(new StorageEvent("storage", {
+              key: AUTH_SESSION_END_STORAGE_KEY,
+              newValue: JSON.stringify(message),
+            }));
+          }
+        });
 
-      await waitFor(() => {
-        expect(window.location.pathname).toBe("/auth");
-        expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
-        expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
-          .not.toContain("CrossTabPrivateRecordCanary");
-      });
+        await waitFor(() => {
+          expect(window.location.pathname).toBe("/auth");
+          expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
+          const cachedPrivateData = JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data));
+          expect(cachedPrivateData).not.toContain("CrossTabPrivateRecordCanary");
+          expect(cachedPrivateData).not.toContain("CrossTabPrivateApplicantCanary");
+        });
+        expect(document.body.textContent).not.toContain("CrossTabPrivateRecordCanary");
+        expect(document.body.textContent).not.toContain("CrossTabPrivateApplicantCanary");
+      } finally {
+        restoreLocalStorage();
+      }
+
       expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
-      expect(document.body.textContent).not.toContain("CrossTabPrivateRecordCanary");
     },
   );
 
