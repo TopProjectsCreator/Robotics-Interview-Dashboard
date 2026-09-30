@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import {
+  CreatePartsPriceSnapshotBody,
+  CreatePartsPriceSnapshotParams,
+  CreatePartsPriceSnapshotResponse,
   CreatePartsCatalogItemBody,
   CreatePartsCatalogItemResponse,
   CreatePartsRobotBody,
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
+  GetPartsRobotDetailsParams,
+  GetPartsRobotDetailsResponse,
   ImportPartsCatalogBody,
   ImportPartsCatalogResponse,
   ListPartsCatalogResponse,
@@ -17,15 +22,28 @@ import {
   UpdatePartsCatalogStockBody,
   UpdatePartsCatalogStockParams,
   UpdatePartsCatalogStockResponse,
+  UpdatePartsCatalogCostBody,
+  UpdatePartsCatalogCostParams,
+  UpdatePartsCatalogCostResponse,
   UpdatePartsRobotBody,
   UpdatePartsRobotParams,
   UpdatePartsRobotResponse,
+  UpdatePartsRobotPreviewBody,
+  UpdatePartsRobotPreviewParams,
+  UpdatePartsRobotPreviewResponse,
   type AssistantActivity,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
-import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
-import { catalogSearchVariants } from "../lib/partsSearchTerms";
+import {
+  fallbackProductSearchMetadata,
+  extractProductPageMetadata,
+  extractVerifiedProductMetadata,
+} from "../lib/partsProductMetadata";
+import {
+  catalogSearchVariants,
+  isRelevantCatalogSearchResult,
+} from "../lib/partsSearchTerms";
 import {
   defaultProductFeedUrl,
   publicVendors,
@@ -35,8 +53,19 @@ import {
   type VendorConfig,
 } from "../lib/partsVendors";
 import { logger } from "../lib/logger";
+import {
+  calculateLineTotal,
+  isPriceSnapshotStale,
+  isValidCurrencyCode,
+  isValidMoneyAmount,
+  moneyFromDatabase,
+  summarizeSavedCosts,
+} from "../lib/partsCosting";
+import { partsPreviewKind } from "../lib/partsRobotPreview";
+import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
+const objectStorageService = new ObjectStorageService();
 type PoolClient = {
   query: (
     statement: string,
@@ -137,6 +166,7 @@ async function upsertCatalogRecord(
     description: string | null;
     productUrl: string | null;
     imageUrl: string | null;
+    isManual: boolean;
   },
 ): Promise<{ id: string; created: boolean }> {
   const existing = await client.query(
@@ -147,8 +177,8 @@ async function upsertCatalogRecord(
   const id = created ? randomUUID() : String(existing.rows[0].id);
   const saved = await client.query(
     `insert into "parts_catalog_items"
-       ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url")
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict ("vendor_key", "external_key") do update set
        "name" = excluded."name",
        "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
@@ -156,6 +186,7 @@ async function upsertCatalogRecord(
        "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
        "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
        "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+       "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
        "updated_at" = now()
      returning "id"`,
     [
@@ -168,6 +199,7 @@ async function upsertCatalogRecord(
       input.description,
       input.productUrl,
       input.imageUrl,
+      input.isManual,
     ],
   );
   const savedId = String(saved.rows[0].id);
@@ -270,9 +302,15 @@ function isoDate(value: Date | string): string {
 }
 
 function mapRobot(row: Record<string, unknown>) {
+  const objectPath = typeof row.previewObjectPath === "string" ? row.previewObjectPath : null;
+  const fileName = typeof row.previewFileName === "string" ? row.previewFileName : null;
+  const contentType = typeof row.previewContentType === "string" ? row.previewContentType : null;
   return {
     id: String(row.id),
     name: String(row.name),
+    preview: objectPath && fileName && contentType
+      ? { objectPath, fileName, contentType }
+      : null,
     createdAt: isoDate(row.createdAt as Date | string),
     updatedAt: isoDate(row.updatedAt as Date | string),
   };
@@ -281,6 +319,10 @@ function mapRobot(row: Record<string, unknown>) {
 function mapCatalogRow(row: Record<string, unknown>) {
   const quantityOwned = Number(row.quantityOwned ?? 0);
   const quantityAssigned = Number(row.quantityAssigned ?? 0);
+  const unitCost = moneyFromDatabase(row.unitCost);
+  const costCurrency = unitCost !== null && isValidCurrencyCode(row.costCurrency)
+    ? row.costCurrency
+    : null;
   const vendorKey = String(row.vendorKey);
   const vendor = vendorByKey.get(vendorKey);
   let allocations = row.allocations;
@@ -301,6 +343,8 @@ function mapCatalogRow(row: Record<string, unknown>) {
     description: (row.description as string | null) ?? null,
     productUrl: (row.productUrl as string | null) ?? null,
     imageUrl: (row.imageUrl as string | null) ?? null,
+    unitCost: costCurrency ? unitCost : null,
+    costCurrency,
     quantityOwned,
     quantityAssigned,
     quantityAvailable: Math.max(0, quantityOwned - quantityAssigned),
@@ -319,7 +363,8 @@ async function queryCatalogRows(
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
-            c."image_url" as "imageUrl", c."created_at" as "createdAt",
+             c."image_url" as "imageUrl", c."unit_cost" as "unitCost",
+             c."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
             coalesce(i."quantity_owned", 0)::int as "quantityOwned",
             coalesce(sum(a."quantity"), 0)::int as "quantityAssigned",
@@ -411,11 +456,52 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   title: string;
   description: string;
   sku: string | null;
-  imageUrl: string;
-  price: string;
-  currency: string;
+  imageUrl: string | null;
+  price: string | null;
+  currency: string | null;
   priceIsStartingAt: boolean;
+  inStock: boolean;
 };
+
+function fallbackOfficialProductResult(
+  candidate: PublicCatalogSearchCandidate,
+  vendor: VendorConfig,
+): PublicCatalogSearchResult | null {
+  if (
+    vendor.catalogMode !== "products" ||
+    vendor.coverageState === "access_restricted" ||
+    vendor.coverageState === "custom_fabrication"
+  ) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(candidate.url);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || !vendorOwnsHost(url.hostname, vendor)) return null;
+
+  const metadata = fallbackProductSearchMetadata(
+    candidate.title,
+    candidate.description,
+    url.toString(),
+  );
+  if (!metadata || metadata.title.toLowerCase() === vendor.name.toLowerCase()) return null;
+  return {
+    vendorKey: vendor.key,
+    vendorName: vendor.name,
+    title: metadata.title,
+    url: url.toString(),
+    description: metadata.description,
+    sku: null,
+    imageUrl: null,
+    price: null,
+    currency: null,
+    priceIsStartingAt: false,
+    inStock: true,
+  };
+}
 
 export const ASSISTANT_PARTS_TOOLS = [
   {
@@ -582,6 +668,29 @@ function toPublicCatalogSearchResult(
   };
 }
 
+function createSerializedSearchQueue(minimumIntervalMs: number) {
+  let pending = Promise.resolve();
+  let nextAllowedAt = 0;
+  return function run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = pending.then(async () => {
+      const waitMs = Math.max(0, nextAllowedAt - Date.now());
+      if (waitMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+      }
+      nextAllowedAt = Date.now() + minimumIntervalMs;
+      return operation();
+    });
+    pending = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+}
+
+const tavilySearchQueue = createSerializedSearchQueue(1_000);
+const exaSearchQueue = createSerializedSearchQueue(1_000);
+
 async function searchWithTavily(
   query: string,
   allowedVendors: VendorConfig[],
@@ -590,20 +699,22 @@ async function searchWithTavily(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Tavily-Access-Mode": "keyless",
-    },
-    body: JSON.stringify({
-      query: `Official supplier product pages matching: ${expandedQuery}`,
-      search_depth: "basic",
-      max_results: 20,
-      include_domains: allowedVendors.map((vendor) => vendor.domain),
+  const response = await tavilySearchQueue(() =>
+    fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Tavily-Access-Mode": "keyless",
+      },
+      body: JSON.stringify({
+        query: `Official supplier product pages matching: ${expandedQuery}`,
+        search_depth: "basic",
+        max_results: 20,
+        include_domains: allowedVendors.map((vendor) => vendor.domain),
+      }),
+      signal: AbortSignal.timeout(10_000),
     }),
-    signal: AbortSignal.timeout(20_000),
-  });
+  );
   if (!response.ok) throw new Error(`Tavily search returned ${response.status}`);
   const payload: unknown = await response.json();
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
@@ -645,28 +756,30 @@ async function searchWithExa(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: `parts-${Date.now()}`,
-      method: "tools/call",
-      params: {
-        name: "web_search_exa",
-        arguments: {
-          query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
-          objective:
-            "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
-          numResults: 20,
-        },
+  const response = await exaSearchQueue(() =>
+    fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
       },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `parts-${Date.now()}`,
+        method: "tools/call",
+        params: {
+          name: "web_search_exa",
+          arguments: {
+            query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
+            objective:
+              "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
+            numResults: 30,
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(10_000),
     }),
-    signal: AbortSignal.timeout(25_000),
-  });
+  );
   if (!response.ok) throw new Error(`Exa search returned ${response.status}`);
   const envelope = parseSseResponse(await response.text());
   if (!isRecord(envelope) || !isRecord(envelope.result) || envelope.result.isError) {
@@ -685,9 +798,13 @@ async function searchWithExa(
 
 async function enrichOfficialProductPage(
   candidate: PublicCatalogSearchCandidate,
+  includePartialDetails = false,
 ): Promise<PublicCatalogSearchResult | null> {
   const vendor = vendorByKey.get(candidate.vendorKey);
   if (!vendor) return null;
+  const searchFallback = includePartialDetails
+    ? fallbackOfficialProductResult(candidate, vendor)
+    : null;
   let target: URL;
   try {
     target = new URL(candidate.url);
@@ -712,7 +829,7 @@ async function enrichOfficialProductPage(
         signal: AbortSignal.timeout(8_000),
       });
     } catch {
-      return null;
+      return searchFallback;
     }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
@@ -725,20 +842,25 @@ async function enrichOfficialProductPage(
       continue;
     }
     const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (response.status === 403 || response.status === 429 || response.status >= 500) {
+      return searchFallback;
+    }
     if (!response.ok || !(contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))) {
       return null;
     }
     const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (contentLength > 2_000_000) return null;
+    if (contentLength > 2_000_000) return searchFallback;
     let html: string;
     try {
       html = await response.text();
     } catch {
-      return null;
+      return searchFallback;
     }
-    if (new TextEncoder().encode(html).byteLength > 2_000_000) return null;
-    const metadata = extractVerifiedProductMetadata(html, target.toString(), candidate.title);
-    if (!metadata) return null;
+    if (new TextEncoder().encode(html).byteLength > 2_000_000) return searchFallback;
+    const metadata = includePartialDetails
+      ? extractProductPageMetadata(html, target.toString(), candidate.title)
+      : extractVerifiedProductMetadata(html, target.toString(), candidate.title);
+    if (!metadata) return searchFallback;
     return {
       vendorKey: vendor.key,
       vendorName: vendor.name,
@@ -750,23 +872,38 @@ async function enrichOfficialProductPage(
       price: metadata.price,
       currency: metadata.currency,
       priceIsStartingAt: metadata.priceIsStartingAt,
+      inStock: metadata.inStock,
     };
   }
   return null;
 }
 
-async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
-  const allowedVendors = vendor ? [vendor] : VENDORS;
+async function searchPublicCatalog(
+  query: string,
+  vendor?: VendorConfig,
+  options: { maxCandidatesPerVendor?: number; includePartialDetails?: boolean } = {},
+) {
+  const allowedVendors = (vendor ? [vendor] : VENDORS).filter(
+    (item) => item.coverageState !== "access_restricted",
+  );
+  if (allowedVendors.length === 0) return [];
   const vendorGroups: VendorConfig[][] = [];
   for (let index = 0; index < allowedVendors.length; index += 4) {
     vendorGroups.push(allowedVendors.slice(index, index + 4));
   }
-  const providerResults = await Promise.allSettled(
-    vendorGroups.flatMap((group) => [
+  const focusedTavilyVendors = vendor
+    ? allowedVendors
+    : allowedVendors.filter((item) => item.publicProductFeedUrl);
+  const providerRequests = options.includePartialDetails
+    ? [
+        ...vendorGroups.map((group) => searchWithExa(query, group)),
+        ...focusedTavilyVendors.map((item) => searchWithTavily(query, [item])),
+      ]
+    : vendorGroups.flatMap((group) => [
       searchWithTavily(query, group),
       searchWithExa(query, group),
-    ]),
-  );
+    ]);
+  const providerResults = await Promise.allSettled(providerRequests);
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
   );
@@ -777,6 +914,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const seen = new Set<string>();
   const byVendor = new Map(allowedVendors.map((item) => [item.key, [] as PublicCatalogSearchCandidate[]]));
   for (const result of combined) {
+    if (!isRelevantCatalogSearchResult(query, result.title, result.description)) continue;
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
     const bucket = byVendor.get(result.vendorKey);
@@ -785,7 +923,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
     bucket.push(result);
   }
   const candidates: PublicCatalogSearchCandidate[] = [];
-  const candidatesPerVendor = vendor ? 24 : 8;
+  const candidatesPerVendor = options.maxCandidatesPerVendor ?? 8;
   for (let rank = 0; rank < candidatesPerVendor; rank += 1) {
     for (const allowedVendor of allowedVendors) {
       const candidate = byVendor.get(allowedVendor.key)?.[rank];
@@ -796,10 +934,18 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const verifiedResults: PublicCatalogSearchResult[] = [];
   for (let index = 0; index < candidates.length; index += 12) {
     const batch = await Promise.allSettled(
-      candidates.slice(index, index + 12).map(enrichOfficialProductPage),
+      candidates
+        .slice(index, index + 12)
+        .map((candidate) => enrichOfficialProductPage(candidate, options.includePartialDetails)),
     );
     for (const result of batch) {
-      if (result.status === "fulfilled" && result.value) verifiedResults.push(result.value);
+      if (
+        result.status === "fulfilled" &&
+        result.value &&
+        isRelevantCatalogSearchResult(query, result.value.title, result.value.description)
+      ) {
+        verifiedResults.push(result.value);
+      }
     }
   }
   return verifiedResults;
@@ -843,6 +989,7 @@ export async function runAssistantPartsTool(
         price: item.price,
         currency: item.currency,
         priceIsStartingAt: item.priceIsStartingAt,
+        inStock: item.inStock,
       }));
       const coverage = publicVendors.map((item) => ({
         vendorKey: item.key,
@@ -865,7 +1012,10 @@ export async function runAssistantPartsTool(
     }
     if (name === "list_parts_robots") {
       const rows = await pool.query(
-        `select "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
          from "parts_robots" order by lower("name")`,
       );
       const robots = rows.rows.map(mapRobot);
@@ -937,6 +1087,7 @@ export async function runAssistantPartsTool(
           description: cleanText(input.description, 1200),
           productUrl,
           imageUrl,
+          isManual: true,
         });
         if (input.quantityOwned !== undefined) await setOwnedQuantity(client, item.id, input.quantityOwned);
         return item;
@@ -1220,7 +1371,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
       const batch = records.slice(start, start + batchSize);
       const values: unknown[] = [];
       const rows = batch.map((record, index) => {
-        const offset = index * 9;
+        const offset = index * 10;
         values.push(
           randomUUID(),
           record.vendorKey,
@@ -1231,12 +1382,13 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
           record.description,
           record.productUrl,
           record.imageUrl,
+          false,
         );
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`;
       });
       const saved = await client.query(
         `insert into "parts_catalog_items"
-           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url")
+           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
          values ${rows.join(", ")}
          on conflict ("vendor_key", "external_key") do update set
            "name" = excluded."name",
@@ -1245,6 +1397,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
            "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
            "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
            "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+           "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
            "updated_at" = now()
          returning "id", (xmax = 0) as "created"`,
         values,
@@ -1275,7 +1428,10 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
   try {
     const [robotsResult, totalsResult] = await Promise.all([
       pool.query(
-        `select "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
          from "parts_robots" order by lower("name")`,
       ),
       pool.query(
@@ -1319,8 +1475,12 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
     const offsetRaw = Number(req.query.offset);
     const limit = Number.isInteger(limitRaw) ? Math.min(500, Math.max(1, limitRaw)) : 100;
     const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+    const manualOnly = req.query.manualOnly === "true" || req.query.manualOnly === "1";
     const clauses: string[] = [];
     const values: unknown[] = [];
+    if (manualOnly) {
+      clauses.push(`c."is_manual" = true`);
+    }
     if (vendorKey) {
       values.push(vendorKey);
       clauses.push(`c."vendor_key" = $${values.length}`);
@@ -1377,7 +1537,10 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     let results: PublicCatalogSearchResult[] = [];
     let liveSearchStatus: "available" | "unavailable" = "available";
     try {
-      results = await searchPublicCatalog(query, vendor);
+      results = await searchPublicCatalog(query, vendor, {
+        maxCandidatesPerVendor: 40,
+        includePartialDetails: true,
+      });
     } catch (error) {
       if (syncedCatalog.total === 0) throw error;
       liveSearchStatus = "unavailable";
@@ -1424,6 +1587,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       description: cleanText(input.description, 1200),
       productUrl,
       imageUrl,
+      isManual: true,
     };
     const itemId = await withTransaction(async (client) => {
       const saved = await upsertCatalogRecord(client, item);
@@ -1552,6 +1716,7 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
           description: cleanText(row.description, 1200),
           productUrl,
           imageUrl,
+          isManual: true,
         });
         if (saved.created) created += 1;
         else updated += 1;
@@ -1603,6 +1768,220 @@ router.patch("/parts/catalog/:partId/stock", requireAdmin, async (req, res): Pro
   }
 });
 
+router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsCatalogCostParams.safeParse(req.params);
+  const body = UpdatePartsCatalogCostBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "The saved unit cost is invalid." });
+    return;
+  }
+  const { unitCost, costCurrency } = body.data;
+  if (
+    (unitCost === null) !== (costCurrency === null) ||
+    (unitCost !== null && !isValidMoneyAmount(unitCost)) ||
+    (costCurrency !== null && !isValidCurrencyCode(costCurrency))
+  ) {
+    res.status(400).json({ error: "Enter both a valid amount and a three-letter currency, or clear both." });
+    return;
+  }
+  try {
+    const updated = await pool.query(
+      `update "parts_catalog_items"
+       set "unit_cost" = $2, "cost_currency" = $3, "updated_at" = now()
+       where "id" = $1
+       returning "id"`,
+      [params.data.partId, unitCost, costCurrency],
+    );
+    if (updated.rowCount === 0) {
+      res.status(404).json({ error: "Catalog item not found." });
+      return;
+    }
+    const savedItem = await getCatalogItem(params.data.partId);
+    res.json(UpdatePartsCatalogCostResponse.parse(savedItem));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts saved cost update failed");
+    res.status(500).json({ error: "Unable to update the saved unit cost." });
+  }
+});
+
+router.post(
+  "/parts/catalog/:partId/price-snapshots",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = CreatePartsPriceSnapshotParams.safeParse(req.params);
+    const body = CreatePartsPriceSnapshotBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "The supplier quote details are invalid." });
+      return;
+    }
+    try {
+      const partResult = await pool.query(
+        `select "vendor_key" as "vendorKey" from "parts_catalog_items" where "id" = $1`,
+        [params.data.partId],
+      );
+      if (partResult.rowCount === 0) {
+        res.status(404).json({ error: "Catalog item not found." });
+        return;
+      }
+      const vendorKey = String(partResult.rows[0].vendorKey);
+      const vendor = vendorForKey(vendorKey);
+      const sourceUrl = validateVendorUrl(body.data.sourceUrl, vendor);
+      if (!sourceUrl || !isValidCurrencyCode(body.data.currency) || !isValidMoneyAmount(body.data.unitPrice)) {
+        res.status(400).json({ error: "Choose a valid price, currency, and source on the item's supplier domain." });
+        return;
+      }
+      const saved = await pool.query(
+        `insert into "parts_supplier_price_snapshots"
+           ("id", "part_id", "unit_price", "currency", "source_url", "is_starting_at")
+         values ($1, $2, $3, $4, $5, $6)
+         returning "id", "part_id" as "partId", "unit_price" as "unitPrice",
+                   "currency", "source_url" as "sourceUrl",
+                   "captured_at" as "capturedAt", "is_starting_at" as "isStartingAt"`,
+        [
+          randomUUID(),
+          params.data.partId,
+          body.data.unitPrice,
+          body.data.currency,
+          sourceUrl,
+          body.data.isStartingAt,
+        ],
+      );
+      const row = saved.rows[0];
+      res.status(201).json(CreatePartsPriceSnapshotResponse.parse({
+        id: String(row.id),
+        partId: String(row.partId),
+        vendorKey,
+        vendorName: vendor.name,
+        sourceUrl: String(row.sourceUrl),
+        unitPrice: moneyFromDatabase(row.unitPrice),
+        currency: String(row.currency),
+        capturedAt: isoDate(row.capturedAt as Date | string),
+        isStartingAt: Boolean(row.isStartingAt),
+        isStale: false,
+      }));
+    } catch (error) {
+      if (error instanceof BadInputError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Supplier quote snapshot save failed");
+      res.status(500).json({ error: "Unable to save the supplier quote snapshot." });
+    }
+  },
+);
+
+router.get(
+  "/parts/robots/:robotId/details",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = GetPartsRobotDetailsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: "The robot ID is invalid." });
+      return;
+    }
+    try {
+      const robotResult = await pool.query(
+        `select "id", "name", "preview_object_path" as "previewObjectPath",
+                "preview_file_name" as "previewFileName",
+                "preview_content_type" as "previewContentType",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
+         from "parts_robots" where "id" = $1`,
+        [params.data.robotId],
+      );
+      if (robotResult.rowCount === 0) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+      const allocationResult = await pool.query(
+        `select c."id" as "partId", c."name", c."vendor_key" as "vendorKey",
+                c."sku", c."product_url" as "productUrl",
+                c."unit_cost" as "unitCost", c."cost_currency" as "costCurrency",
+                a."quantity"
+         from "parts_robot_allocations" a
+         join "parts_catalog_items" c on c."id" = a."part_id"
+         where a."robot_id" = $1
+         order by lower(c."name"), c."id"`,
+        [params.data.robotId],
+      );
+      const partIds = allocationResult.rows.map((row) => String(row.partId));
+      const snapshotResult = partIds.length === 0
+        ? { rows: [] as Record<string, any>[] }
+        : await pool.query(
+            `select s."id", s."part_id" as "partId", s."unit_price" as "unitPrice",
+                    s."currency", s."source_url" as "sourceUrl",
+                    s."captured_at" as "capturedAt",
+                    s."is_starting_at" as "isStartingAt",
+                    c."vendor_key" as "vendorKey"
+             from "parts_supplier_price_snapshots" s
+             join "parts_catalog_items" c on c."id" = s."part_id"
+             where s."part_id" = any($1::text[])
+             order by s."captured_at" desc`,
+            [partIds],
+          );
+      const now = Date.now();
+      const snapshotsByPart = new Map<string, unknown[]>();
+      for (const row of snapshotResult.rows) {
+        const vendorKey = String(row.vendorKey);
+        const vendor = vendorByKey.get(vendorKey);
+        const partId = String(row.partId);
+        const snapshot = {
+          id: String(row.id),
+          partId,
+          vendorKey,
+          vendorName: vendor?.name ?? vendorKey,
+          sourceUrl: String(row.sourceUrl),
+          unitPrice: moneyFromDatabase(row.unitPrice),
+          currency: String(row.currency),
+          capturedAt: isoDate(row.capturedAt as Date | string),
+          isStartingAt: Boolean(row.isStartingAt),
+          isStale: isPriceSnapshotStale(row.capturedAt as Date | string, now),
+        };
+        const snapshots = snapshotsByPart.get(partId) ?? [];
+        snapshots.push(snapshot);
+        snapshotsByPart.set(partId, snapshots);
+      }
+      const parts = allocationResult.rows.map((row) => {
+        const vendorKey = String(row.vendorKey);
+        const vendor = vendorByKey.get(vendorKey);
+        const quantity = Number(row.quantity);
+        const rawUnitCost = moneyFromDatabase(row.unitCost);
+        const costCurrency = rawUnitCost !== null && isValidCurrencyCode(row.costCurrency)
+          ? row.costCurrency
+          : null;
+        const unitCost = costCurrency ? rawUnitCost : null;
+        return {
+          partId: String(row.partId),
+          name: String(row.name),
+          vendorKey,
+          vendorName: vendor?.name ?? vendorKey,
+          sku: (row.sku as string | null) ?? null,
+          productUrl: (row.productUrl as string | null) ?? null,
+          quantity,
+          unitCost,
+          costCurrency,
+          lineTotal: calculateLineTotal(quantity, unitCost, costCurrency),
+          priceSnapshots: snapshotsByPart.get(String(row.partId)) ?? [],
+        };
+      });
+      const savedCostTotals = summarizeSavedCosts(
+        parts.map((part) => ({
+          quantity: part.quantity,
+          unitCost: part.unitCost,
+          currency: part.costCurrency,
+        })),
+      );
+      res.json(GetPartsRobotDetailsResponse.parse({
+        robot: mapRobot(robotResult.rows[0]),
+        parts,
+        ...savedCostTotals,
+      }));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot build details load failed");
+      res.status(500).json({ error: "Unable to load this robot's build details." });
+    }
+  },
+);
+
 router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreatePartsRobotBody.safeParse(req.body);
   if (!parsed.success) {
@@ -1632,6 +2011,67 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
+router.patch(
+  "/parts/robots/:robotId/preview",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = UpdatePartsRobotPreviewParams.safeParse(req.params);
+    const body = UpdatePartsRobotPreviewBody.safeParse(req.body);
+    if (!params.success || !body.success) {
+      res.status(400).json({ error: "The robot preview details are invalid." });
+      return;
+    }
+    const preview = body.data;
+    if (
+      !/^\/objects\/[A-Za-z0-9-]{8,128}$/.test(preview.objectPath) ||
+      partsPreviewKind(preview.fileName, preview.contentType) === null
+    ) {
+      res.status(400).json({ error: "Choose a supported private preview file." });
+      return;
+    }
+    try {
+      const result = await withTransaction(async (client) => {
+        const current = await client.query(
+          `select "preview_object_path" as "previewObjectPath"
+           from "parts_robots" where "id" = $1 for update`,
+          [params.data.robotId],
+        );
+        if (current.rowCount === 0) return null;
+        const updated = await client.query(
+          `update "parts_robots"
+           set "preview_object_path" = $2, "preview_file_name" = $3,
+               "preview_content_type" = $4, "updated_at" = now()
+           where "id" = $1
+           returning "id", "name", "preview_object_path" as "previewObjectPath",
+                     "preview_file_name" as "previewFileName",
+                     "preview_content_type" as "previewContentType",
+                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+          [params.data.robotId, preview.objectPath, preview.fileName, preview.contentType],
+        );
+        return {
+          robot: updated.rows[0],
+          previousObjectPath: current.rows[0].previewObjectPath as string | null,
+        };
+      });
+      if (!result) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+      if (result.previousObjectPath && result.previousObjectPath !== preview.objectPath) {
+        try {
+          await objectStorageService.deleteObject(result.previousObjectPath);
+        } catch (error) {
+          req.log.warn({ err: error, objectPath: result.previousObjectPath }, "Replaced robot preview cleanup failed");
+        }
+      }
+      res.json(UpdatePartsRobotPreviewResponse.parse(mapRobot(result.robot)));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview metadata update failed");
+      res.status(500).json({ error: "Unable to update this robot's preview." });
+    }
+  },
+);
+
 router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<void> => {
   const params = UpdatePartsRobotParams.safeParse(req.params);
   const body = UpdatePartsRobotBody.safeParse(req.body);
@@ -1648,7 +2088,10 @@ router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<v
     const result = await pool.query(
       `update "parts_robots" set "name" = $2, "updated_at" = now()
        where "id" = $1
-       returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+       returning "id", "name", "preview_object_path" as "previewObjectPath",
+                 "preview_file_name" as "previewFileName",
+                 "preview_content_type" as "previewContentType",
+                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [params.data.robotId, name],
     );
     if (result.rowCount === 0) {

@@ -1,9 +1,12 @@
-import { desc, eq } from "drizzle-orm";
-import { db, interviewWhiteboardsTable } from "@workspace/db";
+import { randomUUID } from "node:crypto";
+import { asc, desc, eq } from "drizzle-orm";
+import { applicantsTable, db, interviewWhiteboardsTable } from "@workspace/db";
 import { UpdateBoardBody } from "@workspace/api-zod";
-import { applyBoardOperation, parseBoardData } from "./boardOperations";
+import { ObjectStorageService } from "./objectStorage";
+import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations";
 import {
   applySpreadsheetAssistantEdits,
+  initialSpreadsheetData,
   isSpreadsheetRecordData,
   parseSpreadsheetData,
   spreadsheetGridSize,
@@ -20,8 +23,15 @@ import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "./whiteboa
 import { pushRealtimeHint } from "./realtime";
 import {
   applyWhiteboardOperations,
+  buildTextListWhiteboardOperations,
+  generatedImageObjectPath,
   parseWhiteboardOperations,
+  type WhiteboardOperation,
 } from "./whiteboardAssistantOperations";
+
+const objectStorageService = new ObjectStorageService();
+const MAX_ASSISTANT_WHITEBOARD_BYTES = 1_500_000;
+const MAX_ROSTER_ENTRIES = 1_000;
 
 type ArtifactRow = typeof interviewWhiteboardsTable.$inferSelect;
 type ArtifactKind = "whiteboard" | "board" | "document" | "spreadsheet";
@@ -30,6 +40,10 @@ type ArtifactAccessCheck = (row: Pick<ArtifactRow, "conversationScope" | "conver
 export const ASSISTANT_ARTIFACT_TOOL_NAMES = new Set([
   "list_collaboration_artifacts",
   "read_collaboration_artifact",
+  "create_board",
+  "create_document",
+  "create_spreadsheet",
+  "create_whiteboard",
   "edit_whiteboard",
   "edit_board",
   "edit_document",
@@ -47,9 +61,33 @@ const boardOperationSchema = {
         "rename_column", "delete_column",
       ],
     },
-    card: { type: "object" },
+    card: {
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        description: { type: "string", maxLength: 12000 },
+        columnId: { type: "string", description: "Existing column id returned by create_board or read_collaboration_artifact." },
+        priority: { type: "string", enum: ["urgent", "high", "normal", "low"] },
+        assignee: { type: ["string", "null"] },
+        startDate: { type: ["string", "null"], format: "date" },
+        dueDate: { type: ["string", "null"], format: "date" },
+        labels: { type: "array", maxItems: 12, items: { type: "string", maxLength: 40 } },
+      },
+      required: ["title"],
+    },
     cardId: { type: "string" },
-    cardPatch: { type: "object" },
+    cardPatch: {
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        description: { type: "string", maxLength: 12000 },
+        priority: { type: "string", enum: ["urgent", "high", "normal", "low"] },
+        assignee: { type: ["string", "null"] },
+        startDate: { type: ["string", "null"], format: "date" },
+        dueDate: { type: ["string", "null"], format: "date" },
+        labels: { type: "array", maxItems: 12, items: { type: "string", maxLength: 40 } },
+      },
+    },
     cardIds: { type: "array", items: { type: "string" }, maxItems: 500 },
     titles: { type: "array", items: { type: "string", maxLength: 200 }, maxItems: 250 },
     columnId: { type: "string" },
@@ -67,7 +105,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_collaboration_artifacts",
-      description: "List shared or directly shared Whiteboards, Boards, Documents, and Spreadsheets that the signed-in interviewer can access. Use this before editing when the target is unclear.",
+      description: "List accessible collaboration artifacts with their kind. A Board is a structured task/Kanban board; a Whiteboard is a freeform canvas; a Document is rich text; a Spreadsheet is a workbook grid. Use this to identify the correct existing artifact before editing.",
       parameters: {
         type: "object",
         properties: {
@@ -82,7 +120,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "read_collaboration_artifact",
-      description: "Read an accessible artifact by id before editing. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Spreadsheet rows and board/whiteboard items can be paged with offset and limit; set sheetName to read another worksheet.",
+      description: "Read an accessible artifact by id before editing. The returned kind distinguishes task Board, freeform Whiteboard, rich-text Document, and workbook Spreadsheet. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Spreadsheet rows and Board/Whiteboard items can be paged with offset and limit; set sheetName to read another worksheet.",
       parameters: {
         type: "object",
         properties: {
@@ -101,8 +139,70 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "create_whiteboard",
+      description: "Create a shared freeform Excalidraw canvas for sketches, diagrams, spatial layouts, or images. This is not a task board. For a roster of all applicants, set includeAllApplicantNames to true; the server adds every applicant name without exposing emails or other applicant details. For another text list, supply entries.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", maxLength: 120 },
+          entries: {
+            type: "array",
+            maxItems: 500,
+            items: { type: "string", maxLength: 200 },
+          },
+          includeAllApplicantNames: { type: "boolean" },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_board",
+      description: "Create a shared structured task Board (Kanban columns and cards) for tracking work, statuses, owners, and dates. This is not a freeform Whiteboard. The result includes actual column ids. After creation, use the returned boardId with edit_board to add or organize tasks.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 120 },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_document",
+      description: "Create a shared collaborative rich-text Document for notes, agendas, summaries, or prose. This is not a task board, canvas, or spreadsheet. After creation, use the returned documentId with edit_document to add requested content.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 120 },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_spreadsheet",
+      description: "Create a shared workbook-style Spreadsheet for rows, columns, calculations, and formulas (similar to an Excel worksheet). This is not a task board. After creation, use the returned spreadsheetId with edit_spreadsheet to add headers, rows, or formulas.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 120 },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "edit_whiteboard",
-      description: "Edit an accessible Excalidraw whiteboard. Add text, rectangles, ellipses, or arrows; update or delete an existing text/scene element by id. Provide concise operations and read the board first. Do not clear or delete content unless explicitly asked.",
+      description: "Edit an accessible freeform Excalidraw Whiteboard: add text, shapes, arrows, or an image returned by generate_image; update or delete scene elements by id. Use for sketches and diagrams, not task tracking. Read the Whiteboard first. Do not clear or delete content unless explicitly asked.",
       parameters: {
         type: "object",
         properties: {
@@ -115,9 +215,10 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["add_text", "add_rectangle", "add_ellipse", "add_arrow", "update_text", "delete_element"] },
+                type: { type: "string", enum: ["add_text", "add_rectangle", "add_ellipse", "add_arrow", "add_image", "update_text", "delete_element"] },
                 elementId: { type: "string" },
                 text: { type: "string", maxLength: 4000 },
+                imageUrl: { type: "string", maxLength: 300, description: "Exact image URL returned by generate_image; only app-stored generated images are accepted." },
                 x: { type: "number" },
                 y: { type: "number" },
                 width: { type: "number" },
@@ -138,7 +239,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "edit_board",
-      description: "Apply one validated Board operation to an accessible board. Read the board first and use its real column/card ids. Use the operation-specific fields inside operation. Do not delete cards or columns unless explicitly requested.",
+      description: "Apply one validated operation to an accessible structured task Board (Kanban columns and cards). Use for task status, owners, and dates—not freeform drawing. For one task use operation=create_card with card.title and optional card.columnId/description/assignee/dates/priority/labels; for several use bulk_add_cards with titles and targetColumnId. Use the actual column/card ids returned by create_board or read_collaboration_artifact. Do not delete cards or columns unless explicitly requested.",
       parameters: {
         type: "object",
         properties: {
@@ -153,7 +254,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "edit_document",
-      description: "Append or replace text in an accessible collaborative Document, or change its title. Read it first; prefer append unless the interviewer explicitly asks to rewrite or replace. Edits sync through the live Yjs collaboration room.",
+      description: "Append or replace rich text in an accessible collaborative Document, or change its title. Use for prose, notes, and agendas—not task cards, spreadsheet cells, or freeform drawings. Read it first; prefer append unless the interviewer explicitly asks to rewrite or replace.",
       parameters: {
         type: "object",
         properties: {
@@ -170,7 +271,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "edit_spreadsheet",
-      description: "Edit cells, append rows/columns, or rename an accessible Spreadsheet. Cell coordinates and row indexes are zero-based. Set sheetName for another worksheet. A value beginning with = is saved as a formula.",
+      description: "Edit cells, append rows/columns, or rename an accessible workbook-style Spreadsheet (similar to Excel). Use for tabular data and formulas—not task cards or freeform drawings. Cell coordinates and row indexes are zero-based. Set sheetName for another worksheet. A value beginning with = is saved as a formula.",
       parameters: {
         type: "object",
         properties: {
@@ -607,6 +708,35 @@ async function editWhiteboard(
   if (args.title !== undefined && !title) return toolFailure("Whiteboard titles cannot be empty.");
   if (title && title.length > 120) return toolFailure("Whiteboard titles must be 120 characters or fewer.");
 
+  const resolvedOperations: WhiteboardOperation[] = [];
+  for (const operation of parsedOperations.operations) {
+    if (operation.type !== "add_image") {
+      resolvedOperations.push(operation);
+      continue;
+    }
+    const imagePath = generatedImageObjectPath(operation.imageUrl ?? "");
+    if (!imagePath) {
+      return toolFailure("Only the stored image URL returned by generate_image can be added to a whiteboard.");
+    }
+    try {
+      const image = await objectStorageService.downloadObject(imagePath);
+      const mimeType = image.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+      if (
+        image.data.byteLength > 800_000 ||
+        !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(mimeType)
+      ) {
+        return toolFailure("The generated image is too large or uses an unsupported format.");
+      }
+      resolvedOperations.push({
+        ...operation,
+        imageDataUrl: `data:${mimeType};base64,${image.data.toString("base64")}`,
+        imageMimeType: mimeType,
+      });
+    } catch {
+      return toolFailure("That generated image is no longer available in storage. Generate it again, then add it to the whiteboard.");
+    }
+  }
+
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select().from(interviewWhiteboardsTable)
       .where(eq(interviewWhiteboardsTable.id, whiteboardId))
@@ -625,13 +755,17 @@ async function editWhiteboard(
     const elements = scene.elements.filter((element): element is Record<string, unknown> =>
       Boolean(element) && typeof element === "object",
     );
-    const applied = applyWhiteboardOperations(elements, parsedOperations.operations!);
+    const files = scene.files && typeof scene.files === "object" && !Array.isArray(scene.files)
+      ? scene.files as Record<string, unknown>
+      : {};
+    const applied = applyWhiteboardOperations(elements, resolvedOperations, files);
     if (!applied.elements) return { ok: false as const, error: applied.error ?? "The scene edit could not be applied." };
     const serialized = mergeWhiteboardDataForSave(row.id, JSON.stringify({
       ...scene,
       elements: applied.elements,
+      files: applied.files ?? files,
     }));
-    if (Buffer.byteLength(serialized, "utf8") > 1_500_000) {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_ASSISTANT_WHITEBOARD_BYTES) {
       return { ok: false as const, error: "This whiteboard is too large to save." };
     }
     const [updated] = await tx.update(interviewWhiteboardsTable)
@@ -693,6 +827,149 @@ async function editDocument(
   };
 }
 
+async function createWhiteboard(
+  args: Record<string, unknown>,
+  displayName: string,
+): Promise<ToolOutcome> {
+  const title = clippedText(args.title, 120).trim();
+  const includeAllApplicantNames = args.includeAllApplicantNames === true;
+  if (!title) return toolFailure("A whiteboard title is required.");
+  if (includeAllApplicantNames && args.entries !== undefined) {
+    return toolFailure("Choose either all applicant names or a supplied entries list, not both.");
+  }
+
+  let entries: string[];
+  if (includeAllApplicantNames) {
+    const applicants = await db.select({ name: applicantsTable.name })
+      .from(applicantsTable)
+      .orderBy(asc(applicantsTable.name))
+      .limit(MAX_ROSTER_ENTRIES + 1);
+    if (applicants.length > MAX_ROSTER_ENTRIES) {
+      return toolFailure(`There are more than ${MAX_ROSTER_ENTRIES} applicants. Narrow the roster before creating a whiteboard.`);
+    }
+    entries = applicants.map((applicant) => applicant.name);
+  } else if (Array.isArray(args.entries)) {
+    if (args.entries.length < 1 || args.entries.length > 500) {
+      return toolFailure("Provide 1 to 500 text entries.");
+    }
+    if (args.entries.some((entry) => typeof entry !== "string" || !entry.trim() || entry.length > 200)) {
+      return toolFailure("Each whiteboard entry must contain 1 to 200 characters.");
+    }
+    entries = args.entries.map((entry) => (entry as string).trim());
+  } else {
+    return toolFailure("Provide entries or set includeAllApplicantNames to true.");
+  }
+  if (entries.length === 0) return toolFailure("There are no applicants to add to the whiteboard.");
+
+  const operations = buildTextListWhiteboardOperations(title, entries);
+  const applied = applyWhiteboardOperations([], operations);
+  if (!applied.elements) return toolFailure(applied.error ?? "The whiteboard could not be created.");
+  const data = JSON.stringify({ elements: applied.elements, appState: {}, files: applied.files ?? {} });
+  if (Buffer.byteLength(data, "utf8") > MAX_ASSISTANT_WHITEBOARD_BYTES) {
+    return toolFailure("This list is too large for one whiteboard.");
+  }
+  const [row] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title,
+    data,
+    createdBy: displayName,
+    conversationScope: "shared",
+    conversationPeer: null,
+  }).returning();
+  pushRealtimeHint("interview_whiteboards");
+  return {
+    content: JSON.stringify({
+      ok: true,
+      whiteboardId: row.id,
+      title: row.title,
+      entryCount: entries.length,
+    }),
+    activity: { tool: "create_whiteboard", detail: `"${row.title.slice(0, 45)}" · ${entries.length} entries` },
+  };
+}
+
+function creationTitle(args: Record<string, unknown>, artifactLabel: string): { title?: string; error?: string } {
+  if (typeof args.title !== "string" || !args.title.trim()) {
+    return { error: `A title is required to create the ${artifactLabel}.` };
+  }
+  const title = args.title.trim();
+  if (title.length > 120) return { error: `${artifactLabel} titles must be 120 characters or fewer.` };
+  return { title };
+}
+
+async function insertSharedArtifact(
+  title: string,
+  data: string,
+  displayName: string,
+): Promise<ArtifactRow> {
+  const [row] = await db.insert(interviewWhiteboardsTable).values({
+    id: randomUUID(),
+    title,
+    data,
+    createdBy: displayName,
+    conversationScope: "shared",
+    conversationPeer: null,
+  }).returning();
+  pushRealtimeHint("interview_whiteboards");
+  return row;
+}
+
+async function createBoard(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+  const parsedTitle = creationTitle(args, "task board");
+  if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A task board title is required.");
+  const data = initialBoardData();
+  const row = await insertSharedArtifact(
+    parsedTitle.title,
+    JSON.stringify(data),
+    displayName,
+  );
+  return {
+    content: JSON.stringify({
+      ok: true,
+      kind: "board",
+      boardId: row.id,
+      title: row.title,
+      columns: data.columns.map(({ id, title }) => ({ id, title })),
+    }),
+    activity: { tool: "create_board", detail: `"${row.title.slice(0, 45)}"` },
+  };
+}
+
+async function createDocument(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+  const parsedTitle = creationTitle(args, "document");
+  if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A document title is required.");
+  const row = await insertSharedArtifact(
+    parsedTitle.title,
+    JSON.stringify({ kind: "document", elements: [], yState: "" }),
+    displayName,
+  );
+  return {
+    content: JSON.stringify({ ok: true, kind: "document", documentId: row.id, title: row.title }),
+    activity: { tool: "create_document", detail: `"${row.title.slice(0, 45)}"` },
+  };
+}
+
+async function createSpreadsheet(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+  const parsedTitle = creationTitle(args, "spreadsheet");
+  if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A spreadsheet title is required.");
+  const data = initialSpreadsheetData();
+  const row = await insertSharedArtifact(
+    parsedTitle.title,
+    JSON.stringify(data),
+    displayName,
+  );
+  return {
+    content: JSON.stringify({
+      ok: true,
+      kind: "spreadsheet",
+      spreadsheetId: row.id,
+      title: row.title,
+      sheetNames: spreadsheetSheetNames(data),
+    }),
+    activity: { tool: "create_spreadsheet", detail: `"${row.title.slice(0, 45)}"` },
+  };
+}
+
 export async function runAssistantArtifactTool(
   name: string,
   args: Record<string, unknown>,
@@ -703,6 +980,10 @@ export async function runAssistantArtifactTool(
   if (name === "read_collaboration_artifact") {
     return readArtifact({ ...args, displayName }, canAccess);
   }
+  if (name === "create_board") return createBoard(args, displayName);
+  if (name === "create_document") return createDocument(args, displayName);
+  if (name === "create_spreadsheet") return createSpreadsheet(args, displayName);
+  if (name === "create_whiteboard") return createWhiteboard(args, displayName);
   if (name === "edit_whiteboard") return editWhiteboard(args, displayName, canAccess);
   if (name === "edit_board") return editBoard(args, displayName, canAccess);
   if (name === "edit_document") return editDocument(args, displayName);

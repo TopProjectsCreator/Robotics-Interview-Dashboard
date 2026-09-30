@@ -18,3 +18,6 @@
 - [Dummy half-edge FIN geometry](occt-dummy-halfedge-fin.md) — resolve curve-less edges from a real FIN, not an arbitrary twin.
 - [Tailwind dev CSS refresh](tailwind-dev-css-refresh.md) — if new page utilities are missing after HMR, compare the generated CSS and restart the existing Vite workflow before rewriting styles.
 - [Parts source coverage](parts-source-coverage.md) — search hits are discovery only; mark a vendor fully synced only after its official feed paginates to a verified end.
+- [Vitest source-file reads](vitest-source-file-reads.md) — under Vitest, read source fixtures from the package-root working directory when `import.meta.url` is virtualized.
+- [Nullable SQL checks](nullable-sql-checks.md) — nullable paired fields need explicit non-null predicates in CHECK constraints because SQL treats UNKNOWN as passing.
+- [Authentication cache expiry](authentication-cache-expiry.md) — auth failures must bypass query retries so stale private data and live connections are cleared immediately.

@@ -11,11 +11,9 @@ import {
   FileText,
   FolderKanban,
   Hash,
-  LockKeyhole,
   Menu,
   MessageCircle,
   PanelTop,
-  ShieldCheck,
   X,
 } from "lucide-react";
 import "./chat-landing.css";
@@ -39,11 +37,6 @@ export default function ChatLanding() {
   return (
     <main className="chat-landing" data-testid="chat-landing">
       <div className="chat-landing__shell">
-        <div className="chat-landing__topline" role="note" data-testid="notice-chat-preview">
-          <span><strong>Public preview</strong> · fictional workspace view</span>
-          <span>Private team records are never shown here</span>
-        </div>
-
         <header className="chat-landing__nav">
           <Link href="/" className="chat-landing__brand" onClick={closeMenu} data-testid="link-chat-brand">
             <span className="chat-landing__brand-mark" aria-hidden="true"><CircleDot size={20} strokeWidth={2.4} /></span>
@@ -94,10 +87,6 @@ export default function ChatLanding() {
                 See how it works <ChevronDown size={16} />
               </a>
             </div>
-            <p className="chat-landing__privacy-note">
-              <ShieldCheck size={14} aria-hidden="true" />
-              <span>This page is an illustrative public preview. Sign in before viewing private conversations, files, or team tools.</span>
-            </p>
           </div>
 
           <div className="chat-landing__preview-wrap">
@@ -107,11 +96,10 @@ export default function ChatLanding() {
                   <p className="chat-landing__workspace-kicker">Wolverines / Team 23442</p>
                   <h2>Team chat</h2>
                 </div>
-                <span className="chat-landing__preview-pill">PUBLIC PREVIEW</span>
               </div>
 
               <div className="chat-landing__workspace-body">
-                <aside className="chat-landing__workspace-sidebar" aria-label="Illustrative conversation list">
+                <aside className="chat-landing__workspace-sidebar" aria-label="Conversation list">
                   <span className="chat-landing__workspace-sidebar-label">CHANNELS</span>
                   <div className="chat-landing__channel-list">
                     {channels.map((channel) => (
@@ -136,7 +124,7 @@ export default function ChatLanding() {
                       <p>Moved the intake layout into a smaller pass. <span className="chat-landing__mention">@design</span> can review the mounting points here.</p>
                       <div className="chat-landing__file-context">
                         <FileCode2 size={15} aria-hidden="true" />
-                        <span><strong>intake-layout-v3.step</strong><small>linked design context · fictional</small></span>
+                        <span><strong>intake-layout-v3.step</strong><small>linked design context</small></span>
                       </div>
                     </div>
                   </div>
@@ -151,30 +139,12 @@ export default function ChatLanding() {
               </div>
 
               <div className="chat-landing__workspace-foot">
-                <span><LockKeyhole size={11} aria-hidden="true" /> Fictional preview content</span>
                 <span>STATIC VIEW</span>
               </div>
               <figcaption id="chat-preview-caption" className="sr-only">
-                Static fictional preview of team chat with generic channels, sample messages, and a made-up file reference.
+                Team chat with generic channels, sample messages, and a file reference.
               </figcaption>
             </figure>
-          </div>
-        </section>
-
-        <section className="chat-landing__boundary" aria-label="Public and private boundary" data-testid="section-chat-boundary">
-          <div className="chat-landing__boundary-item">
-            <ShieldCheck size={18} aria-hidden="true" />
-            <div>
-              <strong>Public by design, private in practice.</strong>
-              <p>Explore the shape of the workspace here. Team conversations and shared files begin after sign-in.</p>
-            </div>
-          </div>
-          <div className="chat-landing__boundary-item">
-            <LockKeyhole size={18} aria-hidden="true" />
-            <div>
-              <strong>Your team space stays yours.</strong>
-              <p>No live messages, member identities, presence, or private file links are loaded on this page.</p>
-            </div>
           </div>
         </section>
 
@@ -200,7 +170,7 @@ export default function ChatLanding() {
               <span className="chat-landing__feature-number">02 / DIRECT CONVERSATIONS</span>
               <h3>Ask a focused question, then bring it back when it matters.</h3>
               <p>Direct conversations keep a quick handoff or sensitive detail out of the main channel until it is ready to help the team.</p>
-              <div className="chat-landing__mini-thread" aria-label="Illustrative direct conversation preview">
+              <div className="chat-landing__mini-thread" aria-label="Direct conversation preview">
                 <div><i aria-hidden="true" /> One-to-one question</div>
                 <div><i aria-hidden="true" /> Clear next step</div>
               </div>
@@ -227,7 +197,7 @@ export default function ChatLanding() {
             </div>
           </div>
 
-          <div className="chat-landing__context-card" aria-label="Illustrative file context preview" data-testid="card-file-context">
+          <div className="chat-landing__context-card" aria-label="File context preview" data-testid="card-file-context">
             <div className="chat-landing__context-top">
               <strong>Review thread</strong>
               <span>CONTEXT ATTACHED</span>
@@ -246,7 +216,7 @@ export default function ChatLanding() {
               <div className="chat-landing__model-file">
                 <span><FileCode2 size={16} aria-hidden="true" /></span>
                 <strong>intake-layout-v3.step</strong>
-                <small className="chat-landing__file-meta">design file · preview</small>
+                <small className="chat-landing__file-meta">design file</small>
               </div>
             </div>
           </div>

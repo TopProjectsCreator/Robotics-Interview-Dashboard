@@ -1,11 +1,18 @@
-export type VerifiedProductMetadata = {
+export type ProductPageMetadata = {
   title: string;
   description: string;
   sku: string | null;
+  imageUrl: string | null;
+  price: string | null;
+  currency: string | null;
+  priceIsStartingAt: boolean;
+  inStock: boolean;
+};
+
+export type VerifiedProductMetadata = ProductPageMetadata & {
   imageUrl: string;
   price: string;
   currency: string;
-  priceIsStartingAt: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -146,6 +153,7 @@ function productPrice(product: JsonRecord, html: string): {
   price: string;
   currency: string;
   priceIsStartingAt: boolean;
+  inStock: boolean;
 } | null {
   const offers = Array.isArray(product.offers)
     ? product.offers.filter(isRecord)
@@ -175,9 +183,9 @@ function productPrice(product: JsonRecord, html: string): {
     const availability = typeof offer.availability === "string"
       ? offer.availability.toLowerCase()
       : "";
-    if (/outofstock|soldout|discontinued|preorderonly/.test(availability)) return [];
+    const outOfStock = /outofstock|soldout|discontinued|preorderonly|out_of_stock|sold_out/.test(availability);
     const highPrice = parsePrice(offer.highPrice);
-    return [{ price, currency, hasRange: Boolean(highPrice && highPrice !== price) }];
+    return [{ price, currency, hasRange: Boolean(highPrice && highPrice !== price), inStock: !outOfStock }];
   });
 
   if (quotes.length > 0) {
@@ -185,24 +193,27 @@ function productPrice(product: JsonRecord, html: string): {
     if (currencies.size !== 1) return null;
     const sorted = quotes.sort((left, right) => Number(left.price) - Number(right.price));
     const distinctPrices = new Set(sorted.map((quote) => quote.price));
+    const inStockQuotes = sorted.filter((quote) => quote.inStock);
+    const chosen = inStockQuotes.length > 0 ? inStockQuotes[0] : sorted[0];
     return {
-      price: sorted[0].price,
-      currency: sorted[0].currency,
+      price: chosen.price,
+      currency: chosen.currency,
       priceIsStartingAt: distinctPrices.size > 1 || sorted.some((quote) => quote.hasRange),
+      inStock: inStockQuotes.length > 0,
     };
   }
 
   const price = parsePrice(pageMetadata(html, "product:price:amount"));
   const currency = pageMetadata(html, "product:price:currency")?.toUpperCase() ?? null;
   if (!price || !currency || !/^[A-Z]{3}$/.test(currency)) return null;
-  return { price, currency, priceIsStartingAt: false };
+  return { price, currency, priceIsStartingAt: false, inStock: true };
 }
 
-export function extractVerifiedProductMetadata(
+export function extractProductPageMetadata(
   html: string,
   pageUrl: string,
   searchTitle: string,
-): VerifiedProductMetadata | null {
+): ProductPageMetadata | null {
   let parsedPage: URL;
   try {
     parsedPage = new URL(pageUrl);
@@ -281,6 +292,69 @@ export function extractVerifiedProductMetadata(
     ? product.sku.trim().slice(0, 200)
     : null;
 
-  if (!title || !description || !imageUrl || !price) return null;
-  return { title, description, sku, imageUrl, ...price };
+  if (!title) return null;
+  return {
+    title,
+    description: description ?? "",
+    sku,
+    imageUrl,
+    price: price?.price ?? null,
+    currency: price?.currency ?? null,
+    priceIsStartingAt: price?.priceIsStartingAt ?? false,
+    inStock: price?.inStock ?? true,
+  };
+}
+
+export function fallbackProductSearchMetadata(
+  titleValue: unknown,
+  descriptionValue: unknown,
+  pageUrl: string,
+): ProductPageMetadata | null {
+  let parsedPage: URL;
+  try {
+    parsedPage = new URL(pageUrl);
+  } catch {
+    return null;
+  }
+  if (
+    parsedPage.protocol !== "https:" ||
+    !/(^|\/)products\/[^/]+\/?$/i.test(parsedPage.pathname)
+  ) {
+    return null;
+  }
+
+  const title = cleanDescription(titleValue)?.slice(0, 250) ?? "";
+  if (!title) return null;
+  return {
+    title,
+    description: cleanDescription(descriptionValue)?.slice(0, 1200) ?? "",
+    sku: null,
+    imageUrl: null,
+    price: null,
+    currency: null,
+    priceIsStartingAt: false,
+    inStock: true,
+  };
+}
+
+export function extractVerifiedProductMetadata(
+  html: string,
+  pageUrl: string,
+  searchTitle: string,
+): VerifiedProductMetadata | null {
+  const metadata = extractProductPageMetadata(html, pageUrl, searchTitle);
+  if (
+    !metadata?.description ||
+    !metadata.imageUrl ||
+    !metadata.price ||
+    !metadata.currency
+  ) {
+    return null;
+  }
+  return {
+    ...metadata,
+    imageUrl: metadata.imageUrl,
+    price: metadata.price,
+    currency: metadata.currency,
+  };
 }

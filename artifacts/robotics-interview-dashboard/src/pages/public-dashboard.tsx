@@ -11,7 +11,6 @@ import {
   Monitor,
   Radio,
   Rows3,
-  ShieldCheck,
   Sparkles,
   UsersRound,
   X,
@@ -122,7 +121,7 @@ export default function PublicDashboard() {
 
           <nav
             id="public-dashboard-nav"
-            aria-label="Public preview navigation"
+            aria-label="Primary navigation"
             className={`${menuOpen ? "flex" : "hidden"} absolute left-0 right-0 top-[70px] flex-col gap-1 rounded-xl border border-[#d9e6e1] bg-white p-2 shadow-lg dark:border-[#28464d] dark:bg-[#122a32] md:static md:flex md:flex-row md:items-center md:gap-7 md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
             data-testid="public-dashboard-nav-links"
           >
@@ -163,16 +162,6 @@ export default function PublicDashboard() {
           </button>
         </header>
 
-        <div
-          className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-y border-[#d9e6e1] bg-white/55 px-4 py-2.5 text-center font-mono text-[9px] uppercase tracking-[.08em] text-[#43616a] dark:border-[#28464d] dark:bg-[#122a32]/65 dark:text-[#b6ceca] sm:text-[10px]"
-          role="note"
-          data-testid="notice-preview-content"
-        >
-          <Sparkles size={12} aria-hidden="true" className="text-[#168b94] dark:text-[#7edbd0]" />
-          <strong className="font-medium text-[#168b94] dark:text-[#7edbd0]">Platform preview</strong>
-          <span>Illustrative interface only · no private team records or live data</span>
-        </div>
-
         <section
           id="platform"
           className="grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[.92fr_1.08fr] lg:gap-16 lg:py-24"
@@ -209,10 +198,6 @@ export default function PublicDashboard() {
                 Team sign in <ArrowRight size={15} />
               </Link>
             </div>
-            <p className="mt-5 flex items-center gap-2 font-mono text-[9px] leading-5 text-[#70868b] dark:text-[#91aaa8]">
-              <ShieldCheck size={14} className="shrink-0 text-[#4f9a7b]" />
-              <span>Private team information stays inside the signed-in workspace.</span>
-            </p>
           </div>
 
           <div className="relative min-w-0">
@@ -226,7 +211,7 @@ export default function PublicDashboard() {
             />
             <div
               className="relative overflow-hidden rounded-2xl border border-[#2c5963] bg-[#153642] text-[#eaf5f0] shadow-[0_24px_60px_rgba(21,54,66,.2)]"
-              aria-label="Illustrative preview of the robotics workspace"
+              aria-label="Robotics workspace preview"
               data-testid="card-workspace-preview"
             >
               <div
@@ -240,9 +225,6 @@ export default function PublicDashboard() {
                     Robotics workspace
                   </h2>
                 </div>
-                <span className="shrink-0 rounded-full border border-[#64ae8e]/35 bg-[#64ae8e]/10 px-2.5 py-1.5 font-mono text-[8px] tracking-[.08em] text-[#b8e0c7]">
-                  PREVIEW
-                </span>
               </div>
               <div className="relative grid grid-cols-1 gap-2.5 p-4 sm:grid-cols-2 sm:gap-3 sm:p-6">
                 {workspaceModules.map(({ label, title, detail, icon: Icon, color }) => (
@@ -263,7 +245,6 @@ export default function PublicDashboard() {
               </div>
               <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-3 font-mono text-[9px] text-[#8cb7b5] sm:px-7">
                 <span className="inline-flex items-center gap-2"><Radio size={12} /> SHARED TEAM TOOLS</span>
-                <span>ILLUSTRATIVE PREVIEW</span>
               </div>
             </div>
           </div>
@@ -426,7 +407,6 @@ export default function PublicDashboard() {
 
         <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
           <span>Wolverines Robotics · Team 23442</span>
-          <span className="inline-flex items-center gap-2"><ShieldCheck size={12} /> Public preview · no private team records</span>
         </footer>
       </div>
     </main>

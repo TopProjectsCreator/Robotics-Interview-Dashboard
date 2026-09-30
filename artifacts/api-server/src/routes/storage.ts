@@ -1,6 +1,7 @@
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
+  UploadPartsRobotPreviewFileResponse,
 } from '@workspace/api-zod';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -17,7 +18,8 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
-import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { requireAdmin } from "../middlewares/adminAuth";
+import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -310,6 +312,44 @@ router.post(
 );
 
 /**
+ * POST /storage/parts-robot-previews
+ *
+ * Store a validated image or supported CAD file for the authenticated Parts
+ * workspace. The returned object path remains private and is served only by
+ * the admin-gated /storage/objects route.
+ */
+router.post(
+  '/storage/parts-robot-previews',
+  requireAdmin,
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    if (!data || !Buffer.isBuffer(data)) {
+      res.status(400).json({ error: 'No preview file data received' });
+      return;
+    }
+    const fileName = typeof req.query.fileName === 'string' ? req.query.fileName.trim() : '';
+    const contentType = typeof req.query.contentType === 'string'
+      ? req.query.contentType.trim().toLowerCase()
+      : '';
+    const validationError = validatePartsPreviewFile(fileName, contentType, data);
+    if (validationError) {
+      res.status(
+        validationError.includes('upload limit') ? 413 : 400,
+      ).json({ error: validationError });
+      return;
+    }
+    try {
+      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
+      res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
+    } catch (error) {
+      req.log.error({ err: error }, 'Robot preview upload failed');
+      res.status(500).json({ error: 'Unable to store this robot preview.' });
+    }
+  },
+);
+
+/**
  * POST /storage/parasolid-preview
  *
  * Convert a private Parasolid attachment locally. Large X_T files use the
@@ -318,7 +358,7 @@ router.post(
  */
 router.post(
   '/storage/parasolid-preview',
-  requireCoordinator,
+  requireAdmin,
   express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
     let data = req.body as Buffer | undefined;

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractVerifiedProductMetadata } from "./partsProductMetadata.ts";
+import {
+  extractProductPageMetadata,
+  extractVerifiedProductMetadata,
+  fallbackProductSearchMetadata,
+} from "./partsProductMetadata.ts";
 
 const productJsonLd = JSON.stringify({
   "@context": "https://schema.org",
@@ -29,6 +33,7 @@ test("extracts product details only when supplier markup includes image and pric
       price: "4.50",
       currency: "USD",
       priceIsStartingAt: false,
+      inStock: true,
     },
   );
 });
@@ -60,7 +65,70 @@ test("rejects PDFs, category pages, and structured data without an image or offe
   );
 });
 
-test("rejects collection pages with product cards and unavailable offers", () => {
+test("keeps verified product pages when the supplier does not publish price, image, or description", () => {
+  const product = JSON.stringify({
+    "@type": "Product",
+    name: "Unpriced actuator bracket",
+    sku: "BRACKET-ACT-1",
+  });
+  const html = `<meta property="og:type" content="product"><script type="application/ld+json">${product}</script>`;
+  const pageUrl = "https://shop.example.com/products/actuator-bracket";
+  assert.deepEqual(
+    extractProductPageMetadata(html, pageUrl, "Unpriced actuator bracket"),
+    {
+      title: "Unpriced actuator bracket",
+      description: "",
+      sku: "BRACKET-ACT-1",
+      imageUrl: null,
+      price: null,
+      currency: null,
+      priceIsStartingAt: false,
+      inStock: true,
+    },
+  );
+  assert.equal(
+    extractVerifiedProductMetadata(html, pageUrl, "Unpriced actuator bracket"),
+    null,
+  );
+});
+
+test("keeps official product search candidates when supplier pages block metadata fetches", () => {
+  assert.deepEqual(
+    fallbackProductSearchMetadata(
+      "5/16 in. (8 mm) Round Bore Split Collar Clamp",
+      "Aluminum clamp-on shaft collar for a CIM motor shaft.",
+      "https://andymark.com/products/5-16-in-8-mm-round-bore-split-collar-clamp",
+    ),
+    {
+      title: "5/16 in. (8 mm) Round Bore Split Collar Clamp",
+      description: "Aluminum clamp-on shaft collar for a CIM motor shaft.",
+      sku: null,
+      imageUrl: null,
+      price: null,
+      currency: null,
+      priceIsStartingAt: false,
+      inStock: true,
+    },
+  );
+  assert.equal(
+    fallbackProductSearchMetadata(
+      "Collar Clamps",
+      "A collection of collar clamps.",
+      "https://andymark.com/collections/shaft-collars",
+    ),
+    null,
+  );
+  assert.equal(
+    fallbackProductSearchMetadata(
+      "Unsecure collar",
+      "Not an HTTPS supplier page.",
+      "http://andymark.com/products/collar",
+    ),
+    null,
+  );
+});
+
+test("rejects collection pages with product cards and marks unavailable offers out of stock", () => {
   const collection = JSON.stringify({
     "@type": "CollectionPage",
     "@graph": [JSON.parse(productJsonLd)],
@@ -78,13 +146,22 @@ test("rejects collection pages with product cards and unavailable offers", () =>
     ...JSON.parse(productJsonLd),
     offers: { "@type": "Offer", price: "4.50", priceCurrency: "USD", availability: "https://schema.org/OutOfStock" },
   });
-  assert.equal(
+  assert.deepEqual(
     extractVerifiedProductMetadata(
       `<meta property="og:type" content="product"><script type="application/ld+json">${outOfStockProduct}</script>`,
       "https://shop.example.com/products/unavailable",
       "8 mm Shaft Collar",
     ),
-    null,
+    {
+      title: "8 mm Shaft Collar",
+      description: "An aluminum shaft collar with a clamping screw.",
+      sku: "COLLAR-8",
+      imageUrl: "https://cdn.example.com/collar.jpg",
+      price: "4.50",
+      currency: "USD",
+      priceIsStartingAt: false,
+      inStock: false,
+    },
   );
 });
 

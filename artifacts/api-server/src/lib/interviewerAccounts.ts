@@ -18,7 +18,6 @@ export async function syncInterviewerAccounts(labels: string[]): Promise<Intervi
         displayName,
         normalizedName,
         passwordHash: null,
-        role: "interviewer",
       }).returning();
       if (created) byName.set(normalizedName, created);
     }

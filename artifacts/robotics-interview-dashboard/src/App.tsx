@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -44,9 +44,9 @@ import {
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -80,7 +80,58 @@ import {
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
 
-const queryClient = new QueryClient();
+const sessionQueryKey = getGetSessionQueryKey();
+const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
+
+function isExpiredSessionError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("status" in error) || error.status !== 401) return false;
+  const url = "url" in error && typeof error.url === "string" ? error.url : "";
+  const path = url ? new URL(url, window.location.origin).pathname : "";
+  // These endpoints are deliberately available before sign-in; a wrong
+  // password or event passcode must not invalidate an existing session.
+  if (/\/api\/auth\/(?:interviewers\/?$|interviewers\/setup$|login$)/.test(path)) return false;
+  return true;
+}
+
+function signInErrorMessage(error: unknown, fallback = "Could not complete sign-in. Check the team access code and password and try again."): string {
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+
+  if (status === 401) return "The team access code or personal password is incorrect.";
+  if (status === 429) return "Too many sign-in attempts. Wait a minute and try again.";
+  if (typeof status !== "number" || status >= 500) {
+    return "Sign-in is temporarily unavailable. Check your connection and try again.";
+  }
+  return fallback;
+}
+
+function expireSessionOnError(error: unknown) {
+  if (isExpiredSessionError(error)) clearUserScopedRecords(queryClient);
+}
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => !isExpiredSessionError(error) && failureCount < 3,
+    },
+  },
+  queryCache: new QueryCache({
+    onSuccess: (data, query) => {
+      if (
+        isSessionQuery(query.queryKey) &&
+        data !== null &&
+        typeof data === "object" &&
+        "authenticated" in data &&
+        data.authenticated === false
+      ) {
+        clearUserScopedRecords(queryClient);
+      }
+    },
+    onError: expireSessionOnError,
+  }),
+  mutationCache: new MutationCache({ onError: expireSessionOnError }),
+});
 const categories = ["advance", "hold", "decline", "unranked"];
 const statuses = ["queued", "in_progress", "completed"];
 type BrowserSpeechResult = { 0?: { transcript?: string } };
@@ -156,7 +207,6 @@ function SettingRow({ title, detail, children }: { title: string; detail?: strin
 function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { settings } = useWorkspaceSettings();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const isCoordinator = session.data?.role === "coordinator";
   const [, setLocation] = useLocation();
   const logout = useLogout();
   const [open, setOpen] = useState(false);
@@ -175,8 +225,8 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-2xl">
       <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
       <div className="p-2">
-        {isCoordinator && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>}
-        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
+        <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>
+        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
       </div>
     </div>}
   </div>;
@@ -197,20 +247,6 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
   const updateInterviewerPassword = useUpdateInterviewerPassword();
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
-  const updateInterviewerRole = useUpdateInterviewerRole();
-  const deleteInterviewer = useDeleteInterviewer();
-  const changeInterviewerRole = (id: string, role: "coordinator" | "interviewer") => {
-    updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
-      onSuccess: () => { setPasswordNotice("Access updated."); setPasswordError(""); qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() }); },
-      onError: () => { setPasswordError("Could not update access. Try again."); },
-    });
-  };
-  const removeInterviewerAccount = (id: string, displayName: string) => {
-    deleteInterviewer.mutate({ interviewerId: id }, {
-      onSuccess: () => { setPasswordNotice(`${displayName} was removed from the team.`); setPasswordError(""); qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() }); },
-      onError: () => { setPasswordError("Could not remove that account. Try again."); },
-    });
-  };
   const enableNotifications = async () => {
     try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ }
     setNotifyState(browserNotifyPermission());
@@ -221,8 +257,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     setPasswordError("");
     qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
     if (resetSession) {
-      clearStoredAuthToken();
-      qc.clear();
+      clearAuthSession(qc);
       onClose();
       setLocation("/");
     }
@@ -319,9 +354,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa]">
           {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91]">Loading interviewer accounts…</p>}
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Coordinator" : "Helper"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div>
+            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div>
             <div className="flex flex-wrap gap-2"><input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="New password" data-testid={`input-settings-password-${account.id}`} className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs outline-none focus:border-[#16869a]" /><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? "")} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Set</button><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] disabled:opacity-50">Reset</button></div>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91]">Access:</span><Segmented options={[{ value: "coordinator", label: "Coordinator" }, { value: "interviewer", label: "Helper" }]} value={account.role === "coordinator" ? "coordinator" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" disabled={passwordBusy} onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] disabled:opacity-50">Remove</button>}</div>
           </div>)}
         </div>
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2.5 text-xs font-semibold text-[#a34d46] disabled:opacity-50"><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
@@ -817,6 +851,11 @@ function MarkdownContent({
     if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
       flush();
       blocks.push(<hr key={`rule-${key++}`} className="border-[#dce9e8]" />);
+      return;
+    }
+    if (/^(?:!\[[^\]]*\]|\[[^\]]+\])\(\/api\/storage\/objects\/[^)]+\)$/.test(trimmed)) {
+      flush();
+      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople)}</div>);
       return;
     }
     if (orderedItems.length || unorderedItems.length) flushLists();
@@ -1332,7 +1371,8 @@ function LegacyLogin() {
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
-  useEffect(() => { if (session.data?.authenticated && (location === "/" || location === "/auth")) setLocation("/dashboard"); }, [session.data, location, setLocation]);
+  const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
+  useEffect(() => { if (session.data?.authenticated && (location.split("?")[0] === "/" || location.split("?")[0] === "/auth")) setLocation(returnTo); }, [session.data, location, returnTo, setLocation]);
   useEffect(() => {
     // Browsers may ignore autoFocus in an iframe until the document has
     // mounted, so focus again after the login view is ready.
@@ -1342,7 +1382,13 @@ function LegacyLogin() {
   useEffect(() => {
     if (!selectedId && interviewers.data?.items[0]) setSelectedId(interviewers.data.items[0].id);
   }, [interviewers.data, selectedId]);
-  const finishLogin = (response: { token?: string }) => { storeAuthToken(response.token); qc.invalidateQueries({ queryKey: getGetSessionQueryKey() }); setLocation("/dashboard"); };
+  const finishLogin = (response: AuthSession) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    storeAuthToken(token);
+    qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    setLocation(returnTo);
+  };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const selected = interviewers.data?.items.find(item => item.id === selectedId);
@@ -1390,32 +1436,63 @@ function Login() {
   const [personalPassword, setPersonalPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
+  const [sessionEndedInAnotherTab, setSessionEndedInAnotherTab] = useState(false);
   const [location, setLocation] = useLocation();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const interviewers = useListInterviewers({
-    query: { queryKey: getListInterviewersQueryKey(), enabled: step !== "event" },
+    query: {
+      queryKey: getListInterviewersQueryKey(),
+      enabled: step !== "event",
+      retry: false,
+      networkMode: "always",
+      queryFn: async ({ signal }) => {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 5000);
+        const abortFromQuery = () => controller.abort(signal.reason);
+        if (signal.aborted) abortFromQuery();
+        else signal.addEventListener("abort", abortFromQuery, { once: true });
+        try {
+          return await listInterviewers({ signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeout);
+          signal.removeEventListener("abort", abortFromQuery);
+        }
+      },
+    },
   });
+  const teamAccounts = interviewers.data?.items ?? [];
+  const accountLookupBusy = interviewers.isPending || interviewers.isFetching || interviewers.isPaused;
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
-  const selected = interviewers.data?.items.find(item => item.id === selectedId);
+  const selected = teamAccounts.find(item => item.id === selectedId);
   const busy = login.isPending || setup.isPending || create.isPending;
+  const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
 
   useEffect(() => {
-    if (session.data?.authenticated && (location === "/" || location === "/auth")) setLocation("/dashboard");
-  }, [session.data, location, setLocation]);
+    if (consumeAuthSessionEndedByAnotherTab()) setSessionEndedInAnotherTab(true);
+  }, []);
+
+  useEffect(() => {
+    const route = location.split("?")[0];
+    if (session.data?.authenticated && !sessionEndedInAnotherTab && (route === "/" || route === "/auth")) {
+      setLocation(returnTo);
+    }
+  }, [session.data, sessionEndedInAnotherTab, location, returnTo, setLocation]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [step]);
 
-  const finishLogin = (response: { token?: string }) => {
-    storeAuthToken(response.token);
+  const finishLogin = (response: AuthSession) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
-    setLocation("/dashboard");
+    setLocation(returnTo);
   };
 
   const continueFromEvent = (event: React.FormEvent) => {
@@ -1452,7 +1529,10 @@ function Login() {
         onSuccess: () => {
           login.mutate(
             { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-            { onSuccess: finishLogin, onError: () => setError("Password setup succeeded, but sign-in failed. Try again.") },
+            {
+              onSuccess: finishLogin,
+              onError: error => setError(signInErrorMessage(error, "Password setup succeeded, but sign-in could not be completed. Try again.")),
+            },
           );
         },
         onError: error => {
@@ -1481,7 +1561,7 @@ function Login() {
     }
     login.mutate(
       { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-      { onSuccess: finishLogin, onError: () => setError("The team access code or personal password is incorrect.") },
+      { onSuccess: finishLogin, onError: error => setError(signInErrorMessage(error)) },
     );
   };
 
@@ -1497,9 +1577,13 @@ function Login() {
       },
       {
         onSuccess: account => {
+          void qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
           login.mutate(
             { data: { interviewerId: account.id, eventPassword, password: personalPassword } },
-            { onSuccess: finishLogin, onError: () => setError("Account created, but sign-in failed. Try again.") },
+            {
+              onSuccess: finishLogin,
+              onError: error => setError(signInErrorMessage(error, "Account created, but sign-in could not be completed. Try again.")),
+            },
           );
         },
         onError: error => {
@@ -1593,6 +1677,15 @@ function Login() {
             </div>
             <h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{heading}</h2>
             <p className="mt-3 text-sm leading-6 text-[#63747c] dark:text-[#a4bbc3]">{description}</p>
+            {sessionEndedInAnotherTab && (
+              <p
+                role="status"
+                data-testid="session-ended-in-another-tab"
+                className="mt-5 rounded-xl border border-[#e5d18b] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#665214] dark:border-[#806b3d] dark:bg-[#392f1a] dark:text-[#f6df94]"
+              >
+                Your session ended in another tab. Sign in again to continue.
+              </p>
+            )}
 
             {step === "event" && (
               <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
@@ -1607,10 +1700,40 @@ function Login() {
 
             {step === "interviewer" && (
               <div className="mt-8 space-y-3">
-                {interviewers.isLoading && <p className="rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#a4bbc3]">Loading team accounts…</p>}
-                {interviewers.data?.items.map(item => (
+                {accountLookupBusy && (
+                  <p role="status" className="rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#a4bbc3]">
+                    {interviewers.isPaused ? "Waiting for a connection…" : "Loading team accounts…"}
+                  </p>
+                )}
+                {!accountLookupBusy && interviewers.isError && (
+                  <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e5c4bf] bg-white px-4 py-4 text-sm text-[#8b3d36] dark:border-[#70423f] dark:bg-[#1b303b] dark:text-[#ffaaa1]">
+                    <span>{teamAccounts.length ? "Could not refresh team accounts. Showing the last loaded list." : "Could not load team accounts. Check your connection and try again."}</span>
+                    <button
+                      type="button"
+                      onClick={() => void interviewers.refetch()}
+                      disabled={interviewers.isFetching}
+                      className="rounded-lg border border-current px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+                {!accountLookupBusy && !teamAccounts.length && interviewers.isSuccess && (
+                  <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#d5e0e0] bg-white px-4 py-4 text-sm text-[#63747c] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#a4bbc3]">
+                    <span>No team accounts were returned. Refresh the list before adding an account.</span>
+                    <button
+                      type="button"
+                      onClick={() => void interviewers.refetch()}
+                      disabled={interviewers.isFetching}
+                      className="rounded-lg border border-current px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Refresh list
+                    </button>
+                  </div>
+                )}
+                {!accountLookupBusy && teamAccounts.map(item => (
                   <button key={item.id} type="button" onClick={() => chooseInterviewer(item.id)} data-testid={`button-choose-interviewer-${item.displayName.toLowerCase().replaceAll(" ", "-")}`} className="flex w-full items-center justify-between rounded-xl border border-[#cbd7da] bg-white px-4 py-4 text-left transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#395563] dark:bg-[#1b303b] dark:hover:bg-[#203b47]">
-                    <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.role === "coordinator" ? "Coordinator" : "Helper"} · {item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
+                    <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
                     <ChevronRight size={18} className="text-[#16869a]" />
                   </button>
                 ))}
@@ -1679,6 +1802,11 @@ function Shell({ children }: { children: ReactNode }) {
   usePresenceHeartbeat(session.data?.authenticated === true, location);
   useRealtimeSync(session.data?.authenticated === true);
   const qc = useQueryClient();
+  useEffect(() => listenForAuthSessionEnd(() => {
+    markAuthSessionEndedByAnotherTab();
+    clearUserScopedRecords(qc);
+    setLocation(getAuthRedirectPath(getCurrentPathWithQuery()));
+  }), [qc, setLocation]);
   const broadcasts = useGetMyBroadcasts({
     query: {
       queryKey: getGetMyBroadcastsQueryKey(),
@@ -1722,19 +1850,8 @@ function Shell({ children }: { children: ReactNode }) {
       }
     }
   }, [broadcasts.data, dismissedBroadcasts]);
-  const isCoordinator = session.data?.role === "coordinator";
-  const shellPath = location.split(/[?#]/, 1)[0];
-  const isPartsAssistant = shellPath === "/parts/assistant" || shellPath.startsWith("/parts/assistant/");
-  const restrictedAllowed =
-    shellPath === "/chat" || shellPath.startsWith("/chat/") ||
-    shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant);
-  const restrictedBlocked = session.data?.authenticated === true && !isCoordinator && !restrictedAllowed;
-  useEffect(() => {
-    if (restrictedBlocked) setLocation("/chat");
-  }, [restrictedBlocked, setLocation]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
-  if (!session.data?.authenticated) return <Redirect to="/auth" />;
-  if (restrictedBlocked) return null;
+  if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
   const workspaceArea = workspaceAreaForPath(location);
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
@@ -1746,12 +1863,7 @@ function Shell({ children }: { children: ReactNode }) {
     assistant: Bot,
     parts: Box,
   };
-  const nav = (isCoordinator
-    ? getWorkspaceNavigation(workspaceArea)
-    : [
-        { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
-        { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
-      ] as { href: string; label: string; iconKey: WorkspaceNavIcon; kind: "workspace" | "section" }[]).map((item) => ({
+  const nav = getWorkspaceNavigation(workspaceArea).map((item) => ({
     ...item,
     icon: navIcons[item.iconKey],
   }));
@@ -1805,7 +1917,7 @@ function Shell({ children }: { children: ReactNode }) {
             <Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link>
           </div>
         )}
-        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
+        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
         <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
@@ -2350,7 +2462,7 @@ function Applicants() {
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge><SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge><SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button><button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button><div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
 function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
 type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
 
@@ -2545,7 +2657,7 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
   </div>;
 }
 
-function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); useEffect(() => { if (detail.data) { setNotes(detail.data.notes); setEditName(detail.data.name); setEditGrade(detail.data.grade); setEditEmail(detail.data.email ?? ""); setEditScore(String(detail.data.aiScore)); setEditRec(detail.data.aiRecommendation); } }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
+function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); useEffect(() => { if (detail.data) { setNotes(detail.data.notes); setEditName(detail.data.name); setEditGrade(detail.data.grade); setEditEmail(detail.data.email ?? ""); setEditScore(String(detail.data.aiScore)); setEditRec(detail.data.aiRecommendation); } }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
     setPhotoError("");
     if (!file.type.startsWith("image/")) { setPhotoError("Please choose an image file."); return; }
     if (file.size > 5 * 1024 * 1024) { setPhotoError("Images must be under 5 MB."); return; }
@@ -2561,9 +2673,7 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPhotoError("Photo upload failed. Try again.");
     }
   };
-  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
-  if (readOnly) return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Coordinator notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
-  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } }); }; return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
 
@@ -3969,7 +4079,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         await withTimeout(sendChat.mutateAsync({
           data: {
             author: "AI assistant",
-            ...(conversationPeer ? { conversationAuthor: activeInterviewer } : {}),
+            conversationAuthor: activeInterviewer,
             message: response.answer,
             scope: conversationScope,
             ...(conversationPeer ? { recipient: conversationPeer } : {}),
@@ -4295,6 +4405,7 @@ function Queue() {
         setLabels(response.interviewerLabels);
         qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
         qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
       },
     });
   };
@@ -4605,8 +4716,12 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
   if (tool === "list_collaboration_artifacts") return { label: "Listed shared artifacts", Icon: Search };
   if (tool === "read_collaboration_artifact") return { label: "Read artifact", Icon: Search };
+  if (tool === "create_board") return { label: "Created task board", Icon: ClipboardList };
+  if (tool === "create_document") return { label: "Created document", Icon: FileText };
+  if (tool === "create_spreadsheet") return { label: "Created spreadsheet", Icon: FileSpreadsheet };
+  if (tool === "create_whiteboard") return { label: "Created whiteboard", Icon: FilePenLine };
   if (tool === "edit_whiteboard") return { label: "Edited whiteboard", Icon: Pencil };
-  if (tool === "edit_board") return { label: "Edited board", Icon: ClipboardList };
+  if (tool === "edit_board") return { label: "Edited task board", Icon: ClipboardList };
   if (tool === "edit_document") return { label: "Edited document", Icon: Pencil };
   if (tool === "edit_spreadsheet") return { label: "Edited spreadsheet", Icon: ClipboardList };
   return { label: tool, Icon: Sparkles };
@@ -5275,5 +5390,5 @@ function Router() {
   );
 }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
-export { MarkdownContent, renderInlineMarkdown };
+export { InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;

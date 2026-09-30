@@ -15,7 +15,6 @@ import {
   UpdateInterviewerPasswordBody,
   UpdateInterviewerPasswordParams,
   UpdateInterviewerPasswordResponse,
-  UpdateInterviewerRoleResponse,
   ResetAllInterviewerPasswordsResponse,
   ResetAllInterviewerPasswordsBody,
 } from "@workspace/api-zod";
@@ -26,7 +25,6 @@ import {
   isValidAdminSession,
   requestAdminSession,
   requireAdmin,
-  requireCoordinator,
   revokeAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
@@ -127,8 +125,8 @@ function passwordHashMatches(password: string, encoded: string | null): boolean 
   }
 }
 
-function publicAccount(account: { id: string; displayName: string; passwordHash: string | null; role: string }) {
-  return { id: account.id, displayName: account.displayName, hasPassword: Boolean(account.passwordHash), role: account.role };
+function publicAccount(account: { id: string; displayName: string; passwordHash: string | null }) {
+  return { id: account.id, displayName: account.displayName, hasPassword: Boolean(account.passwordHash) };
 }
 
 router.get("/auth/interviewers", async (_req, res): Promise<void> => {
@@ -160,7 +158,6 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     displayName,
     normalizedName,
     passwordHash: hashPassword(parsed.data.password),
-    role: "interviewer",
   }).returning();
   if (!account) {
     res.status(500).json({ error: "Could not create interviewer." });
@@ -200,7 +197,7 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
   res.json(SetupInterviewerPasswordResponse.parse(publicAccount(updated)));
 });
 
-router.patch("/auth/interviewers/:interviewerId/password", requireCoordinator, async (req, res): Promise<void> => {
+router.patch("/auth/interviewers/:interviewerId/password", requireAdmin, async (req, res): Promise<void> => {
   const params = UpdateInterviewerPasswordParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Interviewer is required." });
@@ -235,7 +232,7 @@ router.patch("/auth/interviewers/:interviewerId/password", requireCoordinator, a
   res.json(UpdateInterviewerPasswordResponse.parse(publicAccount(updated)));
 });
 
-router.post("/auth/interviewers/passwords/reset-all", requireCoordinator, async (req, res): Promise<void> => {
+router.post("/auth/interviewers/passwords/reset-all", requireAdmin, async (req, res): Promise<void> => {
   const parsed = ResetAllInterviewerPasswordsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "The event passcode is required." });
@@ -249,7 +246,7 @@ router.post("/auth/interviewers/passwords/reset-all", requireCoordinator, async 
   res.json(ResetAllInterviewerPasswordsResponse.parse({ message: "All interviewer passwords were reset. Each interviewer must set up a new password." }));
 });
 
-router.delete("/auth/interviewers/:interviewerId", requireCoordinator, async (req, res): Promise<void> => {
+router.delete("/auth/interviewers/:interviewerId", requireAdmin, async (req, res): Promise<void> => {
   const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
   if (!interviewerId) {
     res.status(400).json({ error: "Interviewer id required" });
@@ -264,31 +261,6 @@ router.delete("/auth/interviewers/:interviewerId", requireCoordinator, async (re
   const labels = await getInterviewSettings();
   await updateQueueLabels(labels.filter((label) => normalizeInterviewerName(label) !== account.normalizedName));
   res.status(204).end();
-});
-
-router.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async (req, res): Promise<void> => {
-  const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
-  const role = (req.body as Record<string, unknown> | undefined)?.role;
-  if (!interviewerId || (role !== "coordinator" && role !== "interviewer")) {
-    res.status(400).json({ error: "Interviewer id and a valid role are required" });
-    return;
-  }
-  const selfId = (req as Request & { interviewerId?: string }).interviewerId;
-  if (selfId === interviewerId) {
-    res.status(400).json({ error: "You cannot change your own role" });
-    return;
-  }
-  const account = await accountById(interviewerId);
-  if (!account) {
-    res.status(404).json({ error: "Interviewer not found." });
-    return;
-  }
-  const [updated] = await db.update(interviewerAccountsTable).set({ role, updatedAt: new Date() }).where(eq(interviewerAccountsTable.id, interviewerId)).returning();
-  if (!updated) {
-    res.status(500).json({ error: "Could not update role." });
-    return;
-  }
-  res.json(UpdateInterviewerRoleResponse.parse(publicAccount(updated)));
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {
@@ -331,7 +303,7 @@ router.get("/auth/session", async (req, res): Promise<void> => {
     res.json(GetSessionResponse.parse({ authenticated: false }));
     return;
   }
-  res.json(GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role }));
+  res.json(GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id }));
 });
 
 router.post("/auth/logout", (req, res): void => {
