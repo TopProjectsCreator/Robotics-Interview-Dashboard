@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   extractProductPageMetadata,
   extractVerifiedProductMetadata,
+  fallbackProductSearchMetadata,
 } from "./partsProductMetadata.ts";
 
 const productJsonLd = JSON.stringify({
@@ -87,6 +88,42 @@ test("keeps verified product pages when the supplier does not publish price, ima
   );
   assert.equal(
     extractVerifiedProductMetadata(html, pageUrl, "Unpriced actuator bracket"),
+    null,
+  );
+});
+
+test("keeps official product search candidates when supplier pages block metadata fetches", () => {
+  assert.deepEqual(
+    fallbackProductSearchMetadata(
+      "5/16 in. (8 mm) Round Bore Split Collar Clamp",
+      "Aluminum clamp-on shaft collar for a CIM motor shaft.",
+      "https://andymark.com/products/5-16-in-8-mm-round-bore-split-collar-clamp",
+    ),
+    {
+      title: "5/16 in. (8 mm) Round Bore Split Collar Clamp",
+      description: "Aluminum clamp-on shaft collar for a CIM motor shaft.",
+      sku: null,
+      imageUrl: null,
+      price: null,
+      currency: null,
+      priceIsStartingAt: false,
+      inStock: true,
+    },
+  );
+  assert.equal(
+    fallbackProductSearchMetadata(
+      "Collar Clamps",
+      "A collection of collar clamps.",
+      "https://andymark.com/collections/shaft-collars",
+    ),
+    null,
+  );
+  assert.equal(
+    fallbackProductSearchMetadata(
+      "Unsecure collar",
+      "Not an HTTPS supplier page.",
+      "http://andymark.com/products/collar",
+    ),
     null,
   );
 });

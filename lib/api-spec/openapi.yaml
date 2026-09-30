@@ -1471,6 +1471,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: manualOnly
+          in: query
+          schema:
+            type: boolean
+          description: When true, only return manually saved catalog items, excluding synced supplier feed records.
         - name: limit
           in: query
           schema:

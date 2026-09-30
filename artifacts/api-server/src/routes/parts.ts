@@ -25,6 +25,7 @@ import {
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
 import {
+  fallbackProductSearchMetadata,
   extractProductPageMetadata,
   extractVerifiedProductMetadata,
 } from "../lib/partsProductMetadata";
@@ -140,6 +141,7 @@ async function upsertCatalogRecord(
     description: string | null;
     productUrl: string | null;
     imageUrl: string | null;
+    isManual: boolean;
   },
 ): Promise<{ id: string; created: boolean }> {
   const existing = await client.query(
@@ -150,8 +152,8 @@ async function upsertCatalogRecord(
   const id = created ? randomUUID() : String(existing.rows[0].id);
   const saved = await client.query(
     `insert into "parts_catalog_items"
-       ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url")
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict ("vendor_key", "external_key") do update set
        "name" = excluded."name",
        "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
@@ -159,6 +161,7 @@ async function upsertCatalogRecord(
        "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
        "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
        "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+       "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
        "updated_at" = now()
      returning "id"`,
     [
@@ -171,6 +174,7 @@ async function upsertCatalogRecord(
       input.description,
       input.productUrl,
       input.imageUrl,
+      input.isManual,
     ],
   );
   const savedId = String(saved.rows[0].id);
@@ -421,6 +425,46 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   inStock: boolean;
 };
 
+function fallbackOfficialProductResult(
+  candidate: PublicCatalogSearchCandidate,
+  vendor: VendorConfig,
+): PublicCatalogSearchResult | null {
+  if (
+    vendor.catalogMode !== "products" ||
+    vendor.coverageState === "access_restricted" ||
+    vendor.coverageState === "custom_fabrication"
+  ) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(candidate.url);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || !vendorOwnsHost(url.hostname, vendor)) return null;
+
+  const metadata = fallbackProductSearchMetadata(
+    candidate.title,
+    candidate.description,
+    url.toString(),
+  );
+  if (!metadata || metadata.title.toLowerCase() === vendor.name.toLowerCase()) return null;
+  return {
+    vendorKey: vendor.key,
+    vendorName: vendor.name,
+    title: metadata.title,
+    url: url.toString(),
+    description: metadata.description,
+    sku: null,
+    imageUrl: null,
+    price: null,
+    currency: null,
+    priceIsStartingAt: false,
+    inStock: true,
+  };
+}
+
 export const ASSISTANT_PARTS_TOOLS = [
   {
     type: "function" as const,
@@ -665,7 +709,7 @@ async function searchWithExa(
           query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
           objective:
             "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
-          numResults: 20,
+          numResults: 30,
         },
       },
     }),
@@ -693,6 +737,9 @@ async function enrichOfficialProductPage(
 ): Promise<PublicCatalogSearchResult | null> {
   const vendor = vendorByKey.get(candidate.vendorKey);
   if (!vendor) return null;
+  const searchFallback = includePartialDetails
+    ? fallbackOfficialProductResult(candidate, vendor)
+    : null;
   let target: URL;
   try {
     target = new URL(candidate.url);
@@ -717,7 +764,7 @@ async function enrichOfficialProductPage(
         signal: AbortSignal.timeout(8_000),
       });
     } catch {
-      return null;
+      return searchFallback;
     }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
@@ -730,22 +777,25 @@ async function enrichOfficialProductPage(
       continue;
     }
     const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (response.status === 403 || response.status === 429 || response.status >= 500) {
+      return searchFallback;
+    }
     if (!response.ok || !(contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))) {
       return null;
     }
     const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (contentLength > 2_000_000) return null;
+    if (contentLength > 2_000_000) return searchFallback;
     let html: string;
     try {
       html = await response.text();
     } catch {
-      return null;
+      return searchFallback;
     }
-    if (new TextEncoder().encode(html).byteLength > 2_000_000) return null;
+    if (new TextEncoder().encode(html).byteLength > 2_000_000) return searchFallback;
     const metadata = includePartialDetails
       ? extractProductPageMetadata(html, target.toString(), candidate.title)
       : extractVerifiedProductMetadata(html, target.toString(), candidate.title);
-    if (!metadata) return null;
+    if (!metadata) return searchFallback;
     return {
       vendorKey: vendor.key,
       vendorName: vendor.name,
@@ -768,16 +818,25 @@ async function searchPublicCatalog(
   vendor?: VendorConfig,
   options: { maxCandidatesPerVendor?: number; includePartialDetails?: boolean } = {},
 ) {
-  const allowedVendors = vendor ? [vendor] : VENDORS;
+  const allowedVendors = (vendor ? [vendor] : VENDORS).filter(
+    (item) => item.coverageState !== "access_restricted",
+  );
+  if (allowedVendors.length === 0) return [];
   const vendorGroups: VendorConfig[][] = [];
   for (let index = 0; index < allowedVendors.length; index += 4) {
     vendorGroups.push(allowedVendors.slice(index, index + 4));
   }
+  const providerRequests = options.includePartialDetails
+    ? allowedVendors.flatMap((item) => [
+        searchWithTavily(query, [item]),
+        searchWithExa(query, [item]),
+      ])
+    : vendorGroups.flatMap((group) => [
+        searchWithTavily(query, group),
+        searchWithExa(query, group),
+      ]);
   const providerResults = await Promise.allSettled(
-    vendorGroups.flatMap((group) => [
-      searchWithTavily(query, group),
-      searchWithExa(query, group),
-    ]),
+    providerRequests,
   );
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
@@ -952,6 +1011,7 @@ export async function runAssistantPartsTool(
           description: cleanText(input.description, 1200),
           productUrl,
           imageUrl,
+          isManual: true,
         });
         if (input.quantityOwned !== undefined) await setOwnedQuantity(client, item.id, input.quantityOwned);
         return item;
@@ -1235,7 +1295,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
       const batch = records.slice(start, start + batchSize);
       const values: unknown[] = [];
       const rows = batch.map((record, index) => {
-        const offset = index * 9;
+        const offset = index * 10;
         values.push(
           randomUUID(),
           record.vendorKey,
@@ -1246,12 +1306,13 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
           record.description,
           record.productUrl,
           record.imageUrl,
+          false,
         );
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`;
       });
       const saved = await client.query(
         `insert into "parts_catalog_items"
-           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url")
+           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
          values ${rows.join(", ")}
          on conflict ("vendor_key", "external_key") do update set
            "name" = excluded."name",
@@ -1260,6 +1321,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
            "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
            "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
            "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+           "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
            "updated_at" = now()
          returning "id", (xmax = 0) as "created"`,
         values,
@@ -1334,8 +1396,12 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
     const offsetRaw = Number(req.query.offset);
     const limit = Number.isInteger(limitRaw) ? Math.min(500, Math.max(1, limitRaw)) : 100;
     const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+    const manualOnly = req.query.manualOnly === "true" || req.query.manualOnly === "1";
     const clauses: string[] = [];
     const values: unknown[] = [];
+    if (manualOnly) {
+      clauses.push(`c."is_manual" = true`);
+    }
     if (vendorKey) {
       values.push(vendorKey);
       clauses.push(`c."vendor_key" = $${values.length}`);
@@ -1442,6 +1508,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       description: cleanText(input.description, 1200),
       productUrl,
       imageUrl,
+      isManual: true,
     };
     const itemId = await withTransaction(async (client) => {
       const saved = await upsertCatalogRecord(client, item);
@@ -1570,6 +1637,7 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
           description: cleanText(row.description, 1200),
           productUrl,
           imageUrl,
+          isManual: true,
         });
         if (saved.created) created += 1;
         else updated += 1;

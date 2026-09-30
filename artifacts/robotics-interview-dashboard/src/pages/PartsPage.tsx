@@ -38,6 +38,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 type PageTab = "inventory" | "search";
@@ -491,11 +498,13 @@ export default function PartsPage() {
   const [customProductUrl, setCustomProductUrl] = useState("");
   const [customImageUrl, setCustomImageUrl] = useState("");
   const [customQuantity, setCustomQuantity] = useState("0");
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [lastCatalogSync, setLastCatalogSync] = useState<PartsCatalogSyncResult | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
     vendorKey: inventoryVendor || undefined,
+    manualOnly: true,
     limit: pageSize,
     offset: 0,
   });
@@ -720,6 +729,7 @@ export default function PartsPage() {
       setCustomProductUrl("");
       setCustomImageUrl("");
       setCustomQuantity("0");
+      setCustomDialogOpen(false);
       setNotice({ kind: "success", text: `${name} added to inventory.` });
       await refreshParts();
     } catch (error) {
@@ -1336,14 +1346,14 @@ export default function PartsPage() {
               </section>
             ) : (
               <section className="space-y-4" aria-label="Parts inventory">
-                <Card className="border-border bg-card">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Add a custom part</CardTitle>
-                    <CardDescription className="mt-1">
-                      Can&apos;t find it in search? Add it manually with a name and supplier.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
+                <Dialog open={customDialogOpen} onOpenChange={setCustomDialogOpen}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add a custom part</DialogTitle>
+                      <DialogDescription>
+                        Can&apos;t find it in search? Add it manually with a name and supplier.
+                      </DialogDescription>
+                    </DialogHeader>
                     <form onSubmit={createCustomPart} className="grid gap-3 sm:grid-cols-2">
                       <label className="text-sm font-medium">
                         Part name *
@@ -1433,7 +1443,7 @@ export default function PartsPage() {
                           className="mt-1"
                         />
                       </label>
-                      <div className="flex items-end sm:col-span-2">
+                      <div className="flex items-end gap-2 sm:col-span-2">
                         <Button
                           type="submit"
                           disabled={createItemMutation.isPending || !customName.trim() || !customVendor}
@@ -1441,10 +1451,13 @@ export default function PartsPage() {
                           {createItemMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                           Add part
                         </Button>
+                        <Button type="button" variant="outline" onClick={() => setCustomDialogOpen(false)}>
+                          Cancel
+                        </Button>
                       </div>
                     </form>
-                  </CardContent>
-                </Card>
+                  </DialogContent>
+                </Dialog>
                 <Card className="border-border bg-card">
                   <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
                     <div className="grid flex-1 gap-3 sm:grid-cols-2">
@@ -1493,6 +1506,9 @@ export default function PartsPage() {
                       ? "Loading catalog…"
                       : `${formatQuantity(catalogItems.length)} shown of ${formatQuantity(catalogQuery.data?.total ?? 0)} saved item(s)`}
                   </span>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
+                    <Plus size={14} aria-hidden="true" /> Add custom part
+                  </Button>
                   {catalogQuery.isError && <span role="alert" className="text-destructive">Could not load saved catalog items.</span>}
                 </div>
 

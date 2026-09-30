@@ -305,6 +305,38 @@ export function extractProductPageMetadata(
   };
 }
 
+export function fallbackProductSearchMetadata(
+  titleValue: unknown,
+  descriptionValue: unknown,
+  pageUrl: string,
+): ProductPageMetadata | null {
+  let parsedPage: URL;
+  try {
+    parsedPage = new URL(pageUrl);
+  } catch {
+    return null;
+  }
+  if (
+    parsedPage.protocol !== "https:" ||
+    !/(^|\/)products\/[^/]+\/?$/i.test(parsedPage.pathname)
+  ) {
+    return null;
+  }
+
+  const title = cleanDescription(titleValue)?.slice(0, 250) ?? "";
+  if (!title) return null;
+  return {
+    title,
+    description: cleanDescription(descriptionValue)?.slice(0, 1200) ?? "",
+    sku: null,
+    imageUrl: null,
+    price: null,
+    currency: null,
+    priceIsStartingAt: false,
+    inStock: true,
+  };
+}
+
 export function extractVerifiedProductMetadata(
   html: string,
   pageUrl: string,

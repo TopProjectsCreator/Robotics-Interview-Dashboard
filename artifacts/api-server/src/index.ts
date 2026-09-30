@@ -81,6 +81,7 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
     `create unique index if not exists "parts_catalog_vendor_external_key_unique" on "parts_catalog_items" ("vendor_key", "external_key")`,
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
     `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
