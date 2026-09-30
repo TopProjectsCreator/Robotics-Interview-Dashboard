@@ -9,6 +9,12 @@ Live whiteboard editing uses a server-authenticated WebSocket room scoped by whi
 
 **How to apply:** Keep the WebSocket path explicitly listed in the API artifact service paths so proxy upgrades reach the API. Persist merged scenes server-side with a bounded debounce, broadcast updates only to authorized room members, and keep reconnect hydration from the database. Treat same-element simultaneous edits as last-writer-wins; add a CRDT or per-user cursor/presence layer if true Miro/Google Docs parity is required.
 
+Enforce board-specific authorization before completing a WebSocket upgrade, not only before sending the initial snapshot. A rejected connection must never join the room or receive collaboration messages.
+
+**Why:** Cursor labels, selected element IDs, and presence counts are private room data even when scene data is not sent.
+
+**How to apply:** Resolve the board and verify the signed-in interviewer is a member before accepting the upgrade; test rejected clients receive no collaboration payload.
+
 When other collaborative data shares the whiteboard storage channel, avoid subscribing the whole table to high-frequency database change events. Send targeted local realtime hints and keep a bounded authenticated polling fallback so clients on other API processes still converge.
 
 **Why:** Drawing-scene persistence can emit frequent row updates; broad subscriptions would cause unrelated collaborative views to refetch repeatedly.

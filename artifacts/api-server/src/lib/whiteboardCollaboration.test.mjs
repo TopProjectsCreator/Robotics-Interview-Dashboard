@@ -25,7 +25,7 @@ registerHooks({
   },
 });
 
-const board = {
+const sharedBoard = {
   id: "whiteboard-collaboration-test",
   title: "Collaboration test",
   data: JSON.stringify({ elements: [] }),
@@ -36,10 +36,20 @@ const board = {
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 };
 
+const directBoard = {
+  ...sharedBoard,
+  id: "direct-whiteboard-collaboration-test",
+  title: "Direct collaboration test",
+  conversationScope: "direct",
+  conversationPeer: "Alex\u001fJordan",
+};
+
 const accounts = [
   { id: "interviewer-one", displayName: "Alex", passwordHash: "configured" },
   { id: "interviewer-two", displayName: "Jordan", passwordHash: "configured" },
+  { id: "interviewer-three", displayName: "Casey", passwordHash: "configured" },
 ];
+const whiteboards = [sharedBoard, directBoard];
 
 function rowsFor(table, whereClause) {
   if (table === revokedSessionsTable) return [];
@@ -47,7 +57,10 @@ function rowsFor(table, whereClause) {
     const id = whereClause?.queryChunks?.find((chunk) => chunk.constructor.name === "Param")?.value;
     return accounts.filter((account) => account.id === id);
   }
-  if (table === interviewWhiteboardsTable) return [board];
+  if (table === interviewWhiteboardsTable) {
+    const id = whereClause?.queryChunks?.find((chunk) => chunk.constructor.name === "Param")?.value;
+    return whiteboards.filter((whiteboard) => whiteboard.id === id);
+  }
   throw new Error("Unexpected database table in whiteboard collaboration test");
 }
 
@@ -118,6 +131,23 @@ function watchMessages(socket) {
   };
 }
 
+function expectRejectedBeforeUpgrade(url) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const messages = [];
+    socket.on("message", (raw) => messages.push(raw.toString()));
+    socket.on("open", () => {
+      socket.terminate();
+      reject(new Error("Expected the whiteboard connection to be rejected before upgrade"));
+    });
+    socket.on("unexpected-response", (_request, response) => {
+      response.resume();
+      resolve({ statusCode: response.statusCode, messages });
+    });
+    socket.on("error", reject);
+  });
+}
+
 test("removes a disconnected collaborator cursor from the room presence update", async (t) => {
   mock.module("@workspace/db", {
     namedExports: {
@@ -147,13 +177,13 @@ test("removes a disconnected collaborator cursor from the room presence update",
   await once(server, "listening");
   const address = server.address();
   assert.ok(address && typeof address === "object");
-  const collaborationUrl = (session) => {
-    const url = new URL(`ws://127.0.0.1:${address.port}/api/whiteboards/${board.id}/collab`);
+  const collaborationUrl = (whiteboard, session) => {
+    const url = new URL(`ws://127.0.0.1:${address.port}/api/whiteboards/${whiteboard.id}/collab`);
     url.searchParams.set("access_token", session);
     return url;
   };
 
-  const first = new WebSocket(collaborationUrl(createInterviewerSession("interviewer-one")));
+  const first = new WebSocket(collaborationUrl(sharedBoard, createInterviewerSession("interviewer-one")));
   sockets.push(first);
   const firstMessages = watchMessages(first);
   await once(first, "open");
@@ -163,7 +193,7 @@ test("removes a disconnected collaborator cursor from the room presence update",
   const firstPresence = firstMessages.waitFor(
     (message) => message.type === "presence" && message.participants === 2,
   );
-  const second = new WebSocket(collaborationUrl(createInterviewerSession("interviewer-two")));
+  const second = new WebSocket(collaborationUrl(sharedBoard, createInterviewerSession("interviewer-two")));
   sockets.push(second);
   const secondMessages = watchMessages(second);
   await once(second, "open");
@@ -200,4 +230,43 @@ test("removes a disconnected collaborator cursor from the room presence update",
     updatedPresence.collaborators.some(({ displayName }) => displayName === "Alex"),
     false,
   );
+
+  const directFirst = new WebSocket(collaborationUrl(directBoard, createInterviewerSession("interviewer-one")));
+  sockets.push(directFirst);
+  const directFirstMessages = watchMessages(directFirst);
+  await once(directFirst, "open");
+  const directFirstSnapshot = await directFirstMessages.waitFor((message) => message.type === "snapshot");
+  assert.equal(directFirstSnapshot.participants, 1);
+
+  const directPresence = directFirstMessages.waitFor(
+    (message) => message.type === "presence" && message.participants === 2,
+  );
+  const directSecond = new WebSocket(collaborationUrl(directBoard, createInterviewerSession("interviewer-two")));
+  sockets.push(directSecond);
+  const directSecondMessages = watchMessages(directSecond);
+  await once(directSecond, "open");
+  const [directSecondSnapshot, twoDirectParticipants] = await Promise.all([
+    directSecondMessages.waitFor((message) => message.type === "snapshot"),
+    directPresence,
+  ]);
+  assert.equal(directSecondSnapshot.participants, 2);
+  assert.ok(twoDirectParticipants.collaborators.some(({ displayName }) => displayName === "Jordan"));
+
+  const directCursorDelivery = directFirstMessages.waitFor(
+    (message) => message.type === "cursor" && message.displayName === "Jordan",
+  );
+  directSecond.send(JSON.stringify({
+    type: "cursor",
+    cursor: { x: 48, y: 96, visible: true, selectedElementIds: ["private-shape"] },
+  }));
+  const deliveredDirectCursor = await directCursorDelivery;
+  assert.equal(deliveredDirectCursor.x, 48);
+  assert.equal(deliveredDirectCursor.y, 96);
+  assert.deepEqual(deliveredDirectCursor.selectedElementIds, ["private-shape"]);
+
+  const rejectedOutsider = await expectRejectedBeforeUpgrade(
+    collaborationUrl(directBoard, createInterviewerSession("interviewer-three")),
+  );
+  assert.equal(rejectedOutsider.statusCode, 403);
+  assert.deepEqual(rejectedOutsider.messages, [], "a direct-room outsider must receive no presence data");
 });

@@ -229,19 +229,10 @@ async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<
 
 async function openCollaboration(
   socket: WebSocket,
-  request: IncomingMessage,
-  whiteboardId: string,
   identity: { interviewerId: string; displayName: string },
+  whiteboard: WhiteboardRow,
 ): Promise<void> {
-  const [whiteboard] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, whiteboardId))
-    .limit(1);
-  if (!whiteboard || !canAccessWhiteboard(whiteboard, identity.displayName)) {
-    send(socket, { type: "error", message: "Whiteboard not found." });
-    socket.close(1008, "Whiteboard not found");
-    return;
-  }
-
+  const whiteboardId = whiteboard.id;
   const room = roomFor(whiteboardId, whiteboard.data);
   const clientId = randomUUID();
   const client: CollaborationClient = {
@@ -374,12 +365,26 @@ export function setupWhiteboardCollaboration(server: Server): void {
           socket.destroy();
           return;
         }
-        websocketServer.handleUpgrade(request, socket, head, (clientSocket) => {
-          void openCollaboration(clientSocket, request, whiteboardId, identity).catch((error) => {
-            logger.error({ err: error, whiteboardId }, "Whiteboard collaboration connection failed");
-            clientSocket.close(1011, "Collaboration unavailable");
+        void db.select().from(interviewWhiteboardsTable)
+          .where(eq(interviewWhiteboardsTable.id, whiteboardId))
+          .limit(1)
+          .then(([whiteboard]) => {
+            if (!whiteboard || !canAccessWhiteboard(whiteboard, identity.displayName)) {
+              socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+              socket.destroy();
+              return;
+            }
+            websocketServer.handleUpgrade(request, socket, head, (clientSocket) => {
+              void openCollaboration(clientSocket, identity, whiteboard).catch((error) => {
+                logger.error({ err: error, whiteboardId }, "Whiteboard collaboration connection failed");
+                clientSocket.close(1011, "Collaboration unavailable");
+              });
+            });
+          })
+          .catch((error) => {
+            logger.error({ err: error, whiteboardId }, "Whiteboard collaboration authorization failed");
+            socket.destroy();
           });
-        });
       })
       .catch((error) => {
         logger.error({ err: error }, "Whiteboard collaboration authentication failed");
