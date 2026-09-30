@@ -152,11 +152,26 @@ function productPrice(product: JsonRecord, html: string): {
     : isRecord(product.offers) ? [product.offers] : [];
   const quotes = offers.flatMap((offer) => {
     const isAggregate = typeNames(offer["@type"]).includes("aggregateoffer");
-    const price = parsePrice(isAggregate ? offer.lowPrice ?? offer.price : offer.price ?? offer.lowPrice);
-    const currency = typeof offer.priceCurrency === "string"
-      ? offer.priceCurrency.trim().toUpperCase()
-      : null;
-    if (!price || !currency || !/^[A-Z]{3}$/.test(currency)) return [];
+    const specifications = Array.isArray(offer.priceSpecification)
+      ? offer.priceSpecification.filter(isRecord)
+      : isRecord(offer.priceSpecification) ? [offer.priceSpecification] : [];
+    const candidates = [
+      {
+        price: parsePrice(isAggregate ? offer.lowPrice ?? offer.price : offer.price ?? offer.lowPrice),
+        currency: typeof offer.priceCurrency === "string" ? offer.priceCurrency.trim().toUpperCase() : null,
+      },
+      ...specifications.map((specification) => ({
+        price: parsePrice(specification.price ?? specification.minPrice),
+        currency: typeof specification.priceCurrency === "string"
+          ? specification.priceCurrency.trim().toUpperCase()
+          : typeof offer.priceCurrency === "string" ? offer.priceCurrency.trim().toUpperCase() : null,
+      })),
+    ];
+    const candidate = candidates.find((entry) =>
+      entry.price && entry.currency && /^[A-Z]{3}$/.test(entry.currency),
+    );
+    if (!candidate?.price || !candidate.currency) return [];
+    const { price, currency } = candidate;
     const availability = typeof offer.availability === "string"
       ? offer.availability.toLowerCase()
       : "";
@@ -207,7 +222,7 @@ export function extractVerifiedProductMetadata(
   }
 
   if (
-    products.length !== 1 ||
+    products.length === 0 ||
     [...pageTypes].some((type) => [
       "itemlist",
       "collectionpage",
@@ -220,7 +235,22 @@ export function extractVerifiedProductMetadata(
     return null;
   }
 
-  const product = products[0];
+  const pageProducts = products.filter((candidate) => {
+    const declaredPage = productDeclaredPage(candidate);
+    return declaredPage !== null && samePage(declaredPage, pageUrl);
+  });
+  const titleMatches = products.filter((candidate) =>
+    typeof candidate.name === "string" && candidateTitleMatches(searchTitle, candidate.name),
+  );
+  const product =
+    pageProducts.length === 1
+      ? pageProducts[0]
+      : pageProducts.length > 1
+        ? null
+        : products.length === 1
+          ? products[0]
+          : titleMatches.length === 1 ? titleMatches[0] : null;
+  if (!product) return null;
   const declaredPage = productDeclaredPage(product);
   const canonical = pageMetadata(html, "canonical");
   const ogType = pageMetadata(html, "og:type")?.toLowerCase();
@@ -239,10 +269,13 @@ export function extractVerifiedProductMetadata(
     cleanDescription(product.description) ??
     cleanDescription(pageMetadata(html, "og:description")) ??
     cleanDescription(pageMetadata(html, "description"));
-  const imageValue = Array.isArray(product.image) ? product.image[0] : product.image;
-  const imageUrl =
-    absoluteHttpsUrl(imageValue, pageUrl) ??
-    absoluteHttpsUrl(pageMetadata(html, "og:image"), pageUrl);
+  const imageValues = Array.isArray(product.image) ? product.image : [product.image];
+  const imageUrl = [
+    ...imageValues,
+    pageMetadata(html, "og:image"),
+  ]
+    .map((image) => absoluteHttpsUrl(image, pageUrl))
+    .find((image): image is string => image !== null) ?? null;
   const price = productPrice(product, html);
   const sku = typeof product.sku === "string" && product.sku.trim()
     ? product.sku.trim().slice(0, 200)

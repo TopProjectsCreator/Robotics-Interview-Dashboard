@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   AlertCircle,
   ArrowUpRight,
+  Bot,
   Boxes,
   Check,
   ExternalLink,
@@ -79,7 +81,10 @@ function readPartsOrderDraft(): PartsOrderLine[] {
       typeof line.product.url === "string" &&
       typeof line.product.title === "string" &&
       typeof line.product.price === "string" &&
+      Number.isFinite(Number(line.product.price)) &&
+      Number(line.product.price) >= 0 &&
       typeof line.product.currency === "string" &&
+      /^[A-Z]{3}$/.test(line.product.currency) &&
       typeof line.product.imageUrl === "string",
     );
   } catch {
@@ -88,6 +93,7 @@ function readPartsOrderDraft(): PartsOrderLine[] {
 }
 
 function formatMoney(amount: number, currency: string): string {
+  if (!Number.isFinite(amount) || !/^[A-Z]{3}$/.test(currency)) return "Price unavailable";
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -96,6 +102,31 @@ function formatMoney(amount: number, currency: string): string {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+function PartImage({ src, alt, className }: { src: string; alt: string; className: string }) {
+  const [failed, setFailed] = useState(!src);
+  useEffect(() => setFailed(!src), [src]);
+  if (failed) {
+    return (
+      <div
+        className={`flex items-center justify-center rounded-md border border-border bg-muted text-muted-foreground ${className}`}
+        role="img"
+        aria-label={alt ? `${alt} image unavailable` : "Part image unavailable"}
+      >
+        <Package size={22} aria-hidden="true" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function QuantityMetric({
@@ -321,7 +352,10 @@ export default function PartsPage() {
   const draftQuantities = orderDraft.reduce((total, line) => total + line.quantity, 0);
   const orderTotalsByCurrency = orderDraft.reduce<Record<string, number>>((totals, line) => {
     const currency = line.product.currency;
-    totals[currency] = (totals[currency] ?? 0) + Number(line.product.price) * line.quantity;
+    const unitPrice = Number(line.product.price);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || !/^[A-Z]{3}$/.test(currency)) return totals;
+    const total = (totals[currency] ?? 0) + unitPrice * line.quantity;
+    if (Number.isFinite(total)) totals[currency] = total;
     return totals;
   }, {});
 
@@ -503,6 +537,13 @@ export default function PartsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/parts/assistant"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Bot size={16} aria-hidden="true" />
+              Parts assistant
+            </Link>
             <Button
               variant="outline"
               disabled={syncMutation.isPending}
@@ -650,7 +691,7 @@ export default function PartsPage() {
                   <CardHeader>
                     <CardTitle className="text-base">Search all suppliers</CardTitle>
                     <CardDescription>
-                      Search the 19 listed suppliers. Only official product pages with a verified image and price appear here; this is not an exhaustive catalog or live stock feed.
+                      We search vendors separately to broaden coverage. Only official product pages with a verified image and price appear here. Search results are discovery, not an exhaustive catalog or live stock feed.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -715,11 +756,10 @@ export default function PartsPage() {
                               key={product.url}
                               className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5"
                             >
-                              <img
+                              <PartImage
                                 src={product.imageUrl}
                                 alt=""
                                 className="size-14 shrink-0 rounded-md border border-border bg-muted object-contain"
-                                loading="lazy"
                               />
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
@@ -786,7 +826,7 @@ export default function PartsPage() {
 
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} /> Searching all 19 suppliers…
+                    <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
                   </div>
                 )}
 
@@ -796,6 +836,11 @@ export default function PartsPage() {
                     <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
                   </div>
                 )}
+                {lastSearch && (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Search checks all 19 suppliers, but results are not a complete SKU listing. It shows only official product pages with verified details; public-catalog sync is available only for suppliers that expose a feed.
+                  </p>
+                )}
                 <div className="grid gap-3 lg:grid-cols-2">
                   {searchResults.map((result) => {
                     const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
@@ -803,11 +848,10 @@ export default function PartsPage() {
                     return (
                       <Card key={result.url} className="border-border bg-card">
                         <CardContent className="flex h-full flex-col gap-3 p-4">
-                          <img
+                          <PartImage
                             src={result.imageUrl}
                             alt={result.title}
                             className="h-44 w-full rounded-lg border border-border bg-muted/40 object-contain p-2"
-                            loading="lazy"
                           />
                           <div className="min-w-0">
                             <h3 className="font-medium text-foreground">{result.title}</h3>

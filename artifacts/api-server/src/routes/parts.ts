@@ -20,10 +20,12 @@ import {
   UpdatePartsRobotBody,
   UpdatePartsRobotParams,
   UpdatePartsRobotResponse,
+  type AssistantActivity,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
 import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 type PoolClient = {
@@ -231,6 +233,65 @@ async function setOwnedQuantity(
   return { exists: true, allocated };
 }
 
+type RobotAllocationResult =
+  | { robotId: string; robotName: string; partId: string; quantity: number }
+  | { missing: "robot" | "part" }
+  | { conflict: true; available: number };
+
+async function saveRobotAllocation(
+  robotId: string,
+  partId: string,
+  quantity: number,
+): Promise<RobotAllocationResult> {
+  return withTransaction(async (client) => {
+    const robotResult = await client.query(
+      `select "id", "name" from "parts_robots" where "id" = $1`,
+      [robotId],
+    );
+    if (robotResult.rowCount === 0) return { missing: "robot" as const };
+    const partResult = await client.query(
+      `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
+       from "parts_catalog_items" c
+       left join "parts_inventory" i on i."part_id" = c."id"
+       where c."id" = $1 for update of c`,
+      [partId],
+    );
+    if (partResult.rowCount === 0) return { missing: "part" as const };
+    const otherAssignments = await client.query(
+      `select coalesce(sum("quantity"), 0)::int as "quantity"
+       from "parts_robot_allocations"
+       where "part_id" = $1 and "robot_id" <> $2`,
+      [partId, robotId],
+    );
+    const others = Number(otherAssignments.rows[0].quantity);
+    const owned = Number(partResult.rows[0].quantityOwned);
+    if (quantity + others > owned) {
+      return { conflict: true as const, available: Math.max(0, owned - others) };
+    }
+    if (quantity === 0) {
+      await client.query(
+        `delete from "parts_robot_allocations"
+         where "robot_id" = $1 and "part_id" = $2`,
+        [robotId, partId],
+      );
+    } else {
+      await client.query(
+        `insert into "parts_robot_allocations" ("id", "robot_id", "part_id", "quantity")
+         values ($1, $2, $3, $4)
+         on conflict ("robot_id", "part_id") do update set
+           "quantity" = excluded."quantity", "updated_at" = now()`,
+        [randomUUID(), robotId, partId, quantity],
+      );
+    }
+    return {
+      robotId,
+      robotName: String(robotResult.rows[0].name),
+      partId,
+      quantity,
+    };
+  });
+}
+
 function isoDate(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
@@ -345,6 +406,132 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   currency: string;
   priceIsStartingAt: boolean;
 };
+
+export const ASSISTANT_PARTS_TOOLS = [
+  {
+    type: "function" as const,
+    function: {
+      name: "search_supplier_parts",
+      description: "Search the 19 listed suppliers using keyless search, then return only official product pages with verified product details, an image, and a supplier-page price. Use this before adding a supplier part.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", minLength: 2, maxLength: 120 },
+          vendorKey: { type: "string", maxLength: 100 },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_parts_robots",
+      description: "List the existing robots and IDs in the shared Parts workspace. Use this before assigning a part to a robot.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_parts_catalog",
+      description: "List saved parts and inventory with exact part IDs, vendor, SKU, owned stock, allocations, and availability. Use this before editing stock or allocations.",
+      parameters: {
+        type: "object",
+        properties: {
+          search: { type: "string", maxLength: 120 },
+          vendorKey: { type: "string", maxLength: 100 },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          offset: { type: "integer", minimum: 0 },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_parts_robot",
+      description: "Add a robot to the shared Parts workspace after the user asks. Return the created robot and exact ID.",
+      parameters: {
+        type: "object",
+        properties: { name: { type: "string", minLength: 1, maxLength: 80 } },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "rename_parts_robot",
+      description: "Rename an existing robot using its exact ID from list_parts_robots.",
+      parameters: {
+        type: "object",
+        properties: {
+          robotId: { type: "string" },
+          name: { type: "string", minLength: 1, maxLength: 80 },
+        },
+        required: ["robotId", "name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_parts_catalog_item",
+      description: "Save a part to the shared catalog for a listed vendor. Use verified search result details when available; never invent a SKU, product page, image, or stock count. quantityOwned defaults to zero.",
+      parameters: {
+        type: "object",
+        properties: {
+          vendorKey: { type: "string", enum: VENDORS.map((item) => item.key) },
+          name: { type: "string", minLength: 1, maxLength: 250 },
+          sku: { type: ["string", "null"], maxLength: 200 },
+          category: { type: ["string", "null"], maxLength: 200 },
+          description: { type: ["string", "null"], maxLength: 1200 },
+          productUrl: { type: ["string", "null"], maxLength: 2000 },
+          imageUrl: { type: ["string", "null"], maxLength: 2000 },
+          quantityOwned: { type: "integer", minimum: 0, maximum: 100000 },
+        },
+        required: ["vendorKey", "name"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_parts_stock",
+      description: "Set owned stock for a saved part using its exact ID. Do not reduce stock below parts already assigned to robots.",
+      parameters: {
+        type: "object",
+        properties: {
+          partId: { type: "string" },
+          quantityOwned: { type: "integer", minimum: 0, maximum: 100000 },
+        },
+        required: ["partId", "quantityOwned"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "set_parts_robot_allocation",
+      description: "Set the quantity of a saved part assigned to a robot. Use exact IDs from list_parts_catalog and list_parts_robots; zero removes the assignment. The server rejects quantities above available stock.",
+      parameters: {
+        type: "object",
+        properties: {
+          robotId: { type: "string" },
+          partId: { type: "string" },
+          quantity: { type: "integer", minimum: 0, maximum: 100000 },
+        },
+        required: ["robotId", "partId", "quantity"],
+      },
+    },
+  },
+] as const;
+
+export const ASSISTANT_PARTS_TOOL_NAMES = new Set<string>(
+  ASSISTANT_PARTS_TOOLS.map((tool) => tool.function.name),
+);
 
 function catalogVendorForUrl(url: URL, allowedVendors: VendorConfig[]) {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
@@ -550,37 +737,225 @@ async function enrichOfficialProductPage(
 
 async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const allowedVendors = vendor ? [vendor] : VENDORS;
-  const [tavily, exa] = await Promise.allSettled([
-    searchWithTavily(query, allowedVendors),
-    searchWithExa(query, allowedVendors),
-  ]);
-  if (tavily.status === "rejected" && exa.status === "rejected") {
+  const vendorGroups: VendorConfig[][] = [];
+  for (let index = 0; index < allowedVendors.length; index += 4) {
+    vendorGroups.push(allowedVendors.slice(index, index + 4));
+  }
+  const providerResults = await Promise.allSettled(
+    vendorGroups.flatMap((group) => [
+      searchWithTavily(query, group),
+      searchWithExa(query, group),
+    ]),
+  );
+  const combined = providerResults.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+  const storedProducts = await pool.query(
+    `select c."vendor_key" as "vendorKey", c."name", c."sku", c."description",
+            c."product_url" as "url"
+     from "parts_catalog_items" c
+     where c."vendor_key" = any($1::text[])
+       and c."product_url" is not null
+       and (
+         c."name" ilike $2
+         or coalesce(c."sku", '') ilike $2
+         or coalesce(c."description", '') ilike $2
+       )
+     order by lower(c."name")
+     limit 500`,
+    [allowedVendors.map((item) => item.key), `%${query}%`],
+  );
+  const storedCandidates = storedProducts.rows.flatMap((row) => {
+    const itemUrl = typeof row.url === "string" ? row.url : null;
+    const itemVendorKey = typeof row.vendorKey === "string" ? row.vendorKey : "";
+    const storedVendor = vendorByKey.get(itemVendorKey);
+    if (!itemUrl || !storedVendor) return [];
+    return [{
+      vendorKey: storedVendor.key,
+      vendorName: storedVendor.name,
+      title: String(row.name ?? storedVendor.name),
+      url: itemUrl,
+      description: String(row.description ?? ""),
+    }];
+  });
+  if (
+    providerResults.every((result) => result.status === "rejected") &&
+    storedCandidates.length === 0
+  ) {
     throw new Error("All keyless catalog search providers are unavailable.");
   }
 
-  const combined = [
-    ...(tavily.status === "fulfilled" ? tavily.value : []),
-    ...(exa.status === "fulfilled" ? exa.value : []),
-  ];
   const seen = new Set<string>();
-  const candidates = combined.filter((result) => {
+  const byVendor = new Map(allowedVendors.map((item) => [item.key, [] as PublicCatalogSearchCandidate[]]));
+  for (const result of [...combined, ...storedCandidates]) {
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
-    if (seen.has(key)) return false;
+    const bucket = byVendor.get(result.vendorKey);
+    if (!bucket || seen.has(key)) continue;
     seen.add(key);
-    return true;
-  }).slice(0, 16);
+    bucket.push(result);
+  }
+  const candidates: PublicCatalogSearchCandidate[] = [];
+  const candidatesPerVendor = vendor ? 24 : 3;
+  for (let rank = 0; rank < candidatesPerVendor; rank += 1) {
+    for (const allowedVendor of allowedVendors) {
+      const candidate = byVendor.get(allowedVendor.key)?.[rank];
+      if (candidate) candidates.push(candidate);
+    }
+  }
 
   const verifiedResults: PublicCatalogSearchResult[] = [];
-  for (let index = 0; index < candidates.length; index += 4) {
+  for (let index = 0; index < candidates.length; index += 12) {
     const batch = await Promise.allSettled(
-      candidates.slice(index, index + 4).map(enrichOfficialProductPage),
+      candidates.slice(index, index + 12).map(enrichOfficialProductPage),
     );
     for (const result of batch) {
       if (result.status === "fulfilled" && result.value) verifiedResults.push(result.value);
     }
   }
   return verifiedResults;
+}
+
+export async function runAssistantPartsTool(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ content: string; activity: AssistantActivity }> {
+  const result = (content: string, detail: string) => ({
+    content,
+    activity: { tool: name, detail: detail.slice(0, 160) },
+  });
+  try {
+    if (name === "search_supplier_parts") {
+      const query = cleanText(args.query, 120);
+      const vendorKey = cleanText(args.vendorKey, 100);
+      if (!query || query.length < 2) return result("Use at least two search characters.", "invalid search");
+      if (vendorKey && !vendorByKey.has(vendorKey)) return result("Unsupported supplier.", "unknown vendor");
+      const products = await searchPublicCatalog(query, vendorKey ? vendorByKey.get(vendorKey) : undefined);
+      const items = products.slice(0, 18).map((item) => ({
+        vendorKey: item.vendorKey,
+        vendorName: item.vendorName,
+        title: item.title,
+        url: item.url,
+        sku: item.sku,
+        description: item.description,
+        imageUrl: item.imageUrl,
+        price: item.price,
+        currency: item.currency,
+        priceIsStartingAt: item.priceIsStartingAt,
+      }));
+      return result(JSON.stringify({ query, catalogIsExhaustive: false, results: items }), `${items.length} verified product page(s)`);
+    }
+    if (name === "list_parts_robots") {
+      const rows = await pool.query(
+        `select "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"
+         from "parts_robots" order by lower("name")`,
+      );
+      const robots = rows.rows.map(mapRobot);
+      return result(JSON.stringify({ robots }), `${robots.length} robot(s)`);
+    }
+    if (name === "list_parts_catalog") {
+      const vendorKey = cleanText(args.vendorKey, 100);
+      if (vendorKey && !vendorByKey.has(vendorKey)) return result("Unsupported supplier.", "unknown vendor");
+      const search = cleanText(args.search, 120);
+      const clauses: string[] = [];
+      const values: unknown[] = [];
+      if (vendorKey) {
+        values.push(vendorKey);
+        clauses.push(`c."vendor_key" = $${values.length}`);
+      }
+      if (search) {
+        values.push(`%${search}%`);
+        clauses.push(`(c."name" ilike $${values.length} or coalesce(c."sku", '') ilike $${values.length})`);
+      }
+      const limitValue = Number(args.limit);
+      const offsetValue = Number(args.offset);
+      const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 30;
+      const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
+      const rows = await queryCatalogRows(clauses.length ? `where ${clauses.join(" and ")}` : "", values, limit, offset);
+      const items = rows.map(mapCatalogRow);
+      return result(JSON.stringify({ offset, limit, items }), `${items.length} part(s)`);
+    }
+    if (name === "create_parts_robot") {
+      const parsed = CreatePartsRobotBody.safeParse({ name: args.name });
+      if (!parsed.success || !parsed.data.name.trim()) return result("Enter a valid robot name.", "invalid robot name");
+      const rows = await pool.query(
+        `insert into "parts_robots" ("id", "name") values ($1, $2)
+         returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+        [randomUUID(), parsed.data.name.trim()],
+      );
+      const robot = mapRobot(rows.rows[0]);
+      return result(JSON.stringify({ created: true, robot }), `added ${robot.name}`);
+    }
+    if (name === "rename_parts_robot") {
+      const params = UpdatePartsRobotParams.safeParse({ robotId: args.robotId });
+      const body = UpdatePartsRobotBody.safeParse({ name: args.name });
+      if (!params.success || !body.success || !body.data.name.trim()) return result("A valid robot ID and name are required.", "invalid rename");
+      const rows = await pool.query(
+        `update "parts_robots" set "name" = $2, "updated_at" = now() where "id" = $1
+         returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+        [params.data.robotId, body.data.name.trim()],
+      );
+      if (!rows.rowCount) return result("Robot not found; no change was made.", "robot not found");
+      const robot = mapRobot(rows.rows[0]);
+      return result(JSON.stringify({ renamed: true, robot }), `renamed ${robot.name}`);
+    }
+    if (name === "create_parts_catalog_item") {
+      const parsed = CreatePartsCatalogItemBody.safeParse(args);
+      if (!parsed.success) return result("Part details are invalid; provide a supported vendor and name.", "invalid part");
+      const input = parsed.data;
+      const vendor = vendorForKey(input.vendorKey);
+      const partName = cleanText(input.name, 250);
+      if (!partName) return result("A part name is required.", "missing name");
+      const sku = cleanText(input.sku, 200);
+      const productUrl = validateVendorUrl(input.productUrl, vendor);
+      const imageUrl = validateImageUrl(input.imageUrl);
+      const saved = await withTransaction(async (client) => {
+        const item = await upsertCatalogRecord(client, {
+          vendorKey: vendor.key,
+          externalKey: externalKeyFor({ sku, productUrl, name: partName }),
+          name: partName,
+          sku,
+          category: cleanText(input.category, 200),
+          description: cleanText(input.description, 1200),
+          productUrl,
+          imageUrl,
+        });
+        if (input.quantityOwned !== undefined) await setOwnedQuantity(client, item.id, input.quantityOwned);
+        return item;
+      });
+      const item = await getCatalogItem(saved.id);
+      if (!item) return result("The saved item could not be reloaded; check the catalog before retrying.", "reload failed");
+      return result(JSON.stringify({ created: saved.created, item }), `${saved.created ? "added" : "updated"} ${item.name}`);
+    }
+    if (name === "update_parts_stock") {
+      const params = UpdatePartsCatalogStockParams.safeParse({ partId: args.partId });
+      const body = UpdatePartsCatalogStockBody.safeParse({ quantityOwned: args.quantityOwned });
+      if (!params.success || !body.success) return result("Use a valid part ID and non-negative whole-number quantity.", "invalid stock");
+      const update = await withTransaction((client) => setOwnedQuantity(client, params.data.partId, body.data.quantityOwned));
+      if (!update.exists) return result("Part not found; no stock was changed.", "part not found");
+      const item = await getCatalogItem(params.data.partId);
+      return result(JSON.stringify({ updated: true, item }), `stock updated: ${item?.name ?? params.data.partId}`);
+    }
+    if (name === "set_parts_robot_allocation") {
+      const params = SetPartsRobotAllocationParams.safeParse({ robotId: args.robotId, partId: args.partId });
+      const body = SetPartsRobotAllocationBody.safeParse({ quantity: args.quantity });
+      if (!params.success || !body.success) return result("Use valid robot/part IDs and a non-negative whole-number quantity.", "invalid allocation");
+      const allocation = await saveRobotAllocation(params.data.robotId, params.data.partId, body.data.quantity);
+      if ("missing" in allocation) return result(`${allocation.missing} not found; no change was made.`, `${allocation.missing} not found`);
+      if ("conflict" in allocation) return result(`Only ${allocation.available} unassigned unit(s) are available; no change was made.`, "insufficient stock");
+      return result(JSON.stringify({ updated: true, allocation }), `${allocation.robotName}: ${allocation.quantity} assigned`);
+    }
+    return result("Unsupported Parts operation.", "unsupported operation");
+  } catch (error) {
+    if (error instanceof BadInputError || error instanceof StockConflictError) return result(`${error.message} No change was made.`, "request rejected");
+    if (isUniqueViolation(error)) {
+      return name === "create_parts_robot" || name === "rename_parts_robot"
+        ? result("A robot with that name already exists.", "duplicate robot")
+        : result("A matching catalog entry already exists; no change was confirmed.", "duplicate catalog item");
+    }
+    logger.error({ err: error, tool: name }, "Assistant Parts operation failed");
+    return result("The operation failed and success was not confirmed. Refresh Parts and try again.", "operation failed");
+  }
 }
 
 type CatalogFeedRecord = {
@@ -1154,54 +1529,11 @@ router.put(
       return;
     }
     try {
-      const allocation = await withTransaction(async (client) => {
-        const robotResult = await client.query(
-          `select "id", "name" from "parts_robots" where "id" = $1`,
-          [params.data.robotId],
-        );
-        if (robotResult.rowCount === 0) return { missing: "robot" as const };
-        const partResult = await client.query(
-          `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
-           from "parts_catalog_items" c
-           left join "parts_inventory" i on i."part_id" = c."id"
-           where c."id" = $1 for update of c`,
-          [params.data.partId],
-        );
-        if (partResult.rowCount === 0) return { missing: "part" as const };
-        const quantity = body.data.quantity;
-        const otherAssignments = await client.query(
-          `select coalesce(sum("quantity"), 0)::int as "quantity"
-           from "parts_robot_allocations"
-           where "part_id" = $1 and "robot_id" <> $2`,
-          [params.data.partId, params.data.robotId],
-        );
-        const others = Number(otherAssignments.rows[0].quantity);
-        const owned = Number(partResult.rows[0].quantityOwned);
-        if (quantity + others > owned) {
-          return { conflict: true as const, available: Math.max(0, owned - others) };
-        }
-        if (quantity === 0) {
-          await client.query(
-            `delete from "parts_robot_allocations"
-             where "robot_id" = $1 and "part_id" = $2`,
-            [params.data.robotId, params.data.partId],
-          );
-        } else {
-          await client.query(
-            `insert into "parts_robot_allocations" ("id", "robot_id", "part_id", "quantity")
-             values ($1, $2, $3, $4)
-             on conflict ("robot_id", "part_id") do update set
-               "quantity" = excluded."quantity", "updated_at" = now()`,
-            [randomUUID(), params.data.robotId, params.data.partId, quantity],
-          );
-        }
-        return {
-          robotId: params.data.robotId,
-          robotName: String(robotResult.rows[0].name),
-          partId: params.data.partId,
-          quantity,
-        };
-      });
+      const allocation = await saveRobotAllocation(
+        params.data.robotId,
+        params.data.partId,
+        body.data.quantity,
+      );
       if ("missing" in allocation) {
         res.status(404).json({
           error: allocation.missing === "robot" ? "Robot not found." : "Catalog item not found.",

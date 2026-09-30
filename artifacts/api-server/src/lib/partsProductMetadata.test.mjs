@@ -107,3 +107,48 @@ test("supports supplier product price metadata and marks variant ranges as start
   assert.equal(result?.price, "12.00");
   assert.equal(result?.priceIsStartingAt, true);
 });
+
+test("selects the current product from a page graph with unrelated product cards", () => {
+  const currentProduct = {
+    ...JSON.parse(productJsonLd),
+    mainEntityOfPage: "https://shop.example.com/products/collar",
+  };
+  const recommendation = {
+    ...JSON.parse(productJsonLd),
+    name: "6 mm Shaft Collar",
+    sku: "COLLAR-6",
+    mainEntityOfPage: "https://shop.example.com/products/collar-6mm",
+  };
+  const html = `<meta property="og:type" content="product"><script type="application/ld+json">${JSON.stringify({ "@graph": [recommendation, currentProduct] })}</script>`;
+  const result = extractVerifiedProductMetadata(
+    html,
+    "https://shop.example.com/products/collar",
+    "8 mm Shaft Collar | Shop",
+  );
+  assert.equal(result?.title, "8 mm Shaft Collar");
+  assert.equal(result?.sku, "COLLAR-8");
+});
+
+test("uses a later valid HTTPS product image and a structured price specification", () => {
+  const item = {
+    ...JSON.parse(productJsonLd),
+    image: ["javascript:bad-image", "https://cdn.example.com/collar-large.jpg"],
+    offers: {
+      "@type": "Offer",
+      priceSpecification: {
+        "@type": "UnitPriceSpecification",
+        price: "5.25",
+        priceCurrency: "USD",
+      },
+    },
+  };
+  const html = `<meta property="og:type" content="product"><script type="application/ld+json">${JSON.stringify(item)}</script>`;
+  const result = extractVerifiedProductMetadata(
+    html,
+    "https://shop.example.com/products/collar",
+    "8 mm Shaft Collar",
+  );
+  assert.equal(result?.imageUrl, "https://cdn.example.com/collar-large.jpg");
+  assert.equal(result?.price, "5.25");
+  assert.equal(result?.currency, "USD");
+});
