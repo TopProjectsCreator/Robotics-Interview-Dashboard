@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +8,57 @@ import App from "@/App";
 import ChatLanding from "./chat-landing";
 import PublicDashboard from "./public-dashboard";
 
+const chatLandingStyles = readFileSync("src/pages/chat-landing.css", "utf8");
+
 function renderWithRouter(ui: ReactNode) {
   return render(<Router>{ui}</Router>);
+}
+
+function extractCssBlock(stylesheet: string, startIndex: number) {
+  const openingBrace = stylesheet.indexOf("{", startIndex);
+  if (openingBrace < 0) throw new Error("CSS rule is missing an opening brace");
+
+  let depth = 0;
+  for (let index = openingBrace; index < stylesheet.length; index += 1) {
+    if (stylesheet[index] === "{") depth += 1;
+    if (stylesheet[index] === "}") depth -= 1;
+    if (depth === 0) return stylesheet.slice(openingBrace + 1, index);
+  }
+
+  throw new Error("CSS rule is missing a closing brace");
+}
+
+function cssRule(stylesheet: string, selector: string) {
+  const selectorIndex = stylesheet.indexOf(selector);
+  if (selectorIndex < 0) throw new Error(`CSS selector was not found: ${selector}`);
+  return extractCssBlock(stylesheet, selectorIndex);
+}
+
+function cssProperty(rule: string, property: string) {
+  const value = rule.match(new RegExp(`(?:^|\\n)\\s*${property}:\\s*([^;]+);`))?.[1]?.trim();
+  if (!value) throw new Error(`CSS property was not found: ${property}`);
+  return value;
+}
+
+function colorFromDeclaration(declaration: string) {
+  const color = declaration.match(/#[0-9a-f]{6}/i)?.[0];
+  if (!color) throw new Error(`Expected a hex color declaration, received: ${declaration}`);
+  return color;
+}
+
+function relativeLuminance(color: string) {
+  const channels = color.match(/[0-9a-f]{2}/gi)?.map((channel) => parseInt(channel, 16) / 255);
+  if (!channels || channels.length !== 3) throw new Error(`Expected a hex color, received: ${color}`);
+
+  const [red, green, blue] = channels.map((channel) => (
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  ));
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const [lighter, darker] = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 const privateRecordCanaries = [
@@ -58,6 +108,7 @@ const privateDataPath = /(?:^|\/)(?:chat|applicants?|presence|events?|whiteboard
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  document.documentElement.classList.remove("dark");
   window.history.replaceState({}, "", "/");
 });
 
@@ -88,6 +139,97 @@ describe("public chat discovery", () => {
       expect(screen.getByTestId(testId)).toHaveAttribute("href", "/auth");
     }
     expect(screen.getByTestId("link-chat-back-platform")).toHaveAttribute("href", "/");
+  });
+
+  it("keeps the mobile navigation keyboard reachable and exposes its expanded state", () => {
+    renderWithRouter(<ChatLanding />);
+
+    const menuButton = screen.getByRole("button", { name: "Open navigation" });
+    const navigation = screen.getByRole("navigation", { name: "Chat landing navigation" });
+    expect(menuButton).toHaveAttribute("type", "button");
+    expect(menuButton).toHaveAttribute("aria-controls", navigation.id);
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect((menuButton as HTMLButtonElement).tabIndex).toBe(0);
+
+    (menuButton as HTMLButtonElement).focus();
+    expect(document.activeElement).toBe(menuButton);
+    fireEvent.click(menuButton);
+
+    expect(screen.getByRole("button", { name: "Close navigation" })).toHaveAttribute("aria-expanded", "true");
+    expect(navigation).toHaveClass("is-open");
+    expect(screen.getByTestId("link-chat-conversations")).toBeInTheDocument();
+    expect(screen.getByTestId("link-chat-context")).toBeInTheDocument();
+    expect(screen.getByTestId("link-chat-tools")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveAttribute("aria-expanded", "false");
+    expect(navigation).not.toHaveClass("is-open");
+  });
+
+  it("keeps landing text and the expanded menu legible with html.dark enabled", () => {
+    document.documentElement.classList.add("dark");
+    renderWithRouter(<ChatLanding />);
+
+    expect(document.documentElement).toHaveClass("dark");
+    expect(screen.getByTestId("chat-landing")).toBeInTheDocument();
+
+    const darkPage = cssRule(chatLandingStyles, ".dark .chat-landing");
+    const pageInk = cssProperty(darkPage, "--chat-ink");
+    const mutedInk = cssProperty(darkPage, "--chat-muted");
+    const paper = cssProperty(darkPage, "--chat-paper");
+    expect(contrastRatio(pageInk, paper)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(mutedInk, paper)).toBeGreaterThanOrEqual(4.5);
+
+    const darkNavigation = cssRule(chatLandingStyles, ".dark .chat-landing__nav-links {");
+    const darkNavigationLinks = cssRule(
+      chatLandingStyles,
+      ".dark .chat-landing__nav-links a:not(.chat-landing__nav-cta)",
+    );
+    expect(contrastRatio(cssProperty(darkNavigationLinks, "color"), cssProperty(darkNavigation, "background")))
+      .toBeGreaterThanOrEqual(4.5);
+    expect(cssRule(chatLandingStyles, ".dark .chat-landing__menu-button")).toContain("#e4f0eb");
+  });
+
+  it("preserves high-contrast focus, mobile menu states, and reduced-motion styles", () => {
+    const focusStyles = cssRule(chatLandingStyles, ".chat-landing a:focus-visible");
+    expect(focusStyles).toMatch(/outline:\s*3px solid/);
+    expect(focusStyles).toMatch(/outline-offset:\s*4px/);
+    const lightPaper = cssProperty(cssRule(chatLandingStyles, ".chat-landing"), "--chat-paper");
+    const lightFocusColor = colorFromDeclaration(cssProperty(focusStyles, "outline"));
+    expect(contrastRatio(lightFocusColor, lightPaper)).toBeGreaterThanOrEqual(3);
+
+    const lightCtaFocusColor = colorFromDeclaration(
+      cssProperty(cssRule(chatLandingStyles, ".chat-landing__cta a:focus-visible"), "outline-color"),
+    );
+    const lightCtaSurface = cssProperty(cssRule(chatLandingStyles, ".chat-landing"), "--chat-deep");
+    expect(contrastRatio(lightCtaFocusColor, lightCtaSurface)).toBeGreaterThanOrEqual(3);
+
+    const darkPage = cssRule(chatLandingStyles, ".dark .chat-landing");
+    const darkPaper = cssProperty(darkPage, "--chat-paper");
+    const darkFocusColor = cssProperty(
+      cssRule(chatLandingStyles, ".dark .chat-landing a:focus-visible"),
+      "outline-color",
+    );
+    expect(contrastRatio(darkFocusColor, darkPaper)).toBeGreaterThanOrEqual(3);
+    const darkCtaFocusColor = cssProperty(
+      cssRule(chatLandingStyles, ".dark .chat-landing__cta a:focus-visible"),
+      "outline-color",
+    );
+    expect(contrastRatio(darkCtaFocusColor, cssProperty(darkPage, "--chat-deep"))).toBeGreaterThanOrEqual(3);
+
+    const mobileQueryStart = chatLandingStyles.indexOf("@media (max-width: 680px)");
+    expect(mobileQueryStart).toBeGreaterThanOrEqual(0);
+    const mobileStyles = extractCssBlock(chatLandingStyles, mobileQueryStart);
+    expect(cssProperty(cssRule(mobileStyles, ".chat-landing__nav-links"), "display")).toBe("none");
+    expect(cssProperty(cssRule(mobileStyles, ".chat-landing__nav-links.is-open"), "display")).toBe("flex");
+
+    const reducedMotionStart = chatLandingStyles.indexOf("@media (prefers-reduced-motion: reduce)");
+    expect(reducedMotionStart).toBeGreaterThanOrEqual(0);
+    const reducedMotionStyles = extractCssBlock(chatLandingStyles, reducedMotionStart);
+    const reducedMotionRule = cssRule(reducedMotionStyles, ".chat-landing *");
+    expect(cssProperty(reducedMotionRule, "transition-duration")).toBe(".01ms !important");
+    expect(cssProperty(reducedMotionRule, "animation-duration")).toBe(".01ms !important");
+    expect(cssProperty(reducedMotionRule, "animation-iteration-count")).toBe("1 !important");
   });
 
   it.each(["/", "/chat-landing"])(

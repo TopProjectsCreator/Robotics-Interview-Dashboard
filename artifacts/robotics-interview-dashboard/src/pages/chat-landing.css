@@ -29,8 +29,12 @@
 
 .chat-landing a:focus-visible,
 .chat-landing button:focus-visible {
-  outline: 3px solid rgba(19, 141, 138, .38);
+  outline: 3px solid #0b6765;
   outline-offset: 4px;
+}
+
+.chat-landing__cta a:focus-visible {
+  outline-color: #f4c74e;
 }
 
 .chat-landing__shell {
@@ -1396,6 +1400,15 @@
   background:
     radial-gradient(circle at 83% 7%, rgba(44, 108, 94, .3), transparent 23rem),
     linear-gradient(180deg, #102f36 0, #0d2028 34rem, #0d2028 100%);
+}
+
+.dark .chat-landing a:focus-visible,
+.dark .chat-landing button:focus-visible {
+  outline-color: #78d5c9;
+}
+
+.dark .chat-landing__cta a:focus-visible {
+  outline-color: #f2c64f;
 }
 
 .dark .chat-landing__topline,
