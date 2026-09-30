@@ -1,17 +1,55 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import App from "@/App";
 import PartsLanding from "./parts-landing";
 import PublicDashboard from "./public-dashboard";
+
+const privateRecordCanaries = [
+  "PRIVATE_PARTS_INVENTORY_RECORD_CANARY",
+  "PRIVATE_APPLICANT_RECORD_CANARY",
+  "PRIVATE_PRESENCE_RECORD_CANARY",
+  "PRIVATE_COLLABORATION_RECORD_CANARY",
+];
+
+const privateRecordsResponse = {
+  ok: true,
+  status: 200,
+  headers: { get: () => "application/json" } as unknown as Headers,
+  text: async () => JSON.stringify({
+    inventory: [{ name: privateRecordCanaries[0] }],
+    applicants: [{ name: privateRecordCanaries[1] }],
+    presence: [{ name: privateRecordCanaries[2] }],
+    collaborators: [{ name: privateRecordCanaries[3] }],
+  }),
+} as Response;
 
 function renderWithRouter(ui: ReactNode) {
   return render(<Router>{ui}</Router>);
 }
 
+function stubNetworkTransports() {
+  const fetchSpy = vi.fn(async () => privateRecordsResponse);
+  const eventSourceConstructor = vi.fn().mockImplementation(() => ({ close: vi.fn() }));
+  const webSocketConstructor = vi.fn().mockImplementation(() => ({
+    readyState: 0,
+    addEventListener: vi.fn(),
+    close: vi.fn(),
+    send: vi.fn(),
+  }));
+
+  vi.stubGlobal("fetch", fetchSpy);
+  vi.stubGlobal("EventSource", eventSourceConstructor);
+  vi.stubGlobal("WebSocket", webSocketConstructor);
+
+  return { fetchSpy, eventSourceConstructor, webSocketConstructor };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState({}, "", "/");
 });
 
 describe("public parts discovery", () => {
@@ -51,6 +89,26 @@ describe("public parts discovery", () => {
     expect(screen.queryByTestId("card-part-result-rev-hex-12")).not.toBeInTheDocument();
     expect(screen.getByTestId("status-parts-results")).toHaveTextContent("1 matches");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps /parts-landing free of private workspace requests and records", async () => {
+    window.history.replaceState({}, "", "/parts-landing");
+    const network = stubNetworkTransports();
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { level: 1, name: /search the shelves/i })).toBeInTheDocument();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(network.fetchSpy).not.toHaveBeenCalled();
+    expect(network.eventSourceConstructor).not.toHaveBeenCalled();
+    expect(network.webSocketConstructor).not.toHaveBeenCalled();
+    for (const canary of privateRecordCanaries) {
+      expect(document.body.textContent).not.toContain(canary);
+    }
   });
 
   it("sends every team access action to the existing auth route", () => {
