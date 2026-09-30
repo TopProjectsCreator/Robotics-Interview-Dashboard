@@ -40,7 +40,10 @@ import {
   extractProductPageMetadata,
   extractVerifiedProductMetadata,
 } from "../lib/partsProductMetadata";
-import { catalogSearchVariants } from "../lib/partsSearchTerms";
+import {
+  catalogSearchVariants,
+  isRelevantCatalogSearchResult,
+} from "../lib/partsSearchTerms";
 import {
   defaultProductFeedUrl,
   publicVendors,
@@ -911,6 +914,7 @@ async function searchPublicCatalog(
   const seen = new Set<string>();
   const byVendor = new Map(allowedVendors.map((item) => [item.key, [] as PublicCatalogSearchCandidate[]]));
   for (const result of combined) {
+    if (!isRelevantCatalogSearchResult(query, result.title, result.description)) continue;
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
     const bucket = byVendor.get(result.vendorKey);
@@ -935,7 +939,13 @@ async function searchPublicCatalog(
         .map((candidate) => enrichOfficialProductPage(candidate, options.includePartialDetails)),
     );
     for (const result of batch) {
-      if (result.status === "fulfilled" && result.value) verifiedResults.push(result.value);
+      if (
+        result.status === "fulfilled" &&
+        result.value &&
+        isRelevantCatalogSearchResult(query, result.value.title, result.value.description)
+      ) {
+        verifiedResults.push(result.value);
+      }
     }
   }
   return verifiedResults;
