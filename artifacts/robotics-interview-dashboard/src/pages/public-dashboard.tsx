@@ -163,16 +163,6 @@ export default function PublicDashboard() {
           </button>
         </header>
 
-        <div
-          className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-y border-[#d9e6e1] bg-white/55 px-4 py-2.5 text-center font-mono text-[9px] uppercase tracking-[.08em] text-[#43616a] dark:border-[#28464d] dark:bg-[#122a32]/65 dark:text-[#b6ceca] sm:text-[10px]"
-          role="note"
-          data-testid="notice-preview-content"
-        >
-          <Sparkles size={12} aria-hidden="true" className="text-[#168b94] dark:text-[#7edbd0]" />
-          <strong className="font-medium text-[#168b94] dark:text-[#7edbd0]">Platform preview</strong>
-          <span>Illustrative interface only · no private team records or live data</span>
-        </div>
-
         <section
           id="platform"
           className="grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[.92fr_1.08fr] lg:gap-16 lg:py-24"
