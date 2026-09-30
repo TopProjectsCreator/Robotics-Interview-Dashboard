@@ -57,6 +57,7 @@ import NotFound from "@/pages/not-found";
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
+import ChatLanding from "@/pages/chat-landing";
 import PartsPage from "@/pages/PartsPage";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
@@ -5216,6 +5217,7 @@ function Router() {
       <Switch>
         <Route path="/" component={PublicDashboard} />
         <Route path="/interview-landing" component={Landing} />
+        <Route path="/chat-landing" component={ChatLanding} />
         <Route path="/auth" component={Login} />
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>

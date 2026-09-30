@@ -330,29 +330,55 @@ export default function PublicDashboard() {
             ))}
           </div>
 
-          <article
-            className="mt-4 flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
-            data-testid="card-interview-entry"
-          >
-            <div className="flex items-start gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#efc34f] dark:bg-[#203f49]">
-                <ClipboardListIcon />
-              </span>
-              <div>
-                <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">Interview</h3>
-                <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
-                  A dedicated workflow for applicant review and tryout coordination.
-                </p>
-              </div>
-            </div>
-            <Link
-              href="/interview-landing"
-              className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
-              data-testid="link-interview-entry"
+          <div className="mt-4 grid gap-3 sm:grid-cols-2" data-testid="grid-product-entry-cards">
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              data-testid="card-interview-entry"
             >
-              View workspace <ArrowRight size={14} />
-            </Link>
-          </article>
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#efc34f] dark:bg-[#203f49]">
+                  <ClipboardListIcon />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">Interview</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
+                    A dedicated workflow for applicant review and tryout coordination.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/interview-landing"
+                className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
+                data-testid="link-interview-entry"
+              >
+                View workspace <ArrowRight size={14} />
+              </Link>
+            </article>
+
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              data-testid="card-chat-entry"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#7edbd0] dark:bg-[#203f49]">
+                  <MessageSquare size={17} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">Chat & collaboration</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
+                    Team conversations, shared context, and connected work tools.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/chat-landing"
+                className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
+                data-testid="link-chat-entry"
+              >
+                Explore chat <ArrowRight size={14} />
+              </Link>
+            </article>
+          </div>
         </section>
 
         <section className="mb-12 overflow-hidden rounded-2xl bg-[#153642] px-6 py-8 text-[#eef8f3] dark:border dark:border-[#335963] sm:mb-16 sm:px-10 sm:py-10" data-testid="section-team-access">
