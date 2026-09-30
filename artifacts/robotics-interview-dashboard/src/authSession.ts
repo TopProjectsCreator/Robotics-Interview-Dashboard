@@ -1,5 +1,8 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { getGetSessionQueryKey } from "@workspace/api-client-react";
+import {
+  getGetSessionQueryKey,
+  getListInterviewersQueryKey,
+} from "@workspace/api-client-react";
 
 export const AUTH_TOKEN_STORAGE_KEY = "robotics_admin_session_token";
 export const AUTH_SESSION_CHANNEL_NAME = "robotics-admin-session";
@@ -134,11 +137,18 @@ export function clearUserScopedRecords(
 ): void {
   clearStoredAuthToken();
   const sessionQueryKey: QueryKey = getGetSessionQueryKey();
-  const isSessionQuery = (queryKey: QueryKey) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
-  const otherQueries = { predicate: (query: { queryKey: QueryKey }) => !isSessionQuery(query.queryKey) };
+  const interviewerListQueryKey: QueryKey = getListInterviewersQueryKey();
+  const isPreservedQuery = (queryKey: QueryKey) =>
+    JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey) ||
+    JSON.stringify(queryKey) === JSON.stringify(interviewerListQueryKey);
+  const userScopedQueries = {
+    predicate: (query: { queryKey: QueryKey }) => !isPreservedQuery(query.queryKey),
+  };
 
-  void queryClient.cancelQueries(otherQueries);
-  queryClient.removeQueries(otherQueries);
+  // The interviewer list is public and is required before sign-in. Do not
+  // cancel or remove it when an unauthenticated session check clears private data.
+  void queryClient.cancelQueries(userScopedQueries);
+  queryClient.removeQueries(userScopedQueries);
   queryClient.getMutationCache().clear();
   queryClient.setQueryData(sessionQueryKey, sessionData);
 }
