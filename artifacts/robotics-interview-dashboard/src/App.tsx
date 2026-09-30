@@ -1728,7 +1728,11 @@ function Shell({ children }: { children: ReactNode }) {
         <nav className="space-y-1" aria-label="Workspace navigation">
           {nav.map(({ href, label, icon: Icon, kind }) => {
             const active = kind === "workspace"
-              ? (href === "/interview" ? workspaceArea === "interview" : workspaceArea === "chat")
+              ? (
+                  (href === "/interview" && workspaceArea === "interview") ||
+                  (href === "/chat" && workspaceArea === "chat") ||
+                  (href === "/parts" && workspaceArea === "parts")
+                )
               : location === href ||
                 location.startsWith(`${href}/`) ||
                 (href === "/chat" && location.startsWith("/spreadsheets/"));
@@ -1960,11 +1964,11 @@ function WorkspaceOverview() {
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            02 spaces
+            03 spaces
           </span>
         </header>
 
-      <div className="grid gap-5 md:grid-cols-2" role="group" aria-label="Choose a workspace">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="group" aria-label="Choose a workspace">
         <Link
           href="/interview"
           data-testid="link-workspace-interview"
@@ -2053,6 +2057,42 @@ function WorkspaceOverview() {
           <span className="relative z-10 mt-5 flex items-center justify-between border-t border-[#183a4b]/15 pt-4 text-sm font-semibold dark:border-white/15">
             <span className="dark:text-[#f2f7f8]">Open team chat</span>
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#16869a] text-white transition-transform group-hover:translate-x-1 dark:bg-[#48b8ab] dark:text-[#10252d]"><ArrowRight size={17} /></span>
+          </span>
+        </Link>
+
+        <Link
+          href="/parts"
+          data-testid="link-workspace-parts"
+          className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#e2d4a5] bg-gradient-to-br from-[#fff8df] via-[#f8edc7] to-[#efe2b4] p-6 text-[#26313a] shadow-[0_20px_45px_rgba(82,69,28,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(82,69,28,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b47c16] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#6f6039] dark:bg-gradient-to-br dark:from-[#3c3525] dark:via-[#453c29] dark:to-[#51442a] dark:text-[#f4efdf] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 -z-10 h-64 w-64 rounded-full border border-[#9b762c]/15 dark:border-[#f8d879]/15" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-10 -z-10 h-48 w-48 rounded-full bg-[#c89831]/[.10] blur-3xl dark:bg-[#f8d879]/[.08]" />
+
+          <span className="relative z-10 flex items-center justify-between">
+            <span className="mono inline-flex items-center gap-2 rounded-full border border-[#8f7029]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#665426] dark:border-white/15 dark:bg-white/[.06] dark:text-[#e3d6ad]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#b47c16] dark:bg-[#f8d879]" />
+              Workspace 03
+            </span>
+            <span className="mono text-[10px] tracking-[.12em] text-[#75683e] dark:text-[#e2d4a5]">PARTS & INVENTORY</span>
+          </span>
+
+          <span className="relative z-10 flex flex-1 items-center justify-end py-5">
+            <span aria-hidden="true" className="relative mr-2 flex h-[142px] w-[172px] items-center justify-center sm:mr-7 sm:h-[160px] sm:w-[190px]">
+              <span className="absolute right-4 top-2 h-32 w-32 rotate-12 rounded-[28px] border border-[#9b762c]/20 bg-white/30 shadow-[0_18px_35px_rgba(82,69,28,.10)] dark:border-white/10 dark:bg-white/[.04]" />
+              <span className="relative flex h-24 w-24 rotate-[-7deg] items-center justify-center rounded-[26px] border border-[#8f7029]/20 bg-[#fffdf5] text-[#94701f] shadow-[0_18px_32px_rgba(82,69,28,.16)] dark:border-white/15 dark:bg-[#66552f] dark:text-[#ffe39a]">
+                <Box size={42} strokeWidth={1.6} />
+              </span>
+              <span className="absolute bottom-1 left-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-[#f8c84a] text-[#182232] shadow-lg transition duration-300 group-hover:-translate-y-1 group-hover:rotate-[-6deg]"><Box size={19} /></span>
+            </span>
+          </span>
+
+          <span className="relative z-10">
+            <h2 className="text-[2rem] font-semibold leading-none tracking-[-.055em] sm:text-[2.35rem]">Parts</h2>
+            <span className="mt-2 block max-w-[300px] text-sm leading-6 text-[#625733] dark:text-[#e0d6b8]">Find supplier products, build an order list, and manage robot inventory.</span>
+          </span>
+          <span className="relative z-10 mt-5 flex items-center justify-between border-t border-[#665426]/20 pt-4 text-sm font-semibold dark:border-white/15">
+            <span>Open parts workspace</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b47c16] text-white transition-transform group-hover:translate-x-1 dark:bg-[#f8c84a] dark:text-[#182232]"><ArrowRight size={17} /></span>
           </span>
         </Link>
       </div>

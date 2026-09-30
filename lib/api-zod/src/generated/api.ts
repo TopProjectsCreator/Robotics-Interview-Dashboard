@@ -2371,6 +2371,10 @@ export const SearchPartsCatalogQueryParams = zod.object({
   "q": zod.coerce.string().min(searchPartsCatalogQueryQMin).max(searchPartsCatalogQueryQMax)
 })
 
+export const searchPartsCatalogResponseResultsItemPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,4})?$');
+export const searchPartsCatalogResponseResultsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+
+
 export const SearchPartsCatalogResponse = zod.object({
   "query": zod.string(),
   "results": zod.array(zod.object({
@@ -2379,7 +2383,11 @@ export const SearchPartsCatalogResponse = zod.object({
   "title": zod.string(),
   "url": zod.string().url(),
   "description": zod.string(),
-  "sku": zod.string().nullish()
+  "sku": zod.string().nullable(),
+  "imageUrl": zod.string().url(),
+  "price": zod.string().regex(searchPartsCatalogResponseResultsItemPriceRegExp),
+  "currency": zod.string().regex(searchPartsCatalogResponseResultsItemCurrencyRegExp),
+  "priceIsStartingAt": zod.boolean()
 }))
 })
 

@@ -7,11 +7,14 @@ import {
   Check,
   ExternalLink,
   Loader2,
+  Minus,
   Package,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  ShoppingCart,
+  Trash2,
   Users,
   Wrench,
 } from "lucide-react";
@@ -37,6 +40,9 @@ import { Input } from "@/components/ui/input";
 
 type PageTab = "inventory" | "search";
 type Notice = { kind: "success" | "error"; text: string };
+type PartsOrderLine = { product: PartsCatalogSearchResult; quantity: number };
+
+const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
 
 const VENDOR_GROUPS: PartsVendor["group"][] = [
   "General Parts",
@@ -55,6 +61,41 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function formatQuantity(value: number): string {
   return new Intl.NumberFormat().format(value);
+}
+
+function readPartsOrderDraft(): PartsOrderLine[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(PARTS_ORDER_DRAFT_KEY) ?? "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved.filter((line): line is PartsOrderLine =>
+      typeof line === "object" &&
+      line !== null &&
+      typeof line.quantity === "number" &&
+      Number.isInteger(line.quantity) &&
+      line.quantity > 0 &&
+      typeof line.product === "object" &&
+      line.product !== null &&
+      typeof line.product.url === "string" &&
+      typeof line.product.title === "string" &&
+      typeof line.product.price === "string" &&
+      typeof line.product.currency === "string" &&
+      typeof line.product.imageUrl === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
 }
 
 function QuantityMetric({
@@ -256,7 +297,7 @@ export default function PartsPage() {
   const [lastSearch, setLastSearch] = useState("");
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [addedUrls, setAddedUrls] = useState<Set<string>>(() => new Set());
+  const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
 
@@ -277,6 +318,23 @@ export default function PartsPage() {
   const currentlyAdded = new Set(
     catalogItems.map((item) => item.productUrl).filter((url): url is string => Boolean(url)),
   );
+  const draftQuantities = orderDraft.reduce((total, line) => total + line.quantity, 0);
+  const orderTotalsByCurrency = orderDraft.reduce<Record<string, number>>((totals, line) => {
+    const currency = line.product.currency;
+    totals[currency] = (totals[currency] ?? 0) + Number(line.product.price) * line.quantity;
+    return totals;
+  }, {});
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PARTS_ORDER_DRAFT_KEY, JSON.stringify(orderDraft));
+    } catch {
+      setNotice({
+        kind: "error",
+        text: "This browser blocked local storage. The order draft may not persist after you leave this page.",
+      });
+    }
+  }, [orderDraft]);
 
   const refreshParts = async () => {
     await Promise.all([
@@ -340,7 +398,9 @@ export default function PartsPage() {
     try {
       const result = await searchPartsCatalog({ q: searchText.trim() });
       setSearchResults(result.results);
-      if (result.results.length === 0) setSearchError("No matching public supplier pages were found. Try a different search.");
+      if (result.results.length === 0) {
+        setSearchError("No matching supplier product pages with a verified image and price were found. Try another search.");
+      }
     } catch (error) {
       setSearchError(errorMessage(error, "Keyless supplier search is unavailable right now."));
     } finally {
@@ -348,22 +408,41 @@ export default function PartsPage() {
     }
   };
 
-  const addSearchResult = async (result: PartsCatalogSearchResult) => {
+  const addSearchResultToDraft = (product: PartsCatalogSearchResult) => {
+    setOrderDraft((previous) => {
+      const existing = previous.find((line) => line.product.url === product.url);
+      return existing
+        ? previous.map((line) => line.product.url === product.url
+          ? { product, quantity: line.quantity + 1 }
+          : line)
+        : [...previous, { product, quantity: 1 }];
+    });
+    setNotice({ kind: "success", text: `${product.title} added to the draft order. No purchase has been placed.` });
+  };
+
+  const setDraftQuantity = (productUrl: string, quantity: number) => {
+    setOrderDraft((previous) => previous
+      .map((line) => line.product.url === productUrl ? { ...line, quantity } : line)
+      .filter((line) => line.quantity > 0));
+  };
+
+  const saveSearchResultToInventory = async (product: PartsCatalogSearchResult) => {
     try {
       await createItemMutation.mutateAsync({
         data: {
-          vendorKey: result.vendorKey,
-          name: result.title,
-          description: result.description || null,
-          productUrl: result.url,
+          vendorKey: product.vendorKey,
+          name: product.title,
+          sku: product.sku,
+          description: product.description,
+          productUrl: product.url,
+          imageUrl: product.imageUrl,
           quantityOwned: 0,
         },
       });
-      setAddedUrls((previous) => new Set(previous).add(result.url));
-      setNotice({ kind: "success", text: "Part added to your catalog. Set its owned quantity in Inventory." });
+      setNotice({ kind: "success", text: `${product.title} saved to inventory.` });
       await refreshParts();
     } catch (error) {
-      setNotice({ kind: "error", text: errorMessage(error, "Unable to add this catalog result.") });
+      setNotice({ kind: "error", text: errorMessage(error, "Unable to save this part to inventory.") });
     }
   };
 
@@ -406,7 +485,6 @@ export default function PartsPage() {
 
   const dashboard = dashboardQuery.data;
   const isMutating =
-    createItemMutation.isPending ||
     stockMutation.isPending ||
     allocationMutation.isPending;
 
@@ -572,7 +650,7 @@ export default function PartsPage() {
                   <CardHeader>
                     <CardTitle className="text-base">Search all suppliers</CardTitle>
                     <CardDescription>
-                      Search public product pages across all 19 suppliers. Results link to the supplier source and are not a complete SKU export.
+                      Search the 19 listed suppliers. Only official product pages with a verified image and price appear here; this is not an exhaustive catalog or live stock feed.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -600,6 +678,112 @@ export default function PartsPage() {
                   </CardContent>
                 </Card>
 
+                <Card className="border-primary/25 bg-card">
+                  <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <ShoppingCart size={18} aria-hidden="true" />
+                        Draft order
+                        <Badge variant="secondary">{formatQuantity(draftQuantities)} items</Badge>
+                      </CardTitle>
+                      <CardDescription className="mt-1">
+                        Saved in this browser. Prices are supplier-page snapshots; shipping, tax, and availability must be confirmed with the supplier.
+                      </CardDescription>
+                    </div>
+                    {orderDraft.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setOrderDraft([])}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                        Clear
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {orderDraft.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+                        Your draft is empty. Add a verified product below to start an order list.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                          {orderDraft.map(({ product, quantity }) => (
+                            <div
+                              key={product.url}
+                              className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5"
+                            >
+                              <img
+                                src={product.imageUrl}
+                                alt=""
+                                className="size-14 shrink-0 rounded-md border border-border bg-muted object-contain"
+                                loading="lazy"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {product.vendorName} · {product.priceIsStartingAt ? "From " : ""}
+                                  {formatMoney(Number(product.price), product.currency)} each
+                                </p>
+                                <p className="text-sm font-semibold tabular-nums text-foreground">
+                                  {formatMoney(Number(product.price) * quantity, product.currency)}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="size-8"
+                                  aria-label={`Decrease quantity of ${product.title}`}
+                                  onClick={() => setDraftQuantity(product.url, quantity - 1)}
+                                >
+                                  <Minus size={14} aria-hidden="true" />
+                                </Button>
+                                <span className="w-7 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
+                                  {quantity}
+                                </span>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  className="size-8"
+                                  aria-label={`Increase quantity of ${product.title}`}
+                                  onClick={() => setDraftQuantity(product.url, quantity + 1)}
+                                >
+                                  <Plus size={14} aria-hidden="true" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="border-t border-border pt-3">
+                          <p className="text-xs text-muted-foreground">
+                            {Object.keys(orderTotalsByCurrency).length > 1
+                              ? "Subtotal by supplier currency"
+                              : "Estimated subtotal"}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
+                            {Object.entries(orderTotalsByCurrency).map(([currency, total]) => (
+                              <p key={currency} className="text-lg font-semibold tabular-nums text-foreground">
+                                {formatMoney(total, currency)}
+                                {Object.keys(orderTotalsByCurrency).length > 1 && (
+                                  <span className="ml-1 text-xs font-normal text-muted-foreground">{currency}</span>
+                                )}
+                              </p>
+                            ))}
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Draft only — no supplier order or payment has been submitted.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" size={16} /> Searching all 19 suppliers…
@@ -608,20 +792,35 @@ export default function PartsPage() {
 
                 {lastSearch && searchResults.length > 0 && (
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{searchResults.length} result(s) for “{lastSearch}” across all suppliers</span>
-                    <span>Open the supplier page to confirm SKU, options, and availability.</span>
+                    <span>{searchResults.length} verified product result(s) for “{lastSearch}”</span>
+                    <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
                   </div>
                 )}
                 <div className="grid gap-3 lg:grid-cols-2">
                   {searchResults.map((result) => {
-                    const alreadyAdded = currentlyAdded.has(result.url) || addedUrls.has(result.url);
+                    const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
+                    const alreadyInInventory = currentlyAdded.has(result.url);
                     return (
                       <Card key={result.url} className="border-border bg-card">
                         <CardContent className="flex h-full flex-col gap-3 p-4">
+                          <img
+                            src={result.imageUrl}
+                            alt={result.title}
+                            className="h-44 w-full rounded-lg border border-border bg-muted/40 object-contain p-2"
+                            loading="lazy"
+                          />
                           <div className="min-w-0">
                             <h3 className="font-medium text-foreground">{result.title}</h3>
-                            <Badge variant="secondary" className="mt-2">{result.vendorName}</Badge>
-                            <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{result.description || "Open the supplier page for product details."}</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Badge variant="secondary">{result.vendorName}</Badge>
+                              {result.sku && <span className="text-xs text-muted-foreground">SKU {result.sku}</span>}
+                            </div>
+                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
+                            <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">
+                              {result.priceIsStartingAt ? "From " : ""}
+                              {formatMoney(Number(result.price), result.currency)}
+                              <span className="ml-1 text-xs font-normal text-muted-foreground">{result.currency}</span>
+                            </p>
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
                             <a
@@ -632,15 +831,25 @@ export default function PartsPage() {
                             >
                               Supplier page <ArrowUpRight size={14} aria-hidden="true" />
                             </a>
-                            <Button
-                              size="sm"
-                              variant={alreadyAdded ? "secondary" : "default"}
-                              disabled={alreadyAdded || createItemMutation.isPending}
-                              onClick={() => void addSearchResult(result)}
-                            >
-                              {alreadyAdded ? <Check size={15} /> : <Plus size={15} />}
-                              {alreadyAdded ? "In inventory" : "Add to catalog"}
-                            </Button>
+                            <span className="ml-auto flex flex-wrap justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={alreadyInInventory || createItemMutation.isPending}
+                                onClick={() => void saveSearchResultToInventory(result)}
+                              >
+                                {alreadyInInventory ? <Check size={15} /> : <Package size={15} />}
+                                {alreadyInInventory ? "In inventory" : "Save to inventory"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={alreadyAdded ? "secondary" : "default"}
+                                onClick={() => addSearchResultToDraft(result)}
+                              >
+                                {alreadyAdded ? <Check size={15} /> : <Plus size={15} />}
+                                {alreadyAdded ? "Add another" : "Add to draft"}
+                              </Button>
+                            </span>
                           </div>
                         </CardContent>
                       </Card>

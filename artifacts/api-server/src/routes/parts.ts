@@ -23,6 +23,7 @@ import {
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
+import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
 
 const router: IRouter = Router();
 type PoolClient = {
@@ -327,12 +328,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-type PublicCatalogSearchResult = {
+type PublicCatalogSearchCandidate = {
   vendorKey: string;
   vendorName: string;
   title: string;
   url: string;
   description: string;
+};
+
+type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
+  title: string;
+  description: string;
+  sku: string | null;
+  imageUrl: string;
+  price: string;
+  currency: string;
+  priceIsStartingAt: boolean;
 };
 
 function catalogVendorForUrl(url: URL, allowedVendors: VendorConfig[]) {
@@ -345,7 +356,7 @@ function catalogVendorForUrl(url: URL, allowedVendors: VendorConfig[]) {
 function toPublicCatalogSearchResult(
   item: Record<string, unknown>,
   allowedVendors: VendorConfig[],
-): PublicCatalogSearchResult | null {
+): PublicCatalogSearchCandidate | null {
   if (typeof item.url !== "string") return null;
   let url: URL;
   try {
@@ -375,7 +386,7 @@ function toPublicCatalogSearchResult(
 async function searchWithTavily(
   query: string,
   allowedVendors: VendorConfig[],
-): Promise<PublicCatalogSearchResult[]> {
+): Promise<PublicCatalogSearchCandidate[]> {
   const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: {
@@ -403,7 +414,7 @@ async function searchWithTavily(
 
 function parseExaSearchResults(text: string, allowedVendors: VendorConfig[]) {
   const chunks = text.split(/\n---\n/);
-  const results: PublicCatalogSearchResult[] = [];
+  const results: PublicCatalogSearchCandidate[] = [];
   for (const chunk of chunks) {
     const title = chunk.match(/^Title:\s*(.+)$/m)?.[1]?.trim();
     const resultUrl = chunk.match(/^URL:\s*(https?:\/\/\S+)$/m)?.[1]?.trim();
@@ -425,7 +436,7 @@ function parseExaSearchResults(text: string, allowedVendors: VendorConfig[]) {
 async function searchWithExa(
   query: string,
   allowedVendors: VendorConfig[],
-): Promise<PublicCatalogSearchResult[]> {
+): Promise<PublicCatalogSearchCandidate[]> {
   const vendorScope = allowedVendors.map((vendor) => `${vendor.name} (${vendor.domain})`).join("; ");
   const response = await fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
     method: "POST",
@@ -465,6 +476,78 @@ async function searchWithExa(
   return parseExaSearchResults(textBlock.text, allowedVendors);
 }
 
+async function enrichOfficialProductPage(
+  candidate: PublicCatalogSearchCandidate,
+): Promise<PublicCatalogSearchResult | null> {
+  const vendor = vendorByKey.get(candidate.vendorKey);
+  if (!vendor) return null;
+  let target: URL;
+  try {
+    target = new URL(candidate.url);
+  } catch {
+    return null;
+  }
+
+  for (let redirect = 0; redirect < 4; redirect += 1) {
+    if (
+      target.protocol !== "https:" ||
+      target.username ||
+      target.password ||
+      !vendorOwnsHost(target.hostname, vendor)
+    ) {
+      return null;
+    }
+    let response: Response;
+    try {
+      response = await fetch(target, {
+        headers: { accept: "text/html,application/xhtml+xml" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch {
+      return null;
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) return null;
+      try {
+        target = new URL(location, target);
+      } catch {
+        return null;
+      }
+      continue;
+    }
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (!response.ok || !(contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))) {
+      return null;
+    }
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (contentLength > 2_000_000) return null;
+    let html: string;
+    try {
+      html = await response.text();
+    } catch {
+      return null;
+    }
+    if (new TextEncoder().encode(html).byteLength > 2_000_000) return null;
+    const metadata = extractVerifiedProductMetadata(html, target.toString(), candidate.title);
+    if (!metadata) return null;
+    return {
+      vendorKey: vendor.key,
+      vendorName: vendor.name,
+      title: metadata.title,
+      url: target.toString(),
+      description: metadata.description,
+      sku: metadata.sku,
+      imageUrl: metadata.imageUrl,
+      price: metadata.price,
+      currency: metadata.currency,
+      priceIsStartingAt: metadata.priceIsStartingAt,
+    };
+  }
+  return null;
+}
+
 async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const allowedVendors = vendor ? [vendor] : VENDORS;
   const [tavily, exa] = await Promise.allSettled([
@@ -480,13 +563,24 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
     ...(exa.status === "fulfilled" ? exa.value : []),
   ];
   const seen = new Set<string>();
-  return combined.filter((result) => {
+  const candidates = combined.filter((result) => {
     const parsedUrl = new URL(result.url);
     const key = `${result.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  });
+  }).slice(0, 16);
+
+  const verifiedResults: PublicCatalogSearchResult[] = [];
+  for (let index = 0; index < candidates.length; index += 4) {
+    const batch = await Promise.allSettled(
+      candidates.slice(index, index + 4).map(enrichOfficialProductPage),
+    );
+    for (const result of batch) {
+      if (result.status === "fulfilled" && result.value) verifiedResults.push(result.value);
+    }
+  }
+  return verifiedResults;
 }
 
 type CatalogFeedRecord = {

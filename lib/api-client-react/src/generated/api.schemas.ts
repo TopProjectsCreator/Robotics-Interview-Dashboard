@@ -97,7 +97,13 @@ export interface PartsCatalogSearchResult {
   url: string;
   description: string;
   /** @nullable */
-  sku?: string | null;
+  sku: string | null;
+  imageUrl: string;
+  /** @pattern ^\d{1,9}(\.\d{1,4})?$ */
+  price: string;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  priceIsStartingAt: boolean;
 }
 
 export interface PartsCatalogSearch {

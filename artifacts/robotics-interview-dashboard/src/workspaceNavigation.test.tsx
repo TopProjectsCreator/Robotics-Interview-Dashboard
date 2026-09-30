@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import { getWorkspaceNavigation, workspaceAreaForPath } from "./workspaceNavigation";
 
 describe("workspace navigation", () => {
-  it("keeps the overview limited to the two workspace pills", () => {
+  it("shows all three workspace choices on the overview", () => {
     expect(workspaceAreaForPath("/dashboard")).toBe("overview");
     expect(getWorkspaceNavigation("overview").map(({ label, kind }) => [label, kind])).toEqual([
       ["Interview", "workspace"],
       ["Chat", "workspace"],
+      ["Parts", "workspace"],
     ]);
   });
 
@@ -18,6 +19,7 @@ describe("workspace navigation", () => {
     expect(getWorkspaceNavigation("interview").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
+      "Parts",
       "Applicants",
       "Interview queue",
       "Attendance",
@@ -35,9 +37,20 @@ describe("workspace navigation", () => {
     expect(getWorkspaceNavigation("chat").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
+      "Parts",
       "AI assistant",
     ]);
     expect(getWorkspaceNavigation("chat").find(({ label }) => label === "AI assistant")?.href)
       .toBe("/assistant");
+  });
+
+  it("keeps parts routes in the dedicated parts workspace", () => {
+    expect(workspaceAreaForPath("/parts")).toBe("parts");
+    expect(workspaceAreaForPath("/parts?search=shaft")).toBe("parts");
+    expect(getWorkspaceNavigation("parts").map(({ label }) => label)).toEqual([
+      "Interview",
+      "Chat",
+      "Parts",
+    ]);
   });
 });

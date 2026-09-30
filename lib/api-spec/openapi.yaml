@@ -1871,7 +1871,7 @@ components:
           type: integer
     PartsCatalogSearchResult:
       type: object
-      required: [vendorKey, vendorName, title, url, description]
+      required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, currency, priceIsStartingAt]
       properties:
         vendorKey:
           type: string
@@ -1886,6 +1886,17 @@ components:
           type: string
         sku:
           type: [string, "null"]
+        imageUrl:
+          type: string
+          format: uri
+        price:
+          type: string
+          pattern: '^\d{1,9}(\.\d{1,4})?$'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        priceIsStartingAt:
+          type: boolean
     PartsCatalogSearch:
       type: object
       required: [query, results]
