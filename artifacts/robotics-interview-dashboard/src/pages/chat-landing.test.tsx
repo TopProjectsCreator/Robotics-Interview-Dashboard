@@ -177,14 +177,18 @@ function jsonResponse(payload: unknown): Response {
   } as Response;
 }
 
-function unauthorizedResponse(): Response {
+function errorResponse(status: number, statusText: string, payload: unknown): Response {
   return {
     ok: false,
-    status: 401,
-    statusText: "Unauthorized",
+    status,
+    statusText,
     headers: { get: () => "application/json" } as unknown as Headers,
-    text: async () => JSON.stringify({ error: "Session revoked" }),
+    text: async () => JSON.stringify(payload),
   } as Response;
+}
+
+function unauthorizedResponse(): Response {
+  return errorResponse(401, "Unauthorized", { error: "Session revoked" });
 }
 
 afterEach(() => {
@@ -613,7 +617,7 @@ describe("public chat discovery", () => {
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("return-interviewer-token");
   });
 
-  it("does not show a cross-tab notice on ordinary sign-in or invalid-password errors", async () => {
+  it("shows credential guidance for rejected sign-in without a cross-tab notice", async () => {
     window.history.replaceState({}, "", "/auth");
     const network = stubNetworkTransports(async (input) => {
       const path = requestPath(input);
@@ -621,7 +625,9 @@ describe("public chat discovery", () => {
       if (path === "/api/auth/interviewers") {
         return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
       }
-      if (path === "/api/auth/login") return unauthorizedResponse();
+      if (path === "/api/auth/login") {
+        return errorResponse(401, "Unauthorized", { error: "Incorrect interviewer or password" });
+      }
       return jsonResponse({});
     });
 
@@ -638,6 +644,46 @@ describe("public chat discovery", () => {
       "The team access code or personal password is incorrect.",
     );
     expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
+  });
+
+  it.each([
+    [
+      "network",
+      async () => { throw new TypeError("Failed to fetch"); },
+      "Sign-in is temporarily unavailable. Check your connection and try again.",
+    ],
+    [
+      "server",
+      async () => errorResponse(503, "Service Unavailable", { error: "Service unavailable" }),
+      "Sign-in is temporarily unavailable. Check your connection and try again.",
+    ],
+    [
+      "rate-limit",
+      async () => errorResponse(429, "Too Many Requests", { error: "Too many attempts" }),
+      "Too many sign-in attempts. Wait a minute and try again.",
+    ],
+  ])("shows retry guidance for a %s sign-in failure", async (_failureKind, failLogin, expectedMessage) => {
+    window.history.replaceState({}, "", "/auth");
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") return failLogin();
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-a"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(expectedMessage);
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 

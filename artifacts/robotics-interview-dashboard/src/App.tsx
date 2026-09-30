@@ -93,6 +93,19 @@ function isExpiredSessionError(error: unknown): boolean {
   return true;
 }
 
+function signInErrorMessage(error: unknown, fallback = "Could not complete sign-in. Check the team access code and password and try again."): string {
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+
+  if (status === 401) return "The team access code or personal password is incorrect.";
+  if (status === 429) return "Too many sign-in attempts. Wait a minute and try again.";
+  if (typeof status !== "number" || status >= 500) {
+    return "Sign-in is temporarily unavailable. Check your connection and try again.";
+  }
+  return fallback;
+}
+
 function expireSessionOnError(error: unknown) {
   if (isExpiredSessionError(error)) clearUserScopedRecords(queryClient);
 }
@@ -1516,7 +1529,10 @@ function Login() {
         onSuccess: () => {
           login.mutate(
             { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-            { onSuccess: finishLogin, onError: () => setError("Password setup succeeded, but sign-in failed. Try again.") },
+            {
+              onSuccess: finishLogin,
+              onError: error => setError(signInErrorMessage(error, "Password setup succeeded, but sign-in could not be completed. Try again.")),
+            },
           );
         },
         onError: error => {
@@ -1545,7 +1561,7 @@ function Login() {
     }
     login.mutate(
       { data: { interviewerId: selected.id, eventPassword, password: personalPassword } },
-      { onSuccess: finishLogin, onError: () => setError("The team access code or personal password is incorrect.") },
+      { onSuccess: finishLogin, onError: error => setError(signInErrorMessage(error)) },
     );
   };
 
@@ -1564,7 +1580,10 @@ function Login() {
           void qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
           login.mutate(
             { data: { interviewerId: account.id, eventPassword, password: personalPassword } },
-            { onSuccess: finishLogin, onError: () => setError("Account created, but sign-in failed. Try again.") },
+            {
+              onSuccess: finishLogin,
+              onError: error => setError(signInErrorMessage(error, "Account created, but sign-in could not be completed. Try again.")),
+            },
           );
         },
         onError: error => {
