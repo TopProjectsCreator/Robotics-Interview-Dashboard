@@ -1912,13 +1912,13 @@ components:
         sku:
           type: [string, "null"]
         imageUrl:
-          type: string
+          type: [string, "null"]
           format: uri
         price:
-          type: string
+          type: [string, "null"]
           pattern: '^\d{1,9}(\.\d{1,4})?$'
         currency:
-          type: string
+          type: [string, "null"]
           pattern: '^[A-Z]{3}$'
         priceIsStartingAt:
           type: boolean

@@ -42,7 +42,11 @@ import { Input } from "@/components/ui/input";
 
 type PageTab = "inventory" | "search";
 type Notice = { kind: "success" | "error"; text: string };
-type PartsOrderLine = { product: PartsCatalogSearchResult; quantity: number };
+type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "currency"> & {
+  price: string;
+  currency: string;
+};
+type PartsOrderLine = { product: PricedPartsCatalogSearchResult; quantity: number };
 type PartsCatalogSyncResult = Awaited<
   ReturnType<ReturnType<typeof useSyncPartsCatalog>["mutateAsync"]>
 >;
@@ -88,7 +92,7 @@ function readPartsOrderDraft(): PartsOrderLine[] {
       Number(line.product.price) >= 0 &&
       typeof line.product.currency === "string" &&
       /^[A-Z]{3}$/.test(line.product.currency) &&
-      typeof line.product.imageUrl === "string",
+      (line.product.imageUrl === null || typeof line.product.imageUrl === "string"),
     );
   } catch {
     return [];
@@ -112,8 +116,8 @@ type GroupedSearchResult = {
   title: string;
   sku: string | null;
   description: string;
-  imageUrl: string;
-  currency: string;
+  imageUrl: string | null;
+  currency: string | null;
   offers: PartsCatalogSearchResult[];
   defaultOffer: PartsCatalogSearchResult;
 };
@@ -129,6 +133,7 @@ function searchResultGroupKey(result: PartsCatalogSearchResult): string {
 }
 
 function searchResultPriceValue(result: PartsCatalogSearchResult): number {
+  if (result.price === null) return Number.POSITIVE_INFINITY;
   const value = Number(result.price);
   return Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
 }
@@ -170,6 +175,38 @@ function groupSearchResults(results: PartsCatalogSearchResult[]): GroupedSearchR
   });
 }
 
+function normalizedSku(value: string | null): string {
+  return value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
+}
+
+function normalizedProductUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function catalogItemHasLiveResult(
+  item: PartsCatalogItem,
+  results: PartsCatalogSearchResult[],
+): boolean {
+  const itemSku = normalizedSku(item.sku);
+  const itemUrl = normalizedProductUrl(item.productUrl);
+  const itemName = normalizeGroupText(item.name);
+  return results.some((result) => {
+    if (result.vendorKey !== item.vendorKey) return false;
+    const resultSku = normalizedSku(result.sku);
+    return (
+      (itemSku !== "" && itemSku === resultSku) ||
+      (itemUrl !== null && itemUrl === normalizedProductUrl(result.url)) ||
+      (itemSku === "" && resultSku === "" && itemName === normalizeGroupText(result.title))
+    );
+  });
+}
+
 function PartImage({ src, alt, className }: { src: string; alt: string; className: string }) {
   const [failed, setFailed] = useState(!src);
   useEffect(() => setFailed(!src), [src]);
@@ -192,6 +229,54 @@ function PartImage({ src, alt, className }: { src: string; alt: string; classNam
       loading="lazy"
       onError={() => setFailed(true)}
     />
+  );
+}
+
+function CatalogSearchCard({ item }: { item: PartsCatalogItem }) {
+  return (
+    <Card className="border-border bg-card" data-testid={`card-catalog-search-result-${item.id}`}>
+      <CardContent className="flex h-full flex-col gap-3 p-4">
+        <PartImage
+          src={item.imageUrl ?? ""}
+          alt={item.name}
+          className="h-44 w-full rounded-lg border border-border bg-muted/40 object-contain p-2"
+        />
+        <div className="min-w-0">
+          <h3 className="font-medium text-foreground">{item.name}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{item.vendorName}</Badge>
+            {item.sku && <span className="text-xs text-muted-foreground">SKU {item.sku}</span>}
+            {item.category && <span className="text-xs text-muted-foreground">{item.category}</span>}
+          </div>
+          {item.description && (
+            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-md bg-muted px-2.5 py-1.5 text-foreground">Catalog product</span>
+            <span className="rounded-md bg-primary/10 px-2.5 py-1.5 text-primary">
+              Team stock: {formatQuantity(item.quantityAvailable)} available
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Price and supplier availability are not included in this catalog record.
+          </p>
+        </div>
+        <div className="mt-auto border-t border-border pt-3">
+          {item.productUrl ? (
+            <a
+              href={item.productUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Supplier product page <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
+          ) : (
+            <span className="text-sm text-muted-foreground">No supplier product page saved</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -398,6 +483,14 @@ export default function PartsPage() {
   const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customVendor, setCustomVendor] = useState("");
+  const [customSku, setCustomSku] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
+  const [customProductUrl, setCustomProductUrl] = useState("");
+  const [customImageUrl, setCustomImageUrl] = useState("");
+  const [customQuantity, setCustomQuantity] = useState("0");
   const [lastCatalogSync, setLastCatalogSync] = useState<PartsCatalogSyncResult | null>(null);
 
   const catalogQuery = useListPartsCatalog({
@@ -516,27 +609,41 @@ export default function PartsPage() {
       if (result.liveSearchStatus === "unavailable") {
         setSearchError(
           result.catalogTotal > 0
-            ? "Live supplier discovery is unavailable right now. Indexed catalog matches are still shown below."
+            ? "Live supplier discovery is unavailable right now. Matching indexed products are still shown below."
             : "Live supplier discovery is unavailable right now. Try again shortly.",
         );
       } else if (result.results.length === 0 && result.catalogTotal === 0) {
-        setSearchError("No live product-page discoveries with verified details were found. Check the synced catalog matches below.");
+        setSearchError("No verified supplier products matched this search. Try a broader term or search again.");
       }
     } catch (error) {
-      setSearchError(errorMessage(error, "Keyless supplier search is unavailable right now."));
+      setSearchError(
+        `${errorMessage(error, "Supplier search is unavailable right now.")} Matching indexed products may still appear below.`,
+      );
     } finally {
       setSearchBusy(false);
     }
   };
 
   const addSearchResultToDraft = (product: PartsCatalogSearchResult) => {
+    if (product.price === null || product.currency === null) {
+      setNotice({
+        kind: "error",
+        text: `${product.title} has no verified price, so it cannot be added to the estimated order draft.`,
+      });
+      return;
+    }
+    const pricedProduct: PricedPartsCatalogSearchResult = {
+      ...product,
+      price: product.price,
+      currency: product.currency,
+    };
     setOrderDraft((previous) => {
-      const existing = previous.find((line) => line.product.url === product.url);
+      const existing = previous.find((line) => line.product.url === pricedProduct.url);
       return existing
-        ? previous.map((line) => line.product.url === product.url
-          ? { product, quantity: line.quantity + 1 }
+        ? previous.map((line) => line.product.url === pricedProduct.url
+          ? { product: pricedProduct, quantity: line.quantity + 1 }
           : line)
-        : [...previous, { product, quantity: 1 }];
+        : [...previous, { product: pricedProduct, quantity: 1 }];
     });
     setNotice({ kind: "success", text: `${product.title} added to the draft order. No purchase has been placed.` });
   };
@@ -580,6 +687,46 @@ export default function PartsPage() {
     }
   };
 
+  const createCustomPart = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = customName.trim();
+    if (!name || !customVendor) {
+      setNotice({ kind: "error", text: "Enter a part name and choose a supplier." });
+      return;
+    }
+    const quantity = customQuantity.trim() === "" ? 0 : Number(customQuantity);
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      setNotice({ kind: "error", text: "Owned quantity must be a non-negative whole number." });
+      return;
+    }
+    try {
+      await createItemMutation.mutateAsync({
+        data: {
+          vendorKey: customVendor,
+          name,
+          sku: customSku.trim() || null,
+          category: customCategory.trim() || null,
+          description: customDescription.trim() || null,
+          productUrl: customProductUrl.trim() || null,
+          imageUrl: customImageUrl.trim() || null,
+          quantityOwned: quantity,
+        },
+      });
+      setCustomName("");
+      setCustomVendor("");
+      setCustomSku("");
+      setCustomCategory("");
+      setCustomDescription("");
+      setCustomProductUrl("");
+      setCustomImageUrl("");
+      setCustomQuantity("0");
+      setNotice({ kind: "success", text: `${name} added to inventory.` });
+      await refreshParts();
+    } catch (error) {
+      setNotice({ kind: "error", text: errorMessage(error, "Unable to add this part.") });
+    }
+  };
+
   const saveStock = async (item: PartsCatalogItem, quantityOwned: number) => {
     try {
       await stockMutation.mutateAsync({ partId: item.id, data: { quantityOwned } });
@@ -608,6 +755,11 @@ export default function PartsPage() {
   const isMutating =
     stockMutation.isPending ||
     allocationMutation.isPending;
+  const liveResultGroups = groupSearchResults(searchResults);
+  const catalogSearchItems = savedCatalogSearchQuery.data?.items ?? [];
+  const additionalCatalogSearchItems = catalogSearchItems.filter(
+    (item) => !catalogItemHasLiveResult(item, searchResults),
+  );
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-6 bg-background p-4 text-foreground sm:p-6 xl:p-8">
@@ -863,7 +1015,7 @@ export default function PartsPage() {
                   <CardHeader>
                     <CardTitle className="text-base">Search all suppliers</CardTitle>
                     <CardDescription>
-                      We search vendors separately to broaden coverage. Only official product pages with a verified image and price appear here. Search results are discovery, not an exhaustive catalog or live stock feed.
+                      We combine verified live supplier products with matching products already in the indexed catalog. A live product can appear without a published price or image; search results still do not cover every supplier SKU or guarantee current stock.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -929,7 +1081,7 @@ export default function PartsPage() {
                               className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5"
                             >
                               <PartImage
-                                src={product.imageUrl}
+                                src={product.imageUrl ?? ""}
                                 alt=""
                                 className="size-14 shrink-0 rounded-md border border-border bg-muted object-contain"
                               />
@@ -996,148 +1148,51 @@ export default function PartsPage() {
                   </CardContent>
                 </Card>
 
-                {lastSearch && (
-                  <Card className="border-primary/25 bg-card" data-testid="card-synced-catalog-matches">
-                    <CardContent className="space-y-4 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h2 className="font-semibold text-foreground">Synced catalog matches</h2>
-                          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                            These are every matching part currently indexed from public supplier feeds or saved inventory, including common metric size spellings. This list is separate from live web discoveries.
-                          </p>
-                        </div>
-                        {savedCatalogSearchQuery.data && (
-                          <span className="text-sm font-medium text-foreground" data-testid="status-synced-catalog-total">
-                            {formatQuantity(savedCatalogSearchQuery.data.total)} total
-                          </span>
-                        )}
-                      </div>
-
-                      {savedCatalogSearchQuery.isLoading && (
-                        <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
-                          <Loader2 className="animate-spin" size={16} /> Searching synced catalogs…
-                        </div>
-                      )}
-
-                      {savedCatalogSearchQuery.isError && (
-                        <p role="alert" className="text-sm text-destructive">
-                          Could not search the synced parts catalog.
-                        </p>
-                      )}
-
-                      {savedCatalogSearchQuery.data?.total === 0 && !savedCatalogSearchQuery.isLoading && (
-                        <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="max-w-2xl text-sm text-muted-foreground">
-                            No matching items are indexed yet. Sync the available public supplier feeds to load their full catalogs; the live results below do not enumerate every SKU.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            disabled={syncMutation.isPending}
-                            onClick={() => void syncPublicCatalogs()}
-                            data-testid="button-sync-catalogs-from-search"
-                          >
-                            {syncMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                            {syncMutation.isPending ? "Syncing…" : "Sync public catalogs"}
-                          </Button>
-                        </div>
-                      )}
-
-                      {savedCatalogSearchQuery.data?.items.map((item) => (
-                        <article
-                          key={item.id}
-                          className="rounded-lg border border-border bg-background p-3"
-                          data-testid={`card-synced-part-${item.id}`}
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <h3 className="font-medium text-foreground" data-testid={`text-synced-part-name-${item.id}`}>{item.name}</h3>
-                              <p className="mt-1 text-sm text-muted-foreground" data-testid={`text-synced-part-details-${item.id}`}>
-                                {item.vendorName}
-                                {item.sku ? ` · SKU ${item.sku}` : ""}
-                                {item.category ? ` · ${item.category}` : ""}
-                              </p>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              In catalog · {formatQuantity(item.quantityOwned)} owned
-                            </span>
-                          </div>
-                          {item.description && (
-                            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{item.description}</p>
-                          )}
-                          {item.productUrl && (
-                            <a
-                              className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
-                              href={item.productUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              data-testid={`link-supplier-page-${item.id}`}
-                            >
-                              Open supplier product page
-                            </a>
-                          )}
-                        </article>
-                      ))}
-
-                      {savedCatalogSearchQuery.data && savedCatalogSearchQuery.data.total > 100 && (
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-sm text-muted-foreground">
-                            Showing {savedSearchOffset + 1}–{Math.min(savedSearchOffset + 100, savedCatalogSearchQuery.data.total)} of {formatQuantity(savedCatalogSearchQuery.data.total)}
-                          </span>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={savedSearchOffset === 0 || savedCatalogSearchQuery.isFetching}
-                              onClick={() => setSavedSearchOffset((offset) => Math.max(0, offset - 100))}
-                              data-testid="button-synced-catalog-previous-page"
-                            >
-                              Previous
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={savedSearchOffset + 100 >= savedCatalogSearchQuery.data.total || savedCatalogSearchQuery.isFetching}
-                              onClick={() => setSavedSearchOffset((offset) => offset + 100)}
-                              data-testid="button-synced-catalog-next-page"
-                            >
-                              Next
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
                   </div>
                 )}
 
-                {lastSearch && searchResults.length > 0 && (
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{groupSearchResults(searchResults).length} grouped item(s) from {searchResults.length} supplier listing(s) for “{lastSearch}”</span>
-                    <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
+                {lastSearch && savedCatalogSearchQuery.isLoading && (
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+                    <Loader2 className="animate-spin" size={16} aria-hidden="true" /> Loading indexed product matches…
                   </div>
                 )}
-                {lastSearch && (
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Live web results are discovery samples, not complete SKU listings. The synced catalog list above shows all matching records currently indexed; complete coverage still depends on each supplier exposing a verifiable public catalog feed.
+
+                {lastSearch && savedCatalogSearchQuery.isError && (
+                  <p role="alert" className="text-sm text-destructive">
+                    Could not load indexed catalog products. Live supplier results remain available.
                   </p>
                 )}
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {groupSearchResults(searchResults).map((group) => {
+
+                {lastSearch && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                    <span>
+                      {liveResultGroups.length} live product group(s)
+                      {savedCatalogSearchQuery.data
+                        ? ` · ${formatQuantity(savedCatalogSearchQuery.data.total)} indexed catalog match(es)`
+                        : ""}
+                      {` for “${lastSearch}”`}
+                    </span>
+                    {liveResultGroups.length > 0 && (
+                      <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid gap-3 lg:grid-cols-2" aria-label="Product search results">
+                  {liveResultGroups.map((group) => {
                     const result = group.defaultOffer;
                     const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
                     const alreadyInInventory = currentlyAdded.has(result.url);
+                    const canAddToDraft = result.price !== null && result.currency !== null;
                     const otherOffers = group.offers.filter((offer) => offer.url !== result.url);
                     return (
-                      <Card key={group.key} className="border-border bg-card">
+                      <Card key={`live-${group.key}`} className="border-border bg-card">
                         <CardContent className="flex h-full flex-col gap-3 p-4">
                           <PartImage
-                            src={result.imageUrl}
+                            src={result.imageUrl ?? ""}
                             alt={result.title}
                             className="h-44 w-full rounded-lg border border-border bg-muted/40 object-contain p-2"
                           />
@@ -1162,11 +1217,17 @@ export default function PartsPage() {
                                 {!isOfferInStock(result) ? " · all offers currently out of stock" : ""}
                               </p>
                             )}
-                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{group.description}</p>
+                            {group.description && (
+                              <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{group.description}</p>
+                            )}
                             <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">
-                              {result.priceIsStartingAt ? "From " : ""}
-                              {formatMoney(Number(result.price), result.currency)}
-                              <span className="ml-1 text-xs font-normal text-muted-foreground">{result.currency}</span>
+                              {canAddToDraft && result.currency
+                                ? <>
+                                    {result.priceIsStartingAt ? "From " : ""}
+                                    {formatMoney(Number(result.price), result.currency)}
+                                    <span className="ml-1 text-xs font-normal text-muted-foreground">{result.currency}</span>
+                                  </>
+                                : "Price not published"}
                             </p>
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
@@ -1204,10 +1265,12 @@ export default function PartsPage() {
                               <Button
                                 size="sm"
                                 variant={alreadyAdded ? "secondary" : "default"}
+                                disabled={!canAddToDraft}
+                                title={!canAddToDraft ? "A verified supplier price is required for the draft subtotal." : undefined}
                                 onClick={() => addSearchResultToDraft(result)}
                               >
                                 {alreadyAdded ? <Check size={15} /> : <Plus size={15} />}
-                                {alreadyAdded ? "Add another" : "Add to draft"}
+                                {alreadyAdded ? "Add another" : canAddToDraft ? "Add to draft" : "Price unavailable"}
                               </Button>
                             </span>
                           </div>
@@ -1215,10 +1278,173 @@ export default function PartsPage() {
                       </Card>
                     );
                   })}
+                  {additionalCatalogSearchItems.map((item) => (
+                    <CatalogSearchCard key={`catalog-${item.id}`} item={item} />
+                  ))}
                 </div>
+
+                {lastSearch &&
+                  !searchBusy &&
+                  !savedCatalogSearchQuery.isLoading &&
+                  !savedCatalogSearchQuery.isError &&
+                  liveResultGroups.length === 0 &&
+                  additionalCatalogSearchItems.length === 0 && (
+                    <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        No matching supplier products or indexed catalog records were found.
+                      </p>
+                      {savedCatalogSearchQuery.data?.total === 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={syncMutation.isPending}
+                          onClick={() => void syncPublicCatalogs()}
+                          data-testid="button-sync-catalogs-from-search"
+                        >
+                          {syncMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                          {syncMutation.isPending ? "Syncing…" : "Sync public catalogs"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                {savedCatalogSearchQuery.data && savedCatalogSearchQuery.data.total > 100 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Indexed products {savedSearchOffset + 1}–{Math.min(savedSearchOffset + 100, savedCatalogSearchQuery.data.total)} of {formatQuantity(savedCatalogSearchQuery.data.total)}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={savedSearchOffset === 0 || savedCatalogSearchQuery.isFetching}
+                        onClick={() => setSavedSearchOffset((offset) => Math.max(0, offset - 100))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={savedSearchOffset + 100 >= savedCatalogSearchQuery.data.total || savedCatalogSearchQuery.isFetching}
+                        onClick={() => setSavedSearchOffset((offset) => offset + 100)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </section>
             ) : (
               <section className="space-y-4" aria-label="Parts inventory">
+                <Card className="border-border bg-card">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Add a custom part</CardTitle>
+                    <CardDescription className="mt-1">
+                      Can&apos;t find it in search? Add it manually with a name and supplier.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={createCustomPart} className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-sm font-medium">
+                        Part name *
+                        <Input
+                          value={customName}
+                          onChange={(event) => setCustomName(event.target.value.slice(0, 250))}
+                          placeholder="Custom bracket"
+                          className="mt-1"
+                          maxLength={250}
+                        />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Supplier *
+                        <select
+                          value={customVendor}
+                          onChange={(event) => setCustomVendor(event.target.value)}
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="">Choose supplier</option>
+                          {VENDOR_GROUPS.map((group) => (
+                            <optgroup key={group} label={group}>
+                              {vendors.filter((vendor) => vendor.group === group).map((vendor) => (
+                                <option key={vendor.key} value={vendor.key}>{vendor.name}</option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm font-medium">
+                        SKU
+                        <Input
+                          value={customSku}
+                          onChange={(event) => setCustomSku(event.target.value.slice(0, 200))}
+                          placeholder="Optional"
+                          className="mt-1"
+                          maxLength={200}
+                        />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Category
+                        <Input
+                          value={customCategory}
+                          onChange={(event) => setCustomCategory(event.target.value.slice(0, 200))}
+                          placeholder="Optional"
+                          className="mt-1"
+                          maxLength={200}
+                        />
+                      </label>
+                      <label className="text-sm font-medium sm:col-span-2">
+                        Description
+                        <Input
+                          value={customDescription}
+                          onChange={(event) => setCustomDescription(event.target.value.slice(0, 1200))}
+                          placeholder="Optional"
+                          className="mt-1"
+                          maxLength={1200}
+                        />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Product URL
+                        <Input
+                          value={customProductUrl}
+                          onChange={(event) => setCustomProductUrl(event.target.value.slice(0, 2000))}
+                          placeholder="Must belong to the selected supplier"
+                          className="mt-1"
+                          inputMode="url"
+                        />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Image URL
+                        <Input
+                          value={customImageUrl}
+                          onChange={(event) => setCustomImageUrl(event.target.value.slice(0, 2000))}
+                          placeholder="https://…"
+                          className="mt-1"
+                          inputMode="url"
+                        />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Owned quantity
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={customQuantity}
+                          onChange={(event) => setCustomQuantity(event.target.value)}
+                          className="mt-1"
+                        />
+                      </label>
+                      <div className="flex items-end sm:col-span-2">
+                        <Button
+                          type="submit"
+                          disabled={createItemMutation.isPending || !customName.trim() || !customVendor}
+                        >
+                          {createItemMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                          Add part
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
                 <Card className="border-border bg-card">
                   <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
                     <div className="grid flex-1 gap-3 sm:grid-cols-2">

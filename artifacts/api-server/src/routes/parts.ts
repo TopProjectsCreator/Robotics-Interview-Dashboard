@@ -24,7 +24,10 @@ import {
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
-import { extractVerifiedProductMetadata } from "../lib/partsProductMetadata";
+import {
+  extractProductPageMetadata,
+  extractVerifiedProductMetadata,
+} from "../lib/partsProductMetadata";
 import { catalogSearchVariants } from "../lib/partsSearchTerms";
 import {
   defaultProductFeedUrl,
@@ -411,9 +414,9 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   title: string;
   description: string;
   sku: string | null;
-  imageUrl: string;
-  price: string;
-  currency: string;
+  imageUrl: string | null;
+  price: string | null;
+  currency: string | null;
   priceIsStartingAt: boolean;
   inStock: boolean;
 };
@@ -686,6 +689,7 @@ async function searchWithExa(
 
 async function enrichOfficialProductPage(
   candidate: PublicCatalogSearchCandidate,
+  includePartialDetails = false,
 ): Promise<PublicCatalogSearchResult | null> {
   const vendor = vendorByKey.get(candidate.vendorKey);
   if (!vendor) return null;
@@ -738,7 +742,9 @@ async function enrichOfficialProductPage(
       return null;
     }
     if (new TextEncoder().encode(html).byteLength > 2_000_000) return null;
-    const metadata = extractVerifiedProductMetadata(html, target.toString(), candidate.title);
+    const metadata = includePartialDetails
+      ? extractProductPageMetadata(html, target.toString(), candidate.title)
+      : extractVerifiedProductMetadata(html, target.toString(), candidate.title);
     if (!metadata) return null;
     return {
       vendorKey: vendor.key,
@@ -757,7 +763,11 @@ async function enrichOfficialProductPage(
   return null;
 }
 
-async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
+async function searchPublicCatalog(
+  query: string,
+  vendor?: VendorConfig,
+  options: { maxCandidatesPerVendor?: number; includePartialDetails?: boolean } = {},
+) {
   const allowedVendors = vendor ? [vendor] : VENDORS;
   const vendorGroups: VendorConfig[][] = [];
   for (let index = 0; index < allowedVendors.length; index += 4) {
@@ -787,7 +797,7 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
     bucket.push(result);
   }
   const candidates: PublicCatalogSearchCandidate[] = [];
-  const candidatesPerVendor = vendor ? 24 : 8;
+  const candidatesPerVendor = options.maxCandidatesPerVendor ?? 8;
   for (let rank = 0; rank < candidatesPerVendor; rank += 1) {
     for (const allowedVendor of allowedVendors) {
       const candidate = byVendor.get(allowedVendor.key)?.[rank];
@@ -798,7 +808,9 @@ async function searchPublicCatalog(query: string, vendor?: VendorConfig) {
   const verifiedResults: PublicCatalogSearchResult[] = [];
   for (let index = 0; index < candidates.length; index += 12) {
     const batch = await Promise.allSettled(
-      candidates.slice(index, index + 12).map(enrichOfficialProductPage),
+      candidates
+        .slice(index, index + 12)
+        .map((candidate) => enrichOfficialProductPage(candidate, options.includePartialDetails)),
     );
     for (const result of batch) {
       if (result.status === "fulfilled" && result.value) verifiedResults.push(result.value);
@@ -1380,7 +1392,10 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     let results: PublicCatalogSearchResult[] = [];
     let liveSearchStatus: "available" | "unavailable" = "available";
     try {
-      results = await searchPublicCatalog(query, vendor);
+      results = await searchPublicCatalog(query, vendor, {
+        maxCandidatesPerVendor: 40,
+        includePartialDetails: true,
+      });
     } catch (error) {
       if (syncedCatalog.total === 0) throw error;
       liveSearchStatus = "unavailable";

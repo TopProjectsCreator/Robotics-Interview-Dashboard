@@ -102,7 +102,7 @@ describe("public chat discovery", () => {
         expect(screen.getByRole("heading", { level: 1, name: /one home for the whole robotics team/i })).toBeInTheDocument();
       } else {
         expect(screen.getByRole("heading", { level: 1, name: /talk through the work/i })).toBeInTheDocument();
-        expect(screen.getByTestId("card-chat-workspace-preview")).toHaveTextContent("Fictional preview content");
+        expect(screen.getByTestId("card-chat-workspace-preview")).toHaveTextContent("STATIC VIEW");
       }
 
       await act(async () => {

@@ -1,12 +1,18 @@
-export type VerifiedProductMetadata = {
+export type ProductPageMetadata = {
   title: string;
   description: string;
   sku: string | null;
+  imageUrl: string | null;
+  price: string | null;
+  currency: string | null;
+  priceIsStartingAt: boolean;
+  inStock: boolean;
+};
+
+export type VerifiedProductMetadata = ProductPageMetadata & {
   imageUrl: string;
   price: string;
   currency: string;
-  priceIsStartingAt: boolean;
-  inStock: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -203,11 +209,11 @@ function productPrice(product: JsonRecord, html: string): {
   return { price, currency, priceIsStartingAt: false, inStock: true };
 }
 
-export function extractVerifiedProductMetadata(
+export function extractProductPageMetadata(
   html: string,
   pageUrl: string,
   searchTitle: string,
-): VerifiedProductMetadata | null {
+): ProductPageMetadata | null {
   let parsedPage: URL;
   try {
     parsedPage = new URL(pageUrl);
@@ -286,6 +292,37 @@ export function extractVerifiedProductMetadata(
     ? product.sku.trim().slice(0, 200)
     : null;
 
-  if (!title || !description || !imageUrl || !price) return null;
-  return { title, description, sku, imageUrl, ...price };
+  if (!title) return null;
+  return {
+    title,
+    description: description ?? "",
+    sku,
+    imageUrl,
+    price: price?.price ?? null,
+    currency: price?.currency ?? null,
+    priceIsStartingAt: price?.priceIsStartingAt ?? false,
+    inStock: price?.inStock ?? true,
+  };
+}
+
+export function extractVerifiedProductMetadata(
+  html: string,
+  pageUrl: string,
+  searchTitle: string,
+): VerifiedProductMetadata | null {
+  const metadata = extractProductPageMetadata(html, pageUrl, searchTitle);
+  if (
+    !metadata?.description ||
+    !metadata.imageUrl ||
+    !metadata.price ||
+    !metadata.currency
+  ) {
+    return null;
+  }
+  return {
+    ...metadata,
+    imageUrl: metadata.imageUrl,
+    price: metadata.price,
+    currency: metadata.currency,
+  };
 }

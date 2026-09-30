@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractVerifiedProductMetadata } from "./partsProductMetadata.ts";
+import {
+  extractProductPageMetadata,
+  extractVerifiedProductMetadata,
+} from "./partsProductMetadata.ts";
 
 const productJsonLd = JSON.stringify({
   "@context": "https://schema.org",
@@ -57,6 +60,33 @@ test("rejects PDFs, category pages, and structured data without an image or offe
       "https://shop.example.com/products/unpriced",
       "Unpriced item",
     ),
+    null,
+  );
+});
+
+test("keeps verified product pages when the supplier does not publish price, image, or description", () => {
+  const product = JSON.stringify({
+    "@type": "Product",
+    name: "Unpriced actuator bracket",
+    sku: "BRACKET-ACT-1",
+  });
+  const html = `<meta property="og:type" content="product"><script type="application/ld+json">${product}</script>`;
+  const pageUrl = "https://shop.example.com/products/actuator-bracket";
+  assert.deepEqual(
+    extractProductPageMetadata(html, pageUrl, "Unpriced actuator bracket"),
+    {
+      title: "Unpriced actuator bracket",
+      description: "",
+      sku: "BRACKET-ACT-1",
+      imageUrl: null,
+      price: null,
+      currency: null,
+      priceIsStartingAt: false,
+      inStock: true,
+    },
+  );
+  assert.equal(
+    extractVerifiedProductMetadata(html, pageUrl, "Unpriced actuator bracket"),
     null,
   );
 });
