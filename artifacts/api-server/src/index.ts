@@ -10,6 +10,32 @@ import { syncPublicPartsCatalogs } from "./routes/parts";
 
 initRealtime();
 
+// One-time removal of test accounts created during development. Best
+// effort and non-fatal; safe to keep running (no-op once they are gone).
+async function removeTestAccounts(): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM chat_message_reactions WHERE message_id IN (SELECT id FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest'))`,
+    );
+    await pool.query(
+      `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest')`,
+    );
+    await pool.query(
+      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2')`,
+    );
+    await pool.query(
+      `UPDATE interview_queue SET interviewer_labels = (
+        SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
+        FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
+        WHERE elem NOT IN ('TempVerify', 'RoleTest')
+      ) WHERE id = 1`,
+    );
+    logger.info("Test accounts cleanup done");
+  } catch (err) {
+    logger.error({ err }, "Test accounts cleanup failed (non-fatal)");
+  }
+}
+
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
 async function ensureSchema(): Promise<void> {
@@ -135,6 +161,7 @@ async function ensureSchema(): Promise<void> {
       throw err;
     }
   }
+  await removeTestAccounts();
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
