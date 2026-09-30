@@ -10,7 +10,11 @@ import {
   AUTH_SESSION_END_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
 } from "@/authSession";
-import { getGetInterviewChatQueryKey, getGetSessionQueryKey } from "@workspace/api-client-react";
+import {
+  getGetInterviewChatQueryKey,
+  getGetSessionQueryKey,
+  getListInterviewersQueryKey,
+} from "@workspace/api-client-react";
 import ChatLanding from "./chat-landing";
 import PublicDashboard from "./public-dashboard";
 
@@ -589,6 +593,10 @@ describe("public chat discovery", () => {
     });
     await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
 
+    const publicInterviewerList = {
+      items: [{ id: "interviewer-b", displayName: "Interviewer B", hasPassword: true }],
+    };
+    queryClient.setQueryData(getListInterviewersQueryKey(), publicInterviewerList);
     expired = true;
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey() });
@@ -606,8 +614,10 @@ describe("public chat discovery", () => {
     expect(document.body.textContent).not.toContain(applicantCanary);
     expect(document.body.textContent).not.toContain(chatCanary);
     expect(queryClient.getQueryCache().getAll().every((query) =>
-      JSON.stringify(query.queryKey) === JSON.stringify(getGetSessionQueryKey()),
+      JSON.stringify(query.queryKey) === JSON.stringify(getGetSessionQueryKey()) ||
+      JSON.stringify(query.queryKey) === JSON.stringify(getListInterviewersQueryKey()),
     )).toBe(true);
+    expect(queryClient.getQueryData(getListInterviewersQueryKey())).toEqual(publicInterviewerList);
   });
 
   it("expires the session and drops cached records when a private request is rejected", async () => {

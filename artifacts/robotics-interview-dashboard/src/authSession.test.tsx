@@ -31,4 +31,34 @@ describe("clearUserScopedRecords", () => {
     expect(queryClient.getQueryData(getListInterviewersQueryKey())).toEqual(interviewers);
     expect(queryClient.getQueryData(["/api/parts/dashboard"])).toBeUndefined();
   });
+
+  it("does not cancel an in-flight public interviewer list request", async () => {
+    queryClient = new QueryClient();
+    const interviewerList = { items: [] };
+    let resolveRequest!: (value: typeof interviewerList) => void;
+    let markStarted!: () => void;
+    let wasAborted = false;
+    const requestStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const request = queryClient.fetchQuery({
+      queryKey: getListInterviewersQueryKey(),
+      queryFn: ({ signal }) => {
+        signal.addEventListener("abort", () => {
+          wasAborted = true;
+        });
+        markStarted();
+        return new Promise<typeof interviewerList>((resolve) => {
+          resolveRequest = resolve;
+        });
+      },
+    });
+
+    await requestStarted;
+    clearUserScopedRecords(queryClient);
+    resolveRequest(interviewerList);
+
+    await expect(request).resolves.toEqual(interviewerList);
+    expect(wasAborted).toBe(false);
+  });
 });
