@@ -24,3 +24,8 @@ export function clearStoredAuthToken(): void {
     // Nothing else is required when storage is disabled.
   }
 }
+
+export function clearAuthSession(privateDataCache: { clear: () => void }): void {
+  clearStoredAuthToken();
+  privateDataCache.clear();
+}

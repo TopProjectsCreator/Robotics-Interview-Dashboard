@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import App from "@/App";
+import App, { queryClient } from "@/App";
+import { AUTH_TOKEN_STORAGE_KEY } from "@/authSession";
 import ChatLanding from "./chat-landing";
 import PublicDashboard from "./public-dashboard";
 
@@ -83,19 +84,26 @@ const privateRecordsResponse = {
 
 function stubNetworkTransports(fetchImplementation: typeof fetch = async () => privateRecordsResponse) {
   const fetchSpy = vi.fn(fetchImplementation);
-  const eventSourceConstructor = vi.fn().mockImplementation(() => ({ close: vi.fn() }));
-  const webSocketConstructor = vi.fn().mockImplementation(() => ({
-    readyState: 0,
-    addEventListener: vi.fn(),
-    close: vi.fn(),
-    send: vi.fn(),
-  }));
+  const eventSources: { close: ReturnType<typeof vi.fn>; onmessage: ((event: MessageEvent) => void) | null }[] = [];
+  const eventSourceConstructor = vi.fn(function MockEventSource() {
+    const source = { close: vi.fn(), onmessage: null };
+    eventSources.push(source);
+    return source;
+  });
+  const webSocketConstructor = vi.fn(function MockWebSocket() {
+    return {
+      readyState: 0,
+      addEventListener: vi.fn(),
+      close: vi.fn(),
+      send: vi.fn(),
+    };
+  });
 
   vi.stubGlobal("fetch", fetchSpy);
   vi.stubGlobal("EventSource", eventSourceConstructor);
   vi.stubGlobal("WebSocket", webSocketConstructor);
 
-  return { fetchSpy, eventSourceConstructor, webSocketConstructor };
+  return { fetchSpy, eventSourceConstructor, eventSources, webSocketConstructor };
 }
 
 function requestPath(input: RequestInfo | URL) {
@@ -105,8 +113,23 @@ function requestPath(input: RequestInfo | URL) {
 }
 
 const privateDataPath = /(?:^|\/)(?:chat|applicants?|presence|events?|whiteboards?|collab(?:oration)?|boards?|documents?|spreadsheets?)(?:\/|$)/i;
+const signedInSession = { authenticated: true, interviewerId: "test-interviewer", label: "Test Interviewer" };
+const applicantCanary = "PrivateApplicantAfterSignoutCanary";
+const chatCanary = "PrivateChatAfterSignoutCanary";
+
+function jsonResponse(payload: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => "application/json" } as unknown as Headers,
+    text: async () => JSON.stringify(payload),
+  } as Response;
+}
 
 afterEach(() => {
+  queryClient.clear();
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem("robotics-workspace-settings");
   vi.unstubAllGlobals();
   document.documentElement.classList.remove("dark");
   window.history.replaceState({}, "", "/");
@@ -257,6 +280,111 @@ describe("public chat discovery", () => {
       for (const canary of privateRecordCanaries) {
         expect(document.body.textContent).not.toContain(canary);
       }
+    },
+  );
+
+  it.each(["/", "/chat-landing"])(
+    "clears signed-in chat and applicant records before navigating to %s",
+    async (publicPath) => {
+      window.history.replaceState({}, "", "/chat");
+      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "test-session-token");
+      window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+      const network = stubNetworkTransports(async (input) => {
+        const path = requestPath(input);
+        if (path === "/api/auth/session") return jsonResponse(signedInSession);
+        if (path === "/api/auth/logout") return jsonResponse({ message: "Logged out" });
+        if (path === "/api/applicants") {
+          return jsonResponse({
+            items: [{
+              id: "private-applicant",
+              name: applicantCanary,
+              grade: "10",
+              age: null,
+              gender: null,
+              aiScore: 0,
+              aiRecommendation: "",
+              aiSummary: "",
+              aiStrengths: "",
+              aiConcerns: "",
+              roboticsExperience: "",
+              commit10Hours: "",
+              parentVolunteer: "",
+              interviewStatus: "queued",
+              category: "unranked",
+              rank: 1,
+              notes: "",
+              queuePosition: 1,
+            }],
+            total: 1,
+          });
+        }
+        if (path === "/api/queue/chat") {
+          return jsonResponse({
+            scope: "shared",
+            peer: null,
+            items: [{
+              id: "private-chat-message",
+              author: "Test Interviewer",
+              message: chatCanary,
+              scope: "shared",
+              peer: null,
+              createdAt: new Date(0).toISOString(),
+            }],
+          });
+        }
+        if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+        if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+        if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+        return jsonResponse({});
+      });
+
+      render(<App />);
+
+      await waitFor(() => {
+        expect(queryClient.isFetching()).toBe(0);
+        expect(document.getElementById("chat-message-private-chat-message")?.textContent).toContain(chatCanary);
+      });
+      expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/applicants");
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .toContain(applicantCanary);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .toContain(chatCanary);
+      expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByTestId("button-logout"));
+
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/");
+        expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+      });
+      if (publicPath === "/chat-landing") {
+        fireEvent.click(screen.getByTestId("link-chat-entry"));
+        await waitFor(() => expect(window.location.pathname).toBe("/chat-landing"));
+      }
+      if (publicPath === "/") {
+        expect(screen.getByRole("heading", { level: 1, name: /one home for the whole robotics team/i })).toBeInTheDocument();
+      } else {
+        expect(screen.getByRole("heading", { level: 1, name: /talk through the work/i })).toBeInTheDocument();
+      }
+      expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
+      expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+      expect(document.body.textContent).not.toContain(applicantCanary);
+      expect(document.body.textContent).not.toContain(chatCanary);
+
+      const privateFetchCountAfterLogout = network.fetchSpy.mock.calls
+        .map(([input]) => requestPath(input))
+        .filter((path) => privateDataPath.test(path)).length;
+      network.eventSources[0].onmessage?.({ data: JSON.stringify({ table: "applicants" }) } as MessageEvent);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1);
+      expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))
+        .filter((path) => privateDataPath.test(path))).toHaveLength(privateFetchCountAfterLogout);
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+      expect(document.body.textContent).not.toContain(applicantCanary);
+      expect(document.body.textContent).not.toContain(chatCanary);
     },
   );
 

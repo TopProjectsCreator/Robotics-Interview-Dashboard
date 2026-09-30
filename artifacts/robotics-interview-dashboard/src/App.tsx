@@ -46,7 +46,7 @@ import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearStoredAuthToken, getStoredAuthToken, storeAuthToken } from "./authSession";
+import { clearAuthSession, getStoredAuthToken, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -80,7 +80,7 @@ import {
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
 
-const queryClient = new QueryClient();
+export const queryClient = new QueryClient();
 const categories = ["advance", "hold", "decline", "unranked"];
 const statuses = ["queued", "in_progress", "completed"];
 type BrowserSpeechResult = { 0?: { transcript?: string } };
@@ -175,7 +175,7 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
       <div className="p-2">
         <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>
-        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
+        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
       </div>
     </div>}
   </div>;
@@ -206,8 +206,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     setPasswordError("");
     qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
     if (resetSession) {
-      clearStoredAuthToken();
-      qc.clear();
+      clearAuthSession(qc);
       onClose();
       setLocation("/");
     }
@@ -1829,7 +1828,7 @@ function Shell({ children }: { children: ReactNode }) {
             <Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link>
           </div>
         )}
-        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearStoredAuthToken(); queryClient.clear(); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
+        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
         <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
