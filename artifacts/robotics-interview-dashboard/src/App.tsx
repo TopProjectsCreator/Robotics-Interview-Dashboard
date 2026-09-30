@@ -46,7 +46,7 @@ import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, clearUserScopedRecords, getStoredAuthToken, listenForAuthSessionEnd, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -1422,6 +1422,7 @@ function Login() {
   const [personalPassword, setPersonalPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
+  const [sessionEndedInAnotherTab, setSessionEndedInAnotherTab] = useState(false);
   const [location, setLocation] = useLocation();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1456,8 +1457,14 @@ function Login() {
   const busy = login.isPending || setup.isPending || create.isPending;
 
   useEffect(() => {
-    if (session.data?.authenticated && (location === "/" || location === "/auth")) setLocation("/dashboard");
-  }, [session.data, location, setLocation]);
+    if (consumeAuthSessionEndedByAnotherTab()) setSessionEndedInAnotherTab(true);
+  }, []);
+
+  useEffect(() => {
+    if (session.data?.authenticated && !sessionEndedInAnotherTab && (location === "/" || location === "/auth")) {
+      setLocation("/dashboard");
+    }
+  }, [session.data, sessionEndedInAnotherTab, location, setLocation]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -1648,6 +1655,15 @@ function Login() {
             </div>
             <h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{heading}</h2>
             <p className="mt-3 text-sm leading-6 text-[#63747c] dark:text-[#a4bbc3]">{description}</p>
+            {sessionEndedInAnotherTab && (
+              <p
+                role="status"
+                data-testid="session-ended-in-another-tab"
+                className="mt-5 rounded-xl border border-[#e5d18b] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#665214] dark:border-[#806b3d] dark:bg-[#392f1a] dark:text-[#f6df94]"
+              >
+                Your session ended in another tab. Sign in again to continue.
+              </p>
+            )}
 
             {step === "event" && (
               <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
@@ -1765,6 +1781,7 @@ function Shell({ children }: { children: ReactNode }) {
   useRealtimeSync(session.data?.authenticated === true);
   const qc = useQueryClient();
   useEffect(() => listenForAuthSessionEnd(() => {
+    markAuthSessionEndedByAnotherTab();
     clearUserScopedRecords(qc);
     setLocation("/auth");
   }), [qc, setLocation]);

@@ -15,6 +15,17 @@ type AuthSessionEndMessage = {
 };
 
 const authSessionTabId = `${Date.now()}-${Math.random()}`;
+let pendingOtherTabSessionEndNotice = false;
+
+export function markAuthSessionEndedByAnotherTab(): void {
+  pendingOtherTabSessionEndNotice = true;
+}
+
+export function consumeAuthSessionEndedByAnotherTab(): boolean {
+  const shouldShowNotice = pendingOtherTabSessionEndNotice;
+  pendingOtherTabSessionEndNotice = false;
+  return shouldShowNotice;
+}
 
 function parseAuthSessionEndMessage(value: unknown): AuthSessionEndMessage | null {
   let message: unknown = value;

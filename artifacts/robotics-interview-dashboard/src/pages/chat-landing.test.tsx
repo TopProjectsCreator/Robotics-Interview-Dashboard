@@ -467,6 +467,7 @@ describe("public chat discovery", () => {
 
       const network = stubNetworkTransports(async (input) => {
         const path = requestPath(input);
+        // Simulate a delayed session lookup that still reports the old session after the broadcast.
         if (path === "/api/auth/session") return jsonResponse(signedInSession);
         if (path === "/api/applicants") {
           return jsonResponse({
@@ -546,6 +547,8 @@ describe("public chat discovery", () => {
           expect(cachedPrivateData).not.toContain("CrossTabPrivateRecordCanary");
           expect(cachedPrivateData).not.toContain("CrossTabPrivateApplicantCanary");
         });
+        expect(await screen.findByTestId("session-ended-in-another-tab"))
+          .toHaveTextContent("Your session ended in another tab. Sign in again to continue.");
         expect(document.body.textContent).not.toContain("CrossTabPrivateRecordCanary");
         expect(document.body.textContent).not.toContain("CrossTabPrivateApplicantCanary");
       } finally {
@@ -576,6 +579,34 @@ describe("public chat discovery", () => {
     );
     expect(network.eventSourceConstructor).not.toHaveBeenCalled();
     expect(network.webSocketConstructor).not.toHaveBeenCalled();
+  });
+
+  it("does not show a cross-tab notice on ordinary sign-in or invalid-password errors", async () => {
+    window.history.replaceState({}, "", "/auth");
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") return unauthorizedResponse();
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-a"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(
+      "The team access code or personal password is incorrect.",
+    );
+    expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 
   it("clears private records and closes realtime when the server expires a session", async () => {
