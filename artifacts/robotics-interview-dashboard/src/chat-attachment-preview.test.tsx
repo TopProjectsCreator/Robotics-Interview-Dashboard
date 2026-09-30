@@ -73,6 +73,17 @@ function stlFixture(): Blob {
   return new Blob([bytes], { type: "model/stl" });
 }
 
+function heicFixture(): Blob {
+  // ISO Base Media File Format `ftyp` header with HEIC-compatible brands.
+  const bytes = Buffer.alloc(20);
+  bytes.writeUInt32BE(bytes.length, 0);
+  bytes.write("ftyp", 4, "ascii");
+  bytes.write("heic", 8, "ascii");
+  bytes.writeUInt32BE(0, 12);
+  bytes.write("mif1", 16, "ascii");
+  return new Blob([bytes], { type: "image/heic" });
+}
+
 const fixtures: Fixture[] = [
   {
     name: "robot.glb",
@@ -158,16 +169,64 @@ const fixtures: Fixture[] = [
     assertPreview: container => expect(container.querySelector("img")).toBeInTheDocument(),
   },
   {
+    name: "portrait.heic",
+    contentType: "application/octet-stream",
+    body: heicFixture(),
+    assertPreview: container => {
+      expect(container.querySelector("img[alt='portrait.heic']")).toBeInTheDocument();
+      expect(container.querySelector("img")).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    },
+  },
+  {
+    name: "logo.svg",
+    contentType: "image/svg+xml",
+    body: new Blob(
+      ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'],
+      { type: "image/svg+xml" },
+    ),
+    assertPreview: container => {
+      expect(container.querySelector("img[alt='logo.svg']")).toBeInTheDocument();
+      expect(container.querySelector("img")).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    },
+  },
+  {
     name: "interview.mp3",
     contentType: "audio/mpeg",
     body: new Blob(["audio fixture"], { type: "audio/mpeg" }),
     assertPreview: container => expect(container.querySelector("audio")).toBeInTheDocument(),
   },
   {
+    name: "interview.flac",
+    contentType: "audio/flac",
+    body: new Blob([new Uint8Array([0x66, 0x4c, 0x61, 0x43, 0x00, 0x00, 0x00, 0x22])], { type: "audio/flac" }),
+    assertPreview: container => {
+      expect(container.querySelector("audio[controls]")).toBeInTheDocument();
+      expect(container.querySelector("audio")).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    },
+  },
+  {
+    name: "interview.ogg",
+    contentType: "application/ogg",
+    body: new Blob([new Uint8Array([0x4f, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00])], { type: "application/ogg" }),
+    assertPreview: container => {
+      expect(container.querySelector("audio[controls]")).toBeInTheDocument();
+      expect(container.querySelector("audio")).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    },
+  },
+  {
     name: "walkthrough.mp4",
     contentType: "video/mp4",
     body: new Blob(["video fixture"], { type: "video/mp4" }),
     assertPreview: container => expect(container.querySelector("video")).toBeInTheDocument(),
+  },
+  {
+    name: "walkthrough.webm",
+    contentType: "application/octet-stream",
+    body: new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81])], { type: "video/webm" }),
+    assertPreview: container => {
+      expect(container.querySelector("video[controls]")).toBeInTheDocument();
+      expect(container.querySelector("video")).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    },
   },
   {
     name: "brief.pdf",
@@ -222,7 +281,9 @@ describe("chat attachment inline previews", () => {
 
     await waitFor(() => fixture.assertPreview(container));
 
-    expect(container.querySelector("a[href^='/api/storage/']")).not.toBeInTheDocument();
+    const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
+      .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
+    expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
   });
 });
 
