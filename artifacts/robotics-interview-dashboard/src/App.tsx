@@ -3940,7 +3940,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         await withTimeout(sendChat.mutateAsync({
           data: {
             author: "AI assistant",
-            ...(conversationPeer ? { conversationAuthor: activeInterviewer } : {}),
+            conversationAuthor: activeInterviewer,
             message: response.answer,
             scope: conversationScope,
             ...(conversationPeer ? { recipient: conversationPeer } : {}),
