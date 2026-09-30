@@ -11,11 +11,9 @@ import {
   Database,
   ExternalLink,
   Filter,
-  LockKeyhole,
   Menu,
   PackageCheck,
   Search,
-  ShieldCheck,
   ShoppingCart,
   Tag,
   Wrench,
@@ -41,7 +39,7 @@ const pageMeta = [
     attribute: "property",
     key: "og:description",
     content:
-      "A public preview of supplier discovery, team-owned stock, and robot-build reservations. All inventory examples are fictional.",
+      "Supplier discovery, team-owned stock, and robot-build reservations.",
   },
   {
     attribute: "name",
@@ -52,7 +50,7 @@ const pageMeta = [
     attribute: "name",
     key: "twitter:description",
     content:
-      "Explore supplier discovery, team-owned stock, and robot-build reservations with fictional examples.",
+      "Explore supplier discovery, team-owned stock, and robot-build reservations.",
   },
 ] as const;
 
@@ -179,13 +177,6 @@ export default function PartsLanding() {
       <div className="parts-landing__orbit parts-landing__orbit--two" aria-hidden="true" />
 
       <div className="parts-landing__shell">
-        <div className="parts-landing__topline" role="note" data-testid="notice-parts-preview">
-          <span>
-            <strong>Public preview</strong> · fictional inventory examples
-          </span>
-          <span>Private quantities and reservations begin after sign in</span>
-        </div>
-
         <header className="parts-landing__nav">
           <Link
             href="/"
@@ -213,9 +204,6 @@ export default function PartsLanding() {
             </a>
             <a href="#coverage" onClick={closeMenu} data-testid="link-parts-coverage">
               Vendor coverage
-            </a>
-            <a href="#boundary" onClick={closeMenu} data-testid="link-parts-boundary">
-              Public / private
             </a>
             <Link
               href="/auth"
@@ -270,13 +258,6 @@ export default function PartsLanding() {
                 See the bench view <ChevronDown size={16} />
               </a>
             </div>
-            <p className="parts-landing__privacy-note">
-              <ShieldCheck size={14} aria-hidden="true" />
-              <span>
-                This is a public, illustrative preview. Sign in before viewing private
-                quantities, reservations, or team-specific records.
-              </span>
-            </p>
           </div>
 
           <div className="parts-landing__hero-figure" id="demo">
@@ -292,13 +273,12 @@ export default function PartsLanding() {
                   <p className="parts-console__kicker">WOLVERINES / PARTS DESK</p>
                   <h2 id="parts-console-title">Find a part</h2>
                 </div>
-                <span className="parts-console__badge">ILLUSTRATIVE</span>
               </div>
 
               <div className="parts-console__search">
                 <Search size={16} aria-hidden="true" />
                 <label htmlFor="parts-demo-search" className="sr-only">
-                  Search illustrative parts
+                  Search parts
                 </label>
                 <input
                   id="parts-demo-search"
@@ -321,7 +301,7 @@ export default function PartsLanding() {
                 ) : null}
               </div>
 
-              <div className="parts-console__filters" aria-label="Illustrative vendor filters">
+              <div className="parts-console__filters" aria-label="Vendor filters">
                 <Filter size={13} aria-hidden="true" />
                 {(["All sources", "REV Robotics", "AndyMark", "McMaster-Carr"] as Vendor[]).map(
                   (source) => (
@@ -340,7 +320,7 @@ export default function PartsLanding() {
               </div>
 
               <div className="parts-console__result-meta" aria-live="polite" data-testid="status-parts-results">
-                <span>{filteredParts.length} illustrative matches</span>
+                <span>{filteredParts.length} matches</span>
                 <span>STATIC VIEW</span>
               </div>
 
@@ -372,17 +352,16 @@ export default function PartsLanding() {
                 ) : (
                   <div className="parts-console__empty" data-testid="empty-parts-results">
                     <Search size={18} aria-hidden="true" />
-                    <p>No illustrative matches. Try a different term or source.</p>
+                    <p>No matches. Try a different term or source.</p>
                   </div>
                 )}
               </div>
 
               <div className="parts-console__footer">
-                <span><LockKeyhole size={12} aria-hidden="true" /> fictional data only</span>
                 <span>NO CHECKOUT</span>
               </div>
               <figcaption className="sr-only">
-                Static fictional parts search preview with sample vendor listings and team quantities.
+                Static parts search with sample vendor listings and team quantities.
               </figcaption>
             </figure>
           </div>
@@ -458,23 +437,23 @@ export default function PartsLanding() {
 
           <div className="parts-landing__vendor-board" data-testid="card-parts-vendor-board">
             <div className="parts-landing__vendor-board-top">
-              <span className="parts-landing__board-label">SOURCE MAP / FICTIONAL EXAMPLE</span>
+              <span className="parts-landing__board-label">SOURCE MAP</span>
               <Database size={16} aria-hidden="true" />
             </div>
             <div className="vendor-row">
               <span className="vendor-row__mark vendor-row__mark--am">A</span>
-              <div><strong>AndyMark</strong><small>Illustrative listing discovery + sync example</small></div>
-              <span className="vendor-row__status vendor-row__status--sync"><Check size={12} /> SYNC EXAMPLE</span>
+              <div><strong>AndyMark</strong><small>Listing discovery + sync</small></div>
+              <span className="vendor-row__status vendor-row__status--sync"><Check size={12} /> SYNC</span>
             </div>
             <div className="vendor-row">
               <span className="vendor-row__mark vendor-row__mark--rev">R</span>
-              <div><strong>REV Robotics</strong><small>Illustrative listing discovery example</small></div>
-              <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH EXAMPLE</span>
+              <div><strong>REV Robotics</strong><small>Listing discovery</small></div>
+              <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH</span>
             </div>
             <div className="vendor-row">
               <span className="vendor-row__mark vendor-row__mark--mm">M</span>
-              <div><strong>McMaster-Carr</strong><small>Illustrative listing discovery example</small></div>
-              <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH EXAMPLE</span>
+              <div><strong>McMaster-Carr</strong><small>Listing discovery</small></div>
+              <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH</span>
             </div>
             <div className="parts-landing__vendor-board-foot">
               <ExternalLink size={13} aria-hidden="true" />
@@ -495,13 +474,11 @@ export default function PartsLanding() {
             <div className="reservation-story__quote">
               <span aria-hidden="true">“</span>
               <p>Reserve the last two for the climber prototype.</p>
-              <small>Illustrative build note · not a live reservation</small>
             </div>
           </div>
           <div className="reservation-card" data-testid="card-parts-reservation-preview">
             <div className="reservation-card__header">
               <span><PackageCheck size={16} aria-hidden="true" /> BUILD HOLD</span>
-              <span>FICTIONAL</span>
             </div>
             <div className="reservation-card__part">
               <span className="reservation-card__part-icon"><ShoppingCart size={17} aria-hidden="true" /></span>
@@ -514,25 +491,6 @@ export default function PartsLanding() {
             <div className="reservation-card__rows">
               <div><span>Available after hold</span><strong>2</strong></div>
               <div><span>Requested by</span><strong>Build crew</strong></div>
-            </div>
-            <div className="reservation-card__foot"><LockKeyhole size={12} /> Private workspace action · sign in required</div>
-          </div>
-        </section>
-
-        <section id="boundary" className="parts-landing__boundary" aria-labelledby="boundary-title" data-testid="section-parts-boundary">
-          <div className="parts-landing__boundary-item">
-            <span className="parts-landing__boundary-icon"><Search size={17} aria-hidden="true" /></span>
-            <div>
-              <strong>Public: understand the shape.</strong>
-              <p>Explore the fictional search, vendor examples, and workflow on this page without exposing the team’s actual stockroom.</p>
-            </div>
-          </div>
-          <div className="parts-landing__boundary-divider" aria-hidden="true" />
-          <div className="parts-landing__boundary-item">
-            <span className="parts-landing__boundary-icon"><LockKeyhole size={17} aria-hidden="true" /></span>
-            <div>
-              <strong id="boundary-title">Private: make the call.</strong>
-              <p>Team members sign in to view configured sources, owned quantities, build reservations, and team-specific records.</p>
             </div>
           </div>
         </section>
@@ -550,7 +508,6 @@ export default function PartsLanding() {
 
         <footer className="parts-landing__footer">
           <span>Wolverines Robotics · Team 23442</span>
-          <span><ShieldCheck size={12} /> Public preview · illustrative content only</span>
         </footer>
       </div>
     </main>

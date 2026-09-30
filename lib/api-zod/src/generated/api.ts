@@ -2406,7 +2406,8 @@ export const SearchPartsCatalogResponse = zod.object({
   "imageUrl": zod.string().url(),
   "price": zod.string().regex(searchPartsCatalogResponseResultsItemPriceRegExp),
   "currency": zod.string().regex(searchPartsCatalogResponseResultsItemCurrencyRegExp),
-  "priceIsStartingAt": zod.boolean()
+  "priceIsStartingAt": zod.boolean(),
+  "inStock": zod.boolean().describe('Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals.')
 })),
   "catalogItems": zod.array(zod.object({
   "id": zod.string(),

@@ -107,6 +107,69 @@ function formatMoney(amount: number, currency: string): string {
   }
 }
 
+type GroupedSearchResult = {
+  key: string;
+  title: string;
+  sku: string | null;
+  description: string;
+  imageUrl: string;
+  currency: string;
+  offers: PartsCatalogSearchResult[];
+  defaultOffer: PartsCatalogSearchResult;
+};
+
+function normalizeGroupText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function searchResultGroupKey(result: PartsCatalogSearchResult): string {
+  const sku = result.sku?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (sku) return `sku:${sku}`;
+  return `title:${normalizeGroupText(result.title)}`;
+}
+
+function searchResultPriceValue(result: PartsCatalogSearchResult): number {
+  const value = Number(result.price);
+  return Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
+}
+
+function isOfferInStock(result: PartsCatalogSearchResult): boolean {
+  return (result as { inStock?: boolean }).inStock ?? true;
+}
+
+function pickDefaultOffer(offers: PartsCatalogSearchResult[]): PartsCatalogSearchResult {
+  const sorted = [...offers].sort(
+    (left, right) => searchResultPriceValue(left) - searchResultPriceValue(right),
+  );
+  return sorted.find((offer) => isOfferInStock(offer)) ?? sorted[0];
+}
+
+function groupSearchResults(results: PartsCatalogSearchResult[]): GroupedSearchResult[] {
+  const groups = new Map<string, PartsCatalogSearchResult[]>();
+  for (const result of results) {
+    const key = searchResultGroupKey(result);
+    const existing = groups.get(key);
+    if (existing) existing.push(result);
+    else groups.set(key, [result]);
+  }
+  return [...groups.entries()].map(([key, offers]) => {
+    const defaultOffer = pickDefaultOffer(offers);
+    const sortedOffers = [...offers].sort(
+      (left, right) => searchResultPriceValue(left) - searchResultPriceValue(right),
+    );
+    return {
+      key,
+      title: defaultOffer.title,
+      sku: defaultOffer.sku,
+      description: defaultOffer.description,
+      imageUrl: defaultOffer.imageUrl,
+      currency: defaultOffer.currency,
+      offers: sortedOffers,
+      defaultOffer,
+    };
+  });
+}
+
 function PartImage({ src, alt, className }: { src: string; alt: string; className: string }) {
   const [failed, setFailed] = useState(!src);
   useEffect(() => setFailed(!src), [src]);
@@ -1055,7 +1118,7 @@ export default function PartsPage() {
 
                 {lastSearch && searchResults.length > 0 && (
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{searchResults.length} live verified product-page discovery result(s) for “{lastSearch}”</span>
+                    <span>{groupSearchResults(searchResults).length} grouped item(s) from {searchResults.length} supplier listing(s) for “{lastSearch}”</span>
                     <span>Confirm final price, options, stock, shipping, and tax with the supplier.</span>
                   </div>
                 )}
@@ -1065,11 +1128,13 @@ export default function PartsPage() {
                   </p>
                 )}
                 <div className="grid gap-3 lg:grid-cols-2">
-                  {searchResults.map((result) => {
+                  {groupSearchResults(searchResults).map((group) => {
+                    const result = group.defaultOffer;
                     const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
                     const alreadyInInventory = currentlyAdded.has(result.url);
+                    const otherOffers = group.offers.filter((offer) => offer.url !== result.url);
                     return (
-                      <Card key={result.url} className="border-border bg-card">
+                      <Card key={group.key} className="border-border bg-card">
                         <CardContent className="flex h-full flex-col gap-3 p-4">
                           <PartImage
                             src={result.imageUrl}
@@ -1077,12 +1142,27 @@ export default function PartsPage() {
                             className="h-44 w-full rounded-lg border border-border bg-muted/40 object-contain p-2"
                           />
                           <div className="min-w-0">
-                            <h3 className="font-medium text-foreground">{result.title}</h3>
+                            <h3 className="font-medium text-foreground">{group.title}</h3>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary">{result.vendorName}</Badge>
-                              {result.sku && <span className="text-xs text-muted-foreground">SKU {result.sku}</span>}
+                              {group.offers.map((offer) => (
+                                <Badge
+                                  key={offer.url}
+                                  variant={offer.url === result.url ? "secondary" : "outline"}
+                                  className={isOfferInStock(offer) ? undefined : "opacity-60"}
+                                >
+                                  {offer.vendorName}
+                                  {!isOfferInStock(offer) ? " · out of stock" : ""}
+                                </Badge>
+                              ))}
+                              {group.sku && <span className="text-xs text-muted-foreground">SKU {group.sku}</span>}
                             </div>
-                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{result.description}</p>
+                            {group.offers.length > 1 && (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                {group.offers.length} vendors · showing cheapest{isOfferInStock(result) ? " in-stock" : ""} price
+                                {!isOfferInStock(result) ? " · all offers currently out of stock" : ""}
+                              </p>
+                            )}
+                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{group.description}</p>
                             <p className="mt-3 text-lg font-semibold tabular-nums text-foreground">
                               {result.priceIsStartingAt ? "From " : ""}
                               {formatMoney(Number(result.price), result.currency)}
@@ -1090,14 +1170,27 @@ export default function PartsPage() {
                             </p>
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                            <a
-                              href={result.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                            >
-                              Supplier page <ArrowUpRight size={14} aria-hidden="true" />
-                            </a>
+                            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <a
+                                href={result.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                              >
+                                Supplier page <ArrowUpRight size={14} aria-hidden="true" />
+                              </a>
+                              {otherOffers.map((offer) => (
+                                <a
+                                  key={offer.url}
+                                  href={offer.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                                >
+                                  {offer.vendorName} <ArrowUpRight size={12} aria-hidden="true" />
+                                </a>
+                              ))}
+                            </span>
                             <span className="ml-auto flex flex-wrap justify-end gap-2">
                               <Button
                                 size="sm"

@@ -29,6 +29,7 @@ test("extracts product details only when supplier markup includes image and pric
       price: "4.50",
       currency: "USD",
       priceIsStartingAt: false,
+      inStock: true,
     },
   );
 });
@@ -60,7 +61,7 @@ test("rejects PDFs, category pages, and structured data without an image or offe
   );
 });
 
-test("rejects collection pages with product cards and unavailable offers", () => {
+test("rejects collection pages with product cards and marks unavailable offers out of stock", () => {
   const collection = JSON.stringify({
     "@type": "CollectionPage",
     "@graph": [JSON.parse(productJsonLd)],
@@ -78,13 +79,22 @@ test("rejects collection pages with product cards and unavailable offers", () =>
     ...JSON.parse(productJsonLd),
     offers: { "@type": "Offer", price: "4.50", priceCurrency: "USD", availability: "https://schema.org/OutOfStock" },
   });
-  assert.equal(
+  assert.deepEqual(
     extractVerifiedProductMetadata(
       `<meta property="og:type" content="product"><script type="application/ld+json">${outOfStockProduct}</script>`,
       "https://shop.example.com/products/unavailable",
       "8 mm Shaft Collar",
     ),
-    null,
+    {
+      title: "8 mm Shaft Collar",
+      description: "An aluminum shaft collar with a clamping screw.",
+      sku: "COLLAR-8",
+      imageUrl: "https://cdn.example.com/collar.jpg",
+      price: "4.50",
+      currency: "USD",
+      priceIsStartingAt: false,
+      inStock: false,
+    },
   );
 });
 

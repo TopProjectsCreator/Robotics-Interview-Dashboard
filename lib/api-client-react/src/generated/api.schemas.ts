@@ -126,6 +126,8 @@ export interface PartsCatalogSearchResult {
   /** @pattern ^[A-Z]{3}$ */
   currency: string;
   priceIsStartingAt: boolean;
+  /** Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals. */
+  inStock: boolean;
 }
 
 /**

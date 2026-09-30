@@ -415,6 +415,7 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   price: string;
   currency: string;
   priceIsStartingAt: boolean;
+  inStock: boolean;
 };
 
 export const ASSISTANT_PARTS_TOOLS = [
@@ -750,6 +751,7 @@ async function enrichOfficialProductPage(
       price: metadata.price,
       currency: metadata.currency,
       priceIsStartingAt: metadata.priceIsStartingAt,
+      inStock: metadata.inStock,
     };
   }
   return null;
@@ -843,6 +845,7 @@ export async function runAssistantPartsTool(
         price: item.price,
         currency: item.currency,
         priceIsStartingAt: item.priceIsStartingAt,
+        inStock: item.inStock,
       }));
       const coverage = publicVendors.map((item) => ({
         vendorKey: item.key,

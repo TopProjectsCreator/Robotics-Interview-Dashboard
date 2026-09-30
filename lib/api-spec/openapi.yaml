@@ -1896,7 +1896,7 @@ components:
           type: integer
     PartsCatalogSearchResult:
       type: object
-      required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, currency, priceIsStartingAt]
+      required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, currency, priceIsStartingAt, inStock]
       properties:
         vendorKey:
           type: string
@@ -1922,6 +1922,9 @@ components:
           pattern: '^[A-Z]{3}$'
         priceIsStartingAt:
           type: boolean
+        inStock:
+          type: boolean
+          description: Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals.
     PartsCatalogSearch:
       type: object
       required: [query, results, catalogItems, catalogTotal, catalogOffset, catalogLimit, liveSearchStatus]

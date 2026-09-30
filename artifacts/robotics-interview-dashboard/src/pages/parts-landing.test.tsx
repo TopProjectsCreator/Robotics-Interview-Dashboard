@@ -23,12 +23,12 @@ describe("public parts discovery", () => {
     expect(screen.getByTestId("link-chat-entry")).toHaveAttribute("href", "/chat-landing");
   });
 
-  it("shows only fictional inventory examples and qualifies supplier coverage", () => {
+  it("shows inventory examples and qualifies supplier coverage", () => {
     renderWithRouter(<PartsLanding />);
 
     expect(screen.getByRole("heading", { level: 1, name: /search the shelves/i })).toBeInTheDocument();
-    expect(screen.getByTestId("card-parts-console")).toHaveTextContent("fictional data only");
-    expect(screen.getByTestId("card-parts-vendor-board")).toHaveTextContent("SOURCE MAP / FICTIONAL EXAMPLE");
+    expect(screen.getByTestId("card-parts-console")).toHaveTextContent("NO CHECKOUT");
+    expect(screen.getByTestId("card-parts-vendor-board")).toHaveTextContent("SOURCE MAP");
     expect(screen.getByTestId("section-parts-coverage")).toHaveTextContent(
       "Complete catalog sync is available only for some sources",
     );
@@ -43,13 +43,13 @@ describe("public parts discovery", () => {
     vi.stubGlobal("fetch", fetchSpy);
     renderWithRouter(<PartsLanding />);
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search illustrative parts" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search parts" }), {
       target: { value: "mcmaster" },
     });
 
     expect(screen.getByTestId("card-part-result-mm-spacer-08")).toBeInTheDocument();
     expect(screen.queryByTestId("card-part-result-rev-hex-12")).not.toBeInTheDocument();
-    expect(screen.getByTestId("status-parts-results")).toHaveTextContent("1 illustrative matches");
+    expect(screen.getByTestId("status-parts-results")).toHaveTextContent("1 matches");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

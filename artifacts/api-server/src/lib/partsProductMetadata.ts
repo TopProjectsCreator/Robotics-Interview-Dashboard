@@ -6,6 +6,7 @@ export type VerifiedProductMetadata = {
   price: string;
   currency: string;
   priceIsStartingAt: boolean;
+  inStock: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -146,6 +147,7 @@ function productPrice(product: JsonRecord, html: string): {
   price: string;
   currency: string;
   priceIsStartingAt: boolean;
+  inStock: boolean;
 } | null {
   const offers = Array.isArray(product.offers)
     ? product.offers.filter(isRecord)
@@ -175,9 +177,9 @@ function productPrice(product: JsonRecord, html: string): {
     const availability = typeof offer.availability === "string"
       ? offer.availability.toLowerCase()
       : "";
-    if (/outofstock|soldout|discontinued|preorderonly/.test(availability)) return [];
+    const outOfStock = /outofstock|soldout|discontinued|preorderonly|out_of_stock|sold_out/.test(availability);
     const highPrice = parsePrice(offer.highPrice);
-    return [{ price, currency, hasRange: Boolean(highPrice && highPrice !== price) }];
+    return [{ price, currency, hasRange: Boolean(highPrice && highPrice !== price), inStock: !outOfStock }];
   });
 
   if (quotes.length > 0) {
@@ -185,17 +187,20 @@ function productPrice(product: JsonRecord, html: string): {
     if (currencies.size !== 1) return null;
     const sorted = quotes.sort((left, right) => Number(left.price) - Number(right.price));
     const distinctPrices = new Set(sorted.map((quote) => quote.price));
+    const inStockQuotes = sorted.filter((quote) => quote.inStock);
+    const chosen = inStockQuotes.length > 0 ? inStockQuotes[0] : sorted[0];
     return {
-      price: sorted[0].price,
-      currency: sorted[0].currency,
+      price: chosen.price,
+      currency: chosen.currency,
       priceIsStartingAt: distinctPrices.size > 1 || sorted.some((quote) => quote.hasRange),
+      inStock: inStockQuotes.length > 0,
     };
   }
 
   const price = parsePrice(pageMetadata(html, "product:price:amount"));
   const currency = pageMetadata(html, "product:price:currency")?.toUpperCase() ?? null;
   if (!price || !currency || !/^[A-Z]{3}$/.test(currency)) return null;
-  return { price, currency, priceIsStartingAt: false };
+  return { price, currency, priceIsStartingAt: false, inStock: true };
 }
 
 export function extractVerifiedProductMetadata(

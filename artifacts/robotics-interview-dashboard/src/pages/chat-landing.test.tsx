@@ -18,16 +18,16 @@ describe("public chat discovery", () => {
     expect(screen.getByTestId("link-interview-entry")).toHaveAttribute("href", "/interview-landing");
   });
 
-  it("renders static illustrative collaboration content and keeps workspace data private", () => {
+  it("renders static collaboration content and keeps workspace data private", () => {
     renderWithRouter(<ChatLanding />);
 
     expect(screen.getByRole("heading", { level: 1, name: /talk through the work/i })).toBeInTheDocument();
-    expect(screen.getByTestId("card-chat-workspace-preview")).toHaveTextContent("Fictional preview content");
+    expect(screen.getByTestId("card-chat-workspace-preview")).toHaveTextContent("STATIC VIEW");
     expect(screen.getByTestId("card-team-conversations")).toHaveTextContent("Focused channels");
     expect(screen.getByTestId("card-direct-conversations")).toHaveTextContent("DIRECT CONVERSATIONS");
     expect(screen.getByTestId("card-file-context")).toHaveTextContent("CONTEXT ATTACHED");
     expect(screen.getByTestId("section-chat-tools")).toHaveTextContent("Work boards");
-    expect(screen.getByTestId("section-chat-boundary")).toHaveTextContent("No live messages, member identities, presence, or private file links");
+    expect(screen.queryByTestId("section-chat-boundary")).not.toBeInTheDocument();
   });
 
   it("sends every sign-in action to the existing auth route", () => {
