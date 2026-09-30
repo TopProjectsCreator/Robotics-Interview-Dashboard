@@ -2031,7 +2031,7 @@ router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> 
   );
 });
 
-router.get("/applicants", requireAdmin, async (req, res): Promise<void> => {
+router.get("/applicants", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = ListApplicantsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2107,7 +2107,7 @@ If the request is vague, create the narrowest useful query and explain it briefl
   }
 });
 
-router.get("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {
+router.get("/applicants/:id", requireCoordinator, async (req, res): Promise<void> => {
   const params = GetApplicantParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -2458,7 +2458,7 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/queue", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/queue", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
