@@ -125,8 +125,13 @@ function passwordHashMatches(password: string, encoded: string | null): boolean 
   }
 }
 
-function publicAccount(account: { id: string; displayName: string; passwordHash: string | null }) {
-  return { id: account.id, displayName: account.displayName, hasPassword: Boolean(account.passwordHash) };
+function publicAccount(account: { id: string; displayName: string; passwordHash: string | null; role: string }) {
+  return {
+    id: account.id,
+    displayName: account.displayName,
+    hasPassword: Boolean(account.passwordHash),
+    role: account.role,
+  };
 }
 
 router.get("/auth/interviewers", async (_req, res): Promise<void> => {
