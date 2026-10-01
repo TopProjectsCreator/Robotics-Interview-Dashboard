@@ -183,7 +183,7 @@ async function ensureSchema(): Promise<void> {
     );
     await pool.query(
       `UPDATE interviewer_accounts SET role = 'treasurer', updated_at = now()
-        WHERE id = '0aaf1c02d1f90aef2b572a4ccf5f06fe', 'de920cd10775a08557c6f0f34f245077'`,
+        WHERE id IN ('f9f229712fec0e4189e769d30d546176')`,
     );
     logger.info("One-time role assignment applied");
   } catch (err) {
