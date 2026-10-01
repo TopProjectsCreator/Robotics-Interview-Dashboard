@@ -2055,6 +2055,45 @@ router.get(
   },
 );
 
+router.patch("/parts/robots/:robotId/preview", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsRobotPreviewParams.safeParse(req.params);
+  const parsed = UpdatePartsRobotPreviewBody.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    res.status(400).json({ error: params.success ? "Invalid preview details." : "Robot not found." });
+    return;
+  }
+  const objectPath = parsed.data.objectPath.trim();
+  const fileName = parsed.data.fileName.trim();
+  const contentType = parsed.data.contentType.trim();
+  if (!objectPath || !fileName || !contentType) {
+    res.status(400).json({ error: "Preview file details are incomplete." });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `update "parts_robots"
+          set "preview_object_path" = $2,
+              "preview_file_name" = $3,
+              "preview_content_type" = $4,
+              "updated_at" = now()
+        where "id" = $1
+        returning "id", "name", "preview_object_path" as "previewObjectPath",
+                  "preview_file_name" as "previewFileName",
+                  "preview_content_type" as "previewContentType",
+                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [params.data.robotId, objectPath, fileName, contentType],
+    );
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Robot not found." });
+      return;
+    }
+    res.json(UpdatePartsRobotPreviewResponse.parse(mapRobot(result.rows[0])));
+  } catch (error) {
+    req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview update failed");
+    res.status(500).json({ error: "Unable to attach this preview." });
+  }
+});
+
 router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreatePartsRobotBody.safeParse(req.body);
   if (!parsed.success) {
