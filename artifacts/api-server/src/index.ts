@@ -21,13 +21,13 @@ async function removeTestAccounts(): Promise<void> {
       `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest')`,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2')`,
+      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82')`,
     );
     await pool.query(
       `UPDATE interview_queue SET interviewer_labels = (
         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
         FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-        WHERE elem NOT IN ('TempVerify', 'RoleTest')
+        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3')
       ) WHERE id = 1`,
     );
     logger.info("Test accounts cleanup done");
