@@ -1,7 +1,55 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { once } from "node:events";
+import { registerHooks } from "node:module";
+import test, { mock } from "node:test";
 import { UpdateBoardResponse } from "../../../../lib/api-zod/src/generated/api.ts";
+import { interviewerAccountsTable } from "../../../../lib/db/src/schema/interviewerAccounts.ts";
+import { revokedSessionsTable } from "../../../../lib/db/src/schema/sessions.ts";
+import { interviewWhiteboardsTable } from "../../../../lib/db/src/schema/whiteboards.ts";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations.ts";
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (specifier.startsWith(".") && !specifier.endsWith(".ts") && !specifier.endsWith(".js")) {
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
+      }
+      throw error;
+    }
+  },
+});
+
+const databaseTableNames = [
+  "applicantsTable",
+  "assistantConversationsTable",
+  "assistantMessagesTable",
+  "broadcastAcksTable",
+  "broadcastsTable",
+  "chatCustomEmojisTable",
+  "chatMessageReactionsTable",
+  "dashboardChartsTable",
+  "dataSnapshotsTable",
+  "displaySettingsTable",
+  "importsTable",
+  "interviewChatMessagesTable",
+  "interviewQueueTable",
+  "pageVisitsTable",
+  "partsCatalogItemsTable",
+  "partsInventoryTable",
+  "partsRobotAllocationsTable",
+  "partsRobotsTable",
+  "partsSupplierPriceSnapshotsTable",
+  "partsSupplierSyncStatesTable",
+  "postsTable",
+  "presenceHeartbeatsTable",
+  "seatingSettingsTable",
+];
 
 function apply(data, operation) {
   const result = applyBoardOperation(data, operation, "Alex");
@@ -153,4 +201,149 @@ test("older boards get a default description and updated responses match the gen
   });
   assert.equal(response.title, "Hello");
   assert.equal(response.data.description, "The plan for interview day");
+});
+
+test("an authenticated board task remains present after a fresh GET", async (t) => {
+  const account = {
+    id: "board-persistence-interviewer",
+    displayName: "Alex",
+    normalizedName: "alex",
+    passwordHash: "configured",
+    role: "coordinator",
+  };
+  const board = {
+    id: "board-persistence-fixture",
+    title: "Persistence check",
+    data: JSON.stringify(initialBoardData()),
+    createdBy: account.displayName,
+    conversationScope: "shared",
+    conversationPeer: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
+  const whereValue = (clause) =>
+    clause?.queryChunks?.find((chunk) => chunk.constructor.name === "Param")?.value;
+  const rowsFor = (table, clause) => {
+    if (table === revokedSessionsTable) return [];
+    if (table === interviewerAccountsTable) {
+      return whereValue(clause) === account.id ? [account] : [];
+    }
+    if (table === interviewWhiteboardsTable) {
+      return whereValue(clause) === board.id ? [board] : [];
+    }
+    return [];
+  };
+  const db = {
+    select() {
+      const query = {
+        table: undefined,
+        clause: undefined,
+        from(table) {
+          this.table = table;
+          return this;
+        },
+        where(clause) {
+          this.clause = clause;
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        for() {
+          return this;
+        },
+        then(resolve, reject) {
+          return Promise.resolve(rowsFor(this.table, this.clause)).then(resolve, reject);
+        },
+      };
+      return query;
+    },
+    update(table) {
+      let values;
+      let clause;
+      const updateQuery = {
+        set(nextValues) {
+          values = nextValues;
+          return this;
+        },
+        where(nextClause) {
+          clause = nextClause;
+          return this;
+        },
+        returning() {
+          assert.equal(table, interviewWhiteboardsTable);
+          assert.equal(whereValue(clause), board.id);
+          Object.assign(board, values);
+          return Promise.resolve([board]);
+        },
+      };
+      return updateQuery;
+    },
+    async transaction(callback) {
+      return callback(this);
+    },
+  };
+
+  const mockedTables = Object.fromEntries(databaseTableNames.map((name) => [name, {}]));
+  mock.module("@workspace/db", {
+    namedExports: {
+      ...mockedTables,
+      db,
+      pool: {},
+      interviewerAccountsTable,
+      revokedSessionsTable,
+      interviewWhiteboardsTable,
+    },
+  });
+  t.after(() => mock.restoreAll());
+
+  const [{ default: express }, { default: roboticsRouter }, { createInterviewerSession }] = await Promise.all([
+    import("express"),
+    import("../routes/robotics.ts"),
+    import("../middlewares/adminAuth.ts"),
+  ]);
+  const app = express();
+  app.use(express.json());
+  app.use("/api", roboticsRouter);
+  const server = app.listen(0, "127.0.0.1");
+
+  try {
+    await once(server, "listening");
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const baseUrl = `http://127.0.0.1:${address.port}/api`;
+    const path = `/boards/${board.id}`;
+
+    const unauthorized = await fetch(`${baseUrl}${path}`);
+    assert.equal(unauthorized.status, 401, "board reads must require an interviewer session");
+
+    const session = createInterviewerSession(account.id);
+    const patchResponse = await fetch(`${baseUrl}${path}`, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${session}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        operation: "create_card",
+        card: { title: "Confirm saved task", columnId: "backlog" },
+      }),
+    });
+    assert.equal(patchResponse.status, 200);
+    const patchedBoard = await patchResponse.json();
+    assert.ok(patchedBoard.data.cards.some((card) => card.title === "Confirm saved task"));
+
+    const reloadResponse = await fetch(`${baseUrl}${path}`, {
+      headers: { authorization: `Bearer ${session}` },
+    });
+    assert.equal(reloadResponse.status, 200);
+    const reloadedBoard = await reloadResponse.json();
+    assert.ok(
+      reloadedBoard.data.cards.some((card) => card.title === "Confirm saved task"),
+      "a fresh authenticated GET must return the task written by PATCH",
+    );
+    assert.equal(parseBoardData(board.data)?.cards.some((card) => card.title === "Confirm saved task"), true);
+  } finally {
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
+  }
 });

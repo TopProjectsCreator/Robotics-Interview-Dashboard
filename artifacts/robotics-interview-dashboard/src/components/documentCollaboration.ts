@@ -12,7 +12,7 @@ export type DocumentCollaborationSession = {
   doc: Y.Doc;
   provider: { awareness: Awareness; setTitle: (title: string) => void };
   subscribeStatus: (callback: (status: DocumentCollaborationStatus) => void) => () => void;
-  subscribeSaveStatus: (callback: (status: "saving" | "saved") => void) => () => void;
+  subscribeSaveStatus: (callback: (status: "saving" | "saved" | "error") => void) => () => void;
   subscribeTitle: (callback: (title: string) => void) => () => void;
   destroy: () => void;
 };
@@ -73,10 +73,10 @@ export function createDocumentCollaboration(
   const awareness = new Awareness(doc);
   awareness.setLocalStateField("user", collaborator);
   const statusListeners = new Set<(status: DocumentCollaborationStatus) => void>();
-  const saveStatusListeners = new Set<(status: "saving" | "saved") => void>();
+  const saveStatusListeners = new Set<(status: "saving" | "saved" | "error") => void>();
   const titleListeners = new Set<(title: string) => void>();
   let status: DocumentCollaborationStatus = "connecting";
-  let saveStatus: "saving" | "saved" = "saved";
+  let saveStatus: "saving" | "saved" | "error" = "saved";
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let retryDelay = 500;
@@ -87,7 +87,7 @@ export function createDocumentCollaboration(
     status = next;
     for (const listener of statusListeners) listener(next);
   };
-  const setSaveStatus = (next: "saving" | "saved") => {
+  const setSaveStatus = (next: "saving" | "saved" | "error") => {
     saveStatus = next;
     for (const listener of saveStatusListeners) listener(next);
   };
@@ -125,6 +125,7 @@ export function createDocumentCollaboration(
         try {
           const message = JSON.parse(event.data) as { type?: unknown; title?: unknown };
           if (message.type === "saved") setSaveStatus("saved");
+          if (message.type === "error") setSaveStatus("error");
           if (message.type === "meta" && typeof message.title === "string") {
             for (const listener of titleListeners) listener(message.title);
           }

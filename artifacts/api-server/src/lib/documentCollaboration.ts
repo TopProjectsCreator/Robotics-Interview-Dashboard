@@ -41,6 +41,9 @@ type DocumentRoom = {
   awareness: Awareness;
   clients: Set<DocumentCollaborationClient>;
   title: string;
+  revision: number;
+  lastQueuedRevision: number;
+  persistChain: Promise<void>;
   flushTimer?: NodeJS.Timeout;
 };
 
@@ -132,13 +135,28 @@ function schedulePersist(room: DocumentRoom): void {
   if (room.flushTimer) clearTimeout(room.flushTimer);
   room.flushTimer = setTimeout(() => {
     room.flushTimer = undefined;
-    void db.update(interviewWhiteboardsTable)
-      .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
-      .where(eq(interviewWhiteboardsTable.id, room.id))
-      .then(() => {
-        for (const client of room.clients) sendJson(client.socket, { type: "saved" });
-      })
-      .catch((error) => logger.error({ err: error, documentId: room.id }, "Collaborative document persist failed"));
+    const revision = room.revision;
+    const data = documentEnvelope(room.doc);
+    room.lastQueuedRevision = Math.max(room.lastQueuedRevision, revision);
+    room.persistChain = room.persistChain.then(async () => {
+      try {
+        await db.update(interviewWhiteboardsTable)
+          .set({ data, updatedAt: new Date() })
+          .where(eq(interviewWhiteboardsTable.id, room.id));
+        if (room.revision === revision) {
+          for (const client of room.clients) sendJson(client.socket, { type: "saved" });
+        }
+      } catch (error) {
+        logger.error({ err: error, documentId: room.id }, "Collaborative document persist failed");
+        for (const client of room.clients) {
+          sendJson(client.socket, {
+            type: "error",
+            message: "Document changes could not be saved.",
+          });
+        }
+      }
+      if (room.revision > room.lastQueuedRevision) schedulePersist(room);
+    });
   }, 180);
 }
 
@@ -163,9 +181,13 @@ function roomFor(
     awareness: new Awareness(doc),
     clients: new Set(),
     title,
+    revision: 0,
+    lastQueuedRevision: 0,
+    persistChain: Promise.resolve(),
   };
   room.awareness.setLocalState(null);
   doc.on("update", (update: Uint8Array, origin: unknown) => {
+    room.revision += 1;
     const message = packet(Y_UPDATE, update);
     for (const client of room.clients) {
       if (client.socket !== origin) sendBinary(client.socket, message);
@@ -430,9 +452,10 @@ async function openDocumentRoom(
       if (room.flushTimer) clearTimeout(room.flushTimer);
       room.flushTimer = undefined;
       rooms.delete(documentId);
-      void db.update(interviewWhiteboardsTable)
-        .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
-        .where(eq(interviewWhiteboardsTable.id, documentId))
+      void room.persistChain
+        .then(() => db.update(interviewWhiteboardsTable)
+          .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
+          .where(eq(interviewWhiteboardsTable.id, documentId)))
         .catch((error) => logger.error({ err: error, documentId }, "Collaborative document final persist failed"))
         .finally(() => {
           room.awareness.destroy();

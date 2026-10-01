@@ -121,7 +121,7 @@ export function DocumentEditor({
     [activeInterviewer, documentRecord.id],
   );
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("connecting");
-  const [documentSaveStatus, setDocumentSaveStatus] = useState<"saving" | "saved">("saved");
+  const [documentSaveStatus, setDocumentSaveStatus] = useState<"saving" | "saved" | "error">("saved");
   const [awarenessVersion, setAwarenessVersion] = useState(0);
   const [activeAlignment, setActiveAlignment] = useState<Alignment>("left");
   const [title, setTitle] = useState(documentRecord.title);
@@ -260,8 +260,11 @@ export function DocumentEditor({
       ? "Reconnecting"
       : "Connecting";
   const isSaving = saving || documentSaveStatus === "saving";
-  const autosaveLabel = error ? "Save needs attention" : isSaving ? "Saving changes" : "All changes saved";
-  const autosaveIcon = error
+  const saveError = error || (documentSaveStatus === "error"
+    ? "A document change could not be saved. Your latest edits are not saved."
+    : "");
+  const autosaveLabel = saveError ? "Save needs attention" : isSaving ? "Saving changes" : "All changes saved";
+  const autosaveIcon = saveError
     ? <CircleAlert size={14} />
     : isSaving
       ? <LoaderCircle size={14} className="animate-spin" />
@@ -299,7 +302,7 @@ export function DocumentEditor({
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="hidden items-center gap-2 lg:flex" data-testid="status-document-autosave" aria-live="polite">
-              <span className="document-save-icon" data-state={error ? "error" : isSaving ? "saving" : "saved"}>{autosaveIcon}</span>
+              <span className="document-save-icon" data-state={saveError ? "error" : isSaving ? "saving" : "saved"}>{autosaveIcon}</span>
               <span className="document-save-text text-[11px] font-semibold">{autosaveLabel}</span>
             </div>
             <button type="button" onClick={() => { saveTitleNow(); onClose(); }} aria-label="Close document" data-testid="button-close-document" className="document-close-button flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition">
@@ -365,7 +368,7 @@ export function DocumentEditor({
         </div>
       </header>
 
-      {error && <div className="document-save-error flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs font-semibold sm:px-7" role="alert" data-testid="status-document-error"><CircleAlert size={14} />{error}</div>}
+      {saveError && <div className="document-save-error flex shrink-0 items-center gap-2 border-b px-4 py-2 text-xs font-semibold sm:px-7" role="alert" data-testid="status-document-error"><CircleAlert size={14} />{saveError}</div>}
 
       <main className="min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-8 sm:py-9">
         <div className="document-paper mx-auto min-h-[calc(100dvh-190px)] w-full max-w-[850px]">
