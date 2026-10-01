@@ -32,6 +32,7 @@ import {
   UpdatePartsRobotPreviewParams,
   UpdatePartsRobotPreviewResponse,
   type AssistantActivity,
+  type PartsVendorSyncState,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middlewares/adminAuth";
@@ -508,7 +509,7 @@ export const ASSISTANT_PARTS_TOOLS = [
     type: "function" as const,
     function: {
       name: "search_supplier_parts",
-        description: "Search live supplier pages and the synced catalog separately. Synced catalog matches are paginated with limit/offset and may not have verified live prices. Live discoveries require verified supplier-page details. A feed is complete only after sync confirms pagination reached its end.",
+        description: "Search live supplier pages and the synced catalog separately. Synced catalog matches are paginated with limit/offset and may not have verified live prices. Live discoveries require verified supplier-page details. The result includes each supplier's latest persisted sync status, checked time, and collected item count. A feed is complete only after sync confirms pagination reached its end.",
       parameters: {
         type: "object",
         properties: {
@@ -991,12 +992,14 @@ export async function runAssistantPartsTool(
         priceIsStartingAt: item.priceIsStartingAt,
         inStock: item.inStock,
       }));
+      const syncStates = await readPartsSupplierSyncStates();
       const coverage = publicVendors.map((item) => ({
         vendorKey: item.key,
         vendorName: item.name,
         catalogSourceUrl: item.catalogSourceUrl,
         coverageState: item.coverageState,
         feedMustReachEndBeforeComplete: item.coverageState === "feed_sync_required",
+        lastSync: syncStates.get(item.key) ?? null,
       }));
       return result(
         JSON.stringify({
@@ -1141,13 +1144,62 @@ type CatalogFeedRecord = {
 type CatalogFeedSyncVendor = {
   vendorKey: string;
   vendorName: string;
-  status: "synced" | "search_only" | "unavailable" | "incomplete";
+  status: PartsVendorSyncState["status"];
+  checkedAt: Date;
   itemCount: number;
   created: number;
   updated: number;
   source: string;
   message: string;
 };
+
+async function readPartsSupplierSyncStates() {
+  const result = await pool.query(
+    `select "vendor_key" as "vendorKey", "status", "checked_at" as "checkedAt",
+            "item_count" as "itemCount", "source", "message"
+     from "parts_supplier_sync_states"`,
+  );
+  return new Map<string, PartsVendorSyncState>(
+    result.rows.map((row) => [
+      String(row.vendorKey),
+      {
+        status: String(row.status) as PartsVendorSyncState["status"],
+        checkedAt: row.checkedAt instanceof Date
+          ? row.checkedAt
+          : new Date(String(row.checkedAt)),
+        itemCount: Number(row.itemCount),
+        source: String(row.source),
+        message: String(row.message),
+      },
+    ]),
+  );
+}
+
+async function savePartsSupplierSyncState(
+  vendorKey: string,
+  state: PartsVendorSyncState,
+) {
+  await pool.query(
+    `insert into "parts_supplier_sync_states"
+       ("vendor_key", "status", "checked_at", "item_count", "source", "message")
+     values ($1, $2, $3, $4, $5, $6)
+     on conflict ("vendor_key") do update set
+       "status" = excluded."status",
+       "checked_at" = excluded."checked_at",
+       "item_count" = excluded."item_count",
+       "source" = excluded."source",
+       "message" = excluded."message"
+     where "parts_supplier_sync_states"."checked_at" <= excluded."checked_at"`,
+    [
+      vendorKey,
+      state.status,
+      state.checkedAt,
+      state.itemCount,
+      state.source,
+      state.message,
+    ],
+  );
+}
 
 const SHOPIFY_PAGE_SIZE = 250;
 const MAX_PUBLIC_FEED_PAGES = 50;
@@ -1426,7 +1478,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
 
 router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const [robotsResult, totalsResult] = await Promise.all([
+    const [robotsResult, totalsResult, syncStates] = await Promise.all([
       pool.query(
         `select "id", "name", "preview_object_path" as "previewObjectPath",
                 "preview_file_name" as "previewFileName",
@@ -1440,13 +1492,17 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
            (select coalesce(sum("quantity_owned"), 0)::int from "parts_inventory") as "ownedUnits",
            (select coalesce(sum("quantity"), 0)::int from "parts_robot_allocations") as "assignedUnits"`,
       ),
+      readPartsSupplierSyncStates(),
     ]);
     const totals = totalsResult.rows[0];
     const ownedUnits = Number(totals.ownedUnits);
     const assignedUnits = Number(totals.assignedUnits);
     res.json(
       GetPartsDashboardResponse.parse({
-        vendors: publicVendors,
+        vendors: publicVendors.map((vendor) => ({
+          ...vendor,
+          lastSync: syncStates.get(vendor.key) ?? null,
+        })),
         robots: robotsResult.rows.map(mapRobot),
         summary: {
           vendorCount: VENDORS.length,
@@ -1639,16 +1695,25 @@ export async function syncPublicPartsCatalogs() {
       vendorKey: collection.vendor.key,
       vendorName: collection.vendor.name,
       status: collection.status,
+      checkedAt: new Date(),
       itemCount: collection.records.length,
       created: counts.created,
       updated: counts.updated,
       source: collection.source,
       message: collection.message,
     };
+    await savePartsSupplierSyncState(collection.vendor.key, {
+      status: vendorResults[index].status,
+      checkedAt: vendorResults[index].checkedAt,
+      itemCount: vendorResults[index].itemCount,
+      source: vendorResults[index].source,
+      message: vendorResults[index].message,
+    });
     logger.info(
       {
         vendorKey: collection.vendor.key,
         status: collection.status,
+        checkedAt: vendorResults[index].checkedAt,
         itemCount: collection.records.length,
         created: counts.created,
         updated: counts.updated,

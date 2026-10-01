@@ -2266,6 +2266,8 @@ export const GetAssistantConversationMessagesResponse = zod.object({
 /**
  * @summary Get parts dashboard totals, vendors, and robots
  */
+export const getPartsDashboardResponseVendorsItemLastSyncOneItemCountMin = 0;
+
 export const getPartsDashboardResponseRobotsItemPreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
 export const getPartsDashboardResponseRobotsItemPreviewOneFileNameMax = 255;
 
@@ -2282,7 +2284,14 @@ export const GetPartsDashboardResponse = zod.object({
   "catalogMode": zod.enum(['products', 'custom_fabrication']),
   "catalogSourceUrl": zod.string().url().describe('Official supplier catalog, product feed, or service source.'),
   "coverageState": zod.enum(['feed_sync_required', 'discovery_only', 'access_restricted', 'custom_fabrication']).describe('Static source coverage classification; a public feed is complete only after sync verifies its final page.'),
-  "publicProductFeedUrl": zod.string().url().nullish().describe('Configured supplier-owned public product feed, if available.')
+  "publicProductFeedUrl": zod.string().url().nullish().describe('Configured supplier-owned public product feed, if available.'),
+  "lastSync": zod.union([zod.object({
+  "status": zod.enum(['synced', 'search_only', 'unavailable', 'incomplete']),
+  "checkedAt": zod.coerce.date(),
+  "itemCount": zod.number().int().min(getPartsDashboardResponseVendorsItemLastSyncOneItemCountMin).describe('Number of supplier catalog records collected in the latest check.'),
+  "source": zod.string().url(),
+  "message": zod.string()
+}),zod.null()]).describe('Latest persisted sync outcome, if this supplier has been checked.')
 })),
   "robots": zod.array(zod.object({
   "id": zod.string(),
@@ -2512,12 +2521,17 @@ export const SearchPartsCatalogResponse = zod.object({
 /**
  * @summary Sync verified public supplier product feeds
  */
+export const syncPartsCatalogResponseVendorsItemItemCountMin = 0;
+
+
+
 export const SyncPartsCatalogResponse = zod.object({
   "vendors": zod.array(zod.object({
   "vendorKey": zod.string(),
   "vendorName": zod.string(),
   "status": zod.enum(['synced', 'search_only', 'unavailable', 'incomplete']),
-  "itemCount": zod.number().int(),
+  "checkedAt": zod.coerce.date(),
+  "itemCount": zod.number().int().min(syncPartsCatalogResponseVendorsItemItemCountMin),
   "created": zod.number().int(),
   "updated": zod.number().int(),
   "source": zod.string().url().describe('Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed.'),

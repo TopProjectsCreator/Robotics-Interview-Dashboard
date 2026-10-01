@@ -1989,7 +1989,7 @@ components:
   schemas:
     PartsVendor:
       type: object
-      required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState]
+      required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState, lastSync]
       properties:
         key:
           type: string
@@ -2016,6 +2016,30 @@ components:
           type: [string, "null"]
           format: uri
           description: Configured supplier-owned public product feed, if available.
+        lastSync:
+          anyOf:
+            - $ref: "#/components/schemas/PartsVendorSyncState"
+            - type: "null"
+          description: Latest persisted sync outcome, if this supplier has been checked.
+    PartsVendorSyncState:
+      type: object
+      required: [status, checkedAt, itemCount, source, message]
+      properties:
+        status:
+          type: string
+          enum: [synced, search_only, unavailable, incomplete]
+        checkedAt:
+          type: string
+          format: date-time
+        itemCount:
+          type: integer
+          minimum: 0
+          description: Number of supplier catalog records collected in the latest check.
+        source:
+          type: string
+          format: uri
+        message:
+          type: string
     PartsRobot:
       type: object
       required: [id, name, preview, createdAt, updatedAt]
@@ -2331,7 +2355,7 @@ components:
           description: Whether current live supplier-page discovery providers responded.
     PartsCatalogSyncVendor:
       type: object
-      required: [vendorKey, vendorName, status, itemCount, created, updated, source, message]
+      required: [vendorKey, vendorName, status, checkedAt, itemCount, created, updated, source, message]
       properties:
         vendorKey:
           type: string
@@ -2340,8 +2364,12 @@ components:
         status:
           type: string
           enum: [synced, search_only, unavailable, incomplete]
+        checkedAt:
+          type: string
+          format: date-time
         itemCount:
           type: integer
+          minimum: 0
         created:
           type: integer
         updated:

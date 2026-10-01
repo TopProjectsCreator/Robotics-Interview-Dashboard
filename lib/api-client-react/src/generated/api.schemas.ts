@@ -35,6 +35,28 @@ export const PartsVendorCoverageState = {
   custom_fabrication: 'custom_fabrication',
 } as const;
 
+export type PartsVendorSyncStateStatus = typeof PartsVendorSyncStateStatus[keyof typeof PartsVendorSyncStateStatus];
+
+
+export const PartsVendorSyncStateStatus = {
+  synced: 'synced',
+  search_only: 'search_only',
+  unavailable: 'unavailable',
+  incomplete: 'incomplete',
+} as const;
+
+export interface PartsVendorSyncState {
+  status: PartsVendorSyncStateStatus;
+  checkedAt: string;
+  /**
+     * Number of supplier catalog records collected in the latest check.
+     * @minimum 0
+     */
+  itemCount: number;
+  source: string;
+  message: string;
+}
+
 export interface PartsVendor {
   key: string;
   name: string;
@@ -50,6 +72,8 @@ export interface PartsVendor {
      * @nullable
      */
   publicProductFeedUrl?: string | null;
+  /** Latest persisted sync outcome, if this supplier has been checked. */
+  lastSync: PartsVendorSyncState | null;
 }
 
 export interface PartsRobotPreview {
@@ -291,6 +315,8 @@ export interface PartsCatalogSyncVendor {
   vendorKey: string;
   vendorName: string;
   status: PartsCatalogSyncVendorStatus;
+  checkedAt: string;
+  /** @minimum 0 */
   itemCount: number;
   created: number;
   updated: number;

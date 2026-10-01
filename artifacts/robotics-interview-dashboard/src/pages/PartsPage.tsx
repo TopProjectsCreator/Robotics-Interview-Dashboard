@@ -56,9 +56,6 @@ type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "
   currency: string;
 };
 type PartsOrderLine = { product: PricedPartsCatalogSearchResult; quantity: number };
-type PartsCatalogSyncResult = Awaited<
-  ReturnType<ReturnType<typeof useSyncPartsCatalog>["mutateAsync"]>
->;
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
 
@@ -501,7 +498,6 @@ export default function PartsPage() {
   const [customImageUrl, setCustomImageUrl] = useState("");
   const [customQuantity, setCustomQuantity] = useState("0");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
-  const [lastCatalogSync, setLastCatalogSync] = useState<PartsCatalogSyncResult | null>(null);
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
 
   const catalogQuery = useListPartsCatalog({
@@ -565,7 +561,6 @@ export default function PartsPage() {
     setNotice(null);
     try {
       const result = await syncMutation.mutateAsync();
-      setLastCatalogSync(result);
       await refreshParts();
       const synced = result.vendors.filter((vendor) => vendor.status === "synced").length;
       const incomplete = result.vendors.filter((vendor) => vendor.status === "incomplete").length;
@@ -965,8 +960,8 @@ export default function PartsPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <p className="text-sm text-foreground" data-testid="status-parts-source-coverage">
-                      {lastCatalogSync
-                        ? `Last sync: ${lastCatalogSync.vendors.filter((item) => item.status === "synced").length} complete feed(s), ${lastCatalogSync.vendors.filter((item) => item.status === "incomplete").length} incomplete, ${lastCatalogSync.vendors.filter((item) => item.status === "search_only").length} discovery-only, and ${lastCatalogSync.vendors.filter((item) => item.status === "unavailable").length} unavailable.`
+                      {vendors.some((item) => item.lastSync)
+                        ? `Latest checks: ${vendors.filter((item) => item.lastSync?.status === "synced").length} complete feed(s), ${vendors.filter((item) => item.lastSync?.status === "incomplete").length} incomplete, ${vendors.filter((item) => item.lastSync?.status === "search_only").length} discovery-only, and ${vendors.filter((item) => item.lastSync?.status === "unavailable").length} unavailable.`
                         : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} public feed(s) await end-of-feed verification; other suppliers remain partial, access-restricted, or custom-fabrication sources.`}
                     </p>
                     <details className="rounded-lg border border-border bg-background p-3">
@@ -978,9 +973,7 @@ export default function PartsPage() {
                       </summary>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
                         {vendors.map((vendor) => {
-                          const syncResult = lastCatalogSync?.vendors.find(
-                            (item) => item.vendorKey === vendor.key,
-                          );
+                          const syncResult = vendor.lastSync;
                           const stateLabel = syncResult
                             ? {
                                 synced: "Complete feed",
@@ -1013,6 +1006,11 @@ export default function PartsPage() {
                                 </Badge>
                               </div>
                               <p className="mt-1 text-sm text-muted-foreground">{stateDetail}</p>
+                              {syncResult && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Checked {new Date(syncResult.checkedAt).toLocaleString()} · {formatQuantity(syncResult.itemCount)} catalog item(s) imported
+                                </p>
+                              )}
                               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
                                 <a
                                   className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"

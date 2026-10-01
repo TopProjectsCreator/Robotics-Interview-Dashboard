@@ -11,6 +11,8 @@ export interface PartsCatalogSyncVendor {
   vendorKey: string;
   vendorName: string;
   status: PartsCatalogSyncVendorStatus;
+  checkedAt: Date;
+  /** @minimum 0 */
   itemCount: number;
   created: number;
   updated: number;

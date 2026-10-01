@@ -42,6 +42,25 @@ export const partsCatalogItemsTable = pgTable(
   }),
 );
 
+export const partsSupplierSyncStatesTable = pgTable(
+  "parts_supplier_sync_states",
+  {
+    vendorKey: text("vendor_key").primaryKey(),
+    status: text("status").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    itemCount: integer("item_count").notNull(),
+    source: text("source").notNull(),
+    message: text("message").notNull(),
+  },
+  (table) => ({
+    validResult: check(
+      "parts_supplier_sync_states_valid_result",
+      sql`${table.status} in ('synced', 'search_only', 'unavailable', 'incomplete')
+        and ${table.itemCount} >= 0`,
+    ),
+  }),
+);
+
 export const partsInventoryTable = pgTable(
   "parts_inventory",
   {

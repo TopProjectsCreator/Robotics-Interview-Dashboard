@@ -147,6 +147,8 @@ export * from './partsVendor';
 export * from './partsVendorCatalogMode';
 export * from './partsVendorCoverageState';
 export * from './partsVendorGroup';
+export * from './partsVendorSyncState';
+export * from './partsVendorSyncStateStatus';
 export * from './passwordSafetyError';
 export * from './passwordSafetyErrorCode';
 export * from './presenceEntry';

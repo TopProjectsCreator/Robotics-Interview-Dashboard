@@ -8,6 +8,7 @@
 import type { PartsVendorCatalogMode } from './partsVendorCatalogMode';
 import type { PartsVendorCoverageState } from './partsVendorCoverageState';
 import type { PartsVendorGroup } from './partsVendorGroup';
+import type { PartsVendorSyncState } from './partsVendorSyncState';
 
 export interface PartsVendor {
   key: string;
@@ -24,4 +25,6 @@ export interface PartsVendor {
      * @nullable
      */
   publicProductFeedUrl?: string | null;
+  /** Latest persisted sync outcome, if this supplier has been checked. */
+  lastSync: PartsVendorSyncState | null;
 }
