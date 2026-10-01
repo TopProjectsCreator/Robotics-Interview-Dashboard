@@ -54,6 +54,21 @@ export const LoginResponse = zod.object({
 
 
 /**
+ * @summary Verify the team event passcode before showing account choices
+ */
+
+
+
+export const VerifyEventPasscodeBody = zod.object({
+  "eventPassword": zod.string().min(1)
+})
+
+export const VerifyEventPasscodeResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary Get the current admin session
  */
 export const GetSessionResponse = zod.object({

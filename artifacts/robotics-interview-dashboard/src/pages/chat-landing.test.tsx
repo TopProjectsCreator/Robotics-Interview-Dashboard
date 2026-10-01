@@ -574,6 +574,9 @@ describe("public chat discovery", () => {
       if (path === "/api/auth/session") {
         return jsonResponse(authenticated ? signedInSession : { authenticated: false });
       }
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
       if (path === "/api/auth/interviewers") {
         return jsonResponse({ items: [{ id: "return-interviewer", displayName: "Return Interviewer", hasPassword: true }] });
       }
@@ -622,6 +625,9 @@ describe("public chat discovery", () => {
     const network = stubNetworkTransports(async (input) => {
       const path = requestPath(input);
       if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
       if (path === "/api/auth/interviewers") {
         return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
       }
@@ -647,6 +653,31 @@ describe("public chat discovery", () => {
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 
+  it("keeps the user on the team access-code step when the code is incorrect", async () => {
+    window.history.replaceState({}, "", "/auth");
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return errorResponse(401, "Unauthorized", { error: "The team access code is incorrect." });
+      }
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "wrong-team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+
+    expect(await screen.findByTestId("login-error"))
+      .toHaveTextContent("That team access code is incorrect. Check it and try again.");
+    expect(screen.getByRole("heading", { name: "Enter your team access code." })).toBeInTheDocument();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .toContain("/api/auth/verify-event-passcode");
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .not.toContain("/api/auth/interviewers");
+  });
+
   it.each([
     [
       "network",
@@ -668,6 +699,9 @@ describe("public chat discovery", () => {
     const network = stubNetworkTransports(async (input) => {
       const path = requestPath(input);
       if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
       if (path === "/api/auth/interviewers") {
         return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
       }
@@ -838,6 +872,9 @@ describe("public chat discovery", () => {
 
     const network = stubNetworkTransports(async (input) => {
       const path = requestPath(input);
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
       if (path === "/api/auth/interviewers") {
         return jsonResponse({ items: [{ id: "interviewer-b", displayName: "Interviewer B", hasPassword: true }] });
       }

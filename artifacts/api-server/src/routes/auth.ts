@@ -17,6 +17,8 @@ import {
   UpdateInterviewerPasswordResponse,
   ResetAllInterviewerPasswordsResponse,
   ResetAllInterviewerPasswordsBody,
+  VerifyEventPasscodeBody,
+  VerifyEventPasscodeResponse,
 } from "@workspace/api-zod";
 import {
   clearAdminCookie,
@@ -38,6 +40,7 @@ const router: IRouter = Router();
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const eventPasscodeFailures = new Map<string, { count: number; resetAt: number }>();
 
 async function rejectUnsafePassword(
   req: Request,
@@ -93,6 +96,23 @@ function recordLoginFailure(ip: string): void {
   const now = Date.now();
   const entry = loginFailures.get(ip);
   if (!entry || entry.resetAt <= now) loginFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else entry.count += 1;
+}
+
+function eventPasscodeAllowed(ip: string): boolean {
+  const now = Date.now();
+  const entry = eventPasscodeFailures.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    eventPasscodeFailures.delete(ip);
+    return true;
+  }
+  return entry.count < LOGIN_MAX_FAILURES;
+}
+
+function recordEventPasscodeFailure(ip: string): void {
+  const now = Date.now();
+  const entry = eventPasscodeFailures.get(ip);
+  if (!entry || entry.resetAt <= now) eventPasscodeFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
   else entry.count += 1;
 }
 
@@ -293,6 +313,26 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const session = createInterviewerSession(account.id);
   setAdminCookie(res, session);
   res.json(LoginResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, token: session }));
+});
+
+router.post("/auth/verify-event-passcode", (req, res): void => {
+  const parsed = VerifyEventPasscodeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "The team access code is required." });
+    return;
+  }
+  const ip = req.ip ?? "unknown";
+  if (!eventPasscodeAllowed(ip)) {
+    res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
+    return;
+  }
+  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+    recordEventPasscodeFailure(ip);
+    res.status(401).json({ error: "The team access code is incorrect." });
+    return;
+  }
+  eventPasscodeFailures.delete(ip);
+  res.json(VerifyEventPasscodeResponse.parse({ message: "Team access code verified." }));
 });
 
 router.get("/auth/session", async (req, res): Promise<void> => {

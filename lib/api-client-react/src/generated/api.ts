@@ -390,6 +390,77 @@ export const useLogin = <TError = ErrorType<ErrorResponse>,
       return useMutation(getLoginMutationOptions(options));
     }
 
+export const getVerifyEventPasscodeUrl = () => {
+
+
+
+
+  return `/api/auth/verify-event-passcode`
+}
+
+/**
+ * @summary Verify the team event passcode before showing account choices
+ */
+export const verifyEventPasscode = async (eventPasswordInput: EventPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getVerifyEventPasscodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(eventPasswordInput)
+  }
+);}
+
+
+
+
+
+export const getVerifyEventPasscodeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyEventPasscode>>, TError,{data: BodyType<EventPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyEventPasscode>>, TError,{data: BodyType<EventPasswordInput>}, TContext> => {
+
+const mutationKey = ['verifyEventPasscode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyEventPasscode>>, {data: BodyType<EventPasswordInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  verifyEventPasscode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyEventPasscodeMutationResult = NonNullable<Awaited<ReturnType<typeof verifyEventPasscode>>>
+    export type VerifyEventPasscodeMutationBody = BodyType<EventPasswordInput>
+    export type VerifyEventPasscodeMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Verify the team event passcode before showing account choices
+ */
+export const useVerifyEventPasscode = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyEventPasscode>>, TError,{data: BodyType<EventPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof verifyEventPasscode>>,
+        TError,
+        {data: BodyType<EventPasswordInput>},
+        TContext
+      > => {
+      return useMutation(getVerifyEventPasscodeMutationOptions(options));
+    }
+
 export const getGetSessionUrl = () => {
 
 

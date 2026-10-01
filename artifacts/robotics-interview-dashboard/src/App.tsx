@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
+   useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -89,7 +89,7 @@ function isExpiredSessionError(error: unknown): boolean {
   const path = url ? new URL(url, window.location.origin).pathname : "";
   // These endpoints are deliberately available before sign-in; a wrong
   // password or event passcode must not invalidate an existing session.
-  if (/\/api\/auth\/(?:interviewers\/?$|interviewers\/setup$|login$)/.test(path)) return false;
+  if (/\/api\/auth\/(?:interviewers\/?$|interviewers\/setup$|login$|verify-event-passcode$)/.test(path)) return false;
   return true;
 }
 
@@ -104,6 +104,14 @@ function signInErrorMessage(error: unknown, fallback = "Could not complete sign-
     return "Sign-in is temporarily unavailable. Check your connection and try again.";
   }
   return fallback;
+}
+
+function eventPasscodeErrorMessage(error: unknown): string {
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+  if (status === 401) return "That team access code is incorrect. Check it and try again.";
+  return signInErrorMessage(error, "Could not verify the team access code. Try again.");
 }
 
 function expireSessionOnError(error: unknown) {
@@ -1465,10 +1473,11 @@ function Login() {
   const teamAccounts = interviewers.data?.items ?? [];
   const accountLookupBusy = interviewers.isPending || interviewers.isFetching || interviewers.isPaused;
   const login = useLogin();
+  const verifyEventPasscode = useVerifyEventPasscode();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
   const selected = teamAccounts.find(item => item.id === selectedId);
-  const busy = login.isPending || setup.isPending || create.isPending;
+  const busy = verifyEventPasscode.isPending || login.isPending || setup.isPending || create.isPending;
   const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
 
   useEffect(() => {
@@ -1503,8 +1512,16 @@ function Login() {
       setError("Enter the team access code to continue.");
       return;
     }
-    setEventPassword(normalizedEventPassword);
-    setStep("interviewer");
+    verifyEventPasscode.mutate(
+      { data: { eventPassword: normalizedEventPassword } },
+      {
+        onSuccess: () => {
+          setEventPassword(normalizedEventPassword);
+          setStep("interviewer");
+        },
+        onError: verificationError => setError(eventPasscodeErrorMessage(verificationError)),
+      },
+    );
   };
 
   const chooseInterviewer = (id: string) => {
@@ -1694,7 +1711,7 @@ function Login() {
                   <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
                 </label>
                 {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
-                <button disabled={!eventPassword.trim()} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">Continue <ArrowRight size={17} /></button>
+                <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
               </form>
             )}
 
