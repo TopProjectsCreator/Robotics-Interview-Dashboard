@@ -2603,7 +2603,7 @@ components:
           type: string
         role:
           type: string
-          description: "coordinator or interviewer"
+          description: "coordinator, treasurer, or interviewer"
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
@@ -2619,7 +2619,7 @@ components:
           type: boolean
         role:
           type: string
-          description: "coordinator has full access; interviewer is restricted to chat and read-only roster"
+          description: "coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts"
     InterviewerAccountList:
       type: object
       required: [items]
@@ -2663,7 +2663,7 @@ components:
       properties:
         role:
           type: string
-          enum: [coordinator, interviewer]
+          enum: [coordinator, treasurer, interviewer]
     EventPasswordInput:
       type: object
       required: [eventPassword]

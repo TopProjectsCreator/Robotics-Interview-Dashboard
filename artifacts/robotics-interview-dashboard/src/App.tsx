@@ -314,7 +314,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
   const deleteInterviewer = useDeleteInterviewer();
-  const changeInterviewerRole = (id: string, role: "coordinator" | "interviewer") => {
+  const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
     updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
       onSuccess: () => { setPasswordNotice("Access updated."); setPasswordError(""); qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() }); },
       onError: () => { setPasswordError("Could not update access. Try again."); },
@@ -433,9 +433,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa]">
           {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91]">Loading interviewer accounts…</p>}
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
+            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
             <div className="flex flex-wrap gap-2"><input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="New password" data-testid={`input-settings-password-${account.id}`} className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs outline-none focus:border-[#16869a]" /><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? "")} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Set</button><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] disabled:opacity-50">Reset</button></div>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46]">Remove</button>}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46]">Remove</button>}</div>
           </div>)}
         </div>
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2.5 text-xs font-semibold text-[#a34d46] disabled:opacity-50"><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
@@ -1923,7 +1923,7 @@ function Login() {
                 )}
                 {!accountLookupBusy && teamAccounts.map(item => (
                   <button key={item.id} type="button" onClick={() => chooseInterviewer(item.id)} data-testid={`button-choose-interviewer-${item.displayName.toLowerCase().replaceAll(" ", "-")}`} className="flex w-full items-center justify-between rounded-xl border border-[#cbd7da] bg-white px-4 py-4 text-left transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#395563] dark:bg-[#1b303b] dark:hover:bg-[#203b47]">
-                    <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.role === "coordinator" ? "Admin" : "Team member"} · {item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
+                    <span><span className="block font-semibold">{item.displayName}</span><span className="mt-1 block text-xs text-[#7c8c91] dark:text-[#a4bbc3]">{item.role === "coordinator" ? "Admin" : item.role === "treasurer" ? "Treasurer" : "Team member"} · {item.hasPassword ? "Password ready" : "Password setup required"}</span></span>
                     <ChevronRight size={18} className="text-[#16869a]" />
                   </button>
                 ))}
@@ -2042,12 +2042,15 @@ function Shell({ children }: { children: ReactNode }) {
     }
   }, [broadcasts.data, dismissedBroadcasts]);
   const isCoordinator = session.data?.role === "coordinator";
+  const isTreasurer = session.data?.role === "treasurer";
   const shellPath = location.split(/[?#]/, 1)[0];
   const isPartsAssistant = shellPath === "/parts/assistant" || shellPath.startsWith("/parts/assistant/");
+  // Team members: chat + parts. Treasurers also get the read-only roster.
   const restrictedAllowed =
     shellPath === "/chat" || shellPath.startsWith("/chat/") ||
+    shellPath === "/applicants" ||
     shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant);
-  const restrictedBlocked = session.data?.authenticated === true && !isCoordinator && !restrictedAllowed;
+  const restrictedBlocked = session.data?.authenticated === true && !isCoordinator && !isTreasurer && !restrictedAllowed;
   useEffect(() => {
     if (restrictedBlocked) setLocation("/chat");
   }, [restrictedBlocked, setLocation]);
@@ -2067,10 +2070,11 @@ function Shell({ children }: { children: ReactNode }) {
   };
   const nav = (isCoordinator
     ? getWorkspaceNavigation(workspaceArea)
-    : [
+    : ([
         { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
         { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
-      ] as { href: string; label: string; iconKey: WorkspaceNavIcon; kind: "workspace" | "section" }[]).map((item) => ({
+        ...(isTreasurer ? [{ href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section" }] : []),
+      ] as { href: string; label: string; iconKey: WorkspaceNavIcon; kind: "workspace" | "section" }[])).map((item) => ({
     ...item,
     icon: navIcons[item.iconKey],
   }));

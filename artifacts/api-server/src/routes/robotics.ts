@@ -116,7 +116,7 @@ import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResu
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { authenticatedInterviewerId, requestAdminSession, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requestAdminSession, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
@@ -2047,7 +2047,7 @@ router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> 
   );
 });
 
-router.get("/applicants", requireCoordinator, async (req, res): Promise<void> => {
+router.get("/applicants", requireStaff, async (req, res): Promise<void> => {
   const parsed = ListApplicantsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2123,7 +2123,7 @@ If the request is vague, create the narrowest useful query and explain it briefl
   }
 });
 
-router.get("/applicants/:id", requireCoordinator, async (req, res): Promise<void> => {
+router.get("/applicants/:id", requireStaff, async (req, res): Promise<void> => {
   const params = GetApplicantParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

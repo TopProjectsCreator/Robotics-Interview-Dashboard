@@ -149,6 +149,39 @@ export function requireAdmin(
   });
 }
 
+// Staff level: admins (coordinators) and treasurers. Treasurers get the
+// read-only applicant roster on top of what any signed-in account can do.
+const STAFF_ROLES = new Set(["coordinator", "treasurer"]);
+
+export function requireStaff(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    db.select({ role: interviewerAccountsTable.role })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1)
+      .then(([account]) => {
+        if (!account?.role || !STAFF_ROLES.has(account.role)) {
+          res.status(403).json({ error: "Not available for your role" });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        req.log.error({ err: error }, "Staff role check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+  });
+}
+
 export function requireCoordinator(
   req: Request,
   res: Response,

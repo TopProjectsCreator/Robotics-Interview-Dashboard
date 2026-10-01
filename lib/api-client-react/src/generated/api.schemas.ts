@@ -461,7 +461,7 @@ export interface AuthSession {
   authenticated: boolean;
   label?: string;
   interviewerId?: string;
-  /** coordinator or interviewer */
+  /** coordinator, treasurer, or interviewer */
   role?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
@@ -471,7 +471,7 @@ export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
-  /** coordinator has full access; interviewer is restricted to chat and read-only roster */
+  /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
 }
 
@@ -507,6 +507,7 @@ export type InterviewerRoleUpdateInputRole = typeof InterviewerRoleUpdateInputRo
 
 export const InterviewerRoleUpdateInputRole = {
   coordinator: 'coordinator',
+  treasurer: 'treasurer',
   interviewer: 'interviewer',
 } as const;
 

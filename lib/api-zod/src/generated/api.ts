@@ -48,7 +48,7 @@ export const LoginResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
-  "role": zod.string().optional().describe('coordinator or interviewer'),
+  "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -75,7 +75,7 @@ export const GetSessionResponse = zod.object({
   "authenticated": zod.boolean(),
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
-  "role": zod.string().optional().describe('coordinator or interviewer'),
+  "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -88,7 +88,7 @@ export const ListInterviewersResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
-  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 }))
 })
 
@@ -112,7 +112,7 @@ export const CreateInterviewerResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
-  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
 
@@ -134,7 +134,7 @@ export const SetupInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
-  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
 
@@ -156,14 +156,14 @@ export const UpdateInterviewerRoleParams = zod.object({
 })
 
 export const UpdateInterviewerRoleBody = zod.object({
-  "role": zod.enum(['coordinator', 'interviewer'])
+  "role": zod.enum(['coordinator', 'treasurer', 'interviewer'])
 })
 
 export const UpdateInterviewerRoleResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
-  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
 
@@ -188,7 +188,7 @@ export const UpdateInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
-  "role": zod.string().describe('coordinator has full access; interviewer is restricted to chat and read-only roster')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
 

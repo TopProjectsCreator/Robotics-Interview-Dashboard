@@ -11,5 +11,6 @@ export type InterviewerRoleUpdateInputRole = typeof InterviewerRoleUpdateInputRo
 
 export const InterviewerRoleUpdateInputRole = {
   coordinator: 'coordinator',
+  treasurer: 'treasurer',
   interviewer: 'interviewer',
 } as const;
