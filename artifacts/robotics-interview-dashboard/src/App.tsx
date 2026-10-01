@@ -3506,6 +3506,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [chatUploading, setChatUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [chatError, setChatError] = useState("");
+  const [failedAiReply, setFailedAiReply] = useState<{
+    answer: string;
+    activities: { tool: string; detail: string }[];
+    conversationAuthor: string;
+    scope: "shared" | "direct";
+    recipient: string | null;
+    idempotencyKey: string;
+  } | null>(null);
+  const [aiReplyRetrying, setAiReplyRetrying] = useState(false);
+  const [aiReplyRetryError, setAiReplyRetryError] = useState("");
+  const [aiReplySavedNotice, setAiReplySavedNotice] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
@@ -4109,17 +4120,61 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       },
     );
   };
+  const retryFailedAiReply = async () => {
+    const pendingReply = failedAiReply;
+    if (!pendingReply || aiReplyRetrying) return;
+    setAiReplyRetrying(true);
+    setAiReplyRetryError("");
+    setAiReplySavedNotice("");
+    try {
+      await withTimeout(sendChat.mutateAsync({
+        data: {
+          author: "AI assistant",
+          conversationAuthor: pendingReply.conversationAuthor,
+          message: pendingReply.answer,
+          scope: pendingReply.scope,
+          ...(pendingReply.recipient ? { recipient: pendingReply.recipient } : {}),
+          activities: pendingReply.activities,
+          idempotencyKey: pendingReply.idempotencyKey,
+        },
+      }), 30000, "send-ai-retry");
+      const retryChatParams = {
+        limit: CHAT_PAGE_SIZE,
+        scope: pendingReply.scope,
+        author: pendingReply.conversationAuthor,
+        ...(pendingReply.scope === "direct" && pendingReply.recipient ? { peer: pendingReply.recipient } : {}),
+      };
+      void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(retryChatParams) });
+      setFailedAiReply(null);
+      setAiReplyRetryError("");
+      setAiReplySavedNotice(
+        pendingReply.scope === "direct" && pendingReply.recipient
+          ? `AI reply saved to your direct chat with ${pendingReply.recipient}.`
+          : "AI reply saved to team chat.",
+      );
+    } catch {
+      setAiReplyRetryError("Retry failed: we still couldn't confirm whether the answer was saved. You can retry again safely; it reuses the same key and won't create a duplicate.");
+    } finally {
+      setAiReplyRetrying(false);
+    }
+  };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim() && !chatFiles.length) return;
     if (message.trim().length > 900) { setChatError("Message is too long — shorten the text."); return; }
     const draft = message.trim();
+    if (failedAiReply && /@ai\b/i.test(draft)) {
+      setChatError("Retry the saved AI reply before sending another @ai prompt.");
+      return;
+    }
     setChatError("");
+    setAiReplySavedNotice("");
     chatStickRef.current = true;
     const author = activeInterviewer;
     const uploadedIds: string[] = [];
     let userPosted = false;
     let stage = "start";
+    let assistantReplyForRetry: typeof failedAiReply = null;
     const fileInfo = chatFiles.map(f => `${f.name}|${f.file.type || "notype"}|${Math.round(f.size / 1024)}kb`).join(";");
     const diagContext = () => `files:[${fileInfo}] ua:${navigator.userAgent.slice(0, 160)}`;
     const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
@@ -4240,16 +4295,29 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
          const chatContext = [...chatItems, { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
         const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
+        assistantReplyForRetry = {
+          answer: response.answer,
+          activities: response.activities ?? [],
+          conversationAuthor: author,
+          scope: conversationScope,
+          recipient: conversationPeer,
+          idempotencyKey: crypto.randomUUID(),
+        };
+        setAiReplySavedNotice("");
+        stage = "send-ai";
         await withTimeout(sendChat.mutateAsync({
           data: {
             author: "AI assistant",
-            conversationAuthor: activeInterviewer,
-            message: response.answer,
-            scope: conversationScope,
-            ...(conversationPeer ? { recipient: conversationPeer } : {}),
-            activities: response.activities ?? [],
+            conversationAuthor: assistantReplyForRetry.conversationAuthor,
+            message: assistantReplyForRetry.answer,
+            scope: assistantReplyForRetry.scope,
+            ...(assistantReplyForRetry.recipient ? { recipient: assistantReplyForRetry.recipient } : {}),
+            activities: assistantReplyForRetry.activities,
+            idempotencyKey: assistantReplyForRetry.idempotencyKey,
           },
         }), 30000, "send-ai");
+        setFailedAiReply(null);
+        setAiReplyRetryError("");
       }
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
       for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
@@ -4270,14 +4338,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           try { await fetch(`${import.meta.env.BASE_URL}api/storage/objects/${id}`, { method: "DELETE", credentials: "include" }); } catch { /* best-effort cleanup */ }
         }
       }
-      const message = !userPosted && error instanceof Error && error.message.startsWith("USER:")
+      if (stage === "send-ai" && assistantReplyForRetry) {
+        setFailedAiReply(assistantReplyForRetry);
+        setAiReplyRetryError("We couldn't confirm whether the AI reply was saved. Retry below to safely check with the same answer; your prompt won't be resent.");
+        setChatError("");
+        return;
+      }
+      const errorMessage = !userPosted && error instanceof Error && error.message.startsWith("USER:")
         ? error.message.slice(5)
         : error instanceof Error && error.message.startsWith("timeout:")
           ? `Timed out (${error.message.slice(8)}). Try again.`
           : userPosted
             ? "The AI answer failed. Your message was saved — try again."
             : serverErrorMessage(error, "Couldn't send — nothing was posted. Try again.");
-      setChatError(message);
+      setChatError(errorMessage);
     } finally {
       setChatUploading(false);
     }
@@ -4437,6 +4511,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        </div>
         <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
+        {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">We couldn’t confirm the AI reply to {failedAiReply.scope === "direct" && failedAiReply.recipient ? failedAiReply.recipient : "team chat"}.</p>
+            <p className="mt-0.5 text-xs">Your prompt is already in chat. Retry will check and save the same answer as {failedAiReply.conversationAuthor} without asking the AI again.</p>
+            {aiReplyRetryError && <p className="mt-1 text-xs font-medium" data-testid="ai-reply-retry-error">{aiReplyRetryError}</p>}
+          </div>
+          <button type="button" onClick={() => void retryFailedAiReply()} disabled={aiReplyRetrying} data-testid="button-retry-ai-reply" className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50">{aiReplyRetrying ? "Saving reply…" : "Retry AI reply"}</button>
+        </div>}
+        {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
      </form>
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard

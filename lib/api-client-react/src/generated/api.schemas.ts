@@ -923,6 +923,8 @@ export interface AssistantActivity {
 }
 
 export interface InterviewChatInput {
+  /** Stable UUID used to safely retry saving an assistant reply. */
+  idempotencyKey?: string;
   /** Configured interviewer label for direct messages; shared messages retain the existing label behavior. */
   author: string;
   /** Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant. */

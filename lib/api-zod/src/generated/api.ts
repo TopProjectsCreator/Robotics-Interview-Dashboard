@@ -946,6 +946,7 @@ export const GetInterviewChatResponse = zod.object({
 export const sendInterviewChatBodyScopeDefault = `shared`;
 
 export const SendInterviewChatBody = zod.object({
+  "idempotencyKey": zod.string().uuid().optional().describe('Stable UUID used to safely retry saving an assistant reply.'),
   "author": zod.string().describe('Configured interviewer label for direct messages; shared messages retain the existing label behavior.'),
   "conversationAuthor": zod.string().nullish().describe('Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant.'),
   "message": zod.string(),

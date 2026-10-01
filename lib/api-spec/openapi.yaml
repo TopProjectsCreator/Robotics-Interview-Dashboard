@@ -755,6 +755,12 @@ paths:
             schema:
               $ref: "#/components/schemas/InterviewChatInput"
       responses:
+        "200":
+          description: Previously saved message returned for an idempotent retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewChatMessage"
         "201":
           description: Sent chat message
           content:
@@ -3298,6 +3304,10 @@ components:
       type: object
       required: [author, message]
       properties:
+        idempotencyKey:
+          type: string
+          format: uuid
+          description: Stable UUID used to safely retry saving an assistant reply.
         author:
           type: string
           description: Configured interviewer label for direct messages; shared messages retain the existing label behavior.

@@ -3256,15 +3256,52 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   const isAssistantMessage = parsed.data.author.trim() === "AI assistant";
-  const [message] = await db.insert(interviewChatMessagesTable).values({
-    id: randomUUID(),
+  if (parsed.data.idempotencyKey && !isAssistantMessage) {
+    res.status(400).json({ error: "Idempotency keys are only supported for assistant replies." });
+    return;
+  }
+  const values = {
+    id: parsed.data.idempotencyKey ?? randomUUID(),
     author: isAssistantMessage ? "AI assistant" : account.displayName,
     message: parsed.data.message.trim().slice(0, 1000),
     conversationScope: conversation.scope,
     conversationPeer: conversation.key,
     parentMessageId,
     activities: JSON.stringify(activities),
-  }).returning();
+  };
+  if (parsed.data.idempotencyKey) {
+    const [inserted] = await db.insert(interviewChatMessagesTable)
+      .values(values)
+      .onConflictDoNothing({ target: interviewChatMessagesTable.id })
+      .returning();
+    if (inserted) {
+      pushRealtimeHint("interview_chat_messages", "INSERT");
+      res.status(201).json(SendInterviewChatResponse.parse({
+        ...chatResponse(inserted, conversation),
+      }));
+      return;
+    }
+    const [existing] = await db.select().from(interviewChatMessagesTable)
+      .where(eq(interviewChatMessagesTable.id, parsed.data.idempotencyKey))
+      .limit(1);
+    if (
+      !existing ||
+      existing.author !== "AI assistant" ||
+      existing.message !== values.message ||
+      existing.conversationScope !== conversation.scope ||
+      existing.conversationPeer !== conversation.key ||
+      existing.parentMessageId !== null ||
+      existing.activities !== values.activities
+    ) {
+      res.status(409).json({ error: "This retry key has already been used for a different chat message." });
+      return;
+    }
+    res.status(200).json(SendInterviewChatResponse.parse({
+      ...chatResponse(existing, conversation),
+    }));
+    return;
+  }
+  const [message] = await db.insert(interviewChatMessagesTable).values(values).returning();
   pushRealtimeHint("interview_chat_messages", "INSERT");
   res.status(201).json(SendInterviewChatResponse.parse({
     ...chatResponse(message, conversation),

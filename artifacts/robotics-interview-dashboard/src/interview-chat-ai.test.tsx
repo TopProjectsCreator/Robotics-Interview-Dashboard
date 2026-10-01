@@ -130,6 +130,7 @@ describe("AI replies in interviewer chat", () => {
           scope: ChatScope;
           recipient?: string;
           activities?: { tool: string; detail: string }[];
+          idempotencyKey?: string;
         };
         if (body.author === "AI assistant" && body.conversationAuthor !== "Alex") {
           return jsonResponse({ error: "Assistant messages must be tied to the signed-in interviewer." }, 403);
@@ -276,11 +277,172 @@ describe("AI replies in interviewer chat", () => {
       scope,
       ...(peer ? { recipient: peer } : {}),
     });
+    expect(assistantPost?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
     expect(persistedMessages.at(-1)).toMatchObject({
       author: "AI assistant",
       message: answer,
       scope,
       peer,
     });
+  });
+
+  it("retries an ambiguously failed AI reply without resending the prompt or duplicating the answer", async () => {
+    const answer = "Generated answer survives retry";
+    const activities = [{ tool: "applicant_lookup", detail: "Reviewed the active roster" }];
+    const persistedMessages: StoredMessage[] = [];
+    const assistantPosts: Array<Record<string, unknown>> = [];
+    const userPosts: Array<Record<string, unknown>> = [];
+    let assistantAttempts = 0;
+    const savedByKey = new Map<string, StoredMessage>();
+    const eventSourceConstructor = vi.fn(function MockEventSource() {
+      const source: MockEventSource = { onmessage: null, onerror: null, close: vi.fn() };
+      eventSources.push(source);
+      return source;
+    });
+    vi.stubGlobal("EventSource", eventSourceConstructor);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      const url = new URL(rawUrl, window.location.origin);
+      if (url.pathname === "/api/auth/session") {
+        return jsonResponse({ authenticated: true, label: "Alex", interviewerId: "alex-id" });
+      }
+      if (url.pathname === "/api/queue" && init?.method !== "POST") {
+        return jsonResponse({ interviewerLabels: ["Alex", "Jordan"], currentApplicants: [] });
+      }
+      if (url.pathname === "/api/queue/chat" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as {
+          author: string;
+          conversationAuthor?: string;
+          message: string;
+          scope: ChatScope;
+          recipient?: string;
+          activities?: { tool: string; detail: string }[];
+          idempotencyKey?: string;
+        };
+        if (body.author === "AI assistant") {
+          assistantPosts.push(body);
+          assistantAttempts += 1;
+          const key = body.idempotencyKey ?? "";
+          let saved = savedByKey.get(key);
+          if (!saved) {
+            saved = {
+              id: key,
+              author: body.author,
+              message: body.message,
+              scope: body.scope,
+              peer: body.scope === "direct" ? body.recipient ?? null : null,
+              parentMessageId: null,
+              pinnedAt: null,
+              activities: body.activities ?? [],
+              reactions: [],
+              createdAt: "2026-09-30T12:00:00.000Z",
+              conversationKey: body.scope === "direct"
+                ? canonicalPair(body.conversationAuthor ?? body.author, body.recipient ?? "")
+                : null,
+            };
+            savedByKey.set(key, saved);
+            persistedMessages.push(saved);
+          }
+          // The first request commits but loses its response; the first retry
+          // also loses its response after reading the already-saved row.
+          if (assistantAttempts <= 2) throw new TypeError("Failed to fetch");
+          return jsonResponse(saved, 200);
+        }
+        userPosts.push(body);
+        const saved: StoredMessage = {
+          id: `user-${userPosts.length}`,
+          author: body.author,
+          message: body.message,
+          scope: body.scope,
+          peer: body.scope === "direct" ? body.recipient ?? null : null,
+          parentMessageId: null,
+          pinnedAt: null,
+          activities: [],
+          reactions: [],
+          createdAt: "2026-09-30T12:00:00.000Z",
+          conversationKey: body.scope === "direct"
+            ? canonicalPair(body.author, body.recipient ?? "")
+            : null,
+        };
+        persistedMessages.push(saved);
+        return jsonResponse(saved, 201);
+      }
+      if (url.pathname === "/api/queue/chat") {
+        const requestedScope = (url.searchParams.get("scope") ?? "shared") as ChatScope;
+        const requestedAuthor = url.searchParams.get("author") ?? "Alex";
+        const requestedPeer = url.searchParams.get("peer");
+        const conversationKey = requestedScope === "direct" && requestedPeer
+          ? canonicalPair(requestedAuthor, requestedPeer)
+          : null;
+        const items = persistedMessages.filter(item =>
+          item.scope === requestedScope &&
+          (requestedScope === "direct" ? item.conversationKey === conversationKey : item.conversationKey === null),
+        ).map(item => ({
+          ...item,
+          peer: requestedScope === "direct" ? requestedPeer : null,
+        }));
+        return jsonResponse({ items, scope: requestedScope, peer: requestedScope === "direct" ? requestedPeer : null });
+      }
+      if (url.pathname === "/api/assistant/ask" && init?.method === "POST") {
+        return jsonResponse({ answer, activities });
+      }
+      if (url.pathname === "/api/diagnostics") return jsonResponse({ ok: true });
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SettingsProvider>
+            <WouterRouter>
+              <InterviewChatPanel applicantIds={[]} />
+            </WouterRouter>
+          </SettingsProvider>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("Signed in as Alex");
+    fireEvent.click(await screen.findByTestId("button-chat-direct-jordan"));
+    fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
+      target: { value: "@ai Give me a quick read." },
+    });
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+
+    expect(await screen.findByTestId("button-retry-ai-reply")).toBeInTheDocument();
+    expect(screen.getByTestId("ai-reply-retry")).toHaveTextContent("Your prompt is already in chat");
+    expect(assistantPosts).toHaveLength(1);
+    expect(userPosts).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId("button-chat-team"));
+    fireEvent.click(screen.getByTestId("button-retry-ai-reply"));
+    expect(await screen.findByTestId("ai-reply-retry-error")).toHaveTextContent("Retry failed");
+    fireEvent.click(screen.getByTestId("button-retry-ai-reply"));
+    expect(await screen.findByTestId("ai-reply-retry-success")).toHaveTextContent("direct chat with Jordan");
+
+    expect(assistantPosts).toHaveLength(3);
+    expect(new Set(assistantPosts.map(post => post.idempotencyKey)).size).toBe(1);
+    for (const post of assistantPosts) {
+      expect(post).toMatchObject({
+        author: "AI assistant",
+        conversationAuthor: "Alex",
+        message: answer,
+        scope: "direct",
+        recipient: "Jordan",
+        activities,
+      });
+    }
+    expect(userPosts).toHaveLength(1);
+    expect(userPosts[0]).toMatchObject({
+      author: "Alex",
+      message: "@ai Give me a quick read.",
+      scope: "direct",
+      recipient: "Jordan",
+    });
+    expect(persistedMessages.filter(item => item.author === "AI assistant" && item.message === answer)).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([input]) =>
+      new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname === "/api/assistant/ask",
+    )).toHaveLength(1);
   });
 });
