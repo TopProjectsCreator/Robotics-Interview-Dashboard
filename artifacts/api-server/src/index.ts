@@ -15,19 +15,19 @@ initRealtime();
 async function removeTestAccounts(): Promise<void> {
   try {
     await pool.query(
-      `DELETE FROM chat_message_reactions WHERE message_id IN (SELECT id FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck'))`,
+      `DELETE FROM chat_message_reactions WHERE message_id IN (SELECT id FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck'))`,
     );
     await pool.query(
-      `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck')`,
+      `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck')`,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82', '394a0e6b93c19427e45f381cbdeae9c5', 'd83906beecb8aa4f3a592be99b6bf9bd')`,
+      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82', '394a0e6b93c19427e45f381cbdeae9c5', 'd83906beecb8aa4f3a592be99b6bf9bd', 'ef60effd88a020f38a5250e52dbfbcfe')`,
     );
     await pool.query(
       `UPDATE interview_queue SET interviewer_labels = (
         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
         FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck')
+        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck')
       ) WHERE id = 1`,
     );
     logger.info("Test accounts cleanup done");
