@@ -3265,6 +3265,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     parentMessageId,
     activities: JSON.stringify(activities),
   }).returning();
+  pushRealtimeHint("interview_chat_messages", "INSERT");
   res.status(201).json(SendInterviewChatResponse.parse({
     ...chatResponse(message, conversation),
   }));
