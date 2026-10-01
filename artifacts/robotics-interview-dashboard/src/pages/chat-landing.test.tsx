@@ -678,6 +678,36 @@ describe("public chat discovery", () => {
       .not.toContain("/api/auth/interviewers");
   });
 
+  it("retries a temporary passcode-check outage before advancing", async () => {
+    window.history.replaceState({}, "", "/auth");
+    let verificationAttempts = 0;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        verificationAttempts += 1;
+        if (verificationAttempts === 1) {
+          return errorResponse(502, "Bad Gateway", { error: "Service starting" });
+        }
+        return jsonResponse({ message: "Team access code verified." });
+      }
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
+      }
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+
+    expect(await screen.findByTestId("button-choose-interviewer-interviewer-a")).toBeInTheDocument();
+    expect(verificationAttempts).toBe(2);
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .toContain("/api/auth/verify-event-passcode");
+  });
+
   it.each([
     [
       "network",
@@ -717,7 +747,7 @@ describe("public chat discovery", () => {
     fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
     fireEvent.click(screen.getByTestId("button-personal-password"));
 
-    expect(await screen.findByTestId("login-error")).toHaveTextContent(expectedMessage);
+    expect(await screen.findByTestId("login-error", {}, { timeout: 6000 })).toHaveTextContent(expectedMessage);
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 

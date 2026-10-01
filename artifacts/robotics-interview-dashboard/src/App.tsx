@@ -123,7 +123,7 @@ function retryTemporaryAuthFailure(failureCount: number, error: unknown): boolea
 }
 
 function temporaryAuthRetryDelay(attempt: number): number {
-  return Math.min(1000 * 2 ** attempt, 4000);
+  return Math.min(500 * 2 ** attempt, 2000);
 }
 
 function expireSessionOnError(error: unknown) {
