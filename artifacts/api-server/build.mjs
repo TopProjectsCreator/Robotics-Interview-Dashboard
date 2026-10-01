@@ -1,10 +1,11 @@
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { access, chmod, constants, copyFile, mkdir } from "node:fs/promises";
+import { access, chmod, constants, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -127,39 +128,63 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   );
 
   const nativeSourceDir = path.resolve(artifactDir, "native/cadconvert");
-  try {
-    execFileSync(
-      "cargo",
-      [
-        "build",
-        "--release",
-        "--locked",
-        "--package",
-        "cad-cli",
-        "--bin",
-        "cadconvert",
-        "--bin",
-        "cadprogressive",
-      ],
-      {
-        cwd: nativeSourceDir,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+  const nativeTargetDir = path.join(nativeSourceDir, "target/release");
+  const nativeBinaries = [
+    path.join(nativeTargetDir, "cadconvert"),
+    path.join(nativeTargetDir, "cadprogressive"),
+  ];
+  const nativeBuildMarker = path.join(nativeTargetDir, ".api-build-input-hash");
+  const nativeInputs = await hashNativeInputs(nativeSourceDir);
+  const binariesExist = await Promise.all(nativeBinaries.map(fileExists));
+  let nativeBuildIsCurrent = binariesExist.every(Boolean);
+
+  if (nativeBuildIsCurrent) {
+    try {
+      nativeBuildIsCurrent = (await readFile(nativeBuildMarker, "utf8")).trim() === nativeInputs.hash;
+    } catch {
+      // Older workspaces have no marker. Trust existing binaries only if none
+      // of their source inputs is newer, then seed the content-based marker.
+      const binaryStats = await Promise.all(nativeBinaries.map((binary) => stat(binary)));
+      nativeBuildIsCurrent = binaryStats.every((binary) => binary.mtimeMs >= nativeInputs.newestInputMtime);
+      if (nativeBuildIsCurrent) await writeFile(nativeBuildMarker, nativeInputs.hash);
+    }
+  }
+
+  if (!nativeBuildIsCurrent) {
+    try {
+      execFileSync(
+        "cargo",
+        [
+          "build",
+          "--release",
+          "--locked",
+          "--package",
+          "cad-cli",
+          "--bin",
+          "cadconvert",
+          "--bin",
+          "cadprogressive",
+        ],
+        {
+          cwd: nativeSourceDir,
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
+          },
         },
-      },
-    );
-  } catch (err) {
-    // Render's Node image (and other hosts) have no Rust toolchain. The
-    // parasolid preview endpoint needs these binaries, but the rest of the
-    // API does not — skip instead of failing the whole build. A real cargo
-    // failure (broken code) still throws below when the binaries are absent
-    // only if cargo exists; missing toolchain is the only tolerated case.
-    if (err?.code !== "ENOENT") throw err;
-    console.warn(
-      "cargo not found — skipping native cadconvert binaries (parasolid preview will be unavailable)",
-    );
+      );
+      if ((await Promise.all(nativeBinaries.map(fileExists))).every(Boolean)) {
+        await writeFile(nativeBuildMarker, nativeInputs.hash);
+      }
+    } catch (err) {
+      // Render's Node image has no Rust toolchain. The Parasolid preview
+      // endpoint needs these binaries, but the rest of the API does not.
+      if (err?.code !== "ENOENT") throw err;
+      console.warn(
+        "cargo not found — skipping native cadconvert binaries (parasolid preview will be unavailable)",
+      );
+    }
   }
   const nativeDistDir = path.join(distDir, "native");
   await mkdir(nativeDistDir, { recursive: true });
@@ -171,6 +196,42 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     path.join(nativeSourceDir, "target/release/cadprogressive"),
     path.join(nativeDistDir, "cadprogressive"),
   );
+}
+
+async function hashNativeInputs(rootDir) {
+  const hash = createHash("sha256");
+  let newestInputMtime = 0;
+
+  async function visit(directory) {
+    const entries = (await readdir(directory, { withFileTypes: true }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      if (entry.isDirectory() && (entry.name === "target" || entry.name === ".git")) continue;
+      const filePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(filePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const [contents, metadata] = await Promise.all([readFile(filePath), stat(filePath)]);
+      hash.update(path.relative(rootDir, filePath));
+      hash.update("\0");
+      hash.update(contents);
+      newestInputMtime = Math.max(newestInputMtime, metadata.mtimeMs);
+    }
+  }
+
+  await visit(rootDir);
+  return { hash: hash.digest("hex"), newestInputMtime };
+}
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function copyIfExists(source, destination) {

@@ -114,6 +114,18 @@ function eventPasscodeErrorMessage(error: unknown): string {
   return signInErrorMessage(error, "Could not verify the team access code. Try again.");
 }
 
+function retryTemporaryAuthFailure(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 3) return false;
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+  return status === undefined || (typeof status === "number" && status >= 500);
+}
+
+function temporaryAuthRetryDelay(attempt: number): number {
+  return Math.min(1000 * 2 ** attempt, 4000);
+}
+
 function expireSessionOnError(error: unknown) {
   if (isExpiredSessionError(error)) clearUserScopedRecords(queryClient);
 }
@@ -1472,8 +1484,12 @@ function Login() {
   });
   const teamAccounts = interviewers.data?.items ?? [];
   const accountLookupBusy = interviewers.isPending || interviewers.isFetching || interviewers.isPaused;
-  const login = useLogin();
-  const verifyEventPasscode = useVerifyEventPasscode();
+  const login = useLogin({
+    mutation: { retry: retryTemporaryAuthFailure, retryDelay: temporaryAuthRetryDelay },
+  });
+  const verifyEventPasscode = useVerifyEventPasscode({
+    mutation: { retry: retryTemporaryAuthFailure, retryDelay: temporaryAuthRetryDelay },
+  });
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
   const selected = teamAccounts.find(item => item.id === selectedId);
