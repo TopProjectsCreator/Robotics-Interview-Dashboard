@@ -313,7 +313,7 @@ describe("public chat discovery", () => {
     );
     expect(contrastRatio(darkCtaFocusColor, cssProperty(darkPage, "--chat-deep"))).toBeGreaterThanOrEqual(3);
 
-    const mobileQueryStart = chatLandingStyles.indexOf("@media (max-width: 680px)");
+    const mobileQueryStart = chatLandingStyles.indexOf("@media (max-width: 760px)");
     expect(mobileQueryStart).toBeGreaterThanOrEqual(0);
     const mobileStyles = extractCssBlock(chatLandingStyles, mobileQueryStart);
     expect(cssProperty(cssRule(mobileStyles, ".chat-landing__nav-links"), "display")).toBe("none");

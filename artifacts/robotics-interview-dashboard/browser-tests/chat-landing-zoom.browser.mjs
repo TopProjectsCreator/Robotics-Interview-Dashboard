@@ -1,0 +1,188 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+import { chromium } from "playwright";
+
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// A 683 CSS-pixel viewport is the effective width of a 1366px desktop at 200% zoom.
+const viewport = { width: 683, height: 900 };
+
+async function assertDoesNotOverlap(first, second, description) {
+  const [firstRect, secondRect] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  assert.ok(firstRect && secondRect, `${description} should be rendered`);
+  const overlaps = firstRect.left < secondRect.right
+    && firstRect.right > secondRect.left
+    && firstRect.top < secondRect.bottom
+    && firstRect.bottom > secondRect.top;
+  assert.equal(overlaps, false, `${description} should not overlap`);
+}
+
+const port = await new Promise((resolve, reject) => {
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    if (!address || typeof address === "string") return reject(new Error("Could not allocate a test port"));
+    server.close(error => (error ? reject(error) : resolve(address.port)));
+  });
+});
+
+const server = spawn("pnpm", ["exec", "vite", "--config", "vite.config.ts", "--host", "127.0.0.1"], {
+  cwd: appDir,
+  env: { ...process.env, BASE_PATH: "/", PORT: String(port), NODE_ENV: "test" },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+let serverOutput = "";
+server.stdout.setEncoding("utf8").on("data", chunk => { serverOutput += chunk; });
+server.stderr.setEncoding("utf8").on("data", chunk => { serverOutput += chunk; });
+
+let browser;
+try {
+  const serverUrl = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (server.exitCode !== null) throw new Error(`Vite exited before starting:\n${serverOutput}`);
+    try {
+      const response = await fetch(`${serverUrl}/chat-landing`);
+      if (response.ok) break;
+    } catch {
+      // Wait for Vite to bind the selected port.
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  const chromiumPath = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    process.env.CHROMIUM_PATH,
+    "/repl/tools/bin/chromium",
+  ].find(candidate => candidate && existsSync(candidate));
+  browser = await chromium.launch({
+    ...(chromiumPath ? { executablePath: chromiumPath } : {}),
+    headless: true,
+    args: ["--no-sandbox"],
+  });
+
+  const page = await browser.newPage({ viewport });
+  const pageErrors = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+
+  await page.goto(`${serverUrl}/chat-landing`);
+  await page.getByTestId("chat-landing").waitFor({ state: "visible" });
+
+  const pageWidth = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    document: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  assert.equal(pageWidth.viewport, viewport.width);
+  assert.ok(
+    pageWidth.document <= pageWidth.viewport && pageWidth.body <= pageWidth.viewport,
+    `The page should not overflow horizontally: ${JSON.stringify(pageWidth)}`,
+  );
+
+  const menuButton = page.getByTestId("button-chat-menu");
+  const brand = page.getByTestId("link-chat-brand");
+  assert.equal(await menuButton.isVisible(), true, "The zoom-width navigation menu should be available");
+  assert.equal(await page.getByTestId("link-chat-nav-sign-in").isVisible(), false);
+  assert.equal(await brand.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth), true);
+  assert.equal(
+    await menuButton.evaluate(element => element.getBoundingClientRect().left >= 0),
+    true,
+    "The menu control should remain inside the viewport",
+  );
+  await assertDoesNotOverlap(brand, menuButton, "The brand and menu control");
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__hero-copy"),
+    page.locator(".chat-landing__preview-wrap"),
+    "The hero copy and workspace preview",
+  );
+  await assertDoesNotOverlap(
+    page.getByTestId("link-chat-hero-sign-in"),
+    page.getByTestId("link-chat-explore"),
+    "The hero sign-in and explore actions",
+  );
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__cta-content > div"),
+    page.getByTestId("link-chat-cta-sign-in"),
+    "The closing callout and sign-in action",
+  );
+
+  await menuButton.click();
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "true");
+  for (const testId of ["link-chat-conversations", "link-chat-context", "link-chat-tools", "link-chat-nav-sign-in"]) {
+    const link = page.getByTestId(testId);
+    assert.equal(await link.isVisible(), true, `${testId} should be reachable in the open menu`);
+    const rect = await link.evaluate(element => {
+      const { left, right } = element.getBoundingClientRect();
+      return { left, right };
+    });
+    assert.ok(rect.left >= 0 && rect.right <= viewport.width, `${testId} should fit within the viewport: ${JSON.stringify(rect)}`);
+  }
+
+  for (const [testId, hash] of [
+    ["link-chat-conversations", "#conversations"],
+    ["link-chat-context", "#context"],
+    ["link-chat-tools", "#tools"],
+  ]) {
+    if (await menuButton.getAttribute("aria-expanded") === "false") await menuButton.click();
+    await page.getByTestId(testId).click();
+    await page.waitForFunction(expected => window.location.hash === expected, hash);
+    assert.equal(await menuButton.getAttribute("aria-expanded"), "false", "Section navigation should close the menu");
+    const target = page.locator(hash);
+    await target.scrollIntoViewIfNeeded();
+    assert.equal(await target.isVisible(), true, `${hash} should remain reachable`);
+  }
+
+  const sections = await page.locator(
+    '[data-testid="section-chat-conversations"], [data-testid="section-chat-context"], [data-testid="section-chat-tools"], [data-testid="section-chat-cta"]',
+  ).evaluateAll(elements => elements.map(element => {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    return { left, right, top, bottom };
+  }));
+  assert.equal(sections.length, 4, "All main landing sections should be rendered");
+  for (const section of sections) {
+    assert.ok(section.left >= 0 && section.right <= viewport.width, `A landing section should fit the viewport: ${JSON.stringify(section)}`);
+  }
+  for (let index = 1; index < sections.length; index += 1) {
+    assert.ok(sections[index].top >= sections[index - 1].bottom, "Landing sections should not overlap");
+  }
+
+  const meaningfulContent = await page.locator(
+    ".chat-landing h1, .chat-landing h2, .chat-landing h3, .chat-landing p, .chat-landing a, .chat-landing button, .chat-landing [aria-label]",
+  ).evaluateAll(elements => elements.map(element => {
+    const { left, right } = element.getBoundingClientRect();
+    return {
+      label: element.getAttribute("aria-label") || element.textContent?.trim().replace(/\s+/g, " ").slice(0, 50),
+      left,
+      right,
+    };
+  }));
+  for (const element of meaningfulContent) {
+    assert.ok(
+      element.left >= 0 && element.right <= viewport.width,
+      `Meaningful content should not be clipped horizontally: ${JSON.stringify(element)}`,
+    );
+  }
+
+  for (const testId of ["link-chat-hero-sign-in", "link-chat-cta-sign-in"]) {
+    const link = page.getByTestId(testId);
+    await link.scrollIntoViewIfNeeded();
+    assert.equal(await link.isVisible(), true, `${testId} should remain visible when reached`);
+    assert.equal(await link.getAttribute("href"), "/auth");
+    const rect = await link.evaluate(element => {
+      const { left, right } = element.getBoundingClientRect();
+      return { left, right };
+    });
+    assert.ok(rect.left >= 0 && rect.right <= viewport.width, `${testId} should fit within the viewport: ${JSON.stringify(rect)}`);
+  }
+
+  assert.deepEqual(pageErrors, [], "The landing should not raise browser errors at the zoom-equivalent width");
+  console.log("Chromium verified the Chat landing at 683 CSS pixels: navigation, sign-in links, sections, and horizontal fit.");
+} finally {
+  await browser?.close();
+  server.kill("SIGTERM");
+}
