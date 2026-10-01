@@ -78,6 +78,9 @@ const privateRecordCanaries = [
   "PRIVATE_APPLICANT_RECORD_CANARY",
   "PRIVATE_PRESENCE_RECORD_CANARY",
   "PRIVATE_COLLABORATION_RECORD_CANARY",
+  "PRIVATE_PARTS_INVENTORY_RECORD_CANARY",
+  "PRIVATE_PARTS_CATALOG_RECORD_CANARY",
+  "PRIVATE_ASSISTANT_CONVERSATION_RECORD_CANARY",
 ];
 
 class MockBroadcastChannel {
@@ -118,6 +121,9 @@ const privateRecordsResponse = {
     items: [{ name: privateRecordCanaries[1] }],
     entries: [{ name: privateRecordCanaries[2] }],
     collaborators: [{ name: privateRecordCanaries[3] }],
+    inventory: [{ name: privateRecordCanaries[4] }],
+    catalog: [{ name: privateRecordCanaries[5] }],
+    assistantConversation: [{ text: privateRecordCanaries[6] }],
   }),
 } as Response;
 
@@ -355,6 +361,31 @@ describe("public chat discovery", () => {
       }
     },
   );
+
+  it("redirects direct Parts assistant visits to sign-in before private requests start", async () => {
+    window.history.replaceState({}, "", "/parts/assistant");
+    const network = stubNetworkTransports(async (input) => {
+      if (requestPath(input) === "/api/auth/session") return jsonResponse({ authenticated: false });
+      return privateRecordsResponse;
+    });
+
+    render(<App />);
+
+    expect(await screen.findByTestId("input-event-passcode")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/auth");
+    expect(new URLSearchParams(window.location.search).get("returnTo")).toBe("/parts/assistant");
+
+    const requestedPaths = network.fetchSpy.mock.calls.map(([input]) => requestPath(input));
+    expect(requestedPaths.length).toBeGreaterThan(0);
+    expect(requestedPaths.every((path) => path === "/api/auth/session")).toBe(true);
+    expect(network.eventSourceConstructor).not.toHaveBeenCalled();
+    expect(network.webSocketConstructor).not.toHaveBeenCalled();
+    for (const canary of privateRecordCanaries) {
+      expect(document.body.textContent).not.toContain(canary);
+      expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
+        .not.toContain(canary);
+    }
+  });
 
   it.each(["/", "/chat-landing"])(
     "clears signed-in chat and applicant records before navigating to %s",
@@ -1066,7 +1097,7 @@ describe("public chat discovery", () => {
     fireEvent.click(screen.getByTestId("button-personal-password"));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/dashboard");
+      expect(window.location.pathname).toBe("/chat");
       expect(queryClient.getQueryData(getGetSessionQueryKey())).toMatchObject({
         authenticated: true,
         interviewerId: "interviewer-b",
