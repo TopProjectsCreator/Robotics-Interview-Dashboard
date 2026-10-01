@@ -77,8 +77,11 @@ type PoolClient = {
 
 class BadInputError extends Error {}
 class StockConflictError extends Error {
-  constructor(readonly allocated: number) {
+  readonly allocated: number;
+
+  constructor(allocated: number) {
     super("Owned stock cannot be lower than the quantity already assigned.");
+    this.allocated = allocated;
   }
 }
 
@@ -382,7 +385,7 @@ async function queryCatalogRows(
      left join "parts_robots" r on r."id" = a."robot_id"
      ${whereSql}
      group by c."id", i."quantity_owned"
-     order by c."updated_at" desc, lower(c."name")
+     order by c."updated_at" desc, lower(c."name"), c."id"
      limit $${values.length + 1} offset $${values.length + 2}`,
     [...values, limit, offset],
   );

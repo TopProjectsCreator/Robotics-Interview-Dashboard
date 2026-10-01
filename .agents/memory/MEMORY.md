@@ -22,3 +22,4 @@
 - [Nullable SQL checks](nullable-sql-checks.md) — nullable paired fields need explicit non-null predicates in CHECK constraints because SQL treats UNKNOWN as passing.
 - [Authentication cache expiry](authentication-cache-expiry.md) — auth failures must bypass query retries so stale private data and live connections are cleared immediately.
 - [Rebase conflict supersets](rebase-conflict-supersets.md) — compare current-main behavior and tests before choosing a side; replayed incoming commits may be older subsets.
+- [Node TypeScript test loading](node-typescript-test-loading.md) — Node's strip-only TS mode accepts only erasable syntax; route tests need TS-free parameter declarations and directory-import resolution.
