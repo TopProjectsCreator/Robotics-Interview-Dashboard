@@ -1184,7 +1184,7 @@
   }
 }
 
-/* Keep the compact navigation and single-column layout usable at 400% zoom. */
+/* Keep the compact navigation and single-column layout usable at narrow widths and high zoom. */
 @media (max-width: 760px) {
   .chat-landing__shell {
     width: min(100% - 28px, 1240px);

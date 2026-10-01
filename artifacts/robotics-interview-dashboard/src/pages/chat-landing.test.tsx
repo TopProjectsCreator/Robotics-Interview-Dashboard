@@ -328,6 +328,9 @@ describe("public chat discovery", () => {
     const focusStyles = cssRule(chatLandingStyles, ".chat-landing a:focus-visible");
     expect(focusStyles).toMatch(/outline:\s*3px solid/);
     expect(focusStyles).toMatch(/outline-offset:\s*4px/);
+    const buttonFocusStyles = cssRule(chatLandingStyles, ".chat-landing button:focus-visible");
+    expect(buttonFocusStyles).toMatch(/outline:\s*3px solid/);
+    expect(buttonFocusStyles).toMatch(/outline-offset:\s*4px/);
     const lightPaper = cssProperty(cssRule(chatLandingStyles, ".chat-landing"), "--chat-paper");
     const lightFocusColor = colorFromDeclaration(cssProperty(focusStyles, "outline"));
     expect(contrastRatio(lightFocusColor, lightPaper)).toBeGreaterThanOrEqual(3);
@@ -345,6 +348,11 @@ describe("public chat discovery", () => {
       "outline-color",
     );
     expect(contrastRatio(darkFocusColor, darkPaper)).toBeGreaterThanOrEqual(3);
+    const darkButtonFocusColor = cssProperty(
+      cssRule(chatLandingStyles, ".dark .chat-landing button:focus-visible"),
+      "outline-color",
+    );
+    expect(contrastRatio(darkButtonFocusColor, darkPaper)).toBeGreaterThanOrEqual(3);
     const darkCtaFocusColor = cssProperty(
       cssRule(chatLandingStyles, ".dark .chat-landing__cta a:focus-visible"),
       "outline-color",

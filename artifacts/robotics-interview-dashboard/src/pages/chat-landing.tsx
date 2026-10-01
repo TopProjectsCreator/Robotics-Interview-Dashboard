@@ -61,19 +61,6 @@ export default function ChatLanding() {
             </span>
           </Link>
 
-          <nav
-            className={`chat-landing__nav-links ${menuOpen ? "is-open" : ""}`}
-            aria-label="Chat landing navigation"
-            id="chat-landing-navigation"
-          >
-            <a href="#conversations" onClick={closeMenu} data-testid="link-chat-conversations">Conversations</a>
-            <a href="#context" onClick={closeMenu} data-testid="link-chat-context">Context</a>
-            <a href="#tools" onClick={closeMenu} data-testid="link-chat-tools">Connected tools</a>
-            <Link href="/auth" onClick={closeMenu} className="chat-landing__nav-cta" data-testid="link-chat-nav-sign-in">
-              Team sign in <ArrowRight size={14} />
-            </Link>
-          </nav>
-
           <button
             ref={menuButtonRef}
             type="button"
@@ -86,6 +73,19 @@ export default function ChatLanding() {
           >
             {menuOpen ? <X size={19} /> : <Menu size={19} />}
           </button>
+
+          <nav
+            className={`chat-landing__nav-links ${menuOpen ? "is-open" : ""}`}
+            aria-label="Chat landing navigation"
+            id="chat-landing-navigation"
+          >
+            <a href="#conversations" onClick={closeMenu} data-testid="link-chat-conversations">Conversations</a>
+            <a href="#context" onClick={closeMenu} data-testid="link-chat-context">Context</a>
+            <a href="#tools" onClick={closeMenu} data-testid="link-chat-tools">Connected tools</a>
+            <Link href="/auth" onClick={closeMenu} className="chat-landing__nav-cta" data-testid="link-chat-nav-sign-in">
+              Team sign in <ArrowRight size={14} />
+            </Link>
+          </nav>
         </header>
 
         <section className="chat-landing__hero" aria-labelledby="chat-landing-title">

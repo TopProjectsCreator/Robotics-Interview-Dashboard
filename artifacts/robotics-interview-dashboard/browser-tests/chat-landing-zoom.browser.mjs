@@ -8,8 +8,37 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// A 336 CSS-pixel viewport approximates a 1344px desktop at 400% zoom.
-const viewport = { width: 336, height: 900 };
+// A 672 CSS-pixel viewport approximates a 1344px desktop at 200% zoom.
+const viewport = { width: 672, height: 900 };
+
+async function assertKeyboardFocusVisible(locator, description) {
+  const focus = await locator.evaluate(element => {
+    const style = getComputedStyle(element);
+    return {
+      active: document.activeElement === element,
+      matchesFocusVisible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+    };
+  });
+  assert.equal(focus.active, true, `${description} should receive keyboard focus`);
+  assert.equal(focus.matchesFocusVisible, true, `${description} should match :focus-visible`);
+  assert.notEqual(focus.outlineStyle, "none", `${description} should show a focus indicator`);
+  assert.ok(focus.outlineWidth >= 3, `${description} should have a strong focus outline: ${JSON.stringify(focus)}`);
+}
+
+async function tabUntilFocused(page, locator, description, maxTabs = 32) {
+  for (let tabCount = 0; tabCount < maxTabs; tabCount += 1) {
+    if (await locator.evaluate(element => document.activeElement === element)) return;
+    await page.keyboard.press("Tab");
+  }
+
+  assert.equal(
+    await locator.evaluate(element => document.activeElement === element),
+    true,
+    `${description} should be reachable by pressing Tab`,
+  );
+}
 
 async function assertDoesNotOverlap(first, second, description) {
   const [firstRect, secondRect] = await Promise.all([first.boundingBox(), second.boundingBox()]);
@@ -136,7 +165,12 @@ try {
     "The tools description and tool cards",
   );
 
-  await menuButton.click();
+  await page.keyboard.press("Tab");
+  await assertKeyboardFocusVisible(brand, "The brand link");
+  await page.keyboard.press("Tab");
+  await assertKeyboardFocusVisible(menuButton, "The navigation menu button");
+
+  await page.keyboard.press("Enter");
   assert.equal(await menuButton.getAttribute("aria-expanded"), "true");
   for (const testId of ["link-chat-conversations", "link-chat-context", "link-chat-tools", "link-chat-nav-sign-in"]) {
     const link = page.getByTestId(testId);
@@ -146,21 +180,23 @@ try {
       return { left, right };
     });
     assert.ok(rect.left >= 0 && rect.right <= viewport.width, `${testId} should fit within the viewport: ${JSON.stringify(rect)}`);
+    await page.keyboard.press("Tab");
+    await assertKeyboardFocusVisible(link, testId);
   }
 
-  for (const [testId, hash] of [
-    ["link-chat-conversations", "#conversations"],
-    ["link-chat-context", "#context"],
-    ["link-chat-tools", "#tools"],
-  ]) {
-    if (await menuButton.getAttribute("aria-expanded") === "false") await menuButton.click();
-    await page.getByTestId(testId).click();
-    await page.waitForFunction(expected => window.location.hash === expected, hash);
-    assert.equal(await menuButton.getAttribute("aria-expanded"), "false", "Section navigation should close the menu");
-    const target = page.locator(hash);
-    await target.scrollIntoViewIfNeeded();
-    assert.equal(await target.isVisible(), true, `${hash} should remain reachable`);
-  }
+  await page.keyboard.press("Escape");
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "false", "Escape should close the menu");
+  await assertKeyboardFocusVisible(menuButton, "The menu button after Escape");
+
+  await page.keyboard.press("Enter");
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "true");
+  await page.keyboard.press("Tab");
+  const conversationsLink = page.getByTestId("link-chat-conversations");
+  await assertKeyboardFocusVisible(conversationsLink, "The Conversations menu link");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.location.hash === "#conversations");
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "false", "Section navigation should close the menu");
+  assert.equal(await page.locator("#conversations").isVisible(), true, "The Conversations section should remain reachable");
 
   const sections = await page.locator(
     '[data-testid="section-chat-conversations"], [data-testid="section-chat-context"], [data-testid="section-chat-tools"], [data-testid="section-chat-cta"]',
@@ -193,6 +229,15 @@ try {
     );
   }
 
+  await page.goto(`${serverUrl}/chat-landing`);
+  const heroSignIn = page.getByTestId("link-chat-hero-sign-in");
+  await tabUntilFocused(page, heroSignIn, "The hero sign-in link");
+  await assertKeyboardFocusVisible(heroSignIn, "The hero sign-in link");
+
+  const ctaSignIn = page.getByTestId("link-chat-cta-sign-in");
+  await tabUntilFocused(page, ctaSignIn, "The closing callout sign-in link");
+  await assertKeyboardFocusVisible(ctaSignIn, "The closing callout sign-in link");
+
   for (const testId of ["link-chat-hero-sign-in", "link-chat-cta-sign-in"]) {
     const link = page.getByTestId(testId);
     await link.scrollIntoViewIfNeeded();
@@ -206,7 +251,7 @@ try {
   }
 
   assert.deepEqual(pageErrors, [], "The landing should not raise browser errors at the zoom-equivalent width");
-  console.log("Chromium verified the Chat landing at 336 CSS pixels: navigation, sign-in links, sections, card layout, and horizontal fit.");
+  console.log("Chromium verified the Chat landing at 672 CSS pixels: keyboard navigation, visible focus, sign-in links, sections, card layout, and horizontal fit.");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
