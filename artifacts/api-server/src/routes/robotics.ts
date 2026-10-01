@@ -37,6 +37,7 @@ import {
   GetInterviewChatResponse,
   ListChatCustomEmojisResponse,
   GetQueueResponse,
+  GetQueueLabelsResponse,
   GetAssistantHistoryResponse,
   GenerateAssistantImageBody,
   GenerateAssistantImageResponse,
@@ -2477,6 +2478,12 @@ router.get("/queue", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
+// Interviewer labels only. The chat panel needs the roster of teammates to
+// offer direct messages, and helpers cannot read the full queue state.
+router.get("/queue/labels", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(GetQueueLabelsResponse.parse({ interviewerLabels: await getInterviewSettings() }));
+});
+
 router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = AdvanceQueueBody.safeParse(req.body);
   if (!parsed.success) {
@@ -3361,7 +3368,7 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
 
-router.post("/queue/chat/:messageId/pin", requireCoordinator, async (req, res): Promise<void> => {
+router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promise<void> => {
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   if (!messageId) {
     res.status(400).json({ error: "Message id required" });
@@ -3386,7 +3393,7 @@ router.post("/queue/chat/:messageId/pin", requireCoordinator, async (req, res): 
   }));
 });
 
-router.patch("/queue/chat/:messageId", requireCoordinator, async (req, res): Promise<void> => {
+router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3431,7 +3438,7 @@ router.patch("/queue/chat/:messageId", requireCoordinator, async (req, res): Pro
   res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation)));
 });
 
-router.delete("/queue/chat/:messageId", requireCoordinator, async (req, res): Promise<void> => {
+router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }

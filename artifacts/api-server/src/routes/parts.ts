@@ -2068,17 +2068,61 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
     const result = await pool.query(
       `insert into "parts_robots" ("id", "name")
        values ($1, $2)
-       returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+       returning "id", "name", "preview_object_path" as "previewObjectPath",
+                 "preview_file_name" as "previewFileName",
+                 "preview_content_type" as "previewContentType",
+                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [randomUUID(), name],
     );
+    if (result.rowCount === 0) {
+      res.status(409).json({ error: "A robot with that name already exists." });
+      return;
+    }
     res.status(201).json(CreatePartsRobotResponse.parse(mapRobot(result.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
       res.status(409).json({ error: "A robot with that name already exists." });
       return;
     }
-    req.log.error({ err: error }, "Parts robot creation failed");
+    req.log.error({ err: error }, "Parts robot create failed");
     res.status(500).json({ error: "Unable to add the robot." });
+  }
+});
+
+router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsRobotParams.safeParse(req.params);
+  const parsed = UpdatePartsRobotBody.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    res.status(400).json({ error: params.success ? "Enter a robot name." : "Robot not found." });
+    return;
+  }
+  const name = parsed.data.name.trim();
+  if (!name) {
+    res.status(400).json({ error: "Enter a robot name." });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      `update "parts_robots" set "name" = $2, "updated_at" = now()
+       where "id" = $1
+       returning "id", "name", "preview_object_path" as "previewObjectPath",
+                 "preview_file_name" as "previewFileName",
+                 "preview_content_type" as "previewContentType",
+                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [params.data.robotId, name],
+    );
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Robot not found." });
+      return;
+    }
+    res.json(UpdatePartsRobotResponse.parse(mapRobot(result.rows[0])));
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      res.status(409).json({ error: "A robot with that name already exists." });
+      return;
+    }
+    req.log.error({ err: error, robotId: params.data.robotId }, "Parts robot update failed");
+    res.status(500).json({ error: "Unable to rename the robot." });
   }
 });
 
@@ -2211,45 +2255,6 @@ router.delete(
     }
   },
 );
-
-router.patch("/parts/robots/:robotId",
-  requireAdmin,
-  async (req, res): Promise<void> => {
-    const params = UpdatePartsRobotParams.safeParse(req.params);
-    const body = UpdatePartsRobotBody.safeParse(req.body);
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "The robot name is invalid." });
-    return;
-  }
-  const name = body.data.name.trim();
-  if (!name) {
-    res.status(400).json({ error: "Enter a robot name." });
-    return;
-  }
-  try {
-    const result = await pool.query(
-      `update "parts_robots" set "name" = $2, "updated_at" = now()
-       where "id" = $1
-       returning "id", "name", "preview_object_path" as "previewObjectPath",
-                 "preview_file_name" as "previewFileName",
-                 "preview_content_type" as "previewContentType",
-                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.robotId, name],
-    );
-    if (result.rowCount === 0) {
-      res.status(404).json({ error: "Robot not found." });
-      return;
-    }
-    res.json(UpdatePartsRobotResponse.parse(mapRobot(result.rows[0])));
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      res.status(409).json({ error: "A robot with that name already exists." });
-      return;
-    }
-    req.log.error({ err: error }, "Parts robot update failed");
-    res.status(500).json({ error: "Unable to rename the robot." });
-  }
-});
 
 router.put(
   "/parts/robots/:robotId/parts/:partId",

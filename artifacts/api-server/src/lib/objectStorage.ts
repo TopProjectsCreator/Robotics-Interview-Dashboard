@@ -45,7 +45,10 @@ function supabase(): SupabaseClient {
 }
 
 let ensuredBucket: Promise<void> | null = null;
-const MAX_STORAGE_UPLOAD_BYTES = 200 * 1024 * 1024;
+// Supabase rejects a bucket file_size_limit above the plan maximum (50 MB on
+// the current plan), and the error is unrelated to bucket existence. Stay at
+// or below that ceiling so the request is always accepted.
+export const MAX_STORAGE_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 function ensureBucket(): Promise<void> {
   if (!ensuredBucket) {
@@ -56,22 +59,30 @@ function ensureBucket(): Promise<void> {
         public: false,
         fileSizeLimit: MAX_STORAGE_UPLOAD_BYTES,
       });
-      // "already exists" is the happy path on warm starts.
       if (error && !/already exists|duplicate/i.test(error.message)) {
-        throw new Error(`Could not create Supabase storage bucket "${bucket}": ${error.message}`);
+        // Creation can be refused for reasons that do not mean the bucket is
+        // missing (for example a size limit the plan rejects). Fall back to
+        // inspecting the bucket and keep going if it is actually there.
+        const { data: existing, error: lookupError } = await storage.getBucket(bucket);
+        if (lookupError || !existing) {
+          throw new Error(`Could not create Supabase storage bucket "${bucket}": ${error.message}`);
+        }
       }
       if (error) {
         const { data: existing, error: lookupError } = await storage.getBucket(bucket);
         if (lookupError || !existing) {
           throw new Error(`Could not inspect Supabase storage bucket "${bucket}": ${lookupError?.message ?? 'unknown error'}`);
         }
-        if (typeof existing.file_size_limit === 'number' && existing.file_size_limit < MAX_STORAGE_UPLOAD_BYTES) {
+        const currentLimit = typeof existing.file_size_limit === 'number' ? existing.file_size_limit : null;
+        if (currentLimit !== null && currentLimit < MAX_STORAGE_UPLOAD_BYTES) {
           const { error: updateError } = await storage.updateBucket(bucket, {
             public: false,
             fileSizeLimit: MAX_STORAGE_UPLOAD_BYTES,
           });
           if (updateError) {
-            throw new Error(`Could not increase the upload limit for storage bucket "${bucket}": ${updateError.message}`);
+            // Not fatal: uploads above the current limit are rejected by
+            // Supabase with a clear message instead of failing the request.
+            console.warn(`Could not raise storage limit for "${bucket}": ${updateError.message}`);
           }
         }
       }

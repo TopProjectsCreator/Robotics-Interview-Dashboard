@@ -756,6 +756,14 @@ export const GetQueueResponse = zod.object({
 
 
 /**
+ * @summary List interviewer labels (used for direct messages)
+ */
+export const GetQueueLabelsResponse = zod.object({
+  "interviewerLabels": zod.array(zod.string())
+})
+
+
+/**
  * @summary Finish one applicant and advance that applicant only
  */
 export const AdvanceQueueBody = zod.object({

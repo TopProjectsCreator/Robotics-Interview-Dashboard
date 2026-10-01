@@ -661,6 +661,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /queue/labels:
+    get:
+      operationId: getQueueLabels
+      tags: [queue]
+      summary: List interviewer labels (used for direct messages)
+      responses:
+        "200":
+          description: Interviewer labels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueLabels"
   /queue/advance:
     post:
       operationId: advanceQueue
@@ -3227,6 +3239,14 @@ components:
               type: integer
             contentType:
               type: string
+    QueueLabels:
+      type: object
+      required: [interviewerLabels]
+      properties:
+        interviewerLabels:
+          type: array
+          items:
+            type: string
     QueueState:
       type: object
       required: [currentApplicants, nextApplicants, interviewerLabels, completedCount, remainingCount, updatedAt]

@@ -15,19 +15,19 @@ initRealtime();
 async function removeTestAccounts(): Promise<void> {
   try {
     await pool.query(
-      `DELETE FROM chat_message_reactions WHERE message_id IN (SELECT id FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest'))`,
+      `DELETE FROM chat_message_reactions WHERE message_id IN (SELECT id FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck'))`,
     );
     await pool.query(
-      `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest')`,
+      `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck')`,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82')`,
+      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82', '394a0e6b93c19427e45f381cbdeae9c5', 'd83906beecb8aa4f3a592be99b6bf9bd', 'ef60effd88a020f38a5250e52dbfbcfe')`,
     );
     await pool.query(
       `UPDATE interview_queue SET interviewer_labels = (
         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
         FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3')
+        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck')
       ) WHERE id = 1`,
     );
     logger.info("Test accounts cleanup done");
@@ -107,6 +107,7 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "role" text not null default 'coordinator', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
+    `update "interviewer_accounts" set "role" = 'interviewer' where "id" = '76319d35b3307f8799c9167da28fe318'`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
@@ -128,6 +129,13 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
     `alter table "parts_robots" add column if not exists "preview_file_name" text`,
+    `do $robots_name$ begin
+       if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'parts_robots_name_unique') then
+         if not exists (select 1 from "parts_robots" group by lower(name) having count(*) > 1) then
+           create unique index parts_robots_name_unique on "parts_robots" (lower(name));
+         end if;
+       end if;
+     end $robots_name$`,
     `alter table "parts_robots" add column if not exists "preview_content_type" text`,
     `do $robot_preview$ begin
        if not exists (select 1 from pg_constraint where conname = 'parts_robots_preview_metadata_valid') then

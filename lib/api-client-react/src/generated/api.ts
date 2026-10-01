@@ -115,6 +115,7 @@ import type {
   PresenceKickResult,
   PresenceList,
   QueueCallbackInput,
+  QueueLabels,
   QueueSettingsInput,
   QueueState,
   ReorderQueueInput,
@@ -2591,6 +2592,83 @@ export function useGetQueue<TData = Awaited<ReturnType<typeof getQueue>>, TError
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetQueueQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetQueueLabelsUrl = () => {
+
+
+
+
+  return `/api/queue/labels`
+}
+
+/**
+ * @summary List interviewer labels (used for direct messages)
+ */
+export const getQueueLabels = async ( options?: Parameters<typeof customFetch>[1]): Promise<QueueLabels> => {
+
+  return customFetch<QueueLabels>(getGetQueueLabelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetQueueLabelsQueryKey = () => {
+    return [
+    `/api/queue/labels`
+    ] as const;
+    }
+
+
+export const getGetQueueLabelsQueryOptions = <TData = Awaited<ReturnType<typeof getQueueLabels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQueueLabels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetQueueLabelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getQueueLabels>>> = ({ signal }) => getQueueLabels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQueueLabels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetQueueLabelsQueryResult = NonNullable<Awaited<ReturnType<typeof getQueueLabels>>>
+export type GetQueueLabelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List interviewer labels (used for direct messages)
+ */
+
+export function useGetQueueLabels<TData = Awaited<ReturnType<typeof getQueueLabels>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQueueLabels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetQueueLabelsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
