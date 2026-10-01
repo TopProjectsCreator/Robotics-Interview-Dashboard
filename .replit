@@ -21,7 +21,7 @@ timeoutMs = 120000
 
 [nix]
 channel = "stable-25_05"
-packages = ["libGL", "xorg.libX11", "expat", "nano"]
+packages = ["libGL", "xorg.libX11", "expat", "nano", "xorg.libXrandr", "xorg.libXcomposite", "xorg.libXcursor", "xorg.libXdamage", "xorg.libXi", "xorg.libXext", "xorg.libXfixes", "gtk3", "pango", "atk", "cairo", "gdk-pixbuf", "glib", "xorg.libXrender", "alsa-lib", "dbus", "gst_all_1.gstreamer", "gst_all_1.gst-plugins-base", "gst_all_1.gst-plugins-good", "gst_all_1.gst-plugins-bad", "gtk4", "vulkan-loader", "graphene", "icu", "gcc-unwrapped", "libxml2", "sqlite", "libxslt", "lcms2", "libevent", "libopus", "flite", "libavif", "harfbuzz", "libepoxy", "libjpeg_turbo", "libmanette", "enchant", "mesa", "libdrm", "hyphen", "libsecret", "libxkbcommon", "x264", "icu74", "libglvnd", "gst_all_1.gst-libav", "libjpeg8"]
 
 [objectStorage]
 defaultBucketID = "replit-objstore-8be2f692-0196-4838-bf87-c7f56c292fcb"

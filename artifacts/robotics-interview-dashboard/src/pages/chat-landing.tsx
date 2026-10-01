@@ -164,11 +164,11 @@ export default function ChatLanding() {
           </div>
         </section>
 
-        <section id="conversations" className="chat-landing__section" aria-labelledby="conversation-title" data-testid="section-chat-conversations">
+        <section className="chat-landing__section" aria-labelledby="conversations" data-testid="section-chat-conversations">
           <div className="chat-landing__section-heading">
             <div>
               <p className="chat-landing__section-kicker">01 / Conversation structure</p>
-              <h2 id="conversation-title">Make room for the right kind of conversation.</h2>
+              <h2 id="conversations" tabIndex={-1}>Make room for the right kind of conversation.</h2>
             </div>
             <p>Keep broad team thinking visible while giving focused questions a quieter lane.</p>
           </div>
@@ -194,10 +194,10 @@ export default function ChatLanding() {
           </div>
         </section>
 
-        <section id="context" className="chat-landing__story" aria-labelledby="context-title" data-testid="section-chat-context">
+        <section className="chat-landing__story" aria-labelledby="context" data-testid="section-chat-context">
           <div className="chat-landing__story-copy">
             <p className="chat-landing__section-kicker">02 / Context that travels</p>
-            <h2 id="context-title">A message is more useful when the work is close by.</h2>
+            <h2 id="context" tabIndex={-1}>A message is more useful when the work is close by.</h2>
             <p>
               Keep a question beside the drawing, plan, or shared note it refers to. Teammates can understand the why before they act on the what.
             </p>
@@ -238,10 +238,10 @@ export default function ChatLanding() {
           </div>
         </section>
 
-        <section id="tools" className="chat-landing__tools" aria-labelledby="tools-title" data-testid="section-chat-tools">
+        <section className="chat-landing__tools" aria-labelledby="tools" data-testid="section-chat-tools">
           <div className="chat-landing__tools-copy">
             <p className="chat-landing__section-kicker">03 / Nearby tools</p>
-            <h2 id="tools-title">Stay close to the tools that move the work forward.</h2>
+            <h2 id="tools" tabIndex={-1}>Stay close to the tools that move the work forward.</h2>
             <p>Chat is the connective tissue. Open the relevant board, document, or dashboard without leaving the conversation’s orbit.</p>
           </div>
           <div className="chat-landing__tool-stack">

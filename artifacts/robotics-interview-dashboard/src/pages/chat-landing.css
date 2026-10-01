@@ -28,7 +28,8 @@
 }
 
 .chat-landing a:focus-visible,
-.chat-landing button:focus-visible {
+.chat-landing button:focus-visible,
+.chat-landing h2:focus-visible {
   outline: 3px solid #0b6765;
   outline-offset: 4px;
 }
@@ -1477,7 +1478,8 @@
 }
 
 .dark .chat-landing a:focus-visible,
-.dark .chat-landing button:focus-visible {
+.dark .chat-landing button:focus-visible,
+.dark .chat-landing h2:focus-visible {
   outline-color: #78d5c9;
 }
 
