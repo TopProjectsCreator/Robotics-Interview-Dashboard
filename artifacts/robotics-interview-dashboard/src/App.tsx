@@ -618,6 +618,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   const [sheets, setSheets] = useState<ChatAttachmentSheet[]>([]);
   const [documentHtml, setDocumentHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [mediaPlaybackFailed, setMediaPlaybackFailed] = useState(false);
   const [imageFallback, setImageFallback] = useState<"converting" | "unavailable" | null>(null);
   const attachmentBlobRef = useRef<Blob | null>(null);
   const objectUrlsRef = useRef<Set<string>>(new Set());
@@ -638,6 +639,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     setSheets([]);
     setDocumentHtml(null);
     setFailed(false);
+    setMediaPlaybackFailed(false);
     setImageFallback(null);
     attachmentBlobRef.current = null;
     attemptedHeicConversionRef.current = false;
@@ -735,6 +737,11 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   };
 
   if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+  if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {
+    return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
+      Couldn’t play {name} in this browser. Try opening it in an app that supports this format.
+    </div>;
+  }
   if (kind === "image" && imageFallback === "converting") {
     return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">Preparing a preview for {name}…</div>;
   }
@@ -755,8 +762,8 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   }
   if (sheets.length) return <div className="my-2 space-y-3">{sheets.map(sheet => <ChatAttachmentTable key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />)}</div>;
   if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" onError={() => void handleImageError()} className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
-  if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
-  if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
+  if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" onError={() => setMediaPlaybackFailed(true)} className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
+  if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
   if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
