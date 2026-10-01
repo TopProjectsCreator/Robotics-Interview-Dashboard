@@ -37,6 +37,7 @@ import {
   GetInterviewChatResponse,
   ListChatCustomEmojisResponse,
   GetQueueResponse,
+  GetQueueLabelsResponse,
   GetAssistantHistoryResponse,
   GenerateAssistantImageBody,
   GenerateAssistantImageResponse,
@@ -2475,6 +2476,12 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
 
 router.get("/queue", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
+});
+
+// Interviewer labels only. The chat panel needs the roster of teammates to
+// offer direct messages, and helpers cannot read the full queue state.
+router.get("/queue/labels", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(GetQueueLabelsResponse.parse({ interviewerLabels: await getInterviewSettings() }));
 });
 
 router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void> => {

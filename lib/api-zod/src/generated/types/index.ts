@@ -161,6 +161,7 @@ export * from './presenceKickResult';
 export * from './presenceList';
 export * from './queueApplicant';
 export * from './queueCallbackInput';
+export * from './queueLabels';
 export * from './queueSettingsInput';
 export * from './queueState';
 export * from './recommendationParameter';

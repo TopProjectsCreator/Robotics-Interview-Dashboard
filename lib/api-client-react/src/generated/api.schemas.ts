@@ -869,6 +869,10 @@ export interface UploadResponse {
   metadata: UploadResponseMetadata;
 }
 
+export interface QueueLabels {
+  interviewerLabels: string[];
+}
+
 export interface QueueApplicant {
   id: string;
   name: string;
