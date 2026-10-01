@@ -5,6 +5,7 @@ import {
 } from "@workspace/api-client-react";
 
 export const AUTH_TOKEN_STORAGE_KEY = "robotics_admin_session_token";
+export const AUTH_SESSION_ACTIVE_STORAGE_KEY = "robotics_admin_session_active";
 export const AUTH_SESSION_CHANNEL_NAME = "robotics-admin-session";
 export const AUTH_SESSION_END_STORAGE_KEY = "robotics_admin_session_ended";
 export const DEFAULT_AUTH_RETURN_PATH = "/dashboard";
@@ -67,14 +68,52 @@ type AuthSessionEndMessage = {
 
 const authSessionTabId = `${Date.now()}-${Math.random()}`;
 let pendingOtherTabSessionEndNotice = false;
+let pendingSessionExpiredNotice = false;
+
+function clearActiveSessionMarker(): void {
+  try {
+    window.sessionStorage.removeItem(AUTH_SESSION_ACTIVE_STORAGE_KEY);
+  } catch {
+    // Session state can still be tracked in memory if storage is unavailable.
+  }
+}
+
+export function markAuthSessionActive(): void {
+  try {
+    window.sessionStorage.setItem(AUTH_SESSION_ACTIVE_STORAGE_KEY, "1");
+  } catch {
+    // The session query remains the in-memory fallback.
+  }
+}
+
+export function hasActiveAuthSessionMarker(): boolean {
+  try {
+    return window.sessionStorage.getItem(AUTH_SESSION_ACTIVE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function markAuthSessionEndedByAnotherTab(): void {
   pendingOtherTabSessionEndNotice = true;
+  pendingSessionExpiredNotice = false;
+  clearActiveSessionMarker();
 }
 
 export function consumeAuthSessionEndedByAnotherTab(): boolean {
   const shouldShowNotice = pendingOtherTabSessionEndNotice;
   pendingOtherTabSessionEndNotice = false;
+  return shouldShowNotice;
+}
+
+export function markAuthSessionExpired(): void {
+  pendingSessionExpiredNotice = true;
+  clearActiveSessionMarker();
+}
+
+export function consumeAuthSessionExpiredNotice(): boolean {
+  const shouldShowNotice = pendingSessionExpiredNotice;
+  pendingSessionExpiredNotice = false;
   return shouldShowNotice;
 }
 
@@ -189,6 +228,9 @@ export function clearStoredAuthToken(): void {
 
 export function clearAuthSession(privateDataCache: { clear: () => void }): void {
   broadcastAuthSessionEnd();
+  pendingOtherTabSessionEndNotice = false;
+  pendingSessionExpiredNotice = false;
+  clearActiveSessionMarker();
   clearStoredAuthToken();
   privateDataCache.clear();
 }

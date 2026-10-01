@@ -47,7 +47,7 @@ import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -83,6 +83,17 @@ import {
 
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
+const authenticatedSessionQueries = new WeakSet<object>();
+
+function markCurrentSessionQueryAuthenticated(): void {
+  const sessionQuery = queryClient.getQueryCache().find({ queryKey: sessionQueryKey });
+  if (sessionQuery) authenticatedSessionQueries.add(sessionQuery);
+}
+
+function forgetCurrentSessionQueryAuthentication(): void {
+  const sessionQuery = queryClient.getQueryCache().find({ queryKey: sessionQueryKey });
+  if (sessionQuery) authenticatedSessionQueries.delete(sessionQuery);
+}
 
 function isExpiredSessionError(error: unknown): boolean {
   if (!error || typeof error !== "object" || !("status" in error) || error.status !== 401) return false;
@@ -141,7 +152,10 @@ function temporaryAuthRetryDelay(attempt: number): number {
 }
 
 function expireSessionOnError(error: unknown) {
-  if (isExpiredSessionError(error)) clearUserScopedRecords(queryClient);
+  if (!isExpiredSessionError(error)) return;
+  markAuthSessionExpired();
+  forgetCurrentSessionQueryAuthentication();
+  clearUserScopedRecords(queryClient);
 }
 
 export const queryClient = new QueryClient({
@@ -152,13 +166,29 @@ export const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onSuccess: (data, query) => {
+      if (!isSessionQuery(query.queryKey)) return;
       if (
-        isSessionQuery(query.queryKey) &&
+        data !== null &&
+        typeof data === "object" &&
+        "authenticated" in data &&
+        data.authenticated === true
+      ) {
+        authenticatedSessionQueries.add(query);
+        markAuthSessionActive();
+      } else if (
         data !== null &&
         typeof data === "object" &&
         "authenticated" in data &&
         data.authenticated === false
       ) {
+        if (
+          authenticatedSessionQueries.has(query) ||
+          getStoredAuthToken() !== null ||
+          hasActiveAuthSessionMarker()
+        ) {
+          markAuthSessionExpired();
+        }
+        authenticatedSessionQueries.delete(query);
         clearUserScopedRecords(queryClient);
       }
     },
@@ -1508,6 +1538,8 @@ function LegacyLogin() {
   const finishLogin = (response: AuthSession) => {
     const { token, ...sessionData } = response;
     clearUserScopedRecords(qc, sessionData);
+    markCurrentSessionQueryAuthenticated();
+    markAuthSessionActive();
     storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
     setLocation(returnTo);
@@ -1560,6 +1592,7 @@ function Login() {
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [sessionEndedInAnotherTab, setSessionEndedInAnotherTab] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [location, setLocation] = useLocation();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1604,6 +1637,10 @@ function Login() {
   }, []);
 
   useEffect(() => {
+    if (consumeAuthSessionExpiredNotice()) setSessionExpired(true);
+  }, [session.data]);
+
+  useEffect(() => {
     const route = location.split("?")[0];
     if (session.data?.authenticated && !sessionEndedInAnotherTab && (route === "/" || route === "/auth")) {
       setLocation(returnTo);
@@ -1618,6 +1655,8 @@ function Login() {
   const finishLogin = (response: AuthSession) => {
     const { token, ...sessionData } = response;
     clearUserScopedRecords(qc, sessionData);
+    markCurrentSessionQueryAuthenticated();
+    markAuthSessionActive();
     storeAuthToken(token);
     qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
     setLocation(returnTo);
@@ -1828,6 +1867,15 @@ function Login() {
                 Your session ended in another tab. Sign in again to continue.
               </p>
             )}
+            {sessionExpired && (
+              <p
+                role="status"
+                data-testid="session-expired"
+                className="mt-5 rounded-xl border border-[#e5d18b] bg-[#fff8df] px-4 py-3 text-sm leading-6 text-[#665214] dark:border-[#806b3d] dark:bg-[#392f1a] dark:text-[#f6df94]"
+              >
+                Your session expired. Sign in again to continue.
+              </p>
+            )}
 
             {step === "event" && (
               <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
@@ -1945,6 +1993,7 @@ function Shell({ children }: { children: ReactNode }) {
   useRealtimeSync(session.data?.authenticated === true);
   const qc = useQueryClient();
   useEffect(() => listenForAuthSessionEnd(() => {
+    forgetCurrentSessionQueryAuthentication();
     markAuthSessionEndedByAnotherTab();
     clearUserScopedRecords(qc);
     setLocation(getAuthRedirectPath(getCurrentPathWithQuery()));

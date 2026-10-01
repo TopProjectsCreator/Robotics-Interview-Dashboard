@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App, { queryClient } from "@/App";
 import {
+  AUTH_SESSION_ACTIVE_STORAGE_KEY,
   AUTH_SESSION_CHANNEL_NAME,
   AUTH_SESSION_END_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
@@ -201,6 +202,7 @@ afterEach(() => {
   queryClient.clear();
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(AUTH_SESSION_END_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_SESSION_ACTIVE_STORAGE_KEY);
   window.localStorage.removeItem("robotics-workspace-settings");
   MockBroadcastChannel.channels.clear();
   vi.unstubAllGlobals();
@@ -393,10 +395,14 @@ describe("public chat discovery", () => {
       window.history.replaceState({}, "", "/chat");
       window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "test-session-token");
       window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+      let authenticated = true;
       const network = stubNetworkTransports(async (input) => {
         const path = requestPath(input);
-        if (path === "/api/auth/session") return jsonResponse(signedInSession);
-        if (path === "/api/auth/logout") return jsonResponse({ message: "Logged out" });
+        if (path === "/api/auth/session") return jsonResponse(authenticated ? signedInSession : { authenticated: false });
+        if (path === "/api/auth/logout") {
+          authenticated = false;
+          return jsonResponse({ message: "Logged out" });
+        }
         if (path === "/api/applicants") {
           return jsonResponse({
             items: [{
@@ -467,9 +473,13 @@ describe("public chat discovery", () => {
       }
       if (publicPath === "/") {
         expect(screen.getByRole("heading", { level: 1, name: /one home for the whole robotics team/i })).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("link-public-sign-in"));
       } else {
         expect(screen.getByRole("heading", { level: 1, name: /talk through the work/i })).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("link-chat-nav-sign-in"));
       }
+      await waitFor(() => expect(window.location.pathname).toBe("/auth"));
+      expect(screen.queryByTestId("session-expired")).not.toBeInTheDocument();
       expect(network.eventSources[0].close).toHaveBeenCalledTimes(1);
       expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
       expect(window.localStorage.getItem(AUTH_SESSION_END_STORAGE_KEY)).toContain('"session-ended"');
@@ -487,7 +497,10 @@ describe("public chat discovery", () => {
       expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1);
       expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))
         .filter((path) => privateDataPath.test(path))).toHaveLength(privateFetchCountAfterLogout);
-      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+      expect(queryClient.getQueryCache().getAll().every((query) =>
+        JSON.stringify(query.queryKey) === JSON.stringify(getGetSessionQueryKey()) ||
+        JSON.stringify(query.queryKey) === JSON.stringify(getListInterviewersQueryKey()),
+      )).toBe(true);
       expect(document.body.textContent).not.toContain(applicantCanary);
       expect(document.body.textContent).not.toContain(chatCanary);
     },
@@ -677,6 +690,7 @@ describe("public chat discovery", () => {
     render(<App />);
 
     expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("session-expired")).not.toBeInTheDocument();
     fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
     fireEvent.click(screen.getByTestId("button-event-passcode"));
     fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-a"));
@@ -688,6 +702,25 @@ describe("public chat discovery", () => {
     );
     expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
+  });
+
+  it("shows the expiry notice when a cookie-only session expires between page loads", async () => {
+    window.history.replaceState({}, "", "/auth");
+    window.sessionStorage.setItem(AUTH_SESSION_ACTIVE_STORAGE_KEY, "1");
+    const network = stubNetworkTransports(async (input) => {
+      if (requestPath(input) === "/api/auth/session") return jsonResponse({ authenticated: false });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(await screen.findByTestId("session-expired"))
+      .toHaveTextContent("Your session expired. Sign in again to continue.");
+    expect(screen.getByTestId("input-event-passcode")).toBeInTheDocument();
+    expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+    expect(window.sessionStorage.getItem(AUTH_SESSION_ACTIVE_STORAGE_KEY)).toBeNull();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .not.toContain("/api/auth/login");
   });
 
   it("keeps the user on the team access-code step when the code is incorrect", async () => {
@@ -987,6 +1020,9 @@ describe("public chat discovery", () => {
       expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
         .not.toContain(chatCanary);
     });
+    expect(await screen.findByTestId("session-expired"))
+      .toHaveTextContent("Your session expired. Sign in again to continue.");
+    expect(screen.getByTestId("input-event-passcode")).toBeInTheDocument();
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
     expect(document.body.textContent).not.toContain(applicantCanary);
     expect(document.body.textContent).not.toContain(chatCanary);
@@ -1043,6 +1079,8 @@ describe("public chat discovery", () => {
       expect(JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data)))
         .not.toContain(chatCanary);
     });
+    expect(await screen.findByTestId("session-expired"))
+      .toHaveTextContent("Your session expired. Sign in again to continue.");
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
     expect(document.body.textContent).not.toContain(chatCanary);
   });
