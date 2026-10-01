@@ -1184,7 +1184,7 @@
   }
 }
 
-/* Keep the compact navigation and single-column layout usable at 200% zoom. */
+/* Keep the compact navigation and single-column layout usable at 400% zoom. */
 @media (max-width: 760px) {
   .chat-landing__shell {
     width: min(100% - 28px, 1240px);
@@ -1385,6 +1385,79 @@
     align-items: flex-start;
     flex-direction: column;
     line-height: 1.5;
+  }
+}
+
+/* Give dense preview cards room to reflow at the narrowest zoom-equivalent widths. */
+@media (max-width: 360px) {
+  .chat-landing__shell {
+    width: calc(100% - 24px);
+  }
+
+  .chat-landing__nav {
+    gap: 12px;
+  }
+
+  .chat-landing__brand {
+    gap: 8px;
+  }
+
+  .chat-landing__brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .chat-landing__brand-copy strong {
+    font-size: 12px;
+    letter-spacing: .15em;
+  }
+
+  .chat-landing__brand-copy small {
+    letter-spacing: .12em;
+  }
+
+  .chat-landing__hero h1 {
+    font-size: clamp(42px, 13.5vw, 48px);
+    letter-spacing: -.065em;
+  }
+
+  .chat-landing__workspace-top {
+    padding: 16px;
+  }
+
+  .chat-landing__workspace-sidebar {
+    display: grid;
+    align-items: start;
+    gap: 8px;
+    overflow: visible;
+    padding: 10px 12px;
+  }
+
+  .chat-landing__channel-list {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .chat-landing__channel {
+    white-space: normal;
+  }
+
+  .chat-landing__workspace-foot {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .chat-landing__feature-panel,
+  .chat-landing__context-card {
+    padding: 18px;
+  }
+
+  .chat-landing__tool-card {
+    padding: 17px;
+  }
+
+  .chat-landing__cta {
+    padding: 38px 20px;
   }
 }
 

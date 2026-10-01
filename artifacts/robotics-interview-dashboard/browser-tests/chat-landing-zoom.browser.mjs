@@ -8,8 +8,8 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// A 683 CSS-pixel viewport is the effective width of a 1366px desktop at 200% zoom.
-const viewport = { width: 683, height: 900 };
+// A 336 CSS-pixel viewport approximates a 1344px desktop at 400% zoom.
+const viewport = { width: 336, height: 900 };
 
 async function assertDoesNotOverlap(first, second, description) {
   const [firstRect, secondRect] = await Promise.all([first.boundingBox(), second.boundingBox()]);
@@ -110,6 +110,31 @@ try {
     page.getByTestId("link-chat-cta-sign-in"),
     "The closing callout and sign-in action",
   );
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__conversation-head strong"),
+    page.locator(".chat-landing__conversation-head span"),
+    "The workspace channel name and label",
+  );
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__context-top strong"),
+    page.locator(".chat-landing__context-top span"),
+    "The file-context title and status",
+  );
+  await assertDoesNotOverlap(
+    page.getByTestId("card-team-conversations"),
+    page.getByTestId("card-direct-conversations"),
+    "The conversation feature cards",
+  );
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__story-copy"),
+    page.getByTestId("card-file-context"),
+    "The context description and file preview",
+  );
+  await assertDoesNotOverlap(
+    page.locator(".chat-landing__tools-copy"),
+    page.locator(".chat-landing__tool-stack"),
+    "The tools description and tool cards",
+  );
 
   await menuButton.click();
   assert.equal(await menuButton.getAttribute("aria-expanded"), "true");
@@ -152,7 +177,7 @@ try {
   }
 
   const meaningfulContent = await page.locator(
-    ".chat-landing h1, .chat-landing h2, .chat-landing h3, .chat-landing p, .chat-landing a, .chat-landing button, .chat-landing [aria-label]",
+    ".chat-landing h1, .chat-landing h2, .chat-landing h3, .chat-landing p, .chat-landing a, .chat-landing button, .chat-landing [aria-label], .chat-landing__channel, .chat-landing__workspace-sidebar-label, .chat-landing__workspace-foot, .chat-landing__message-meta, .chat-landing__context-top, .chat-landing__file-context, .chat-landing__model-file",
   ).evaluateAll(elements => elements.map(element => {
     const { left, right } = element.getBoundingClientRect();
     return {
@@ -181,7 +206,7 @@ try {
   }
 
   assert.deepEqual(pageErrors, [], "The landing should not raise browser errors at the zoom-equivalent width");
-  console.log("Chromium verified the Chat landing at 683 CSS pixels: navigation, sign-in links, sections, and horizontal fit.");
+  console.log("Chromium verified the Chat landing at 336 CSS pixels: navigation, sign-in links, sections, card layout, and horizontal fit.");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
