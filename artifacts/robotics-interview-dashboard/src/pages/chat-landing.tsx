@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowRight,
@@ -32,7 +32,22 @@ const teamFeatures = [
 
 export default function ChatLanding() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      setMenuOpen(false);
+      menuButtonRef.current?.focus();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen]);
 
   return (
     <main className="chat-landing" data-testid="chat-landing">
@@ -60,6 +75,7 @@ export default function ChatLanding() {
           </nav>
 
           <button
+            ref={menuButtonRef}
             type="button"
             className="chat-landing__menu-button"
             onClick={() => setMenuOpen((open) => !open)}

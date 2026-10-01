@@ -251,9 +251,15 @@ describe("public chat discovery", () => {
     expect(screen.getByTestId("link-chat-context")).toBeInTheDocument();
     expect(screen.getByTestId("link-chat-tools")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
-    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveAttribute("aria-expanded", "false");
+    const navigationLink = screen.getByTestId("link-chat-conversations");
+    navigationLink.focus();
+    expect(document.activeElement).toBe(navigationLink);
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    const closedMenuButton = screen.getByRole("button", { name: "Open navigation" });
+    expect(closedMenuButton).toHaveAttribute("aria-expanded", "false");
     expect(navigation).not.toHaveClass("is-open");
+    expect(document.activeElement).toBe(closedMenuButton);
   });
 
   it("keeps landing text and the expanded menu legible with html.dark enabled", () => {
