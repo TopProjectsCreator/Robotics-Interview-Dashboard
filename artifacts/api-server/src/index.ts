@@ -129,7 +129,13 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
     `alter table "parts_robots" add column if not exists "preview_file_name" text`,
-    `alter table "parts_robots" add column if not exists "preview_content_type" text`,
+    `do $robots_name$ begin
+       if not exists (select 1 from pg_indexes where schemaname = 'public' and indexname = 'parts_robots_name_unique') then
+         if not exists (select 1 from "parts_robots" group by lower(name) having count(*) > 1) then
+           create unique index parts_robots_name_unique on "parts_robots" (lower(name));
+         end if;
+       end if;
+     end $robots_name$`,    `alter table "parts_robots" add column if not exists "preview_content_type" text`,
     `do $robot_preview$ begin
        if not exists (select 1 from pg_constraint where conname = 'parts_robots_preview_metadata_valid') then
          alter table "parts_robots" add constraint "parts_robots_preview_metadata_valid"
