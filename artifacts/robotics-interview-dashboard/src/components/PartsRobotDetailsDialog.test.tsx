@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDetails: vi.fn(),
   uploadPreview: vi.fn(),
   updatePreview: vi.fn(),
+  deletePreview: vi.fn(),
   updateCost: vi.fn(),
   createSnapshot: vi.fn(),
 }));
@@ -17,6 +18,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useGetPartsRobotDetails: mocks.getDetails,
   useUploadPartsRobotPreviewFile: () => ({ mutateAsync: mocks.uploadPreview, isPending: false }),
   useUpdatePartsRobotPreview: () => ({ mutateAsync: mocks.updatePreview, isPending: false }),
+  useDeletePartsRobotPreview: () => ({ mutateAsync: mocks.deletePreview, isPending: false }),
   useUpdatePartsCatalogCost: () => ({ mutateAsync: mocks.updateCost, isPending: false }),
   useCreatePartsPriceSnapshot: () => ({ mutateAsync: mocks.createSnapshot, isPending: false }),
 }));
@@ -105,6 +107,7 @@ describe("PartsRobotDetailsDialog", () => {
     mocks.getDetails.mockReturnValue({ data: detail, isLoading: false, isError: false });
     mocks.uploadPreview.mockResolvedValue({ objectPath: "/objects/new-preview-5678" });
     mocks.updatePreview.mockResolvedValue({});
+    mocks.deletePreview.mockResolvedValue({});
     mocks.updateCost.mockResolvedValue({});
     mocks.createSnapshot.mockResolvedValue({});
   });
@@ -185,5 +188,32 @@ describe("PartsRobotDetailsDialog", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("asks before removing a preview and refreshes robot details after success", async () => {
+    const confirm = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("confirm", confirm);
+    const { onPreviewReplaced } = renderDialog();
+
+    fireEvent.click(screen.getByTestId("button-remove-robot-preview"));
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Remove the preview from "Scout"? The robot and its part allocations will remain.',
+    );
+    await waitFor(() => expect(mocks.deletePreview).toHaveBeenCalledWith({ robotId: "robot-1" }));
+    await waitFor(() => expect(onPreviewReplaced).toHaveBeenCalled());
+    expect(screen.getByTestId("status-robot-preview")).toHaveTextContent("Preview removed.");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("does not remove a preview when the confirmation is cancelled", () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
+    renderDialog();
+
+    fireEvent.click(screen.getByTestId("button-remove-robot-preview"));
+
+    expect(mocks.deletePreview).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

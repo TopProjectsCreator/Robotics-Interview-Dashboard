@@ -10,9 +10,11 @@ import {
   Loader2,
   PackageOpen,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react";
 import {
+  useDeletePartsRobotPreview,
   getGetPartsRobotDetailsQueryKey,
   getListPartsCatalogQueryKey,
   useCreatePartsPriceSnapshot,
@@ -433,6 +435,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   });
   const uploadMutation = useUploadPartsRobotPreviewFile();
   const updatePreviewMutation = useUpdatePartsRobotPreview();
+  const deletePreviewMutation = useDeletePartsRobotPreview();
   const updateCostMutation = useUpdatePartsCatalogCost();
   const snapshotMutation = useCreatePartsPriceSnapshot();
 
@@ -504,6 +507,26 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
     }
   };
 
+  const removePreview = async () => {
+    if (!window.confirm(`Remove the preview from "${robot.name}"? The robot and its part allocations will remain.`)) {
+      return;
+    }
+
+    setPreviewError("");
+    setPreviewStatus("Removing preview…");
+    try {
+      await deletePreviewMutation.mutateAsync({ robotId: robot.id });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getGetPartsRobotDetailsQueryKey(robot.id) }),
+        onPreviewReplaced(),
+      ]);
+      setPreviewStatus("Preview removed.");
+    } catch (error) {
+      setPreviewStatus("");
+      setPreviewError(errorMessage(error, "Unable to remove the robot preview."));
+    }
+  };
+
   const saveCost = async (partId: string, unitCost: number | null, costCurrency: string | null) => {
     try {
       await updateCostMutation.mutateAsync({ partId, data: { unitCost, costCurrency } });
@@ -535,6 +558,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
 
   const isPartBusy = updateCostMutation.isPending || snapshotMutation.isPending;
   const details = detailsQuery.data;
+  const currentRobot = details?.robot ?? robot;
   const backdropClick = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
   };
@@ -570,7 +594,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
                   </div>
                   <PackageOpen size={18} className="text-primary" aria-hidden="true" />
                 </div>
-                <PreviewPanel robot={details?.robot ?? robot} />
+                <PreviewPanel robot={currentRobot} />
                 <Form {...previewForm}>
                   <form onSubmit={previewForm.handleSubmit(replacePreview)} className="mt-4 space-y-2 border-t border-border pt-4" data-testid="form-upload-robot-preview">
                     <label className="block text-xs font-semibold text-foreground" htmlFor="robot-preview-file">Replace preview</label>
@@ -588,10 +612,25 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
                     />
                     <p className="text-[11px] text-muted-foreground">JPG, PNG, WebP, GIF, GLB, STL, X_T, or X_B.</p>
                     {selectedFile && <p className="truncate text-xs text-foreground" data-testid="text-selected-preview-file">{selectedFile.name}</p>}
-                    <Button type="submit" size="sm" disabled={!selectedFile || uploadMutation.isPending || updatePreviewMutation.isPending} data-testid="button-upload-robot-preview">
-                      {uploadMutation.isPending || updatePreviewMutation.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <FileUp size={14} aria-hidden="true" />}
-                      {uploadMutation.isPending ? "Uploading…" : updatePreviewMutation.isPending ? "Saving…" : "Upload preview"}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="submit" size="sm" disabled={!selectedFile || uploadMutation.isPending || updatePreviewMutation.isPending || deletePreviewMutation.isPending} data-testid="button-upload-robot-preview">
+                        {uploadMutation.isPending || updatePreviewMutation.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <FileUp size={14} aria-hidden="true" />}
+                        {uploadMutation.isPending ? "Uploading…" : updatePreviewMutation.isPending ? "Saving…" : "Upload preview"}
+                      </Button>
+                      {currentRobot.preview && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void removePreview()}
+                          disabled={uploadMutation.isPending || updatePreviewMutation.isPending || deletePreviewMutation.isPending}
+                          className="text-destructive hover:text-destructive"
+                          data-testid="button-remove-robot-preview"
+                        >
+                          {deletePreviewMutation.isPending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                          {deletePreviewMutation.isPending ? "Removing…" : "Remove preview"}
+                        </Button>
+                      )}
+                    </div>
                     {previewStatus && <p className="text-xs text-primary" role="status" data-testid="status-robot-preview">{previewStatus}</p>}
                     {previewError && <p className="flex items-start gap-1.5 text-xs text-destructive" role="alert" data-testid="error-robot-preview">{previewError}</p>}
                   </form>

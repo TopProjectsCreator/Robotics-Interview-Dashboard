@@ -6904,6 +6904,77 @@ export const useUpdatePartsRobotPreview = <TError = ErrorType<ErrorResponse>,
       return useMutation(getUpdatePartsRobotPreviewMutationOptions(options));
     }
 
+export const getDeletePartsRobotPreviewUrl = (robotId: string,) => {
+
+
+
+
+  return `/api/parts/robots/${robotId}/preview`
+}
+
+/**
+ * @summary Remove a robot preview without deleting the robot
+ */
+export const deletePartsRobotPreview = async (robotId: string, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobot> => {
+
+  return customFetch<PartsRobot>(getDeletePartsRobotPreviewUrl(robotId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePartsRobotPreviewMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePartsRobotPreview>>, TError,{robotId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePartsRobotPreview>>, TError,{robotId: string}, TContext> => {
+
+const mutationKey = ['deletePartsRobotPreview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePartsRobotPreview>>, {robotId: string}> = (props) => {
+          const {robotId} = props ?? {};
+
+          return  deletePartsRobotPreview(robotId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePartsRobotPreviewMutationResult = NonNullable<Awaited<ReturnType<typeof deletePartsRobotPreview>>>
+
+    export type DeletePartsRobotPreviewMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove a robot preview without deleting the robot
+ */
+export const useDeletePartsRobotPreview = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePartsRobotPreview>>, TError,{robotId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePartsRobotPreview>>,
+        TError,
+        {robotId: string},
+        TContext
+      > => {
+      return useMutation(getDeletePartsRobotPreviewMutationOptions(options));
+    }
+
 export const getUpdatePartsCatalogCostUrl = (partId: string,) => {
 
 

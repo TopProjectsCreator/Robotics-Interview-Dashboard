@@ -1784,6 +1784,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePartsRobotPreview
+      tags: [parts]
+      summary: Remove a robot preview without deleting the robot
+      parameters:
+        - name: robotId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Robot with its preview cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsRobot"
+        "404":
+          description: Robot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog/{partId}/cost:
     patch:
       operationId: updatePartsCatalogCost

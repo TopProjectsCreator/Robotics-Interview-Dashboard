@@ -28,7 +28,7 @@ registerHooks({
 const integrationEnabled = process.env.RUN_PARTS_PERSISTENCE_DB_TEST === "1";
 
 test(
-  "saved unit costs and dated supplier quotes persist independently in robot details",
+  "saved costs, quotes, and robot preview removal persist without changing allocations",
   { skip: !integrationEnabled },
   async () => {
     assert.ok(process.env.DATABASE_URL, "DATABASE_URL is required for this integration test");
@@ -153,6 +153,30 @@ test(
       assert.equal(part.priceSnapshots[0].currency, "CAD");
       assert.equal(part.priceSnapshots[0].sourceUrl, sourceUrl);
       assert.equal(part.priceSnapshots[0].capturedAt, savedQuote.capturedAt);
+
+      const previewObjectPath = `/objects/${suffix.slice(0, 32)}`;
+      await request(`/parts/robots/${robotId}/preview`, {
+        method: "PATCH",
+        body: {
+          objectPath: previewObjectPath,
+          fileName: "scout.png",
+          contentType: "image/png",
+        },
+      });
+      const removedRobot = await request(`/parts/robots/${robotId}/preview`, {
+        method: "DELETE",
+      });
+      assert.equal(removedRobot.id, robotId);
+      assert.equal(removedRobot.preview, null);
+
+      // A fresh details request simulates a reload and proves that only the
+      // preview metadata changed: the robot and its allocation remain.
+      const reloadedDetails = await request(`/parts/robots/${robotId}/details`);
+      assert.equal(reloadedDetails.robot.id, robotId);
+      assert.equal(reloadedDetails.robot.preview, null);
+      assert.equal(reloadedDetails.parts.length, 1);
+      assert.equal(reloadedDetails.parts[0].partId, partId);
+      assert.equal(reloadedDetails.parts[0].quantity, 1);
     } finally {
       if (server.listening) {
         await new Promise((resolve) => server.close(resolve));

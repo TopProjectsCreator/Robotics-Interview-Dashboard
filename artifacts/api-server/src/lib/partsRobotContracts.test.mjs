@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CreatePartsPriceSnapshotBody,
+  DeletePartsRobotPreviewResponse,
   GetPartsRobotDetailsResponse,
   UpdatePartsCatalogCostBody,
   UpdatePartsRobotPreviewBody,
@@ -40,6 +41,19 @@ test("generated robot detail response contract accepts currency subtotals and un
       subtotalsByCurrency: [{ currency: "usd", amount: 0 }],
     }).success,
     false,
+  );
+});
+
+test("robot preview removal response preserves the robot with an empty preview", () => {
+  assert.equal(
+    DeletePartsRobotPreviewResponse.safeParse({
+      id: "robot-1",
+      name: "Scout",
+      preview: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    }).success,
+    true,
   );
 });
 

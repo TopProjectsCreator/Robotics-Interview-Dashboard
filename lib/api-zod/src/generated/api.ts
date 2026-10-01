@@ -2808,6 +2808,33 @@ export const UpdatePartsRobotPreviewResponse = zod.object({
 
 
 /**
+ * @summary Remove a robot preview without deleting the robot
+ */
+export const DeletePartsRobotPreviewParams = zod.object({
+  "robotId": zod.coerce.string()
+})
+
+export const deletePartsRobotPreviewResponsePreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
+export const deletePartsRobotPreviewResponsePreviewOneFileNameMax = 255;
+
+export const deletePartsRobotPreviewResponsePreviewOneContentTypeMax = 100;
+
+
+
+export const DeletePartsRobotPreviewResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "preview": zod.union([zod.object({
+  "objectPath": zod.string().regex(deletePartsRobotPreviewResponsePreviewOneObjectPathRegExp),
+  "fileName": zod.string().min(1).max(deletePartsRobotPreviewResponsePreviewOneFileNameMax),
+  "contentType": zod.string().max(deletePartsRobotPreviewResponsePreviewOneContentTypeMax)
+}),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update the saved unit cost basis for a catalog part
  */
 export const UpdatePartsCatalogCostParams = zod.object({

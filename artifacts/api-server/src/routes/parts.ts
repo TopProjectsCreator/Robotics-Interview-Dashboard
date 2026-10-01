@@ -31,6 +31,8 @@ import {
   UpdatePartsRobotPreviewBody,
   UpdatePartsRobotPreviewParams,
   UpdatePartsRobotPreviewResponse,
+  DeletePartsRobotPreviewParams,
+  DeletePartsRobotPreviewResponse,
   type AssistantActivity,
   type PartsVendorSyncState,
 } from "@workspace/api-zod";
@@ -64,6 +66,7 @@ import {
 } from "../lib/partsCosting";
 import { partsPreviewKind } from "../lib/partsRobotPreview";
 import { ObjectStorageService } from "../lib/objectStorage";
+import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -2136,6 +2139,75 @@ router.patch(
     } catch (error) {
       req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview metadata update failed");
       res.status(500).json({ error: "Unable to update this robot's preview." });
+    }
+  },
+);
+
+router.delete(
+  "/parts/robots/:robotId/preview",
+  requireAdmin,
+  async (req, res): Promise<void> => {
+    const params = DeletePartsRobotPreviewParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: "The robot preview request is invalid." });
+      return;
+    }
+
+    try {
+      const result = await withTransaction(async (client) => {
+        const current = await client.query(
+          `select "preview_object_path" as "previewObjectPath"
+           from "parts_robots" where "id" = $1 for update`,
+          [params.data.robotId],
+        );
+        if (current.rowCount === 0) return null;
+
+        const updated = await client.query(
+          `update "parts_robots"
+           set "preview_object_path" = null, "preview_file_name" = null,
+               "preview_content_type" = null, "updated_at" = now()
+           where "id" = $1
+           returning "id", "name", "preview_object_path" as "previewObjectPath",
+                     "preview_file_name" as "previewFileName",
+                     "preview_content_type" as "previewContentType",
+                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+          [params.data.robotId],
+        );
+        return {
+          robot: updated.rows[0],
+          previousObjectPath: current.rows[0].previewObjectPath as string | null,
+        };
+      });
+
+      if (!result) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+
+      if (result.previousObjectPath) {
+        try {
+          if (/^\/objects\/[A-Za-z0-9-]{8,128}$/.test(result.previousObjectPath)) {
+            if (!(await isPrivateObjectReferenced(result.previousObjectPath))) {
+              await objectStorageService.deleteObject(result.previousObjectPath);
+            }
+          } else {
+            req.log.warn(
+              { objectPath: result.previousObjectPath, robotId: params.data.robotId },
+              "Removed robot preview has an invalid object path; storage cleanup skipped",
+            );
+          }
+        } catch (error) {
+          req.log.warn(
+            { err: error, objectPath: result.previousObjectPath, robotId: params.data.robotId },
+            "Removed robot preview storage cleanup failed",
+          );
+        }
+      }
+
+      res.json(DeletePartsRobotPreviewResponse.parse(mapRobot(result.robot)));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview removal failed");
+      res.status(500).json({ error: "Unable to remove this robot's preview." });
     }
   },
 );
