@@ -185,7 +185,6 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
     visible: false,
     selectedElementIds: [] as string[],
   });
-  const stoppedRef = useRef(false);
   const revisionRef = useRef(0);
   const localDirtyRef = useRef(false);
   const pendingDataRef = useRef<string | null>(null);
@@ -210,7 +209,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
       return;
     }
 
-    stoppedRef.current = false;
+    let stopped = false;
     let retryDelay = 500;
 
     const applyRemoteScene = (remoteData: string) => {
@@ -242,7 +241,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
     };
 
     const connect = () => {
-      if (stoppedRef.current) return;
+      if (stopped) return;
       setCollaborationStatus(retryDelay === 500 ? "connecting" : "reconnecting");
       const base = String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -252,12 +251,14 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
       socketRef.current = socket;
 
       socket.onopen = () => {
+        if (stopped || socketRef.current !== socket) return;
         retryDelay = 500;
         setCollaborationStatus("connected");
         sendPendingScene();
         sendPendingCursor();
       };
       socket.onmessage = (event) => {
+        if (stopped || socketRef.current !== socket) return;
         try {
           const message = JSON.parse(String(event.data)) as {
             type?: string;
@@ -311,8 +312,9 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
       };
       socket.onerror = () => socket.close();
       socket.onclose = () => {
-        if (socketRef.current === socket) socketRef.current = null;
-        if (stoppedRef.current) return;
+        if (socketRef.current !== socket) return;
+        socketRef.current = null;
+        if (stopped) return;
         setCollaborationStatus("reconnecting");
         setParticipants(0);
         setRemoteCursors([]);
@@ -323,7 +325,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
 
     connect();
     return () => {
-      stoppedRef.current = true;
+      stopped = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
       if (cursorSendTimerRef.current) clearTimeout(cursorSendTimerRef.current);

@@ -1,10 +1,20 @@
 import type { ComponentProps } from "react";
+import { useEffect } from "react";
 import type { ExcalidrawProps } from "@excalidraw/excalidraw/types";
 
 type ExcalidrawStubProps = Omit<ComponentProps<"div">, "onChange"> &
-  Pick<ExcalidrawProps, "validateEmbeddable" | "onChange">;
+  Pick<ExcalidrawProps, "validateEmbeddable" | "onChange" | "excalidrawAPI">;
 
-export function Excalidraw({ validateEmbeddable, onChange, ...props }: ExcalidrawStubProps) {
+export const excalidrawTestApi = {
+  updateScene: (_scene: unknown) => {},
+  getAppState: () => ({}),
+};
+
+export function Excalidraw({ validateEmbeddable, onChange, excalidrawAPI, ...props }: ExcalidrawStubProps) {
+  useEffect(() => {
+    excalidrawAPI?.(excalidrawTestApi as never);
+  }, [excalidrawAPI]);
+
   const isValid = (url: string) => (
     typeof validateEmbeddable === "function" && validateEmbeddable(url) === true
   );

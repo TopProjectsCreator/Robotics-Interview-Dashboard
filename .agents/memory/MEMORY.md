@@ -20,6 +20,6 @@
 - [Parts source coverage](parts-source-coverage.md) — search hits are discovery only; mark a vendor fully synced only after its official feed paginates to a verified end.
 - [Vitest source-file reads](vitest-source-file-reads.md) — under Vitest, read source fixtures from the package-root working directory when `import.meta.url` is virtualized.
 - [Nullable SQL checks](nullable-sql-checks.md) — nullable paired fields need explicit non-null predicates in CHECK constraints because SQL treats UNKNOWN as passing.
-- [Authentication cache expiry](authentication-cache-expiry.md) — auth failures must bypass query retries so stale private data and live connections are cleared immediately.
+- [Authentication cache expiry](authentication-cache-expiry.md) — auth failures bypass retries; protected editors must close collaboration sockets and reject queued events.
 - [Rebase conflict supersets](rebase-conflict-supersets.md) — compare current-main behavior and tests before choosing a side; replayed incoming commits may be older subsets.
 - [Node TypeScript test loading](node-typescript-test-loading.md) — Node's strip-only TS mode accepts only erasable syntax; route tests need TS-free parameter declarations and directory-import resolution.

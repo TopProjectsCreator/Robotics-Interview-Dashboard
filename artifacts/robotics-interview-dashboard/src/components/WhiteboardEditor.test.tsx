@@ -1,6 +1,46 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WhiteboardEditor } from "./WhiteboardEditor";
+import { AUTH_TOKEN_STORAGE_KEY } from "../authSession";
+import { excalidrawTestApi } from "../test-stubs/excalidraw";
+
+class MockWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  static instances: MockWebSocket[] = [];
+
+  readyState = MockWebSocket.CONNECTING;
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  send = vi.fn();
+  close = vi.fn(() => {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.(new CloseEvent("close"));
+  });
+
+  constructor(readonly url: string) {
+    MockWebSocket.instances.push(this);
+  }
+
+  open() {
+    this.readyState = MockWebSocket.OPEN;
+    this.onopen?.(new Event("open"));
+  }
+
+  receive(data: string) {
+    this.onmessage?.({ data } as MessageEvent);
+  }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+  MockWebSocket.instances = [];
+});
 
 function colorFromClass(element: HTMLElement, prefix: string, theme: "light" | "dark"): string {
   const themePrefix = theme === "dark" ? "dark:" : "";
@@ -152,5 +192,59 @@ describe("WhiteboardEditor embed validation", () => {
     fireEvent.click(screen.getByTestId("button-select-invalid-test-embed"));
 
     expect(screen.queryByTestId("link-open-embedded-site")).not.toBeInTheDocument();
+  });
+});
+
+describe("WhiteboardEditor collaboration session lifecycle", () => {
+  it("closes on session expiry, ignores late scenes, and reconnects with a fresh session", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "expired-session-token");
+    const updateScene = vi.spyOn(excalidrawTestApi, "updateScene");
+    const whiteboard = {
+      id: "board-1",
+      title: "Design review",
+      data: JSON.stringify({ elements: [], appState: {}, files: {} }),
+      createdBy: "interviewer",
+      updatedAt: "",
+    };
+    const renderEditor = () => render(
+      <WhiteboardEditor
+        whiteboard={whiteboard}
+        saving={false}
+        error=""
+        onClose={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    const scene = (id: string) => JSON.stringify({
+      type: "scene",
+      data: JSON.stringify({
+        elements: [{ id, type: "rectangle", version: 1, versionNonce: 1 }],
+        appState: {},
+        files: {},
+      }),
+    });
+
+    const expiredEditor = renderEditor();
+    const expiredSocket = MockWebSocket.instances[0];
+    expiredSocket.open();
+    expiredSocket.receive(scene("before-expiry"));
+    expect(updateScene).toHaveBeenCalledOnce();
+
+    updateScene.mockClear();
+    expiredEditor.unmount();
+    expect(expiredSocket.close).toHaveBeenCalledOnce();
+    expiredSocket.receive(scene("late-update"));
+    expect(updateScene).not.toHaveBeenCalled();
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "fresh-session-token");
+    const freshEditor = renderEditor();
+    const freshSocket = MockWebSocket.instances[1];
+    expect(freshSocket.url).toContain("access_token=fresh-session-token");
+    freshSocket.open();
+    freshSocket.receive(scene("fresh-update"));
+    expect(updateScene).toHaveBeenCalledOnce();
+    freshEditor.unmount();
   });
 });

@@ -93,7 +93,7 @@ export function createDocumentCollaboration(
   };
 
   const sendBinary = (message: Uint8Array) => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(message);
+    if (!stopped && socket?.readyState === WebSocket.OPEN) socket.send(message);
   };
 
   const connect = () => {
@@ -110,6 +110,7 @@ export function createDocumentCollaboration(
     socket = nextSocket;
 
     nextSocket.onopen = () => {
+      if (stopped || socket !== nextSocket) return;
       retryDelay = 500;
       setStatus("connected");
       sendBinary(updatePacket(Y_UPDATE, Y.encodeStateAsUpdate(doc)));
@@ -119,6 +120,7 @@ export function createDocumentCollaboration(
       }
     };
     nextSocket.onmessage = async (event) => {
+      if (stopped || socket !== nextSocket) return;
       if (typeof event.data === "string") {
         try {
           const message = JSON.parse(event.data) as { type?: unknown; title?: unknown };
@@ -138,6 +140,7 @@ export function createDocumentCollaboration(
             ? await event.data.arrayBuffer()
             : null;
         if (!binary) return;
+        if (stopped || socket !== nextSocket) return;
         const message = decodePacket(binary);
         if (!message) return;
         if (message.kind === Y_UPDATE) {
@@ -151,7 +154,8 @@ export function createDocumentCollaboration(
     };
     nextSocket.onerror = () => nextSocket.close();
     nextSocket.onclose = () => {
-      if (socket === nextSocket) socket = null;
+      if (socket !== nextSocket) return;
+      socket = null;
       if (stopped) return;
       setStatus("reconnecting");
       reconnectTimer = setTimeout(connect, retryDelay);
@@ -178,6 +182,7 @@ export function createDocumentCollaboration(
     provider: {
       awareness,
       setTitle: (title: string) => {
+        if (stopped) return;
         pendingTitle = title.trim().slice(0, 120);
         if (pendingTitle) setSaveStatus("saving");
         if (socket?.readyState === WebSocket.OPEN && pendingTitle) {
