@@ -507,19 +507,29 @@ describe("public chat discovery", () => {
   );
 
   it.each([
-    { sessionType: "cookie", token: null, transport: "BroadcastChannel", storageBlocked: false },
-    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "BroadcastChannel", storageBlocked: false },
-    { sessionType: "cookie", token: null, transport: "storage event", storageBlocked: false },
-    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "storage event", storageBlocked: false },
-    { sessionType: "cookie", token: null, transport: "BroadcastChannel", storageBlocked: true },
+    { sessionType: "cookie", token: null, transport: "BroadcastChannel", channelBehavior: "available", storageBlocked: false },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "BroadcastChannel", channelBehavior: "available", storageBlocked: false },
+    { sessionType: "cookie", token: null, transport: "storage event", channelBehavior: "unavailable", storageBlocked: false },
+    { sessionType: "bearer-token fallback", token: "cross-tab-session-token", transport: "storage event", channelBehavior: "unavailable", storageBlocked: false },
+    { sessionType: "cookie", token: null, transport: "storage event", channelBehavior: "constructor throws", storageBlocked: false },
+    { sessionType: "cookie", token: null, transport: "BroadcastChannel", channelBehavior: "available", storageBlocked: true },
   ])(
-    "clears private data and closes realtime in another tab for a $sessionType session via $transport (storage blocked: $storageBlocked)",
-    async ({ token, transport, storageBlocked }) => {
+    "clears private data and closes realtime in another tab for a $sessionType session via $transport when BroadcastChannel is $channelBehavior (storage blocked: $storageBlocked)",
+    async ({ token, transport, channelBehavior, storageBlocked }) => {
       window.history.replaceState({}, "", "/chat");
       if (token) window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
       window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
-      if (transport === "BroadcastChannel") vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
-      else vi.stubGlobal("BroadcastChannel", undefined);
+      if (channelBehavior === "constructor throws") {
+        vi.stubGlobal("BroadcastChannel", class {
+          constructor() {
+            throw new Error("BroadcastChannel construction failed");
+          }
+        });
+      } else if (channelBehavior === "available") {
+        vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
+      } else {
+        vi.stubGlobal("BroadcastChannel", undefined);
+      }
 
       const network = stubNetworkTransports(async (input) => {
         const path = requestPath(input);
