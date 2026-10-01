@@ -19,12 +19,19 @@ async function assertKeyboardFocusVisible(locator, description) {
       matchesFocusVisible: element.matches(":focus-visible"),
       outlineStyle: style.outlineStyle,
       outlineWidth: Number.parseFloat(style.outlineWidth),
+      outlineColor: style.outlineColor,
     };
   });
   assert.equal(focus.active, true, `${description} should receive keyboard focus`);
   assert.equal(focus.matchesFocusVisible, true, `${description} should match :focus-visible`);
   assert.notEqual(focus.outlineStyle, "none", `${description} should show a focus indicator`);
   assert.ok(focus.outlineWidth >= 3, `${description} should have a strong focus outline: ${JSON.stringify(focus)}`);
+  assert.notEqual(focus.outlineColor, "transparent", `${description} focus outline should have a visible color`);
+  assert.equal(
+    /^rgba\([^)]*,\s*0(?:\.0+)?\)$/.test(focus.outlineColor),
+    false,
+    `${description} focus outline should not be fully transparent: ${JSON.stringify(focus)}`,
+  );
 }
 
 async function tabUntilFocused(page, locator, description, maxTabs = 32) {
@@ -112,6 +119,40 @@ async function assertKeyboardNavigation(page, serverUrl, browserName) {
   await tabUntilFocused(page, closingSignIn, `${browserName} closing sign-in link`);
   await assertKeyboardFocusVisible(closingSignIn, `${browserName} closing sign-in link`);
   assert.deepEqual(pageErrors, [], `${browserName} landing should not raise browser errors during keyboard navigation`);
+}
+
+async function assertForcedColorsMenuKeyboardNavigation(page, serverUrl) {
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto(`${serverUrl}/chat-landing`);
+  await page.getByTestId("chat-landing").waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
+    true,
+    "Chromium should emulate the operating system's forced-colors setting",
+  );
+
+  const menuButton = page.getByTestId("button-chat-menu");
+  await tabUntilFocused(page, page.getByTestId("link-chat-brand"), "Chromium forced-colors brand link");
+  await page.keyboard.press("Tab");
+  await assertKeyboardFocusVisible(menuButton, "Chromium forced-colors menu button");
+  await page.keyboard.press("Enter");
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "true", "Chromium should open the menu with Enter in forced-colors mode");
+
+  for (const testId of [
+    "link-chat-conversations",
+    "link-chat-context",
+    "link-chat-tools",
+    "link-chat-nav-sign-in",
+  ]) {
+    const link = page.getByTestId(testId);
+    assert.equal(await link.isVisible(), true, `Chromium forced-colors ${testId} should be visible in the open menu`);
+    await page.keyboard.press("Tab");
+    await assertKeyboardFocusVisible(link, `Chromium forced-colors ${testId}`);
+  }
+
+  await page.keyboard.press("Escape");
+  assert.equal(await menuButton.getAttribute("aria-expanded"), "false", "Chromium should close the menu with Escape in forced-colors mode");
+  await assertKeyboardFocusVisible(menuButton, "Chromium forced-colors menu button after Escape");
 }
 
 async function assertDoesNotOverlap(first, second, description) {
@@ -271,6 +312,7 @@ try {
   }
 
   await assertKeyboardNavigation(page, serverUrl, "Chromium");
+  await assertForcedColorsMenuKeyboardNavigation(page, serverUrl);
 
   for (const testId of ["link-chat-hero-sign-in", "link-chat-cta-sign-in"]) {
     const link = page.getByTestId(testId);

@@ -1621,3 +1621,11 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+@media (forced-colors: active) {
+  .chat-landing a:focus-visible,
+  .chat-landing button:focus-visible,
+  .chat-landing h2:focus-visible {
+    outline-color: Highlight !important;
+  }
+}

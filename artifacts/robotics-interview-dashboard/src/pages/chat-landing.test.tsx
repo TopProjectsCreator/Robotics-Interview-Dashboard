@@ -374,6 +374,18 @@ describe("public chat discovery", () => {
     expect(cssProperty(reducedMotionRule, "animation-iteration-count")).toBe("1 !important");
   });
 
+  it("uses a system focus color for controls in forced-colors mode", () => {
+    const forcedColorsStart = chatLandingStyles.indexOf("@media (forced-colors: active)");
+    expect(forcedColorsStart).toBeGreaterThanOrEqual(0);
+    const forcedColorsStyles = extractCssBlock(chatLandingStyles, forcedColorsStart);
+    const focusStyles = cssRule(forcedColorsStyles, ".chat-landing a:focus-visible");
+
+    expect(forcedColorsStyles).toMatch(
+      /\.chat-landing a:focus-visible,\s*\.chat-landing button:focus-visible,\s*\.chat-landing h2:focus-visible\s*\{/,
+    );
+    expect(cssProperty(focusStyles, "outline-color")).toBe("Highlight !important");
+  });
+
   it.each(["/", "/chat-landing"])(
     "keeps visitor route %s free of private requests and records",
     async (path) => {
