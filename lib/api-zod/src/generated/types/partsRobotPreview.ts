@@ -9,7 +9,11 @@
 export interface PartsRobotPreview {
   /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
   objectPath: string;
-  /** @maxLength 255 */
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
   fileName: string;
+  /** @maxLength 100 */
   contentType: string;
 }

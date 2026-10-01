@@ -89,20 +89,20 @@ import type {
   ListPartsCatalogParams,
   LoginInput,
   MessageResponse,
-  PartsCatalogCostUpdate,
   PartsCatalogImportInput,
   PartsCatalogImportResponse,
   PartsCatalogItem,
   PartsCatalogList,
   PartsCatalogSearch,
   PartsCatalogSyncResponse,
+  PartsCostUpdateInput,
   PartsDashboard,
   PartsPriceSnapshot,
   PartsPriceSnapshotInput,
   PartsRobot,
   PartsRobotAllocation,
   PartsRobotAllocationInput,
-  PartsRobotBuildDetails,
+  PartsRobotDetails,
   PartsRobotInput,
   PartsRobotPreviewInput,
   PartsRobotPreviewUpload,
@@ -2524,85 +2524,6 @@ export const useRequestUploadUrl = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRequestUploadUrlMutationOptions(options));
-    }
-
-export const getUploadPartsRobotPreviewFileUrl = (params: UploadPartsRobotPreviewFileParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/storage/parts-robot-previews?${stringifiedParams}` : `/api/storage/parts-robot-previews`
-}
-
-/**
- * @summary Upload a validated private robot preview file
- */
-export const uploadPartsRobotPreviewFile = async (uploadPartsRobotPreviewFileBody: Blob,
-    params: UploadPartsRobotPreviewFileParams, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobotPreviewUpload> => {
-
-  return customFetch<PartsRobotPreviewUpload>(getUploadPartsRobotPreviewFileUrl(params),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
-    body: uploadPartsRobotPreviewFileBody
-  }
-);}
-
-
-
-
-
-export const getUploadPartsRobotPreviewFileMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext> => {
-
-const mutationKey = ['uploadPartsRobotPreviewFile'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, {data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}> = (props) => {
-          const {data,params} = props ?? {};
-
-          return  uploadPartsRobotPreviewFile(data,params,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UploadPartsRobotPreviewFileMutationResult = NonNullable<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>>
-    export type UploadPartsRobotPreviewFileMutationBody = BodyType<Blob>
-    export type UploadPartsRobotPreviewFileMutationError = ErrorType<ErrorResponse>
-
-    /**
- * @summary Upload a validated private robot preview file
- */
-export const useUploadPartsRobotPreviewFile = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>,
-        TError,
-        {data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams},
-        TContext
-      > => {
-      return useMutation(getUploadPartsRobotPreviewFileMutationOptions(options));
     }
 
 export const getGetQueueUrl = () => {
@@ -6691,150 +6612,6 @@ export const useUpdatePartsCatalogStock = <TError = ErrorType<ErrorResponse>,
       return useMutation(getUpdatePartsCatalogStockMutationOptions(options));
     }
 
-export const getUpdatePartsCatalogCostUrl = (partId: string,) => {
-
-
-
-
-  return `/api/parts/catalog/${partId}/cost`
-}
-
-/**
- * @summary Update or clear the saved unit cost of a catalog item
- */
-export const updatePartsCatalogCost = async (partId: string,
-    partsCatalogCostUpdate: PartsCatalogCostUpdate, options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogItem> => {
-
-  return customFetch<PartsCatalogItem>(getUpdatePartsCatalogCostUrl(partId),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(partsCatalogCostUpdate)
-  }
-);}
-
-
-
-
-
-export const getUpdatePartsCatalogCostMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCatalogCostUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCatalogCostUpdate>}, TContext> => {
-
-const mutationKey = ['updatePartsCatalogCost'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsCatalogCost>>, {partId: string;data: BodyType<PartsCatalogCostUpdate>}> = (props) => {
-          const {partId,data} = props ?? {};
-
-          return  updatePartsCatalogCost(partId,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type UpdatePartsCatalogCostMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsCatalogCost>>>
-    export type UpdatePartsCatalogCostMutationBody = BodyType<PartsCatalogCostUpdate>
-    export type UpdatePartsCatalogCostMutationError = ErrorType<ErrorResponse>
-
-    /**
- * @summary Update or clear the saved unit cost of a catalog item
- */
-export const useUpdatePartsCatalogCost = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCatalogCostUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof updatePartsCatalogCost>>,
-        TError,
-        {partId: string;data: BodyType<PartsCatalogCostUpdate>},
-        TContext
-      > => {
-      return useMutation(getUpdatePartsCatalogCostMutationOptions(options));
-    }
-
-export const getCreatePartsPriceSnapshotUrl = (partId: string,) => {
-
-
-
-
-  return `/api/parts/catalog/${partId}/price-snapshots`
-}
-
-/**
- * @summary Save a supplier price snapshot without changing the saved cost
- */
-export const createPartsPriceSnapshot = async (partId: string,
-    partsPriceSnapshotInput: PartsPriceSnapshotInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsPriceSnapshot> => {
-
-  return customFetch<PartsPriceSnapshot>(getCreatePartsPriceSnapshotUrl(partId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(partsPriceSnapshotInput)
-  }
-);}
-
-
-
-
-
-export const getCreatePartsPriceSnapshotMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext> => {
-
-const mutationKey = ['createPartsPriceSnapshot'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, {partId: string;data: BodyType<PartsPriceSnapshotInput>}> = (props) => {
-          const {partId,data} = props ?? {};
-
-          return  createPartsPriceSnapshot(partId,data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreatePartsPriceSnapshotMutationResult = NonNullable<Awaited<ReturnType<typeof createPartsPriceSnapshot>>>
-    export type CreatePartsPriceSnapshotMutationBody = BodyType<PartsPriceSnapshotInput>
-    export type CreatePartsPriceSnapshotMutationError = ErrorType<ErrorResponse>
-
-    /**
- * @summary Save a supplier price snapshot without changing the saved cost
- */
-export const useCreatePartsPriceSnapshot = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof createPartsPriceSnapshot>>,
-        TError,
-        {partId: string;data: BodyType<PartsPriceSnapshotInput>},
-        TContext
-      > => {
-      return useMutation(getCreatePartsPriceSnapshotMutationOptions(options));
-    }
-
 export const getCreatePartsRobotUrl = () => {
 
 
@@ -6987,11 +6764,11 @@ export const getGetPartsRobotDetailsUrl = (robotId: string,) => {
 }
 
 /**
- * @summary Get a robot's allocated parts, saved costs, and supplier quotes
+ * @summary Get an authenticated robot build bill of materials and costing
  */
-export const getPartsRobotDetails = async (robotId: string, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobotBuildDetails> => {
+export const getPartsRobotDetails = async (robotId: string, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobotDetails> => {
 
-  return customFetch<PartsRobotBuildDetails>(getGetPartsRobotDetailsUrl(robotId),
+  return customFetch<PartsRobotDetails>(getGetPartsRobotDetailsUrl(robotId),
   {
     ...options,
     method: 'GET'
@@ -7034,7 +6811,7 @@ export type GetPartsRobotDetailsQueryError = ErrorType<ErrorResponse>
 
 
 /**
- * @summary Get a robot's allocated parts, saved costs, and supplier quotes
+ * @summary Get an authenticated robot build bill of materials and costing
  */
 
 export function useGetPartsRobotDetails<TData = Awaited<ReturnType<typeof getPartsRobotDetails>>, TError = ErrorType<ErrorResponse>>(
@@ -7064,7 +6841,7 @@ export const getUpdatePartsRobotPreviewUrl = (robotId: string,) => {
 }
 
 /**
- * @summary Attach a private preview file to a robot
+ * @summary Attach or replace a private robot preview file
  */
 export const updatePartsRobotPreview = async (robotId: string,
     partsRobotPreviewInput: PartsRobotPreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobot> => {
@@ -7114,7 +6891,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdatePartsRobotPreviewMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Attach a private preview file to a robot
+ * @summary Attach or replace a private robot preview file
  */
 export const useUpdatePartsRobotPreview = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsRobotPreview>>, TError,{robotId: string;data: BodyType<PartsRobotPreviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -7125,6 +6902,229 @@ export const useUpdatePartsRobotPreview = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUpdatePartsRobotPreviewMutationOptions(options));
+    }
+
+export const getUpdatePartsCatalogCostUrl = (partId: string,) => {
+
+
+
+
+  return `/api/parts/catalog/${partId}/cost`
+}
+
+/**
+ * @summary Update the saved unit cost basis for a catalog part
+ */
+export const updatePartsCatalogCost = async (partId: string,
+    partsCostUpdateInput: PartsCostUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogItem> => {
+
+  return customFetch<PartsCatalogItem>(getUpdatePartsCatalogCostUrl(partId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsCostUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartsCatalogCostMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCostUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCostUpdateInput>}, TContext> => {
+
+const mutationKey = ['updatePartsCatalogCost'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsCatalogCost>>, {partId: string;data: BodyType<PartsCostUpdateInput>}> = (props) => {
+          const {partId,data} = props ?? {};
+
+          return  updatePartsCatalogCost(partId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartsCatalogCostMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsCatalogCost>>>
+    export type UpdatePartsCatalogCostMutationBody = BodyType<PartsCostUpdateInput>
+    export type UpdatePartsCatalogCostMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the saved unit cost basis for a catalog part
+ */
+export const useUpdatePartsCatalogCost = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogCost>>, TError,{partId: string;data: BodyType<PartsCostUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartsCatalogCost>>,
+        TError,
+        {partId: string;data: BodyType<PartsCostUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePartsCatalogCostMutationOptions(options));
+    }
+
+export const getCreatePartsPriceSnapshotUrl = (partId: string,) => {
+
+
+
+
+  return `/api/parts/catalog/${partId}/price-snapshots`
+}
+
+/**
+ * @summary Save a dated supplier quote snapshot without changing saved costs
+ */
+export const createPartsPriceSnapshot = async (partId: string,
+    partsPriceSnapshotInput: PartsPriceSnapshotInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsPriceSnapshot> => {
+
+  return customFetch<PartsPriceSnapshot>(getCreatePartsPriceSnapshotUrl(partId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsPriceSnapshotInput)
+  }
+);}
+
+
+
+
+
+export const getCreatePartsPriceSnapshotMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext> => {
+
+const mutationKey = ['createPartsPriceSnapshot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, {partId: string;data: BodyType<PartsPriceSnapshotInput>}> = (props) => {
+          const {partId,data} = props ?? {};
+
+          return  createPartsPriceSnapshot(partId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePartsPriceSnapshotMutationResult = NonNullable<Awaited<ReturnType<typeof createPartsPriceSnapshot>>>
+    export type CreatePartsPriceSnapshotMutationBody = BodyType<PartsPriceSnapshotInput>
+    export type CreatePartsPriceSnapshotMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Save a dated supplier quote snapshot without changing saved costs
+ */
+export const useCreatePartsPriceSnapshot = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPartsPriceSnapshot>>, TError,{partId: string;data: BodyType<PartsPriceSnapshotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPartsPriceSnapshot>>,
+        TError,
+        {partId: string;data: BodyType<PartsPriceSnapshotInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePartsPriceSnapshotMutationOptions(options));
+    }
+
+export const getUploadPartsRobotPreviewFileUrl = (params: UploadPartsRobotPreviewFileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/storage/parts-robot-previews?${stringifiedParams}` : `/api/storage/parts-robot-previews`
+}
+
+/**
+ * @summary Upload a private robot image or supported CAD preview file
+ */
+export const uploadPartsRobotPreviewFile = async (uploadPartsRobotPreviewFileBody: Blob,
+    params: UploadPartsRobotPreviewFileParams, options?: Parameters<typeof customFetch>[1]): Promise<PartsRobotPreviewUpload> => {
+
+  return customFetch<PartsRobotPreviewUpload>(getUploadPartsRobotPreviewFileUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadPartsRobotPreviewFileBody
+  }
+);}
+
+
+
+
+
+export const getUploadPartsRobotPreviewFileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext> => {
+
+const mutationKey = ['uploadPartsRobotPreviewFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, {data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  uploadPartsRobotPreviewFile(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadPartsRobotPreviewFileMutationResult = NonNullable<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>>
+    export type UploadPartsRobotPreviewFileMutationBody = BodyType<Blob>
+    export type UploadPartsRobotPreviewFileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload a private robot image or supported CAD preview file
+ */
+export const useUploadPartsRobotPreviewFile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>, TError,{data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadPartsRobotPreviewFile>>,
+        TError,
+        {data: BodyType<Blob>;params: UploadPartsRobotPreviewFileParams},
+        TContext
+      > => {
+      return useMutation(getUploadPartsRobotPreviewFileMutationOptions(options));
     }
 
 export const getSetPartsRobotAllocationUrl = (robotId: string,

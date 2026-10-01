@@ -7,6 +7,12 @@
  */
 
 export type UploadPartsRobotPreviewFileParams = {
+/**
+ * @maxLength 255
+ */
 fileName: string;
+/**
+ * @maxLength 100
+ */
 contentType: string;
 };

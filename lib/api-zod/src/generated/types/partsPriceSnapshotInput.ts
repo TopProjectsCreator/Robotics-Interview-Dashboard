@@ -14,6 +14,7 @@ export interface PartsPriceSnapshotInput {
   unitPrice: number;
   /** @pattern ^[A-Z]{3}$ */
   currency: string;
+  /** @maxLength 2000 */
   sourceUrl: string;
   isStartingAt: boolean;
 }

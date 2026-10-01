@@ -27,12 +27,12 @@ export interface PartsCatalogItem {
      * @maximum 99999999.99
      * @nullable
      */
-  unitCost: number | null;
+  unitCost?: number | null;
   /**
      * @nullable
      * @pattern ^[A-Z]{3}$
      */
-  costCurrency: string | null;
+  costCurrency?: string | null;
   /** @minimum 0 */
   quantityOwned: number;
   /** @minimum 0 */

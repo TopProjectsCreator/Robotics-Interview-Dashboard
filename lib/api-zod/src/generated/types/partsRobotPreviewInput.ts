@@ -14,6 +14,6 @@ export interface PartsRobotPreviewInput {
      * @maxLength 255
      */
   fileName: string;
-  /** MIME type for a supported image or CAD preview file. */
+  /** @maxLength 100 */
   contentType: string;
 }

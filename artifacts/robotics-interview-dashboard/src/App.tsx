@@ -114,6 +114,19 @@ function eventPasscodeErrorMessage(error: unknown): string {
   return signInErrorMessage(error, "Could not verify the team access code. Try again.");
 }
 
+function accountSetupErrorMessage(error: unknown, fallback: string): string {
+  const status = error && typeof error === "object" && "status" in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+
+  if (status === 401) return "The team access code is incorrect. Check it and try again.";
+  if (status === 429) return "Too many account setup attempts. Wait a minute and try again.";
+  if (typeof status !== "number" || status >= 500) {
+    return "Account setup is temporarily unavailable. Check your connection and try again.";
+  }
+  return fallback;
+}
+
 function retryTemporaryAuthFailure(failureCount: number, error: unknown): boolean {
   if (failureCount >= 3) return false;
   const status = error && typeof error === "object" && "status" in error
@@ -1578,7 +1591,10 @@ function Login() {
             setError("Password not set. Choose a different password.");
             return;
           }
-          setError(passwordSafetyErrorMessage(issue) ?? "The team access code was rejected. Check it and try again.");
+          setError(passwordSafetyErrorMessage(issue) ?? accountSetupErrorMessage(
+            error,
+            "The team access code was rejected. Check it and try again.",
+          ));
         },
       },
     );
@@ -1629,7 +1645,10 @@ function Login() {
             setError("Password not saved. Choose a different password.");
             return;
           }
-          setError(passwordSafetyErrorMessage(issue) ?? "Could not add that team member. Check the team access code and name.");
+          setError(passwordSafetyErrorMessage(issue) ?? accountSetupErrorMessage(
+            error,
+            "Could not add that team member. Check the team access code and name.",
+          ));
         },
       },
     );

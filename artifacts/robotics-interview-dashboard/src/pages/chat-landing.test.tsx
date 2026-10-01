@@ -751,6 +751,126 @@ describe("public chat discovery", () => {
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
 
+  it.each([
+    {
+      operation: "password setup",
+      failureKind: "incorrect team access code",
+      requestPath: "/api/auth/interviewers/setup",
+      method: "POST",
+      failRequest: async () => errorResponse(401, "Unauthorized", { error: "The team access code is incorrect." }),
+      expectedMessage: "The team access code is incorrect. Check it and try again.",
+    },
+    {
+      operation: "password setup",
+      failureKind: "network outage",
+      requestPath: "/api/auth/interviewers/setup",
+      method: "POST",
+      failRequest: async () => { throw new TypeError("Failed to fetch"); },
+      expectedMessage: "Account setup is temporarily unavailable. Check your connection and try again.",
+    },
+    {
+      operation: "password setup",
+      failureKind: "server outage",
+      requestPath: "/api/auth/interviewers/setup",
+      method: "POST",
+      failRequest: async () => errorResponse(503, "Service Unavailable", { error: "Service unavailable" }),
+      expectedMessage: "Account setup is temporarily unavailable. Check your connection and try again.",
+    },
+    {
+      operation: "account creation",
+      failureKind: "incorrect team access code",
+      requestPath: "/api/auth/interviewers",
+      method: "POST",
+      failRequest: async () => errorResponse(401, "Unauthorized", { error: "The team access code is incorrect." }),
+      expectedMessage: "The team access code is incorrect. Check it and try again.",
+    },
+    {
+      operation: "account creation",
+      failureKind: "network outage",
+      requestPath: "/api/auth/interviewers",
+      method: "POST",
+      failRequest: async () => { throw new TypeError("Failed to fetch"); },
+      expectedMessage: "Account setup is temporarily unavailable. Check your connection and try again.",
+    },
+    {
+      operation: "account creation",
+      failureKind: "server outage",
+      requestPath: "/api/auth/interviewers",
+      method: "POST",
+      failRequest: async () => errorResponse(503, "Service Unavailable", { error: "Service unavailable" }),
+      expectedMessage: "Account setup is temporarily unavailable. Check your connection and try again.",
+    },
+  ])("shows the right retry guidance for $failureKind during $operation", async ({
+    operation,
+    requestPath: failedPath,
+    method: failedMethod,
+    failRequest,
+    expectedMessage,
+  }) => {
+    window.history.replaceState({}, "", "/auth");
+    const network = stubNetworkTransports(async (input, init) => {
+      const path = requestPath(input);
+      const requestMethod = init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET");
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
+      if (path === "/api/auth/interviewers" && requestMethod === "GET") {
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: false }] });
+      }
+      if (path === failedPath && requestMethod === failedMethod) return failRequest();
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    if (operation === "password setup") {
+      fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-a"));
+    } else {
+      fireEvent.click(await screen.findByTestId("button-add-interviewer"));
+      fireEvent.change(await screen.findByTestId("input-new-interviewer-name"), { target: { value: "New Interviewer" } });
+      fireEvent.click(screen.getByTestId("button-continue-add-interviewer"));
+    }
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(expectedMessage);
+    expect(network.fetchSpy.mock.calls.some(([input, init]) => (
+      requestPath(input) === failedPath &&
+      (init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET")) === failedMethod
+    ))).toBe(true);
+  });
+
+  it("does not show a cross-tab notice on ordinary sign-in or invalid-password errors", async () => {
+    window.history.replaceState({}, "", "/auth");
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") return unauthorizedResponse();
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-interviewer-a"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(
+      "The team access code or personal password is incorrect.",
+    );
+    expect(screen.queryByTestId("session-ended-in-another-tab")).not.toBeInTheDocument();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
+  });
+
   it("clears private records and closes realtime when the server expires a session", async () => {
     window.history.replaceState({}, "", "/chat");
     window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "expired-session-token");

@@ -1,8 +1,10 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   integer,
   pgTable,
+  numeric,
   text,
   timestamp,
   uniqueIndex,
@@ -20,6 +22,8 @@ export const partsCatalogItemsTable = pgTable(
     description: text("description"),
     productUrl: text("product_url"),
     imageUrl: text("image_url"),
+    unitCost: numeric("unit_cost", { precision: 10, scale: 2 }),
+    costCurrency: text("cost_currency"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -27,6 +31,13 @@ export const partsCatalogItemsTable = pgTable(
     vendorExternalKey: uniqueIndex("parts_catalog_vendor_external_key_unique").on(
       table.vendorKey,
       table.externalKey,
+    ),
+    validSavedCost: check(
+      "parts_catalog_saved_cost_valid",
+      sql`(${table.unitCost} is null and ${table.costCurrency} is null)
+        or (${table.unitCost} >= 0 and ${table.unitCost} <= 99999999.99
+          and ${table.costCurrency} is not null
+          and ${table.costCurrency} ~ '^[A-Z]{3}$')`,
     ),
   }),
 );
@@ -53,12 +64,23 @@ export const partsRobotsTable = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    previewObjectPath: text("preview_object_path"),
+    previewFileName: text("preview_file_name"),
+    previewContentType: text("preview_content_type"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     uniqueName: uniqueIndex("parts_robots_normalized_name_unique").on(
       sql`lower(${table.name})`,
+    ),
+    validPreview: check(
+      "parts_robots_preview_metadata_valid",
+      sql`(${table.previewObjectPath} is null and ${table.previewFileName} is null and ${table.previewContentType} is null)
+        or (${table.previewObjectPath} ~ '^/objects/[A-Za-z0-9-]{8,128}$'
+          and ${table.previewFileName} is not null and ${table.previewContentType} is not null
+          and length(${table.previewFileName}) between 1 and 255
+          and length(${table.previewContentType}) between 1 and 100)`,
     ),
   }),
 );
@@ -84,6 +106,29 @@ export const partsRobotAllocationsTable = pgTable(
     positiveQuantity: check(
       "parts_robot_allocations_positive_quantity",
       sql`${table.quantity} > 0`,
+    ),
+  }),
+);
+
+export const partsSupplierPriceSnapshotsTable = pgTable(
+  "parts_supplier_price_snapshots",
+  {
+    id: text("id").primaryKey(),
+    partId: text("part_id")
+      .notNull()
+      .references(() => partsCatalogItemsTable.id, { onDelete: "cascade" }),
+    unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+    currency: text("currency").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+    isStartingAt: boolean("is_starting_at").default(false).notNull(),
+  },
+  (table) => ({
+    validQuote: check(
+      "parts_supplier_price_snapshots_valid",
+      sql`${table.unitPrice} >= 0 and ${table.unitPrice} <= 99999999.99
+        and ${table.currency} ~ '^[A-Z]{3}$'
+        and length(${table.sourceUrl}) between 1 and 2000`,
     ),
   }),
 );

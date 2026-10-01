@@ -55,8 +55,12 @@ export interface PartsVendor {
 export interface PartsRobotPreview {
   /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
   objectPath: string;
-  /** @maxLength 255 */
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
   fileName: string;
+  /** @maxLength 100 */
   contentType: string;
 }
 
@@ -66,6 +70,99 @@ export interface PartsRobot {
   preview: PartsRobotPreview | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PartsRobotPreviewInput {
+  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
+  objectPath: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  fileName: string;
+  /** @maxLength 100 */
+  contentType: string;
+}
+
+export interface PartsRobotPreviewUpload {
+  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
+  objectPath: string;
+}
+
+export interface PartsPriceSnapshot {
+  id: string;
+  partId: string;
+  vendorKey: string;
+  vendorName: string;
+  sourceUrl: string;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     */
+  unitPrice: number;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  capturedAt: string;
+  isStartingAt: boolean;
+  isStale: boolean;
+}
+
+export interface PartsPriceSnapshotInput {
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     */
+  unitPrice: number;
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  /** @maxLength 2000 */
+  sourceUrl: string;
+  isStartingAt: boolean;
+}
+
+export interface PartsRobotBuildPart {
+  partId: string;
+  name: string;
+  vendorKey: string;
+  vendorName: string;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  productUrl: string | null;
+  /** @minimum 1 */
+  quantity: number;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency: string | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  lineTotal: number | null;
+  priceSnapshots: PartsPriceSnapshot[];
+}
+
+export type PartsRobotDetailsSubtotalsByCurrencyItem = {
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+  /** @minimum 0 */
+  amount: number;
+};
+
+export interface PartsRobotDetails {
+  robot: PartsRobot;
+  parts: PartsRobotBuildPart[];
+  subtotalsByCurrency: PartsRobotDetailsSubtotalsByCurrencyItem[];
+  /** @minimum 0 */
+  unpricedPartCount: number;
 }
 
 export interface PartsRobotAllocation {
@@ -96,12 +193,12 @@ export interface PartsCatalogItem {
      * @maximum 99999999.99
      * @nullable
      */
-  unitCost: number | null;
+  unitCost?: number | null;
   /**
      * @nullable
      * @pattern ^[A-Z]{3}$
      */
-  costCurrency: string | null;
+  costCurrency?: string | null;
   /** @minimum 0 */
   quantityOwned: number;
   /** @minimum 0 */
@@ -140,12 +237,21 @@ export interface PartsCatalogSearchResult {
   description: string;
   /** @nullable */
   sku: string | null;
-  imageUrl: string;
-  /** @pattern ^\d{1,9}(\.\d{1,4})?$ */
-  price: string;
-  /** @pattern ^[A-Z]{3}$ */
-  currency: string;
+  /** @nullable */
+  imageUrl: string | null;
+  /**
+     * @nullable
+     * @pattern ^\d{1,9}(\.\d{1,4})?$
+     */
+  price: string | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  currency: string | null;
   priceIsStartingAt: boolean;
+  /** Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals. */
+  inStock: boolean;
 }
 
 /**
@@ -261,120 +367,26 @@ export interface PartsRobotInput {
   name: string;
 }
 
+export interface PartsCostUpdateInput {
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency: string | null;
+}
+
 export interface PartsRobotAllocationInput {
   /**
      * @minimum 0
      * @maximum 100000
      */
   quantity: number;
-}
-
-export interface PartsRobotPreviewInput {
-  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
-  objectPath: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  fileName: string;
-  /** MIME type for a supported image or CAD preview file. */
-  contentType: string;
-}
-
-export type PartsRobotPreviewFile = Blob;
-
-export interface PartsRobotPreviewUpload {
-  /** @pattern ^/objects/[A-Za-z0-9-]{8,128}$ */
-  objectPath: string;
-}
-
-export interface PartsCatalogCostUpdate {
-  /**
-     * @minimum 0
-     * @maximum 99999999.99
-     * @nullable
-     */
-  unitCost: number | null;
-  /**
-     * @nullable
-     * @pattern ^[A-Z]{3}$
-     */
-  costCurrency: string | null;
-}
-
-export interface PartsPriceSnapshotInput {
-  /**
-     * @minimum 0
-     * @maximum 99999999.99
-     */
-  unitPrice: number;
-  /** @pattern ^[A-Z]{3}$ */
-  currency: string;
-  sourceUrl: string;
-  isStartingAt: boolean;
-}
-
-export interface PartsPriceSnapshot {
-  id: string;
-  partId: string;
-  vendorKey: string;
-  vendorName: string;
-  sourceUrl: string;
-  /**
-     * @minimum 0
-     * @maximum 99999999.99
-     */
-  unitPrice: number;
-  /** @pattern ^[A-Z]{3}$ */
-  currency: string;
-  capturedAt: string;
-  isStartingAt: boolean;
-  isStale: boolean;
-}
-
-export interface PartsRobotBuildPart {
-  partId: string;
-  name: string;
-  vendorKey: string;
-  vendorName: string;
-  /** @nullable */
-  sku: string | null;
-  /** @nullable */
-  productUrl: string | null;
-  /** @minimum 0 */
-  quantity: number;
-  /**
-     * @minimum 0
-     * @maximum 99999999.99
-     * @nullable
-     */
-  unitCost: number | null;
-  /**
-     * @nullable
-     * @pattern ^[A-Z]{3}$
-     */
-  costCurrency: string | null;
-  /**
-     * @minimum 0
-     * @nullable
-     */
-  lineTotal: number | null;
-  priceSnapshots: PartsPriceSnapshot[];
-}
-
-export interface PartsRobotCostSubtotal {
-  /** @pattern ^[A-Z]{3}$ */
-  currency: string;
-  /** @minimum 0 */
-  amount: number;
-}
-
-export interface PartsRobotBuildDetails {
-  robot: PartsRobot;
-  parts: PartsRobotBuildPart[];
-  subtotalsByCurrency: PartsRobotCostSubtotal[];
-  /** @minimum 0 */
-  unpricedPartCount: number;
 }
 
 export interface HealthStatus {
@@ -1719,11 +1731,6 @@ invalidOnly?: InvalidOnlyParameter;
 sort?: SortParameter;
 };
 
-export type UploadPartsRobotPreviewFileParams = {
-fileName: string;
-contentType: string;
-};
-
 export type GetInterviewChatParams = {
 /**
  * Return messages created before this ISO timestamp (older history page).
@@ -1798,7 +1805,7 @@ export type ListPartsCatalogParams = {
 search?: string;
 vendorKey?: string;
 /**
- * Return only catalog items entered manually by the team.
+ * When true, only return manually saved catalog items, excluding synced supplier feed records.
  */
 manualOnly?: boolean;
 /**
@@ -1828,5 +1835,16 @@ limit?: number;
  * @minimum 0
  */
 offset?: number;
+};
+
+export type UploadPartsRobotPreviewFileParams = {
+/**
+ * @maxLength 255
+ */
+fileName: string;
+/**
+ * @maxLength 100
+ */
+contentType: string;
 };
 

@@ -10,7 +10,7 @@ export type ListPartsCatalogParams = {
 search?: string;
 vendorKey?: string;
 /**
- * Return only catalog items entered manually by the team.
+ * When true, only return manually saved catalog items, excluding synced supplier feed records.
  */
 manualOnly?: boolean;
 /**

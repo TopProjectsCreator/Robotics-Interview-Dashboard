@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PartsCatalogCostUpdate {
+export interface PartsCostUpdateInput {
   /**
      * @minimum 0
      * @maximum 99999999.99

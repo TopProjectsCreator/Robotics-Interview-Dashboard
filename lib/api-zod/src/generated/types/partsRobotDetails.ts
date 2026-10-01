@@ -7,12 +7,12 @@
  */
 import type { PartsRobot } from './partsRobot';
 import type { PartsRobotBuildPart } from './partsRobotBuildPart';
-import type { PartsRobotCostSubtotal } from './partsRobotCostSubtotal';
+import type { PartsRobotDetailsSubtotalsByCurrencyItem } from './partsRobotDetailsSubtotalsByCurrencyItem';
 
-export interface PartsRobotBuildDetails {
+export interface PartsRobotDetails {
   robot: PartsRobot;
   parts: PartsRobotBuildPart[];
-  subtotalsByCurrency: PartsRobotCostSubtotal[];
+  subtotalsByCurrency: PartsRobotDetailsSubtotalsByCurrencyItem[];
   /** @minimum 0 */
   unpricedPartCount: number;
 }

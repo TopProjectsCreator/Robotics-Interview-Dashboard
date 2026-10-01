@@ -6,9 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PartsRobotCostSubtotal {
+export type PartsRobotDetailsSubtotalsByCurrencyItem = {
   /** @pattern ^[A-Z]{3}$ */
   currency: string;
   /** @minimum 0 */
   amount: number;
-}
+};

@@ -16,7 +16,7 @@ export interface PartsRobotBuildPart {
   sku: string | null;
   /** @nullable */
   productUrl: string | null;
-  /** @minimum 0 */
+  /** @minimum 1 */
   quantity: number;
   /**
      * @minimum 0
