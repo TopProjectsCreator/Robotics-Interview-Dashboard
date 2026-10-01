@@ -7,6 +7,9 @@ import { renderInlineMarkdown } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 
 vi.mock("@google/model-viewer", () => ({}));
+vi.mock("heic2any", () => ({
+  default: vi.fn(),
+}));
 vi.mock("./components/ChatStlViewer", () => ({
   ChatStlViewer: ({ name }: { name: string }) => <div data-testid="chat-stl-attachment">{name} · STL model</div>,
 }));
@@ -281,6 +284,101 @@ describe("chat attachment inline previews", () => {
 
     await waitFor(() => fixture.assertPreview(container));
 
+    const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
+      .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
+    expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
+  });
+
+  it("keeps a HEIC image preview when the browser reports a successful load", async () => {
+    const fixture = fixtures.find(item => item.name === "portrait.heic")!;
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(await fixture.body.arrayBuffer(), {
+        status: 200,
+        headers: { "content-type": fixture.contentType },
+      }),
+    );
+
+    const { container } = render(
+      <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
+    );
+    const image = await waitFor(() => {
+      const preview = container.querySelector<HTMLImageElement>("img");
+      expect(preview).toBeInTheDocument();
+      return preview!;
+    });
+
+    fireEvent.load(image);
+
+    expect(image).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/couldn’t preview/i);
+    const { default: heic2any } = await import("heic2any");
+    expect(heic2any).not.toHaveBeenCalled();
+  });
+
+  it("converts a HEIC image to a browser-supported preview after decode failure", async () => {
+    const fixture = fixtures.find(item => item.name === "portrait.heic")!;
+    const { default: heic2any } = await import("heic2any");
+    vi.mocked(heic2any).mockResolvedValueOnce(new Blob(["converted JPEG"], { type: "image/jpeg" }));
+    vi.mocked(URL.createObjectURL)
+      .mockReturnValueOnce("blob:heic-source")
+      .mockReturnValueOnce("blob:heic-jpeg-preview");
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(await fixture.body.arrayBuffer(), {
+        status: 200,
+        headers: { "content-type": fixture.contentType },
+      }),
+    );
+
+    const { container } = render(
+      <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
+    );
+    const image = await waitFor(() => {
+      const preview = container.querySelector<HTMLImageElement>("img");
+      expect(preview).toBeInTheDocument();
+      return preview!;
+    });
+    const originalPreviewUrl = image.getAttribute("src");
+
+    fireEvent.error(image);
+
+    await waitFor(() => {
+      const convertedPreview = container.querySelector<HTMLImageElement>("img");
+      expect(convertedPreview).toBeInTheDocument();
+      expect(convertedPreview).not.toHaveAttribute("src", originalPreviewUrl);
+      expect(convertedPreview).toHaveAttribute("src", expect.stringMatching(/^blob:/));
+    });
+    expect(heic2any).toHaveBeenCalledWith(expect.objectContaining({ toType: "image/jpeg" }));
+    const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
+      .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
+    expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
+  });
+
+  it("shows a clear fallback when a HEIC image cannot be decoded or converted", async () => {
+    const fixture = fixtures.find(item => item.name === "portrait.heic")!;
+    const { default: heic2any } = await import("heic2any");
+    vi.mocked(heic2any).mockRejectedValueOnce(new Error("HEIC conversion unavailable"));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(await fixture.body.arrayBuffer(), {
+        status: 200,
+        headers: { "content-type": fixture.contentType },
+      }),
+    );
+
+    const { container } = render(
+      <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
+    );
+    const image = await waitFor(() => {
+      const preview = container.querySelector<HTMLImageElement>("img");
+      expect(preview).toBeInTheDocument();
+      return preview!;
+    });
+
+    fireEvent.error(image);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Couldn’t preview portrait.heic. Try opening it in an app that supports HEIC.",
+    );
+    expect(container.querySelector("img")).not.toBeInTheDocument();
     const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
       .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
     expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);

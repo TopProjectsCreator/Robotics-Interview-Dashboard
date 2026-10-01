@@ -550,6 +550,10 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   return "document";
 }
 
+function isHeicAttachment(name: string, contentType: string): boolean {
+  return /^image\/hei[cf]$/i.test(contentType) || /\.hei[cf]$/i.test(name);
+}
+
 function parseDelimitedPreview(source: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -614,13 +618,29 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   const [sheets, setSheets] = useState<ChatAttachmentSheet[]>([]);
   const [documentHtml, setDocumentHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [imageFallback, setImageFallback] = useState<"converting" | "unavailable" | null>(null);
+  const attachmentBlobRef = useRef<Blob | null>(null);
+  const objectUrlsRef = useRef<Set<string>>(new Set());
+  const attemptedHeicConversionRef = useRef(false);
+  const imageOperationRef = useRef(0);
   const kind = attachmentKind(name, contentType);
 
   useEffect(() => {
     let active = true;
-    let createdUrl: string | null = null;
+    const createdUrls = new Set<string>();
+    objectUrlsRef.current = createdUrls;
+    imageOperationRef.current += 1;
     const controller = new AbortController();
     const token = getStoredAuthToken();
+    setObjectUrl(null);
+    setContentType("");
+    setText(null);
+    setSheets([]);
+    setDocumentHtml(null);
+    setFailed(false);
+    setImageFallback(null);
+    attachmentBlobRef.current = null;
+    attemptedHeicConversionRef.current = false;
     void fetch(appRelativeUrl(src), {
       credentials: "include",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -665,7 +685,9 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
           if (active) setDocumentHtml(clean);
           return;
         }
-        createdUrl = URL.createObjectURL(blob);
+        const createdUrl = URL.createObjectURL(blob);
+        createdUrls.add(createdUrl);
+        attachmentBlobRef.current = blob;
         if (active) setObjectUrl(createdUrl);
       })
       .catch(() => {
@@ -674,11 +696,55 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     return () => {
       active = false;
       controller.abort();
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
+      imageOperationRef.current += 1;
+      attachmentBlobRef.current = null;
+      for (const createdUrl of createdUrls) URL.revokeObjectURL(createdUrl);
+      createdUrls.clear();
     };
   }, [name, src]);
 
+  const handleImageError = async () => {
+    if (!isHeicAttachment(name, contentType) || attemptedHeicConversionRef.current) {
+      setImageFallback("unavailable");
+      return;
+    }
+    const sourceBlob = attachmentBlobRef.current;
+    if (!sourceBlob) {
+      setImageFallback("unavailable");
+      return;
+    }
+
+    attemptedHeicConversionRef.current = true;
+    setImageFallback("converting");
+    setObjectUrl(null);
+    const operationId = ++imageOperationRef.current;
+    try {
+      const { default: heic2any } = await import("heic2any");
+      const converted = await heic2any({ blob: sourceBlob, toType: "image/jpeg", quality: 0.85 });
+      const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+      if (!(jpegBlob instanceof Blob)) throw new Error("HEIC conversion returned no image");
+      if (imageOperationRef.current !== operationId) return;
+
+      const previewUrl = URL.createObjectURL(new Blob([jpegBlob], { type: "image/jpeg" }));
+      objectUrlsRef.current.add(previewUrl);
+      setObjectUrl(previewUrl);
+      setImageFallback(null);
+    } catch {
+      if (imageOperationRef.current === operationId) setImageFallback("unavailable");
+    }
+  };
+
   if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+  if (kind === "image" && imageFallback === "converting") {
+    return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">Preparing a preview for {name}…</div>;
+  }
+  if (kind === "image" && imageFallback === "unavailable") {
+    return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
+      {isHeicAttachment(name, contentType)
+        ? `Couldn’t preview ${name}. Try opening it in an app that supports HEIC.`
+        : `Couldn’t preview ${name} in this browser.`}
+    </div>;
+  }
   if (!objectUrl && text === null && !sheets.length && documentHtml === null) return <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
   if (text !== null) {
     const extension = attachmentExtension(name);
@@ -688,7 +754,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre className="max-h-[360px] overflow-auto rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e]">{text}</pre>}</div>;
   }
   if (sheets.length) return <div className="my-2 space-y-3">{sheets.map(sheet => <ChatAttachmentTable key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />)}</div>;
-  if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
+  if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" onError={() => void handleImageError()} className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
