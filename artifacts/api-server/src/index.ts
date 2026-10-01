@@ -174,6 +174,21 @@ async function ensureSchema(): Promise<void> {
     }
   }
   await removeTestAccounts();
+
+  // TEMPORARY one-time role assignment (removed in the next deploy).
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'treasurer', updated_at = now()
+        WHERE normalized_name = 'clinton' AND role IS DISTINCT FROM 'treasurer'`,
+    );
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'treasurer', updated_at = now()
+        WHERE id = '0aaf1c02d1f90aef2b572a4ccf5f06fe'`,
+    );
+    logger.info("One-time role assignment applied");
+  } catch (err) {
+    logger.error({ err }, "One-time role assignment failed");
+  }
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
