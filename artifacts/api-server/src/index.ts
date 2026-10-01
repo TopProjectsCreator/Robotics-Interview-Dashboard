@@ -30,7 +30,7 @@ async function removeTestAccounts(): Promise<void> {
       `UPDATE interview_queue SET interviewer_labels = (
         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
         FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck')
+        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck', 'PartsCheck', 'VerifyParts')
       ) WHERE id = 1`,
     );
     logger.info("Test accounts cleanup done");
