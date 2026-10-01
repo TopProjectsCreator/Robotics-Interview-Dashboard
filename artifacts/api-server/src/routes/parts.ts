@@ -1525,7 +1525,7 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
 router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
   try {
     const search = cleanText(req.query.search, 120);
-        const vendorKey = String(row.vendorKey);
+    const vendorKey = cleanText(req.query.vendorKey, 100);
     if (vendorKey && !vendorByKey.has(vendorKey)) {
       res.status(400).json({ error: "Choose one of the listed vendors." });
       return;
@@ -1576,7 +1576,7 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
 });
 
 router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void> => {
-        const vendorKey = String(row.vendorKey);
+  const vendorKey = cleanText(req.query.vendorKey, 100);
   const query = cleanText(req.query.q, 120);
   if (!query || query.length < 2) {
     res.status(400).json({ error: "Enter at least two search characters." });
@@ -1586,7 +1586,7 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
   const offsetRaw = Number(req.query.offset);
   const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 100;
   const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
-        const vendor = vendorByKey.get(vendorKey);
+  const vendor = vendorKey ? vendorByKey.get(vendorKey) : undefined;
   if (vendorKey && !vendor) {
     res.status(400).json({ error: "Choose one of the listed vendors." });
     return;
@@ -1624,15 +1624,15 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
 });
 
 router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
-  const parsed = CreatePartsRobotBody.safeParse(req.body);
+  const parsed = CreatePartsCatalogItemBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "The catalog item details are invalid." });
     return;
   }
   try {
     const input = parsed.data;
-        const vendor = vendorByKey.get(vendorKey);
-  const name = body.data.name.trim();
+    const vendor = vendorForKey(input.vendorKey);
+    const name = cleanText(input.name, 250);
     if (!name) throw new BadInputError("A part name is required.");
     const sku = cleanText(input.sku, 200);
     const productUrl = validateVendorUrl(input.productUrl, vendor);
@@ -1655,7 +1655,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       }
       return saved.id;
     });
-    const savedItem = await getCatalogItem(params.data.partId);
+    const savedItem = await getCatalogItem(itemId);
     res.status(201).json(CreatePartsCatalogItemResponse.parse(savedItem));
   } catch (error) {
     if (error instanceof BadInputError) {
@@ -1754,7 +1754,7 @@ router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void>
 });
 
 router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<void> => {
-  const parsed = CreatePartsRobotBody.safeParse(req.body);
+  const parsed = ImportPartsCatalogBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "The catalog import must contain between 1 and 500 valid rows." });
     return;
@@ -1810,40 +1810,35 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
 });
 
 router.patch("/parts/catalog/:partId/stock", requireAdmin, async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
-    const body = SetPartsRobotAllocationBody.safeParse(req.body);
+  const params = UpdatePartsCatalogStockParams.safeParse(req.params);
+  const body = UpdatePartsCatalogStockBody.safeParse(req.body);
   if (!params.success || !body.success) {
     res.status(400).json({ error: "The stock quantity is invalid." });
     return;
   }
   try {
-    const result = await pool.query(
-      `update "parts_robots" set "name" = $2, "updated_at" = now()
-       where "id" = $1
-       returning "id", "name", "preview_object_path" as "previewObjectPath",
-                 "preview_file_name" as "previewFileName",
-                 "preview_content_type" as "previewContentType",
-                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.robotId, name],
+    const result = await withTransaction((client) =>
+      setOwnedQuantity(client, params.data.partId, body.data.quantityOwned),
     );
     if (!result.exists) {
       res.status(404).json({ error: "Catalog item not found." });
       return;
     }
     const savedItem = await getCatalogItem(params.data.partId);
-    res.json(UpdatePartsCatalogCostResponse.parse(savedItem));
+    res.json(UpdatePartsCatalogStockResponse.parse(savedItem));
   } catch (error) {
-    req.log.error({ err: error }, "Parts saved cost update failed");
-    res.status(500).json({ error: "Unable to update the saved unit cost." });
+    if (error instanceof StockConflictError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "Parts stock update failed");
+    res.status(500).json({ error: "Unable to update stock." });
   }
 });
 
-router.post(
-  "/parts/catalog/:partId/price-snapshots",
-  requireAdmin,
-  async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
-    const body = SetPartsRobotAllocationBody.safeParse(req.body);
+router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsCatalogCostParams.safeParse(req.params);
+  const body = UpdatePartsCatalogCostBody.safeParse(req.body);
   if (!params.success || !body.success) {
     res.status(400).json({ error: "The saved unit cost is invalid." });
     return;
@@ -1881,8 +1876,8 @@ router.post(
   "/parts/catalog/:partId/price-snapshots",
   requireAdmin,
   async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
-    const body = SetPartsRobotAllocationBody.safeParse(req.body);
+    const params = CreatePartsPriceSnapshotParams.safeParse(req.params);
+    const body = CreatePartsPriceSnapshotBody.safeParse(req.body);
     if (!params.success || !body.success) {
       res.status(400).json({ error: "The supplier quote details are invalid." });
       return;
@@ -1896,8 +1891,8 @@ router.post(
         res.status(404).json({ error: "Catalog item not found." });
         return;
       }
-        const vendorKey = String(row.vendorKey);
-        const vendor = vendorByKey.get(vendorKey);
+      const vendorKey = String(partResult.rows[0].vendorKey);
+      const vendor = vendorForKey(vendorKey);
       const sourceUrl = validateVendorUrl(body.data.sourceUrl, vendor);
       if (!sourceUrl || !isValidCurrencyCode(body.data.currency) || !isValidMoneyAmount(body.data.unitPrice)) {
         res.status(400).json({ error: "Choose a valid price, currency, and source on the item's supplier domain." });
@@ -1947,7 +1942,7 @@ router.get(
   "/parts/robots/:robotId/details",
   requireAdmin,
   async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
+    const params = GetPartsRobotDetailsParams.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ error: "The robot ID is invalid." });
       return;
@@ -2061,42 +2056,35 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Enter a robot name." });
     return;
   }
-  const name = body.data.name.trim();
+  const name = parsed.data.name.trim();
   if (!name) {
     res.status(400).json({ error: "Enter a robot name." });
     return;
   }
   try {
     const result = await pool.query(
-      `update "parts_robots" set "name" = $2, "updated_at" = now()
-       where "id" = $1
-       returning "id", "name", "preview_object_path" as "previewObjectPath",
-                 "preview_file_name" as "previewFileName",
-                 "preview_content_type" as "previewContentType",
-                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.robotId, name],
+      `insert into "parts_robots" ("id", "name")
+       values ($1, $2)
+       returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [randomUUID(), name],
     );
-    if (result.rowCount === 0) {
-      res.status(404).json({ error: "Robot not found." });
-      return;
-    }
-    res.json(UpdatePartsRobotResponse.parse(mapRobot(result.rows[0])));
+    res.status(201).json(CreatePartsRobotResponse.parse(mapRobot(result.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
       res.status(409).json({ error: "A robot with that name already exists." });
       return;
     }
-    req.log.error({ err: error }, "Parts robot update failed");
-    res.status(500).json({ error: "Unable to rename the robot." });
+    req.log.error({ err: error }, "Parts robot creation failed");
+    res.status(500).json({ error: "Unable to add the robot." });
   }
 });
 
-router.put(
-  "/parts/robots/:robotId/parts/:partId",
+router.patch(
+  "/parts/robots/:robotId/preview",
   requireAdmin,
   async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
-    const body = SetPartsRobotAllocationBody.safeParse(req.body);
+    const params = UpdatePartsRobotPreviewParams.safeParse(req.params);
+    const body = UpdatePartsRobotPreviewBody.safeParse(req.body);
     if (!params.success || !body.success) {
       res.status(400).json({ error: "The robot preview details are invalid." });
       return;
@@ -2110,36 +2098,53 @@ router.put(
       return;
     }
     try {
-    const result = await pool.query(
-      `update "parts_robots" set "name" = $2, "updated_at" = now()
-       where "id" = $1
-       returning "id", "name", "preview_object_path" as "previewObjectPath",
-                 "preview_file_name" as "previewFileName",
-                 "preview_content_type" as "previewContentType",
-                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.robotId, name],
-    );
-    if (result.rowCount === 0) {
-      res.status(404).json({ error: "Robot not found." });
-      return;
+      const result = await withTransaction(async (client) => {
+        const current = await client.query(
+          `select "preview_object_path" as "previewObjectPath"
+           from "parts_robots" where "id" = $1 for update`,
+          [params.data.robotId],
+        );
+        if (current.rowCount === 0) return null;
+        const updated = await client.query(
+          `update "parts_robots"
+           set "preview_object_path" = $2, "preview_file_name" = $3,
+               "preview_content_type" = $4, "updated_at" = now()
+           where "id" = $1
+           returning "id", "name", "preview_object_path" as "previewObjectPath",
+                     "preview_file_name" as "previewFileName",
+                     "preview_content_type" as "previewContentType",
+                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+          [params.data.robotId, preview.objectPath, preview.fileName, preview.contentType],
+        );
+        return {
+          robot: updated.rows[0],
+          previousObjectPath: current.rows[0].previewObjectPath as string | null,
+        };
+      });
+      if (!result) {
+        res.status(404).json({ error: "Robot not found." });
+        return;
+      }
+      if (result.previousObjectPath && result.previousObjectPath !== preview.objectPath) {
+        try {
+          await objectStorageService.deleteObject(result.previousObjectPath);
+        } catch (error) {
+          req.log.warn({ err: error, objectPath: result.previousObjectPath }, "Replaced robot preview cleanup failed");
+        }
+      }
+      res.json(UpdatePartsRobotPreviewResponse.parse(mapRobot(result.robot)));
+    } catch (error) {
+      req.log.error({ err: error, robotId: params.data.robotId }, "Robot preview metadata update failed");
+      res.status(500).json({ error: "Unable to update this robot's preview." });
     }
-    res.json(UpdatePartsRobotResponse.parse(mapRobot(result.rows[0])));
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      res.status(409).json({ error: "A robot with that name already exists." });
-      return;
-    }
-    req.log.error({ err: error }, "Parts robot update failed");
-    res.status(500).json({ error: "Unable to rename the robot." });
-  }
-});
+  },
+);
 
-router.put(
-  "/parts/robots/:robotId/parts/:partId",
+router.patch("/parts/robots/:robotId",
   requireAdmin,
   async (req, res): Promise<void> => {
-    const params = SetPartsRobotAllocationParams.safeParse(req.params);
-    const body = SetPartsRobotAllocationBody.safeParse(req.body);
+    const params = UpdatePartsRobotParams.safeParse(req.params);
+    const body = UpdatePartsRobotBody.safeParse(req.body);
   if (!params.success || !body.success) {
     res.status(400).json({ error: "The robot name is invalid." });
     return;
