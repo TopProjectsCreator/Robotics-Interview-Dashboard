@@ -4271,7 +4271,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           ? `Timed out (${error.message.slice(8)}). Try again.`
           : userPosted
             ? "The AI answer failed. Your message was saved — try again."
-            : "Couldn't send — nothing was posted. Try again.";
+            : serverErrorMessage(error, "Couldn't send — nothing was posted. Try again.");
       setChatError(message);
     } finally {
       setChatUploading(false);
