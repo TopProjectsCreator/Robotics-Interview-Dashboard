@@ -23,3 +23,4 @@
 - [Authentication cache expiry](authentication-cache-expiry.md) — auth failures bypass retries; protected editors must close collaboration sockets and reject queued events.
 - [Rebase conflict supersets](rebase-conflict-supersets.md) — compare current-main behavior and tests before choosing a side; replayed incoming commits may be older subsets.
 - [Node TypeScript test loading](node-typescript-test-loading.md) — Node's strip-only TS mode accepts only erasable syntax; route tests need TS-free parameter declarations and directory-import resolution.
+- [Wouter query routing](wouter-query-routing.md) — use Wouter's search hook for query-driven state; `useLocation` exposes only the pathname.

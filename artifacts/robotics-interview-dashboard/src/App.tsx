@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
+import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
@@ -2544,6 +2544,8 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
 
 function Applicants() {
   const { settings } = useWorkspaceSettings();
+  const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const [search, setSearch] = useState("");
   const [aiSearchOpen, setAiSearchOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -2551,7 +2553,15 @@ function Applicants() {
   const [category, setCategory] = useState("");
   const [grade, setGrade] = useState("");
   const [sort, setSort] = useState(settings.defaultSort);
-  const [selected, setSelected] = useState<string | null>(null);
+  const selected = useMemo(() => {
+    return new URLSearchParams(searchParams).get("applicantId");
+  }, [searchParams]);
+  const openApplicant = useCallback((id: string) => {
+    setLocation(`/applicants?applicantId=${encodeURIComponent(id)}`);
+  }, [setLocation]);
+  const closeApplicant = useCallback(() => {
+    setLocation("/applicants");
+  }, [setLocation]);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -2560,6 +2570,26 @@ function Applicants() {
   const regenAllCancel = useRef(false);
   const params = useMemo(() => ({ search: search || undefined, category: category || undefined, grade: grade || undefined, sort: sort === "skill" || sort === "gender" ? "rank" : sort }), [search, category, grade, sort]);
   const list = useListApplicants(params, { query: { queryKey: getListApplicantsQueryKey(params) } });
+  const selectedApplicant = useGetApplicant(selected ?? "", {
+    query: {
+      enabled: Boolean(selected),
+      queryKey: getGetApplicantQueryKey(selected ?? ""),
+      retry: false,
+    },
+  });
+  const selectedApplicantErrorStatus = selectedApplicant.error && "status" in selectedApplicant.error
+    ? (selectedApplicant.error as { status?: unknown }).status
+    : undefined;
+  useEffect(() => {
+    const missingFromRoster = selected && list.isSuccess && !list.data.items.some(applicant => applicant.id === selected);
+    if (
+      selected === "" ||
+      missingFromRoster ||
+      (selectedApplicant.isError && (selectedApplicantErrorStatus === 400 || selectedApplicantErrorStatus === 404))
+    ) {
+      closeApplicant();
+    }
+  }, [selected, list.isSuccess, list.data, selectedApplicant.isError, selectedApplicantErrorStatus, closeApplicant]);
   const skillRank = (s: ApplicantSignals) => s.skill === "BUILD" ? 0 : s.skill === "CAD" ? 1 : s.skill === "CODE" ? 2 : 3;
   const genderRank = (s: ApplicantSignals) => s.gender === "M" ? 0 : s.gender === "F" ? 1 : 2;
   const items = useMemo(() => {
@@ -2660,12 +2690,12 @@ function Applicants() {
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">
           <div className="flex items-center justify-between border-b border-[#e5ecec] px-5 py-4"><div><h2 className="font-semibold">Review queue <span className="mono ml-2 text-xs text-[#16869a]">{list.data?.total ?? 0}</span></h2></div><span className="flex items-center gap-2 text-xs text-[#7c8c91]"><Filter size={14} /> filtered view</span></div>
-          {!items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p>{search.trim() && <p className="mt-1 break-words text-sm text-[#526d75]">Active search: <code className="font-mono">{search.trim()}</code></p>}<p className="mt-1 text-sm text-[#7c8c91]">Try widening the search or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => setSelected(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
+          {!items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p>{search.trim() && <p className="mt-1 break-words text-sm text-[#526d75]">Active search: <code className="font-mono">{search.trim()}</code></p>}<p className="mt-1 text-sm text-[#7c8c91]">Try widening the search or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => openApplicant(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
         </div>
-        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={setSelected} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
+        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={openApplicant} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
       </div>
     </>}
-    {selected && <ApplicantDetail id={selected} onClose={() => setSelected(null)} />}
+    {selected && <ApplicantDetail id={selected} onClose={closeApplicant} />}
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }

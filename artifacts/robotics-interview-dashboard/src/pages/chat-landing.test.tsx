@@ -1158,6 +1158,131 @@ describe("public chat discovery", () => {
     expect(document.body.textContent).not.toContain(oldAccountCanary);
     expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input))).toContain("/api/auth/login");
   });
+
+  it("reopens the selected applicant after the session expires and sign-in succeeds", async () => {
+    window.history.replaceState({}, "", "/applicants");
+    const applicantId = "applicant-to-restore";
+    const applicant = {
+      id: applicantId,
+      name: "Maya Restorable",
+      grade: "8th",
+      age: 14,
+      gender: "F",
+      email: "maya@example.com",
+      photoUrl: null,
+      transcript: null,
+      aiScore: 88,
+      aiRecommendation: "Advance",
+      aiSummary: "Strong candidate",
+      aiStrengths: "Build experience",
+      aiConcerns: "",
+      roboticsExperience: "Built a robot",
+      commit10Hours: "Yes",
+      parentVolunteer: "No",
+      interviewStatus: "queued",
+      interviewer: "",
+      interviewDecision: "",
+      callbackRequested: false,
+      flagged: false,
+      attendance: "unmarked",
+      lateArrivalTime: null,
+      makeupDate: null,
+      attendanceExcused: null,
+      seatRow: null,
+      seatCol: null,
+      category: "advance",
+      rank: 1,
+      notes: "Applicant notes",
+      queuePosition: 1,
+    };
+    const coordinatorSession = { ...signedInSession, role: "coordinator" };
+    let authenticated = true;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse(authenticated ? coordinatorSession : { authenticated: false });
+      if (path === `/api/applicants/${applicantId}`) return jsonResponse(applicant);
+      if (path === "/api/applicants") return jsonResponse({ items: [applicant], total: 1 });
+      if (path === "/api/auth/verify-event-passcode") return jsonResponse({ message: "Team access code verified." });
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "restoration-coordinator", displayName: "Restoration Coordinator", hasPassword: true, role: "coordinator" }] });
+      }
+      if (path === "/api/auth/login") {
+        authenticated = true;
+        return jsonResponse({
+          authenticated: true,
+          interviewerId: "restoration-coordinator",
+          label: "Restoration Coordinator",
+          role: "coordinator",
+          token: "restoration-session-token",
+        });
+      }
+      if (path === "/api/queue/chat") return jsonResponse({ scope: "shared", peer: null, items: [] });
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByTestId(`button-open-applicant-${applicantId}`));
+    await screen.findByTestId("button-close-detail");
+    expect(new URL(window.location.href).searchParams.get("applicantId")).toBe(applicantId);
+    expect(screen.getByRole("heading", { level: 2, name: applicant.name })).toBeInTheDocument();
+
+    authenticated = false;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    });
+    await waitFor(() => expect(window.location.pathname).toBe("/auth"));
+    expect(new URLSearchParams(window.location.search).get("returnTo"))
+      .toBe(`/applicants?applicantId=${applicantId}`);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-restoration-coordinator"));
+    fireEvent.change(await screen.findByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    await screen.findByTestId("button-close-detail");
+    expect(window.location.pathname).toBe("/applicants");
+    expect(new URL(window.location.href).searchParams.get("applicantId")).toBe(applicantId);
+    expect(screen.getByRole("heading", { level: 2, name: applicant.name })).toBeInTheDocument();
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .toContain(`/api/applicants/${applicantId}`);
+  });
+
+  it.each([
+    ["malformed", 400],
+    ["deleted", 404],
+  ])("returns to the applicant list when the requested applicant is %s", async (idKind, status) => {
+    window.history.replaceState({}, "", `/applicants?applicantId=${idKind}-applicant`);
+    const coordinatorSession = { ...signedInSession, role: "coordinator" };
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse(coordinatorSession);
+      if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
+      if (path === `/api/applicants/${idKind}-applicant`) {
+        return errorResponse(status, status === 404 ? "Not Found" : "Bad Request", { error: "Applicant not found" });
+      }
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
+      if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+        .toContain(`/api/applicants/${idKind}-applicant`);
+    });
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/applicants");
+      expect(new URL(window.location.href).searchParams.has("applicantId")).toBe(false);
+    });
+    expect(screen.getByText("Review queue")).toBeInTheDocument();
+  });
 });
 
 describe("sign-in return destinations", () => {
