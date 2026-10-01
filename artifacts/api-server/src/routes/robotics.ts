@@ -115,7 +115,7 @@ import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResu
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { authenticatedInterviewerId, requestAdminSession, requireAdmin } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requestAdminSession, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
@@ -1865,11 +1865,11 @@ function dashboardChartResponse(chart: typeof dashboardChartsTable.$inferSelect)
   };
 }
 
-router.get("/snapshots", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/snapshots", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(ListSnapshotsResponse.parse({ items: await listSnapshots() }));
 });
 
-router.post("/snapshots", requireAdmin, async (req, res): Promise<void> => {
+router.post("/snapshots", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = CreateSnapshotBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -1879,7 +1879,7 @@ router.post("/snapshots", requireAdmin, async (req, res): Promise<void> => {
   res.status(201).json(CreateSnapshotResponse.parse(created));
 });
 
-router.post("/snapshots/:snapshotId/restore", requireAdmin, async (req, res): Promise<void> => {
+router.post("/snapshots/:snapshotId/restore", requireCoordinator, async (req, res): Promise<void> => {
   const params = RestoreSnapshotParams.safeParse(req.params);
   const body = RestoreSnapshotBody.safeParse(req.body ?? {});
   if (!params.success || !body.success) {
@@ -1918,7 +1918,7 @@ router.get("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =>
   res.json(ListDashboardChartsResponse.parse({ items: charts.map(dashboardChartResponse) }));
 });
 
-router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> => {
+router.post("/dashboard/charts", requireCoordinator, async (req, res): Promise<void> => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateDashboardChartBody.safeParse(req.body);
@@ -1947,7 +1947,7 @@ router.post("/dashboard/charts", requireAdmin, async (req, res): Promise<void> =
   res.status(201).json(CreateDashboardChartResponse.parse(dashboardChartResponse(created)));
 });
 
-router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/dashboard/charts/:chartId", requireCoordinator, async (req, res): Promise<void> => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = DeleteDashboardChartParams.safeParse(req.params);
@@ -1992,7 +1992,7 @@ router.patch("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promi
   res.json(UpdateDashboardChartResponse.parse(dashboardChartResponse(updated)));
 });
 
-router.delete("/dashboard/charts/:chartId", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res): Promise<void> => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = DeleteDashboardChartParams.safeParse(req.params);
@@ -2046,7 +2046,7 @@ router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> 
   );
 });
 
-router.get("/applicants", requireAdmin, async (req, res): Promise<void> => {
+router.get("/applicants", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = ListApplicantsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2063,7 +2063,7 @@ router.get("/applicants", requireAdmin, async (req, res): Promise<void> => {
   }));
 });
 
-router.post("/applicants/search/ai", requireAdmin, async (req, res): Promise<void> => {
+router.post("/applicants/search/ai", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = InterpretApplicantSearchBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2122,7 +2122,7 @@ If the request is vague, create the narrowest useful query and explain it briefl
   }
 });
 
-router.get("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {
+router.get("/applicants/:id", requireCoordinator, async (req, res): Promise<void> => {
   const params = GetApplicantParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -2137,7 +2137,7 @@ router.get("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {
   res.json(GetApplicantResponse.parse(applicantResponse(applicant)));
 });
 
-router.patch("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<void> => {
   const params = UpdateApplicantParams.safeParse(req.params);
   const body = UpdateApplicantBody.safeParse(req.body);
   if (!params.success || !body.success) {
@@ -2182,7 +2182,7 @@ router.patch("/applicants/:id", requireAdmin, async (req, res): Promise<void> =>
   res.json(UpdateApplicantResponse.parse(applicantResponse(result)));
 });
 
-router.delete("/applicants/:id", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/applicants/:id", requireCoordinator, async (req, res): Promise<void> => {
   const params = DeleteApplicantParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid applicant id" });
@@ -2211,7 +2211,7 @@ function laneForRecommendation(recommendation: string): string {
   return "hold";
 }
 
-router.post("/applicants/:id/regenerate", requireAdmin, async (req, res): Promise<void> => {
+router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): Promise<void> => {
   const params = DeleteApplicantParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid applicant id" });
@@ -2313,7 +2313,7 @@ router.post("/applicants/:id/regenerate", requireAdmin, async (req, res): Promis
   }
 });
 
-router.post("/imports/preview", requireAdmin, async (req, res): Promise<void> => {
+router.post("/imports/preview", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = CommitImportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2334,7 +2334,7 @@ router.post("/imports/preview", requireAdmin, async (req, res): Promise<void> =>
   }
 });
 
-router.get("/imports/history", requireAdmin, async (req, res): Promise<void> => {
+router.get("/imports/history", requireCoordinator, async (req, res): Promise<void> => {
   const history = await db.select().from(importsTable).orderBy(desc(importsTable.createdAt));
   const emptyDiff = { added: 0, updated: 0, unchanged: 0, missingFromUpload: 0 };
   const asCount = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
@@ -2453,7 +2453,7 @@ async function commitImportFile(
   };
 }
 
-router.post("/imports", requireAdmin, async (req, res): Promise<void> => {
+router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = CommitImportBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2473,11 +2473,11 @@ router.post("/imports", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/queue", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/queue", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
-router.post("/queue/advance", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = AdvanceQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2499,7 +2499,7 @@ router.post("/queue/advance", requireAdmin, async (req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
-router.post("/queue/callback", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/callback", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = CallbackQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2523,7 +2523,7 @@ router.post("/queue/callback", requireAdmin, async (req, res): Promise<void> => 
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
-router.post("/queue/reset", requireAdmin, async (_req, res): Promise<void> => {
+router.post("/queue/reset", requireCoordinator, async (_req, res): Promise<void> => {
   const applicants = await getApplicants({ sort: "queue" });
   const now = new Date();
   for (const [index, applicant] of applicants.entries()) {
@@ -2537,7 +2537,7 @@ router.post("/queue/reset", requireAdmin, async (_req, res): Promise<void> => {
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
-router.post("/queue/settings", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/settings", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = UpdateQueueSettingsBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -2767,7 +2767,7 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   }));
 });
 
-router.post("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
+router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -2817,7 +2817,7 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
   res.json(GetInterviewWhiteboardByIdResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });
 
-router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -2871,7 +2871,7 @@ function boardResponse(
   };
 }
 
-router.post("/boards", requireAdmin, async (req, res): Promise<void> => {
+router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -2914,7 +2914,7 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
   res.json(GetBoardResponse.parse(boardResponse(board, conversation)));
 });
 
-router.patch("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -2961,7 +2961,7 @@ router.patch("/boards/:boardId", requireAdmin, async (req, res): Promise<void> =
   res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
 });
 
-router.post("/spreadsheets", requireAdmin, async (req, res): Promise<void> => {
+router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3008,7 +3008,7 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   res.json(GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
 });
 
-router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3113,7 +3113,7 @@ router.get("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void>
   }));
 });
 
-router.post("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3323,7 +3323,7 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
 
-router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/chat/:messageId/pin", requireCoordinator, async (req, res): Promise<void> => {
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   if (!messageId) {
     res.status(400).json({ error: "Message id required" });
@@ -3348,7 +3348,7 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
   }));
 });
 
-router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/queue/chat/:messageId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3393,7 +3393,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation)));
 });
 
-router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/queue/chat/:messageId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
@@ -3429,7 +3429,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
   res.status(204).end();
 });
 
-router.post("/queue/reorder", requireAdmin, async (req, res): Promise<void> => {
+router.post("/queue/reorder", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = ReorderQueueBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -3508,7 +3508,7 @@ router.get("/display/settings", requireAdmin, async (_req, res): Promise<void> =
   res.json(GetDisplaySettingsResponse.parse(displaySettingsResponse(row)));
 });
 
-router.post("/display/settings", requireAdmin, async (req, res): Promise<void> => {
+router.post("/display/settings", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = UpdateDisplaySettingsBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid display settings" });
@@ -3559,7 +3559,7 @@ router.get("/seating/settings", requireAdmin, async (_req, res): Promise<void> =
   }));
 });
 
-router.post("/seating/settings", requireAdmin, async (req, res): Promise<void> => {
+router.post("/seating/settings", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = UpdateSeatingSettingsBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid seating settings" });
@@ -3587,7 +3587,7 @@ router.post("/seating/settings", requireAdmin, async (req, res): Promise<void> =
   res.json(UpdateSeatingSettingsResponse.parse(seatingSettingsResponse(row)));
 });
 
-router.post("/seating/assign", requireAdmin, async (req, res): Promise<void> => {
+router.post("/seating/assign", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = AssignSeatBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid seat assignment" });
@@ -3613,7 +3613,7 @@ router.post("/seating/assign", requireAdmin, async (req, res): Promise<void> => 
   res.json(AssignSeatResponse.parse(applicantResponse(seated)));
 });
 
-router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
+router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = AskAssistantBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -3905,7 +3905,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
 
 // NOTE: intentionally outside openapi.yaml — orval cannot express SSE token
 // streams, so this endpoint is consumed with a manual fetch reader on /assistant.
-router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<void> => {
+router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = AskAssistantBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -4212,7 +4212,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   }
 });
 
-router.post("/assistant/images", requireAdmin, async (req, res): Promise<void> => {  const parsed = GenerateAssistantImageBody.safeParse(req.body);
+router.post("/assistant/images", requireCoordinator, async (req, res): Promise<void> => {  const parsed = GenerateAssistantImageBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -4258,7 +4258,7 @@ function assistantModelSelectionInstructions(modelIds: string[]): string {
   return `Only change models when the coordinator explicitly asks to switch or choose one. Then call set_assistant_model with an exact id from this list, and use that model for the rest of this answer. The browser will remember the selected model for later requests. Do not mention model pricing or tiers unless asked. Available model ids: ${modelIds.join(", ")}`;
 }
 
-router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
+router.get("/assistant/models", requireCoordinator, async (req, res): Promise<void> => {
   try {
     const items = (await listFreeAssistantModelIds()).map((id) => ({ id }));
     res.json(ListAssistantModelsResponse.parse({ items }));
@@ -4268,11 +4268,11 @@ router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> =>
   }
 });
 
-router.get("/assistant/config", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/assistant/config", requireCoordinator, async (_req, res): Promise<void> => {
   res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
 });
 
-router.get("/assistant/conversations", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/assistant/conversations", requireCoordinator, async (_req, res): Promise<void> => {
   await getOrCreateAssistantConversation();
   const conversations = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt));
   const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable);
@@ -4285,7 +4285,7 @@ router.get("/assistant/conversations", requireAdmin, async (_req, res): Promise<
   }));
 });
 
-router.post("/assistant/conversations", requireAdmin, async (req, res): Promise<void> => {
+router.post("/assistant/conversations", requireCoordinator, async (req, res): Promise<void> => {
   const parsed = CreateAssistantConversationBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -4299,7 +4299,7 @@ router.post("/assistant/conversations", requireAdmin, async (req, res): Promise<
   res.status(201).json(CreateAssistantConversationResponse.parse(assistantConversationResponse(conversation, 0)));
 });
 
-router.patch("/assistant/conversations/:conversationId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/assistant/conversations/:conversationId", requireCoordinator, async (req, res): Promise<void> => {
   const params = RenameAssistantConversationParams.safeParse(req.params);
   const body = RenameAssistantConversationBody.safeParse(req.body);
   if (!params.success || !body.success) {
@@ -4323,7 +4323,7 @@ router.patch("/assistant/conversations/:conversationId", requireAdmin, async (re
   res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, messages.length)));
 });
 
-router.delete("/assistant/conversations/:conversationId", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/assistant/conversations/:conversationId", requireCoordinator, async (req, res): Promise<void> => {
   const params = DeleteAssistantConversationParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -4339,7 +4339,7 @@ router.delete("/assistant/conversations/:conversationId", requireAdmin, async (r
   res.status(204).send();
 });
 
-router.get("/assistant/conversations/:conversationId/messages", requireAdmin, async (req, res): Promise<void> => {
+router.get("/assistant/conversations/:conversationId/messages", requireCoordinator, async (req, res): Promise<void> => {
   const params = GetAssistantConversationMessagesParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -4370,7 +4370,7 @@ router.get("/assistant/conversations/:conversationId/messages", requireAdmin, as
   }));
 });
 
-router.get("/assistant/history", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/assistant/history", requireCoordinator, async (_req, res): Promise<void> => {
   const messages = await db.select().from(assistantMessagesTable).orderBy(asc(assistantMessagesTable.createdAt));
   res.json(GetAssistantHistoryResponse.parse({
     items: messages.map((message) => ({
@@ -4383,7 +4383,7 @@ router.get("/assistant/history", requireAdmin, async (_req, res): Promise<void> 
   }));
 });
 
-router.delete("/assistant/history", requireAdmin, async (_req, res): Promise<void> => {
+router.delete("/assistant/history", requireCoordinator, async (_req, res): Promise<void> => {
   await db.delete(assistantMessagesTable);
   await db.delete(assistantConversationsTable);
   res.status(204).send();

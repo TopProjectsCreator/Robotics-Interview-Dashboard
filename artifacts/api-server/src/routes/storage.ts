@@ -18,7 +18,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
-import { requireAdmin } from "../middlewares/adminAuth";
+import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
 
 const router: IRouter = Router();
@@ -358,7 +358,7 @@ router.post(
  */
 router.post(
   '/storage/parasolid-preview',
-  requireAdmin,
+  requireCoordinator,
   express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
     let data = req.body as Buffer | undefined;
