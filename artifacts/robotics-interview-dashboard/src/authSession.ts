@@ -9,6 +9,43 @@ export const AUTH_SESSION_ACTIVE_STORAGE_KEY = "robotics_admin_session_active";
 export const AUTH_SESSION_CHANNEL_NAME = "robotics-admin-session";
 export const AUTH_SESSION_END_STORAGE_KEY = "robotics_admin_session_ended";
 export const DEFAULT_AUTH_RETURN_PATH = "/dashboard";
+const CHAT_DRAFT_STORAGE_KEY_PREFIX = "robotics_admin_chat_draft";
+
+export function getChatDraftStorageKey(
+  interviewerId: string | null | undefined,
+  conversationId: string,
+): string | null {
+  if (!interviewerId?.trim() || !conversationId) return null;
+  return `${CHAT_DRAFT_STORAGE_KEY_PREFIX}:${encodeURIComponent(interviewerId)}:${encodeURIComponent(conversationId)}`;
+}
+
+export function loadChatDraft(storageKey: string | null): string {
+  if (!storageKey || typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(storageKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveChatDraft(storageKey: string | null, draft: string): void {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    if (draft.length === 0) window.sessionStorage.removeItem(storageKey);
+    else window.sessionStorage.setItem(storageKey, draft);
+  } catch {
+    // The composer remains usable when browser storage is unavailable.
+  }
+}
+
+export function clearChatDraft(storageKey: string | null): void {
+  if (!storageKey || typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // The composer remains usable when browser storage is unavailable.
+  }
+}
 
 const AUTH_RETURN_ORIGIN = "https://robotics-workspace.invalid";
 const WORKSPACE_RETURN_PATHS = new Set([

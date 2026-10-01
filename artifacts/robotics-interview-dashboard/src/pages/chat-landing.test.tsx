@@ -11,7 +11,11 @@ import {
   AUTH_SESSION_END_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
   DEFAULT_AUTH_RETURN_PATH,
+  clearChatDraft,
+  getChatDraftStorageKey,
   getSafeAuthReturnPath,
+  loadChatDraft,
+  saveChatDraft,
 } from "@/authSession";
 import {
   getGetInterviewChatQueryKey,
@@ -203,11 +207,37 @@ afterEach(() => {
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(AUTH_SESSION_END_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_ACTIVE_STORAGE_KEY);
+  for (const key of Object.keys(window.sessionStorage)) {
+    if (key.startsWith("robotics_admin_chat_draft:")) window.sessionStorage.removeItem(key);
+  }
   window.localStorage.removeItem("robotics-workspace-settings");
   MockBroadcastChannel.channels.clear();
   vi.unstubAllGlobals();
   document.documentElement.classList.remove("dark");
   window.history.replaceState({}, "", "/");
+});
+
+describe("chat draft storage", () => {
+  it("keeps drafts in the current tab under separate interviewer and conversation keys", () => {
+    const interviewerAKey = getChatDraftStorageKey("interviewer-a", "shared:Interviewer A:");
+    const interviewerBKey = getChatDraftStorageKey("interviewer-b", "shared:Interviewer B:");
+    const directChatKey = getChatDraftStorageKey("interviewer-a", "direct:Interviewer A:Jordan");
+
+    expect(interviewerAKey).not.toBeNull();
+    expect(interviewerBKey).not.toBe(interviewerAKey);
+    expect(directChatKey).not.toBe(interviewerAKey);
+    saveChatDraft(interviewerAKey, "A private unsent note");
+
+    expect(loadChatDraft(interviewerAKey)).toBe("A private unsent note");
+    expect(loadChatDraft(interviewerBKey)).toBe("");
+    expect(loadChatDraft(directChatKey)).toBe("");
+
+    saveChatDraft(interviewerAKey, "");
+    expect(loadChatDraft(interviewerAKey)).toBe("");
+    saveChatDraft(interviewerAKey, "Another unsent note");
+    clearChatDraft(interviewerAKey);
+    expect(loadChatDraft(interviewerAKey)).toBe("");
+  });
 });
 
 describe("public chat discovery", () => {
@@ -1043,15 +1073,30 @@ describe("public chat discovery", () => {
     expect(queryClient.getQueryData(getListInterviewersQueryKey())).toEqual(publicInterviewerList);
   });
 
-  it("expires the session and drops cached records when a private request is rejected", async () => {
+  it("restores an unsent chat draft after a private request requires sign-in", async () => {
     window.history.replaceState({}, "", "/chat");
     window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "revoked-session-token");
     window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
+    let authenticated = true;
     let rejectPrivateRequest = false;
     const network = stubNetworkTransports(async (input) => {
       const path = requestPath(input);
-      if (path === "/api/auth/session") return jsonResponse(signedInSession);
-      if (path === "/api/queue/chat" && rejectPrivateRequest) return unauthorizedResponse();
+      if (path === "/api/auth/session") return jsonResponse(authenticated ? signedInSession : { authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
+      if (path === "/api/auth/interviewers") {
+        return jsonResponse({ items: [{ id: "test-interviewer", displayName: "Test Interviewer", hasPassword: true }] });
+      }
+      if (path === "/api/auth/login") {
+        authenticated = true;
+        rejectPrivateRequest = false;
+        return jsonResponse({ ...signedInSession, token: "restored-session-token" });
+      }
+      if (path === "/api/queue/chat" && rejectPrivateRequest) {
+        authenticated = false;
+        return unauthorizedResponse();
+      }
       if (path === "/api/queue/chat") {
         return jsonResponse({
           scope: "shared",
@@ -1075,6 +1120,11 @@ describe("public chat discovery", () => {
 
     render(<App />);
 
+    const draftKey = getChatDraftStorageKey("test-interviewer", "shared:Test Interviewer:");
+    const initialComposer = await screen.findByTestId("input-interviewer-chat");
+    fireEvent.change(initialComposer, { target: { value: "Please compare the two robot designs." } });
+    await waitFor(() => expect(loadChatDraft(draftKey)).toBe("Please compare the two robot designs."));
+
     await waitFor(() => expect(document.getElementById("chat-message-rejected-request-chat")?.textContent).toContain(chatCanary));
     await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
 
@@ -1093,6 +1143,31 @@ describe("public chat discovery", () => {
       .toHaveTextContent("Your session expired. Sign in again to continue.");
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
     expect(document.body.textContent).not.toContain(chatCanary);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+    fireEvent.click(await screen.findByTestId("button-choose-interviewer-test-interviewer"));
+    fireEvent.change(screen.getByTestId("input-personal-password"), { target: { value: "account-password" } });
+    fireEvent.click(screen.getByTestId("button-personal-password"));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/chat"));
+    const restoredComposer = await screen.findByTestId("input-interviewer-chat");
+    expect(restoredComposer).toHaveValue("Please compare the two robot designs.");
+
+    fireEvent.change(restoredComposer, { target: { value: "" } });
+    await waitFor(() => expect(loadChatDraft(draftKey)).toBe(""));
+
+    fireEvent.change(restoredComposer, { target: { value: "Send this note after signing in." } });
+    await waitFor(() => expect(loadChatDraft(draftKey)).toBe("Send this note after signing in."));
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+    await waitFor(() => {
+      expect(network.fetchSpy.mock.calls.some(([input, init]) => (
+        requestPath(input) === "/api/queue/chat" &&
+        (init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET")) === "POST"
+      ))).toBe(true);
+      expect(loadChatDraft(draftKey)).toBe("");
+    });
+    expect(screen.getByTestId("input-interviewer-chat")).toHaveValue("");
   });
 
   it("does not carry cached records into a different interviewer's sign-in", async () => {

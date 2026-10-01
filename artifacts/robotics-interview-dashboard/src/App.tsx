@@ -47,7 +47,7 @@ import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
-import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, storeAuthToken } from "./authSession";
+import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -3583,7 +3583,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   useEffect(() => () => { for (const f of chatFilesRef.current) URL.revokeObjectURL(f.previewUrl); }, []);
   const [chatImageError, setChatImageError] = useState("");
   const [chatUploading, setChatUploading] = useState(false);
+  const chatDraftStorageKey = getChatDraftStorageKey(session.data?.interviewerId, conversationId);
   const [message, setMessage] = useState("");
+  const [loadedChatDraftKey, setLoadedChatDraftKey] = useState<string | null>(null);
+  useEffect(() => {
+    setMessage(loadChatDraft(chatDraftStorageKey));
+    setLoadedChatDraftKey(chatDraftStorageKey);
+  }, [chatDraftStorageKey]);
+  useEffect(() => {
+    if (loadedChatDraftKey !== chatDraftStorageKey) return;
+    saveChatDraft(chatDraftStorageKey, message);
+  }, [chatDraftStorageKey, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
   const [failedAiReply, setFailedAiReply] = useState<{
     answer: string;
@@ -4369,6 +4379,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         },
       }), 30000, "send");
       userPosted = true;
+      clearChatDraft(chatDraftStorageKey);
+      setMessage("");
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
