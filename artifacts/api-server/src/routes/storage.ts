@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { requireCompleteCadconvertFaceSummary } from '../lib/cadconvertPreview';
 import {
+  MAX_STORAGE_UPLOAD_BYTES,
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
@@ -298,8 +299,9 @@ router.post(
         res.status(400).json({ error: 'This is not a valid STL model' });
         return;
       }
-      if (data.length > CHAT_UPLOAD_MAX_BYTES) {
-        res.status(413).json({ error: 'File too big (max 100 MB)' });
+      if (data.length > CHAT_UPLOAD_MAX_BYTES || data.length > MAX_STORAGE_UPLOAD_BYTES) {
+        const maxMb = Math.floor(Math.min(CHAT_UPLOAD_MAX_BYTES, MAX_STORAGE_UPLOAD_BYTES) / (1024 * 1024));
+        res.status(413).json({ error: `File too big (max ${maxMb} MB)` });
         return;
       }
       const objectPath = await objectStorageService.uploadChatImage(data, contentType);
