@@ -45,6 +45,8 @@ describe("chat attachment round trip", () => {
 
   afterEach(() => {
     queryClient.clear();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("uploads a document and media file, persists their paths, and reloads authenticated inline previews", async () => {
@@ -174,5 +176,61 @@ describe("chat attachment round trip", () => {
     expect(document.querySelector('a[href^="/api/storage/objects/"]')).not.toBeInTheDocument();
     expect(document.querySelector("iframe[title='brief.pdf']")?.closest("p")).toBeNull();
     expect(document.querySelector("audio[controls]")?.closest("p")).toBeNull();
+  });
+
+  it("cleans up message attachments through the authenticated storage endpoint after message deletion", async () => {
+    const order: string[] = [];
+    const attachmentMessage: StoredMessage = {
+      id: "message-to-delete",
+      author: "Interviewer",
+      message: "Please review [brief.pdf](/api/storage/objects/chat-delete-1234).",
+      scope: "shared",
+      peer: null,
+      parentMessageId: null,
+      pinnedAt: null,
+      activities: [],
+      reactions: [],
+      createdAt: "2026-09-30T12:00:00.000Z",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      const url = new URL(rawUrl, window.location.origin);
+
+      if (url.pathname === "/api/queue/chat" && init?.method !== "DELETE") {
+        return jsonResponse({ items: [attachmentMessage], scope: "shared", peer: null });
+      }
+      if (url.pathname === "/api/queue/chat/message-to-delete" && init?.method === "DELETE") {
+        order.push("message");
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === "/api/storage/objects/chat-delete-1234" && init?.method === "DELETE") {
+        order.push("storage");
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse({ items: [], interviewerLabels: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SettingsProvider>
+            <WouterRouter>
+              <InterviewChatPanel applicantIds={[]} />
+            </WouterRouter>
+          </SettingsProvider>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByTestId("button-delete-chat-message-message-to-delete");
+    fireEvent.click(screen.getByTestId("button-delete-chat-message-message-to-delete"));
+
+    await waitFor(() => expect(order).toEqual(["message", "storage"]));
+    const storageRequest = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).includes("/api/storage/objects/chat-delete-1234") && init?.method === "DELETE",
+    );
+    expect(storageRequest?.[1]).toMatchObject({ method: "DELETE", credentials: "include" });
   });
 });

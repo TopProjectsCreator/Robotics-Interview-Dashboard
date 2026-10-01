@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
+import { db, interviewChatMessagesTable } from '@workspace/db';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,6 +21,7 @@ import {
 } from '../lib/objectStorage';
 import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
+import { isChatAttachmentReferenced } from "../lib/chatAttachmentReferences";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -655,6 +657,12 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+    const messages = await db.select({ message: interviewChatMessagesTable.message })
+      .from(interviewChatMessagesTable);
+    if (isChatAttachmentReferenced(objectPath, messages.map(({ message }) => message))) {
+      res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
+      return;
+    }
     try {
       await objectStorageService.downloadObject(objectPath);
     } catch (error) {

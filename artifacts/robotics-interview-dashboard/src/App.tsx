@@ -44,6 +44,7 @@ import {
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
+import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, getAuthRedirectPath, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, listenForAuthSessionEnd, markAuthSessionEndedByAnotherTab, storeAuthToken } from "./authSession";
@@ -4095,9 +4096,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     deleteChatMessage.mutate(
       { messageId: item.id },
       {
-        onSuccess: () => {
+        onSuccess: async () => {
           if (editingMessageId === item.id) cancelEdit();
           if (replyingTo?.id === item.id) setReplyingTo(null);
+          const cleanupFailed = await cleanupChatMessageAttachments(item.message);
+          if (cleanupFailed) {
+            setChatError("Message deleted, but one or more attachments could not be removed.");
+          }
           void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
         },
         onError: error => setChatError(error instanceof Error ? error.message : "Couldn't delete that message."),
