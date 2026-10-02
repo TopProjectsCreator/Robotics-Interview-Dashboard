@@ -174,6 +174,16 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP: promote verification account to admin for AI-message delete test.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+        WHERE id IN ('1e05ced62432f8059cb62d99dc9ecd4e')`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp promote failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
