@@ -174,6 +174,18 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // One-time: clear shared team chat history before Viha Apte's join message.
+  try {
+    const trimmed = await pool.query(
+      `delete from interview_chat_messages
+        where conversation_scope = 'shared'
+          and created_at < timestamptz '2026-10-01T05:51:22.131Z'`,
+    );
+    if (trimmed.rowCount) logger.info({ removed: trimmed.rowCount }, "Shared chat history trimmed");
+  } catch (err) {
+    logger.error({ err }, "Could not trim shared chat history");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
