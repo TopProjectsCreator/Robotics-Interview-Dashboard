@@ -4498,7 +4498,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
     const parentPreview = parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
-    const canManage = item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant";
+    // Authors manage their own messages; admins (coordinators) can moderate
+    // anyone's. The API enforces the same rule.
+    const isAdminChat = session.data?.role === "coordinator";
+    const canManage = item.author !== "AI assistant"
+      && (item.author.toLowerCase() === activeInterviewer.toLowerCase() || isAdminChat);
     const editing = editingMessageId === item.id;
     const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer, mentionPeople);
     return <div key={item.id} id={`chat-message-${item.id}`} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
