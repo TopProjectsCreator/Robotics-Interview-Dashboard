@@ -1019,6 +1019,11 @@ export interface ChatConversationSummary {
 
 export interface ChatConversationList {
   items: ChatConversationSummary[];
+  /**
+     * Latest team-channel activity, null when the channel is empty
+     * @nullable
+     */
+  shared: ChatConversationSummary | null;
 }
 
 export interface ChatReactionInput {

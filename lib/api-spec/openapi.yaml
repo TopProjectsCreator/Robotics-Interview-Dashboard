@@ -3522,12 +3522,17 @@ components:
           type: string
     ChatConversationList:
       type: object
-      required: [items]
+      required: [items, shared]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/ChatConversationSummary"
+        shared:
+          type: ["object", "null"]
+          description: Latest team-channel activity, null when the channel is empty
+          allOf:
+            - $ref: "#/components/schemas/ChatConversationSummary"
     ChatReaction:
       type: object
       required: [emoji, count, authors]

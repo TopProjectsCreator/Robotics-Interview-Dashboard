@@ -1077,7 +1077,13 @@ export const GetChatConversationsResponse = zod.object({
   "lastMessageAt": zod.string(),
   "lastMessageAuthor": zod.string(),
   "lastMessage": zod.string()
-}))
+})),
+  "shared": zod.object({
+  "peer": zod.string(),
+  "lastMessageAt": zod.string(),
+  "lastMessageAuthor": zod.string(),
+  "lastMessage": zod.string()
+}).nullable().describe('Latest team-channel activity, null when the channel is empty')
 })
 
 

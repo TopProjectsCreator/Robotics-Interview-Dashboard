@@ -51,6 +51,7 @@ import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSe
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
+import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1991,6 +1992,13 @@ function Shell({ children }: { children: ReactNode }) {
   const logout = useLogout();
   usePresenceHeartbeat(session.data?.authenticated === true, location);
   useRealtimeSync(session.data?.authenticated === true);
+  const shellPathForNotify = location.split(/[?#]/, 1)[0];
+  useGlobalChatNotifications({
+    myLabel: session.data?.label ?? "",
+    viewingPeer: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer")?.trim() || null,
+    viewingShared: shellPathForNotify === "/chat" && !new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer"),
+    enabled: session.data?.authenticated === true,
+  });
   const qc = useQueryClient();
   useEffect(() => listenForAuthSessionEnd(() => {
     forgetCurrentSessionQueryAuthentication();

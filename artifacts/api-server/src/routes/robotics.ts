@@ -3278,7 +3278,25 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
       })
       .filter((item) => item.peer)
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
-    res.json(GetChatConversationsResponse.parse({ items }));
+    // Also report the latest team-channel message so the client can notify
+    // about chat activity even when the chat panel is not on screen.
+    const sharedResult = await pool.query(
+      `select author, message, created_at
+         from interview_chat_messages
+        where conversation_scope = 'shared' and conversation_peer is null
+        order by created_at desc
+        limit 1`,
+    );
+    const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date } | undefined;
+    const shared = sharedRowValue
+      ? {
+          peer: "",
+          lastMessageAt: new Date(sharedRowValue.created_at).toISOString(),
+          lastMessageAuthor: String(sharedRowValue.author),
+          lastMessage: String(sharedRowValue.message ?? "").slice(0, 140),
+        }
+      : null;
+    res.json(GetChatConversationsResponse.parse({ items, shared }));
   } catch (error) {
     req.log.error({ err: error }, "Direct conversation list failed");
     res.status(500).json({ error: "Unable to load your direct messages." });
