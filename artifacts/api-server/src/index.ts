@@ -110,7 +110,6 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "role" text not null default 'coordinator', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
-    `update "interviewer_accounts" set "role" = 'interviewer' where "id" = '76319d35b3307f8799c9167da28fe318'`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
@@ -174,6 +173,18 @@ async function ensureSchema(): Promise<void> {
     }
   }
   await removeTestAccounts();
+
+  // One-time: promote Clinton to Treasurer (removed in the next deploy).
+  try {
+    const promoted = await pool.query(
+      `UPDATE interviewer_accounts SET role = 'treasurer', updated_at = now()
+        WHERE normalized_name = 'clinton' AND role IS DISTINCT FROM 'treasurer'
+        RETURNING id`,
+    );
+    if (promoted.rowCount) logger.info("Clinton promoted to Treasurer");
+  } catch (err) {
+    logger.error({ err }, "Could not promote Clinton to Treasurer");
+  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
