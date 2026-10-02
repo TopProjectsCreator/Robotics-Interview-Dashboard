@@ -174,18 +174,6 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // One-time: promote Clinton to Treasurer (removed in the next deploy).
-  try {
-    const promoted = await pool.query(
-      `UPDATE interviewer_accounts SET role = 'treasurer', updated_at = now()
-        WHERE normalized_name = 'clinton' AND role IS DISTINCT FROM 'treasurer'
-        RETURNING id`,
-    );
-    if (promoted.rowCount) logger.info("Clinton promoted to Treasurer");
-  } catch (err) {
-    logger.error({ err }, "Could not promote Clinton to Treasurer");
-  }
-
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
