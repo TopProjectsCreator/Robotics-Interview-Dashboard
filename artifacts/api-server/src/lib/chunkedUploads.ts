@@ -50,20 +50,31 @@ export async function deleteChunkParts(uploadId: string, totalParts: number): Pr
  */
 export async function streamChunkedUpload(
   uploadId: string,
-  res: { setHeader: (name: string, value: string | number) => void; write: (chunk: Buffer) => boolean; end: () => void; flushHeaders?: () => void },
+  res: { write: (chunk: Uint8Array) => boolean; end: () => void; destroy?: (error?: Error) => void },
   signPartUrl: (path: string) => Promise<string>,
 ): Promise<{ contentType: string; fileName: string; sizeBytes: number }> {
   const manifest = await getChunkUpload(uploadId);
   if (!manifest) throw new Error("Chunked upload not found");
 
-  for (let index = 0; index < manifest.totalParts; index += 1) {
-    const signedUrl = await signPartUrl(chunkStoragePath(uploadId, index));
-    const upstream = await fetch(signedUrl);
-    if (!upstream.ok || !upstream.body) {
-      throw new Error(`Part ${index} is missing from storage`);
+  // One pipeline for the whole object: piping per part would end the response
+  // after the first part and silently truncate the download.
+  async function* parts() {
+    for (let index = 0; index < manifest!.totalParts; index += 1) {
+      const signedUrl = await signPartUrl(chunkStoragePath(uploadId, index));
+      const upstream = await fetch(signedUrl);
+      if (!upstream.ok || !upstream.body) {
+        throw new Error(`Part ${index} is missing from storage`);
+      }
+      const reader = (upstream.body as ReadableStream<Uint8Array>).getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) yield value;
+      }
     }
-    await pipeline(Readable.fromWeb(upstream.body as never), res as never);
   }
+
+  await pipeline(Readable.from(parts()), res as never);
 
   return {
     contentType: manifest.contentType,
