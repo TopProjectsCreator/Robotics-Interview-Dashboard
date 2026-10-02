@@ -2,7 +2,7 @@
 // (/objects/generated/<id>) and external CAD models (/objects/ext/<id>),
 // capturing the full object path.
 const CHAT_ATTACHMENT_URL_PATTERN =
-  /\/api\/storage\/objects\/(?:(generated|ext)\/)?([A-Za-z0-9-]{8,128})(?![A-Za-z0-9-])/g;
+  /\/api\/storage\/objects\/(?:(generated|ext|chunk)\/)?([A-Za-z0-9-]{8,128})(?![A-Za-z0-9-])/g;
 
 export function chatAttachmentObjectIds(message: string): string[] {
   const ids = new Set<string>();

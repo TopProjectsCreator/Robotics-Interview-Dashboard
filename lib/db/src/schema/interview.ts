@@ -34,12 +34,15 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const externalObjectsTable = pgTable("external_objects", {
-  id: text("id").primaryKey(),
-  url: text("url").notNull(),
+
+export const chunkedUploadsTable = pgTable("chunked_uploads", {
+  uploadId: text("upload_id").primaryKey(),
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
   sizeBytes: integer("size_bytes").notNull().default(0),
+  totalParts: integer("total_parts").notNull(),
+  partSizeBytes: integer("part_size_bytes").notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

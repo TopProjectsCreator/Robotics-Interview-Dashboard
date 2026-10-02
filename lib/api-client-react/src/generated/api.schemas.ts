@@ -415,6 +415,33 @@ export interface PartsRobotAllocationInput {
   quantity: number;
 }
 
+export interface ChunkUploadUrlInput {
+  /** Client-generated uuid shared across every part */
+  uploadId: string;
+  /** @minimum 0 */
+  partIndex: number;
+}
+
+export interface ChunkUploadUrl {
+  uploadId: string;
+  partIndex: number;
+  signedUrl: string;
+}
+
+export interface ChunkUploadCompleteInput {
+  uploadId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  totalParts: number;
+  partSizeBytes: number;
+}
+
+export interface ChunkUploadStored {
+  /** Use as the attachment path, e.g. /objects/chunk/<uploadId> */
+  objectPath: string;
+}
+
 export interface HealthStatus {
   status: string;
 }

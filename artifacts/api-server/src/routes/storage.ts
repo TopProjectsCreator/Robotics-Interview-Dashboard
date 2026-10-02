@@ -2,12 +2,17 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UploadPartsRobotPreviewFileResponse,
+  CreateChunkUploadUrlBody,
+  CreateChunkUploadUrlResponse,
+  CompleteChunkUploadBody,
+  CompleteChunkUploadResponse,
 } from '@workspace/api-zod';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { db } from '@workspace/db';
+import { db, chunkedUploadsTable } from '@workspace/db';
+import { eq } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,16 +25,17 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
-import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { accountById } from "../lib/interviewerAccounts";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
 import {
-  deleteExternalObject,
-  fetchExternalFile,
-  getExternalObject,
-  isExternalCadType,
-  recordExternalObject,
-  uploadToCatbox,
-} from "../lib/externalStorage";
+  CHUNKED_UPLOAD_THRESHOLD_BYTES,
+  chunkStoragePath,
+  deleteChunkParts,
+  getChunkUpload,
+  isChunkUploadId,
+  streamChunkedUpload,
+} from "../lib/chunkedUploads";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 
 const router: IRouter = Router();
@@ -285,20 +291,69 @@ function isValidStl(data: Buffer): boolean {
     data.includes('facet') &&
     data.includes('vertex');
 }
-// Oversized CAD models go to external storage; applicant photos, transcripts
-// and chat images always stay in the private Supabase bucket.
-async function storeUploadOrExternal(
-  data: Buffer,
-  fileName: string,
-  contentType: string,
-): Promise<string> {
-  if (isExternalCadType(contentType) && data.length > MAX_STORAGE_UPLOAD_BYTES) {
-    const url = await uploadToCatbox(data, fileName, contentType);
-    const id = await recordExternalObject({ url, fileName, contentType, sizeBytes: data.length });
-    return `/objects/ext/${id}`;
+/**
+ * POST /storage/uploads/chunk-url
+ *
+ * Signed URL for one part of a chunked upload. The browser PUTs each part
+ * straight to Supabase, so large files never pass through this process.
+ */
+router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = CreateChunkUploadUrlBody.safeParse(req.body);
+  if (!parsed.success || !isChunkUploadId(parsed.data.uploadId)) {
+    res.status(400).json({ error: 'A valid uploadId and partIndex are required' });
+    return;
   }
-  return objectStorageService.uploadChatImage(data, contentType);
-}
+  try {
+    const signedUrl = await objectStorageService.mintChunkUpload(
+      chunkStoragePath(parsed.data.uploadId, parsed.data.partIndex),
+    );
+    res.json(CreateChunkUploadUrlResponse.parse({
+      uploadId: parsed.data.uploadId,
+      partIndex: parsed.data.partIndex,
+      signedUrl,
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, 'Error minting chunk upload URL');
+    res.status(500).json({ error: 'Failed to prepare this upload part' });
+  }
+});
+
+/**
+ * POST /storage/uploads/chunk-complete
+ *
+ * Record the manifest once every part is in storage. Returns the object
+ * path to reference from chat messages or robot previews.
+ */
+router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request, res: Response) => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: 'Authentication required' }); return; }
+  const parsed = CompleteChunkUploadBody.safeParse(req.body);
+  if (!parsed.success || !isChunkUploadId(parsed.data.uploadId)) {
+    res.status(400).json({ error: 'Upload manifest is incomplete' });
+    return;
+  }
+  const { uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes } = parsed.data;
+  if (!fileName?.trim() || !Number.isFinite(totalParts) || totalParts < 1) {
+    res.status(400).json({ error: 'Upload manifest is incomplete' });
+    return;
+  }
+  const manifest = {
+    fileName: fileName.trim().slice(0, 255),
+    contentType: contentType.trim().slice(0, 100) || 'application/octet-stream',
+    sizeBytes: Number(sizeBytes) || 0,
+    totalParts: Number(totalParts),
+    partSizeBytes: Number(partSizeBytes) || 0,
+  };
+  try {
+    await db.insert(chunkedUploadsTable).values({ uploadId, ...manifest, createdBy: account.displayName })
+      .onConflictDoUpdate({ target: chunkedUploadsTable.uploadId, set: manifest });
+    res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `/objects/chunk/${uploadId}` }));
+  } catch (error) {
+    req.log.error({ err: error }, 'Error finalising chunked upload');
+    res.status(500).json({ error: 'Upload could not be finalised' });
+  }
+});
 
 router.post(
   '/storage/uploads',
@@ -324,14 +379,14 @@ router.post(
         res.status(400).json({ error: 'This is not a valid STL model' });
         return;
       }
-      const externalCapable = isExternalCadType(contentType);
-      const effectiveMax = externalCapable ? CHAT_UPLOAD_MAX_BYTES : Math.min(CHAT_UPLOAD_MAX_BYTES, MAX_STORAGE_UPLOAD_BYTES);
-      if (data.length > effectiveMax) {
-        const maxMb = Math.floor(effectiveMax / (1024 * 1024));
-        res.status(413).json({ error: `File too big (max ${maxMb} MB)` });
+      if (data.length > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
+        const maxMb = Math.floor(CHUNKED_UPLOAD_THRESHOLD_BYTES / (1024 * 1024));
+        res.status(413).json({
+          error: `File too big for a single upload (max ${maxMb} MB). Send it as a chunked upload instead.`,
+        });
         return;
       }
-      const objectPath = await storeUploadOrExternal(data, 'attachment', contentType);
+      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
       res.status(201).json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
@@ -369,7 +424,7 @@ router.post(
       return;
     }
     try {
-      const objectPath = await storeUploadOrExternal(data, fileName, contentType);
+      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
       res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
     } catch (error) {
       req.log.error({ err: error }, 'Robot preview upload failed');
@@ -656,19 +711,23 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
-    if (wildcardPath.startsWith('ext/')) {
-      const row = await getExternalObject(wildcardPath.slice('ext/'.length));
-      if (!row) {
+    if (wildcardPath.startsWith('chunk/')) {
+      const uploadId = wildcardPath.slice('chunk/'.length);
+      const manifest = await getChunkUpload(uploadId);
+      if (!manifest) {
         res.status(404).json({ error: 'Object not found' });
         return;
       }
-      const upstream = await fetchExternalFile(row);
       res.status(200);
-      res.setHeader('Content-Type', row.contentType || 'application/octet-stream');
-      if (row.sizeBytes) res.setHeader('Content-Length', String(row.sizeBytes));
+      res.setHeader('Content-Type', manifest.contentType || 'application/octet-stream');
+      if (manifest.sizeBytes) res.setHeader('Content-Length', String(manifest.sizeBytes));
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      res.setHeader('Content-Disposition', `inline; filename="${row.fileName.replace(/"/g, '')}"`);
-      await pipeline(upstream.body as unknown as NodeJS.ReadableStream, res);
+      res.setHeader('Content-Disposition', `inline; filename="${manifest.fileName.replace(/"/g, '')}"`);
+      await streamChunkedUpload(
+        uploadId,
+        res as unknown as Parameters<typeof streamChunkedUpload>[1],
+        (path) => objectStorageService.signDownloadUrl(path),
+      );
       return;
     }
 
@@ -702,13 +761,18 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
-    if (wildcardPath.startsWith('ext/')) {
+    if (wildcardPath.startsWith('chunk/')) {
+      const uploadId = wildcardPath.slice('chunk/'.length);
       if (await isPrivateObjectReferenced(objectPath)) {
         res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
         return;
       }
-      const { remoteDeleted } = await deleteExternalObject(wildcardPath.slice('ext/'.length));
-      res.status(200).json({ ok: true, deleted: true, remoteDeleted });
+      const manifest = await getChunkUpload(uploadId);
+      if (manifest) {
+        await deleteChunkParts(uploadId, manifest.totalParts);
+        await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
+      }
+      res.status(200).json({ ok: true, deleted: true });
       return;
     }
 

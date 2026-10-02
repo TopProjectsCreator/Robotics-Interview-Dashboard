@@ -54,6 +54,10 @@ import type {
   ChatPollVoteInput,
   ChatReactionInput,
   ChatReactionList,
+  ChunkUploadCompleteInput,
+  ChunkUploadStored,
+  ChunkUploadUrl,
+  ChunkUploadUrlInput,
   CreateInterviewerInput,
   CreatePartsCatalogItemInput,
   DashboardChart,
@@ -2459,6 +2463,148 @@ export function useListImportHistory<TData = Awaited<ReturnType<typeof listImpor
 
 
 
+
+export const getCreateChunkUploadUrlUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/chunk-url`
+}
+
+/**
+ * @summary Get a signed URL for one part of a chunked upload
+ */
+export const createChunkUploadUrl = async (chunkUploadUrlInput: ChunkUploadUrlInput, options?: Parameters<typeof customFetch>[1]): Promise<ChunkUploadUrl> => {
+
+  return customFetch<ChunkUploadUrl>(getCreateChunkUploadUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chunkUploadUrlInput)
+  }
+);}
+
+
+
+
+
+export const getCreateChunkUploadUrlMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChunkUploadUrl>>, TError,{data: BodyType<ChunkUploadUrlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createChunkUploadUrl>>, TError,{data: BodyType<ChunkUploadUrlInput>}, TContext> => {
+
+const mutationKey = ['createChunkUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChunkUploadUrl>>, {data: BodyType<ChunkUploadUrlInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createChunkUploadUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateChunkUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof createChunkUploadUrl>>>
+    export type CreateChunkUploadUrlMutationBody = BodyType<ChunkUploadUrlInput>
+    export type CreateChunkUploadUrlMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Get a signed URL for one part of a chunked upload
+ */
+export const useCreateChunkUploadUrl = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChunkUploadUrl>>, TError,{data: BodyType<ChunkUploadUrlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createChunkUploadUrl>>,
+        TError,
+        {data: BodyType<ChunkUploadUrlInput>},
+        TContext
+      > => {
+      return useMutation(getCreateChunkUploadUrlMutationOptions(options));
+    }
+
+export const getCompleteChunkUploadUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/chunk-complete`
+}
+
+/**
+ * @summary Record the manifest for a finished chunked upload
+ */
+export const completeChunkUpload = async (chunkUploadCompleteInput: ChunkUploadCompleteInput, options?: Parameters<typeof customFetch>[1]): Promise<ChunkUploadStored> => {
+
+  return customFetch<ChunkUploadStored>(getCompleteChunkUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chunkUploadCompleteInput)
+  }
+);}
+
+
+
+
+
+export const getCompleteChunkUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeChunkUpload>>, TError,{data: BodyType<ChunkUploadCompleteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeChunkUpload>>, TError,{data: BodyType<ChunkUploadCompleteInput>}, TContext> => {
+
+const mutationKey = ['completeChunkUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeChunkUpload>>, {data: BodyType<ChunkUploadCompleteInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeChunkUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteChunkUploadMutationResult = NonNullable<Awaited<ReturnType<typeof completeChunkUpload>>>
+    export type CompleteChunkUploadMutationBody = BodyType<ChunkUploadCompleteInput>
+    export type CompleteChunkUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Record the manifest for a finished chunked upload
+ */
+export const useCompleteChunkUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeChunkUpload>>, TError,{data: BodyType<ChunkUploadCompleteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeChunkUpload>>,
+        TError,
+        {data: BodyType<ChunkUploadCompleteInput>},
+        TContext
+      > => {
+      return useMutation(getCompleteChunkUploadMutationOptions(options));
+    }
 
 export const getRequestUploadUrlUrl = () => {
 

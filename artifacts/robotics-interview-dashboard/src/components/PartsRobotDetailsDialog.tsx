@@ -1,3 +1,4 @@
+import { shouldUseChunkedUpload, uploadChunked } from "@/lib/chunkedUpload";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -487,13 +488,19 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
     setPreviewError("");
     setPreviewStatus("Uploading private preview…");
     try {
-      const upload = await uploadMutation.mutateAsync({
-        data: file,
-        params: { fileName: file.name, contentType },
-      });
+      // Oversized CAD models are sent part-by-part straight to storage so
+      // the API never buffers the whole file in memory.
+      const objectPath = shouldUseChunkedUpload(file.size)
+        ? await uploadChunked(file, file.name, contentType, (done, total) => {
+            setPreviewStatus(`Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`);
+          })
+        : (await uploadMutation.mutateAsync({
+            data: file,
+            params: { fileName: file.name, contentType },
+          })).objectPath;
       await updatePreviewMutation.mutateAsync({
         robotId: robot.id,
-        data: { objectPath: upload.objectPath, fileName: file.name, contentType },
+        data: { objectPath, fileName: file.name, contentType },
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: getGetPartsRobotDetailsQueryKey(robot.id) }),

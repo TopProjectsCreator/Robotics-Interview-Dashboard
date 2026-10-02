@@ -691,6 +691,42 @@ export const ListImportHistoryResponse = zod.object({
 
 
 /**
+ * @summary Get a signed URL for one part of a chunked upload
+ */
+export const createChunkUploadUrlBodyPartIndexMin = 0;
+
+
+
+export const CreateChunkUploadUrlBody = zod.object({
+  "uploadId": zod.string().describe('Client-generated uuid shared across every part'),
+  "partIndex": zod.number().int().min(createChunkUploadUrlBodyPartIndexMin)
+})
+
+export const CreateChunkUploadUrlResponse = zod.object({
+  "uploadId": zod.string(),
+  "partIndex": zod.number().int(),
+  "signedUrl": zod.string()
+})
+
+
+/**
+ * @summary Record the manifest for a finished chunked upload
+ */
+export const CompleteChunkUploadBody = zod.object({
+  "uploadId": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "totalParts": zod.number().int(),
+  "partSizeBytes": zod.number().int()
+})
+
+export const CompleteChunkUploadResponse = zod.object({
+  "objectPath": zod.string().describe('Use as the attachment path, e.g. \/objects\/chunk\/<uploadId>')
+})
+
+
+/**
  * @summary Request a private CSV upload URL
  */
 export const RequestUploadUrlBody = zod.object({

@@ -631,6 +631,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportHistory"
+  /storage/uploads/chunk-url:
+    post:
+      operationId: createChunkUploadUrl
+      tags: [storage]
+      summary: Get a signed URL for one part of a chunked upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChunkUploadUrlInput"
+      responses:
+        "200":
+          description: Signed URL for this part
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChunkUploadUrl"
+  /storage/uploads/chunk-complete:
+    post:
+      operationId: completeChunkUpload
+      tags: [storage]
+      summary: Record the manifest for a finished chunked upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChunkUploadCompleteInput"
+      responses:
+        "201":
+          description: Chunked upload stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChunkUploadStored"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -2600,6 +2636,49 @@ components:
           type: integer
           minimum: 0
           maximum: 100000
+    ChunkUploadUrlInput:
+      type: object
+      required: [uploadId, partIndex]
+      properties:
+        uploadId:
+          type: string
+          description: Client-generated uuid shared across every part
+        partIndex:
+          type: integer
+          minimum: 0
+    ChunkUploadUrl:
+      type: object
+      required: [uploadId, partIndex, signedUrl]
+      properties:
+        uploadId:
+          type: string
+        partIndex:
+          type: integer
+        signedUrl:
+          type: string
+    ChunkUploadCompleteInput:
+      type: object
+      required: [uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes]
+      properties:
+        uploadId:
+          type: string
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        totalParts:
+          type: integer
+        partSizeBytes:
+          type: integer
+    ChunkUploadStored:
+      type: object
+      required: [objectPath]
+      properties:
+        objectPath:
+          type: string
+          description: "Use as the attachment path, e.g. /objects/chunk/<uploadId>"
     HealthStatus:
       type: object
       properties:

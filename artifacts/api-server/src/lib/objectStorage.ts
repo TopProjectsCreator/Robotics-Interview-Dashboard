@@ -112,6 +112,28 @@ function toStoragePath(objectPath: string): string {
 export class ObjectStorageService {
   constructor() {}
 
+  async mintChunkUpload(storagePath: string): Promise<string> {
+    await ensureBucket();
+    const { data, error } = await supabase()
+      .storage.from(storageBucket())
+      .createSignedUploadUrl(storagePath, { upsert: false });
+    if (error || !data?.signedUrl) {
+      throw new Error(`Failed to mint upload URL: ${error?.message ?? 'unknown error'}`);
+    }
+    return data.signedUrl;
+  }
+
+  async signDownloadUrl(storagePath: string, expiresInSeconds = 900): Promise<string> {
+    await ensureBucket();
+    const { data, error } = await supabase()
+      .storage.from(storageBucket())
+      .createSignedUrl(storagePath, expiresInSeconds);
+    if (error || !data?.signedUrl) {
+      throw new Error(`Failed to sign download URL: ${error?.message ?? 'unknown error'}`);
+    }
+    return data.signedUrl;
+  }
+
   async mintUpload(): Promise<{ uploadURL: string; objectPath: string }> {
     await ensureBucket();
     const bucket = storageBucket();

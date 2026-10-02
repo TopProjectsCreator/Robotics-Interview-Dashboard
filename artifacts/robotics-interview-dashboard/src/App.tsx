@@ -51,6 +51,7 @@ import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSe
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
 import { useRealtimeSync } from "./useRealtimeSync";
+import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -4378,12 +4379,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         stage = `upload:${f.name}`;
         setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
         let objectId = "";
+        let chunked = false;
+        let response: Response | null = null;
         try {
           const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
           const controller = new AbortController();
           const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
           const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
-          let response: Response;
           try {
             if (useSignedUpload) {
               const requested = await chatAttachmentUpload.mutateAsync({
@@ -4410,6 +4412,19 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
               objectId = requested.objectPath.replace(/^\/objects\//, "");
               if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+            } else if (shouldUseChunkedUpload(prepared.blob.size)) {
+              // Big files go part-by-part straight to storage so the API
+              // never has to hold the whole thing in memory.
+              setFileStatus(current => ({ ...current, [f.id]: "Uploading in parts…" }));
+              const chunkedPath = await uploadChunked(prepared.blob, prepared.name, prepared.type, (done, total) => {
+                setFileStatus(current => ({
+                  ...current,
+                  [f.id]: `Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`,
+                }));
+              });
+              objectId = chunkedPath.replace(/^\/objects\//, "");
+              if (!objectId || !objectId.startsWith("chunk/")) fail("Upload failed (bad response). Try again.");
+              chunked = true;
             } else {
               response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
                 method: "POST",
@@ -4429,7 +4444,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           } finally {
             clearTimeout(abortTimer);
           }
-          if (!useSignedUpload && !response.ok) {
+          if (!useSignedUpload && !chunked && response && !response.ok) {
             let detail = "";
             try {
               const parsed = await response.json() as { error?: unknown };
@@ -4437,8 +4452,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             } catch { /* ignore parse errors */ }
             fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
           }
-          if (!useSignedUpload) {
-            const parsed = await response.json() as { objectPath?: unknown };
+          if (!useSignedUpload && !chunked) {
+            const parsed = await (response as Response).json() as { objectPath?: unknown };
             objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
             if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
           }
