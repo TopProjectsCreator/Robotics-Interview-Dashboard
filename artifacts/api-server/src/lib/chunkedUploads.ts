@@ -38,7 +38,7 @@ export async function deleteChunkParts(uploadId: string, totalParts: number): Pr
   const paths = Array.from({ length: totalParts }, (_, index) => chunkStoragePath(uploadId, index));
   if (!paths.length) return;
   await pool.query(
-    `select storage.delete_object(paths) from storage.objects where bucket_id = $1 and name = any($2::text[])`,
+    `delete from storage.objects where bucket_id = $1 and name = any($2::text[])`,
     [process.env.SUPABASE_STORAGE_BUCKET || "app-uploads", paths],
   );
 }
