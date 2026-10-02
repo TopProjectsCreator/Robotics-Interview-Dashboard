@@ -820,6 +820,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatConversationList"
+  /queue/chat/{messageId}/poll:
+    post:
+      operationId: createChatPoll
+      tags: [queue]
+      summary: Attach a poll to a chat message
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatPollInput"
+      responses:
+        "201":
+          description: Poll created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatPoll"
+        "404":
+          description: Message not found
+  /queue/chat/{messageId}/poll/vote:
+    post:
+      operationId: voteChatPoll
+      tags: [queue]
+      summary: Cast or change your vote on a chat poll
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatPollVoteInput"
+      responses:
+        "200":
+          description: Poll with updated tallies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatPoll"
+        "404":
+          description: Poll not found
   /queue/chat/{messageId}/reactions:
     post:
       operationId: toggleChatReaction
@@ -3399,8 +3451,63 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatReaction"
+        poll:
+          type: ["object", "null"]
+          description: Poll attached to this message, null when there is none
+          allOf:
+            - $ref: "#/components/schemas/ChatPoll"
         createdAt:
           type: string
+    ChatPollOption:
+      type: object
+      required: [index, text, votes]
+      properties:
+        index:
+          type: integer
+        text:
+          type: string
+        votes:
+          type: integer
+    ChatPoll:
+      type: object
+      required: [messageId, question, options, totalVotes, createdBy]
+      properties:
+        messageId:
+          type: string
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatPollOption"
+        totalVotes:
+          type: integer
+        yourVote:
+          type: ["integer", "null"]
+          description: Option index you picked, null when you have not voted
+        createdBy:
+          type: string
+    ChatPollInput:
+      type: object
+      required: [question, options]
+      properties:
+        question:
+          type: string
+          minLength: 1
+        options:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: string
+            minLength: 1
+    ChatPollVoteInput:
+      type: object
+      required: [optionIndex]
+      properties:
+        optionIndex:
+          type: integer
+          minimum: 0
     ChatConversationSummary:
       type: object
       required: [peer, lastMessageAt, lastMessageAuthor, lastMessage]

@@ -34,6 +34,26 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const chatPollsTable = pgTable("chat_polls", {
+  messageId: text("message_id")
+    .primaryKey()
+    .references(() => interviewChatMessagesTable.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  options: text("options").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const chatPollVotesTable = pgTable("chat_poll_votes", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id")
+    .notNull()
+    .references(() => interviewChatMessagesTable.id, { onDelete: "cascade" }),
+  optionIndex: integer("option_index").notNull(),
+  voter: text("voter").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const chatCustomEmojisTable = pgTable("chat_custom_emojis", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -36,6 +36,10 @@ import {
   AssignSeatResponse,
   GetInterviewChatResponse,
   GetChatConversationsResponse,
+  CreateChatPollBody,
+  CreateChatPollResponse,
+  VoteChatPollBody,
+  VoteChatPollResponse,
   ListChatCustomEmojisResponse,
   GetQueueResponse,
   GetQueueLabelsResponse,
@@ -2607,6 +2611,59 @@ async function resolveChatConversation(
   return { scope: "direct", peer, key: canonicalInterviewerPair(author, peer) };
 }
 
+type ChatPollPayload = {
+  messageId: string;
+  question: string;
+  options: { index: number; text: string; votes: number }[];
+  totalVotes: number;
+  yourVote: number | null;
+  createdBy: string;
+};
+
+function parsePollOptions(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+async function pollsForMessages(messageIds: string[], viewer: string): Promise<Map<string, ChatPollPayload>> {
+  const result = new Map<string, ChatPollPayload>();
+  if (!messageIds.length) return result;
+  const polls = await db.select().from(chatPollsTable).where(inArray(chatPollsTable.messageId, messageIds));
+  if (!polls.length) return result;
+  const votes = await db.select().from(chatPollVotesTable).where(inArray(chatPollVotesTable.messageId, polls.map((poll) => poll.messageId)));
+  const byMessage = new Map<string, { optionIndex: number; voter: string }[]>();
+  for (const vote of votes) {
+    const list = byMessage.get(vote.messageId) ?? [];
+    list.push({ optionIndex: vote.optionIndex, voter: vote.voter });
+    byMessage.set(vote.messageId, list);
+  }
+  const viewerKey = viewer.trim().toLowerCase();
+  for (const poll of polls) {
+    const texts = parsePollOptions(poll.options);
+    const cast = byMessage.get(poll.messageId) ?? [];
+    const counts = new Array(texts.length).fill(0) as number[];
+    let yourVote: number | null = null;
+    for (const vote of cast) {
+      if (vote.optionIndex >= 0 && vote.optionIndex < counts.length) counts[vote.optionIndex] += 1;
+      if (vote.voter.trim().toLowerCase() === viewerKey) yourVote = vote.optionIndex;
+    }
+    result.set(poll.messageId, {
+      messageId: poll.messageId,
+      question: poll.question,
+      options: texts.map((text, index) => ({ index, text, votes: counts[index] ?? 0 })),
+      totalVotes: cast.length,
+      yourVote,
+      createdBy: poll.createdBy,
+    });
+  }
+  return result;
+}
+
 function chatResponse(
   message: {
     id: string;
@@ -2619,6 +2676,7 @@ function chatResponse(
   },
   conversation: ChatConversation,
   reactions?: ReactionGroup[],
+  poll?: ChatPollPayload | null,
 ) {
   return {
     id: message.id,
@@ -2630,6 +2688,7 @@ function chatResponse(
     pinnedAt: message.pinnedAt?.toISOString() ?? null,
     activities: parseStoredActivities(message.activities),
     reactions: reactions ?? [],
+    poll: poll ?? null,
     createdAt: message.createdAt.toISOString(),
   };
 }
@@ -3246,8 +3305,9 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
     .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
   const reactions = await reactionsForMessages(messages.map((message) => message.id));
+  const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName);
   res.json(GetInterviewChatResponse.parse({
-    items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [])),
+    items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [], polls.get(message.id) ?? null)),
     scope: conversation.scope,
     peer: conversation.peer,
   }));
@@ -3351,8 +3411,9 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }
   const [message] = await db.insert(interviewChatMessagesTable).values(values).returning();
   pushRealtimeHint("interview_chat_messages", "INSERT");
+  const createdPolls = await pollsForMessages([message.id], account.displayName);
   res.status(201).json(SendInterviewChatResponse.parse({
-    ...chatResponse(message, conversation),
+    ...chatResponse(message, conversation, undefined, createdPolls.get(message.id) ?? null),
   }));
 });
 
@@ -3364,6 +3425,80 @@ function isSingleUnicodeEmoji(value: string): boolean {
   return /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(value)
     || /^[0-9#*]\uFE0F?\u20E3$/u.test(value);
 }
+
+router.post("/queue/chat/:messageId/poll", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  const parsed = CreateChatPollBody.safeParse(req.body);
+  if (!messageId || !parsed.success) {
+    res.status(400).json({ error: parsed.success ? "Message not found." : "A poll needs a question and at least two options." });
+    return;
+  }
+  const question = parsed.data.question.trim().slice(0, 200);
+  const options = parsed.data.options.map((option) => option.trim()).filter(Boolean).slice(0, 8);
+  if (!question || options.length < 2) {
+    res.status(400).json({ error: "A poll needs a question and at least two options." });
+    return;
+  }
+  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id })
+    .from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const [existing] = await db.select({ messageId: chatPollsTable.messageId }).from(chatPollsTable).where(eq(chatPollsTable.messageId, messageId)).limit(1);
+  if (existing) {
+    res.status(409).json({ error: "That message already has a poll." });
+    return;
+  }
+  await db.insert(chatPollsTable).values({
+    messageId,
+    question,
+    options: JSON.stringify(options),
+    createdBy: account.displayName,
+  });
+  const polls = await pollsForMessages([messageId], account.displayName);
+  pushRealtimeHint("interview_chat_messages");
+  res.status(201).json(CreateChatPollResponse.parse(polls.get(messageId)));
+});
+
+router.post("/queue/chat/:messageId/poll/vote", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
+  const parsed = VoteChatPollBody.safeParse(req.body);
+  if (!messageId || !parsed.success) {
+    res.status(400).json({ error: "Choose one of the options." });
+    return;
+  }
+  const [poll] = await db.select().from(chatPollsTable).where(eq(chatPollsTable.messageId, messageId)).limit(1);
+  if (!poll) {
+    res.status(404).json({ error: "Poll not found." });
+    return;
+  }
+  const optionCount = parsePollOptions(poll.options).length;
+  if (parsed.data.optionIndex < 0 || parsed.data.optionIndex >= optionCount) {
+    res.status(400).json({ error: "Choose one of the options." });
+    return;
+  }
+  const voter = account.displayName;
+  await db.delete(chatPollVotesTable).where(and(
+    eq(chatPollVotesTable.messageId, messageId),
+    eq(chatPollVotesTable.voter, voter),
+  ));
+  await db.insert(chatPollVotesTable).values({
+    id: randomUUID(),
+    messageId,
+    optionIndex: parsed.data.optionIndex,
+    voter,
+  });
+  const polls = await pollsForMessages([messageId], voter);
+  pushRealtimeHint("interview_chat_messages");
+  res.json(VoteChatPollResponse.parse(polls.get(messageId)));
+});
 
 router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
@@ -3479,7 +3614,8 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
       }
     : { scope: "shared", peer: null, key: null };
   pushRealtimeHint("interview_chat_messages");
-  res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation)));
+  const editedPolls = await pollsForMessages([updated.id], account.displayName);
+  res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation, undefined, editedPolls.get(updated.id) ?? null)));
 });
 
 router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {

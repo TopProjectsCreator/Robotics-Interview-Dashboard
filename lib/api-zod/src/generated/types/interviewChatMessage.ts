@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssistantActivity } from './assistantActivity';
+import type { ChatPoll } from './chatPoll';
 import type { ChatReaction } from './chatReaction';
 import type { InterviewChatMessageScope } from './interviewChatMessageScope';
 
@@ -19,5 +20,10 @@ export interface InterviewChatMessage {
   pinnedAt?: Date | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
+  /**
+     * Poll attached to this message, null when there is none
+     * @nullable
+     */
+  poll?: ChatPoll | null;
   createdAt: string;
 }

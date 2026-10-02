@@ -49,6 +49,9 @@ import type {
   ChatCustomEmojiList,
   ChatMessagePin,
   ChatMessageUpdateInput,
+  ChatPoll,
+  ChatPollInput,
+  ChatPollVoteInput,
   ChatReactionInput,
   ChatReactionList,
   CreateInterviewerInput,
@@ -3274,6 +3277,150 @@ export function useGetChatConversations<TData = Awaited<ReturnType<typeof getCha
 
 
 
+
+export const getCreateChatPollUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}/poll`
+}
+
+/**
+ * @summary Attach a poll to a chat message
+ */
+export const createChatPoll = async (messageId: string,
+    chatPollInput: ChatPollInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatPoll> => {
+
+  return customFetch<ChatPoll>(getCreateChatPollUrl(messageId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatPollInput)
+  }
+);}
+
+
+
+
+
+export const getCreateChatPollMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollInput>}, TContext> => {
+
+const mutationKey = ['createChatPoll'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChatPoll>>, {messageId: string;data: BodyType<ChatPollInput>}> = (props) => {
+          const {messageId,data} = props ?? {};
+
+          return  createChatPoll(messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateChatPollMutationResult = NonNullable<Awaited<ReturnType<typeof createChatPoll>>>
+    export type CreateChatPollMutationBody = BodyType<ChatPollInput>
+    export type CreateChatPollMutationError = ErrorType<void>
+
+    /**
+ * @summary Attach a poll to a chat message
+ */
+export const useCreateChatPoll = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createChatPoll>>,
+        TError,
+        {messageId: string;data: BodyType<ChatPollInput>},
+        TContext
+      > => {
+      return useMutation(getCreateChatPollMutationOptions(options));
+    }
+
+export const getVoteChatPollUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}/poll/vote`
+}
+
+/**
+ * @summary Cast or change your vote on a chat poll
+ */
+export const voteChatPoll = async (messageId: string,
+    chatPollVoteInput: ChatPollVoteInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatPoll> => {
+
+  return customFetch<ChatPoll>(getVoteChatPollUrl(messageId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatPollVoteInput)
+  }
+);}
+
+
+
+
+
+export const getVoteChatPollMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof voteChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollVoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof voteChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollVoteInput>}, TContext> => {
+
+const mutationKey = ['voteChatPoll'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof voteChatPoll>>, {messageId: string;data: BodyType<ChatPollVoteInput>}> = (props) => {
+          const {messageId,data} = props ?? {};
+
+          return  voteChatPoll(messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VoteChatPollMutationResult = NonNullable<Awaited<ReturnType<typeof voteChatPoll>>>
+    export type VoteChatPollMutationBody = BodyType<ChatPollVoteInput>
+    export type VoteChatPollMutationError = ErrorType<void>
+
+    /**
+ * @summary Cast or change your vote on a chat poll
+ */
+export const useVoteChatPoll = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof voteChatPoll>>, TError,{messageId: string;data: BodyType<ChatPollVoteInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof voteChatPoll>>,
+        TError,
+        {messageId: string;data: BodyType<ChatPollVoteInput>},
+        TContext
+      > => {
+      return useMutation(getVoteChatPollMutationOptions(options));
+    }
 
 export const getToggleChatReactionUrl = (messageId: string,) => {
 

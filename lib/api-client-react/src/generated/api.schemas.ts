@@ -957,6 +957,25 @@ export interface ChatReaction {
   authors: string[];
 }
 
+export interface ChatPollOption {
+  index: number;
+  text: string;
+  votes: number;
+}
+
+export interface ChatPoll {
+  messageId: string;
+  question: string;
+  options: ChatPollOption[];
+  totalVotes: number;
+  /**
+     * Option index you picked, null when you have not voted
+     * @nullable
+     */
+  yourVote?: number | null;
+  createdBy: string;
+}
+
 export interface InterviewChatMessage {
   id: string;
   author: string;
@@ -967,7 +986,28 @@ export interface InterviewChatMessage {
   pinnedAt?: string | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
+  /**
+     * Poll attached to this message, null when there is none
+     * @nullable
+     */
+  poll?: ChatPoll | null;
   createdAt: string;
+}
+
+export interface ChatPollInput {
+  /** @minLength 1 */
+  question: string;
+  /**
+     * @minItems 2
+     * @maxItems 8
+     * @items.minLength 1
+     */
+  options: string[];
+}
+
+export interface ChatPollVoteInput {
+  /** @minimum 0 */
+  optionIndex: number;
 }
 
 export interface ChatConversationSummary {

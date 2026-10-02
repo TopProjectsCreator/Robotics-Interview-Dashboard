@@ -941,6 +941,18 @@ export const GetInterviewChatResponse = zod.object({
   "count": zod.number().int(),
   "authors": zod.array(zod.string())
 })).optional(),
+  "poll": zod.object({
+  "messageId": zod.string(),
+  "question": zod.string(),
+  "options": zod.array(zod.object({
+  "index": zod.number().int(),
+  "text": zod.string(),
+  "votes": zod.number().int()
+})),
+  "totalVotes": zod.number().int(),
+  "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
+  "createdBy": zod.string()
+}).nullish().describe('Poll attached to this message, null when there is none'),
   "createdAt": zod.string()
 })),
   "scope": zod.enum(['shared', 'direct']),
@@ -985,6 +997,18 @@ export const SendInterviewChatResponse = zod.object({
   "count": zod.number().int(),
   "authors": zod.array(zod.string())
 })).optional(),
+  "poll": zod.object({
+  "messageId": zod.string(),
+  "question": zod.string(),
+  "options": zod.array(zod.object({
+  "index": zod.number().int(),
+  "text": zod.string(),
+  "votes": zod.number().int()
+})),
+  "totalVotes": zod.number().int(),
+  "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
+  "createdBy": zod.string()
+}).nullish().describe('Poll attached to this message, null when there is none'),
   "createdAt": zod.string()
 })
 
@@ -1058,6 +1082,68 @@ export const GetChatConversationsResponse = zod.object({
 
 
 /**
+ * @summary Attach a poll to a chat message
+ */
+export const CreateChatPollParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+
+
+export const createChatPollBodyOptionsMin = 2;
+export const createChatPollBodyOptionsMax = 8;
+
+
+
+export const CreateChatPollBody = zod.object({
+  "question": zod.string().min(1),
+  "options": zod.array(zod.string().min(1)).min(createChatPollBodyOptionsMin).max(createChatPollBodyOptionsMax)
+})
+
+export const CreateChatPollResponse = zod.object({
+  "messageId": zod.string(),
+  "question": zod.string(),
+  "options": zod.array(zod.object({
+  "index": zod.number().int(),
+  "text": zod.string(),
+  "votes": zod.number().int()
+})),
+  "totalVotes": zod.number().int(),
+  "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
+  "createdBy": zod.string()
+})
+
+
+/**
+ * @summary Cast or change your vote on a chat poll
+ */
+export const VoteChatPollParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const voteChatPollBodyOptionIndexMin = 0;
+
+
+
+export const VoteChatPollBody = zod.object({
+  "optionIndex": zod.number().int().min(voteChatPollBodyOptionIndexMin)
+})
+
+export const VoteChatPollResponse = zod.object({
+  "messageId": zod.string(),
+  "question": zod.string(),
+  "options": zod.array(zod.object({
+  "index": zod.number().int(),
+  "text": zod.string(),
+  "votes": zod.number().int()
+})),
+  "totalVotes": zod.number().int(),
+  "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
+  "createdBy": zod.string()
+})
+
+
+/**
  * @summary Toggle an emoji reaction on a chat message
  */
 export const ToggleChatReactionParams = zod.object({
@@ -1127,6 +1213,18 @@ export const UpdateChatMessageResponse = zod.object({
   "count": zod.number().int(),
   "authors": zod.array(zod.string())
 })).optional(),
+  "poll": zod.object({
+  "messageId": zod.string(),
+  "question": zod.string(),
+  "options": zod.array(zod.object({
+  "index": zod.number().int(),
+  "text": zod.string(),
+  "votes": zod.number().int()
+})),
+  "totalVotes": zod.number().int(),
+  "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
+  "createdBy": zod.string()
+}).nullish().describe('Poll attached to this message, null when there is none'),
   "createdAt": zod.string()
 })
 

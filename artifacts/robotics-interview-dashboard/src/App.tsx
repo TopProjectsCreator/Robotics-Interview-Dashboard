@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, Bot, Box, Check, ChevronRight, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Check, ChevronRight, CircleDot, ClipboardList,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
@@ -19,7 +19,7 @@ import {
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
-   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
+   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
@@ -3586,6 +3586,36 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [pollError, setPollError] = useState("");
+  const [pollBusy, setPollBusy] = useState(false);
+  const createPollMutation = useCreateChatPoll();
+  useEffect(() => { setPollBusy(createPollMutation.isPending || sendChat.isPending); }, [createPollMutation.isPending, sendChat.isPending]);
+  const votePollMutation = useVoteChatPoll();
+  const resetPollDraft = () => {
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    setPollError("");
+  };
+  const submitPoll = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+    if (!question) { setPollError("Ask a question."); return; }
+    if (options.length < 2) { setPollError("Add at least two options."); return; }
+    const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question } });
+    await createPollMutation.mutateAsync({ messageId: posted.id, data: { question, options } });
+    setPollOpen(false);
+    resetPollDraft();
+    qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+  };
+  const voteOnPoll = (messageId: string, optionIndex: number) => {
+    votePollMutation.mutate({ messageId, data: { optionIndex } }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); },
+    });
+  };
   const [editDraft, setEditDraft] = useState("");
   const [mentionAttention, setMentionAttention] = useState<InterviewChatMessage | null>(null);
   const seenChatMessagesRef = useRef<{ conversationId: string; ids: Set<string>; latestAt: number } | null>(null);
@@ -4535,6 +4565,32 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                  : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
+      {item.poll && <div className="mt-2 space-y-1.5" data-testid={`chat-poll-${item.id}`}>
+        <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Poll · {item.poll.totalVotes} vote{item.poll.totalVotes === 1 ? "" : "s"}</p>
+        {item.poll.options.map(option => {
+          const share = item.poll!.totalVotes > 0 ? Math.round((option.votes / item.poll!.totalVotes) * 100) : 0;
+          const mine = item.poll!.yourVote === option.index;
+          const content = (
+            <>
+              <span className="relative z-10 flex min-w-0 flex-1 items-center gap-2 text-left">
+                <span className="truncate">{option.text}</span>
+                {mine && <Check size={13} className="shrink-0 text-[#12737d]" />}
+              </span>
+              <span className="mono relative z-10 shrink-0 text-[11px] font-semibold text-[#52666e]">{option.votes}</span>
+            </>
+          );
+          const shell = mine
+            ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]"
+            : "border-[#d5e0e0] bg-white text-[#38555e] hover:border-[#16869a]";
+          return item.poll!.yourVote === null
+            ? <button key={option.index} type="button" onClick={() => voteOnPoll(item.id, option.index)} disabled={votePollMutation.isPending} data-testid={`poll-vote-${item.id}-${option.index}`} className={`relative flex w-full items-center overflow-hidden rounded-lg border px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${shell}`}>{content}</button>
+            : <div key={option.index} className={`relative flex w-full items-center overflow-hidden rounded-lg border px-3 py-2 text-xs font-medium ${shell}`}>
+                <span className="absolute inset-y-0 left-0 transition-all" style={{ width: `${share}%`, background: mine ? "rgba(22,134,154,.16)" : "rgba(137,164,171,.16)" }} />
+                {content}
+              </div>;
+        })}
+        {item.poll.yourVote === null && <p className="text-[11px] text-[#8a999d]">Tap an option to vote. You can change it later.</p>}
+      </div>}
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {
            const mine = r.authors.includes(activeInterviewer);
@@ -4644,6 +4700,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
                 <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+                <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
                 <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
              </div>
@@ -4663,6 +4720,24 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
+        {pollOpen && <form onSubmit={submitPoll} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a]">New poll</p>
+          <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm outline-none focus:border-[#16869a]" />
+          <div className="space-y-1.5">
+            {pollOptions.map((option, index) => (
+              <div key={index} className="flex items-center gap-1.5">
+                <input value={option} onChange={event => setPollOptions(current => current.map((value, i) => i === index ? event.target.value : value))} placeholder={`Option ${index + 1}`} data-testid={`input-poll-option-${index}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm outline-none focus:border-[#16869a]" />
+                {pollOptions.length > 2 && <button type="button" onClick={() => setPollOptions(current => current.filter((_, i) => i !== index))} aria-label={`Remove option ${index + 1}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] hover:bg-[#fff1ef]"><X size={13} /></button>}
+              </div>
+            ))}
+          </div>
+          {pollOptions.length < 8 && <button type="button" onClick={() => setPollOptions(current => [...current, ""])} data-testid="button-poll-add-option" className="rounded-lg border border-dashed border-[#9bbec0] px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-white">+ Add option</button>}
+          {pollError && <p className="text-xs text-[#ad4b43]" data-testid="poll-error">{pollError}</p>}
+          <div className="flex items-center gap-2 pt-1">
+            <button type="submit" disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{pollBusy ? "Creating…" : "Post poll"}</button>
+            <button type="button" onClick={() => { setPollOpen(false); resetPollDraft(); }} data-testid="button-poll-cancel" className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e]">Cancel</button>
+          </div>
+        </form>}
      </form>
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
