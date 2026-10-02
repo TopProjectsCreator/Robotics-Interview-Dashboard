@@ -105,6 +105,7 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
+    `create table if not exists "external_objects" ("id" text primary key, "url" text not null, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_poll_votes_one_per_voter" on "chat_poll_votes" ("message_id", "voter")`,

@@ -34,6 +34,15 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const externalObjectsTable = pgTable("external_objects", {
+  id: text("id").primaryKey(),
+  url: text("url").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const chatPollsTable = pgTable("chat_polls", {
   messageId: text("message_id")
     .primaryKey()

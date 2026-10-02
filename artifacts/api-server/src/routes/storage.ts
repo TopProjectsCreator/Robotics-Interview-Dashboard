@@ -22,6 +22,14 @@ import {
 } from '../lib/objectStorage';
 import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
+import {
+  deleteExternalObject,
+  fetchExternalFile,
+  getExternalObject,
+  isExternalCadType,
+  recordExternalObject,
+  uploadToCatbox,
+} from "../lib/externalStorage";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 
 const router: IRouter = Router();
@@ -277,6 +285,21 @@ function isValidStl(data: Buffer): boolean {
     data.includes('facet') &&
     data.includes('vertex');
 }
+// Oversized CAD models go to external storage; applicant photos, transcripts
+// and chat images always stay in the private Supabase bucket.
+async function storeUploadOrExternal(
+  data: Buffer,
+  fileName: string,
+  contentType: string,
+): Promise<string> {
+  if (isExternalCadType(contentType) && data.length > MAX_STORAGE_UPLOAD_BYTES) {
+    const url = await uploadToCatbox(data, fileName, contentType);
+    const id = await recordExternalObject({ url, fileName, contentType, sizeBytes: data.length });
+    return `/objects/ext/${id}`;
+  }
+  return objectStorageService.uploadChatImage(data, contentType);
+}
+
 router.post(
   '/storage/uploads',
   express.raw({ type: CHAT_UPLOAD_CONTENT_TYPES, limit: '100mb' }),
@@ -301,12 +324,14 @@ router.post(
         res.status(400).json({ error: 'This is not a valid STL model' });
         return;
       }
-      if (data.length > CHAT_UPLOAD_MAX_BYTES || data.length > MAX_STORAGE_UPLOAD_BYTES) {
-        const maxMb = Math.floor(Math.min(CHAT_UPLOAD_MAX_BYTES, MAX_STORAGE_UPLOAD_BYTES) / (1024 * 1024));
+      const externalCapable = isExternalCadType(contentType);
+      const effectiveMax = externalCapable ? CHAT_UPLOAD_MAX_BYTES : Math.min(CHAT_UPLOAD_MAX_BYTES, MAX_STORAGE_UPLOAD_BYTES);
+      if (data.length > effectiveMax) {
+        const maxMb = Math.floor(effectiveMax / (1024 * 1024));
         res.status(413).json({ error: `File too big (max ${maxMb} MB)` });
         return;
       }
-      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
+      const objectPath = await storeUploadOrExternal(data, 'attachment', contentType);
       res.status(201).json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
@@ -344,7 +369,7 @@ router.post(
       return;
     }
     try {
-      const objectPath = await objectStorageService.uploadChatImage(data, contentType);
+      const objectPath = await storeUploadOrExternal(data, fileName, contentType);
       res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
     } catch (error) {
       req.log.error({ err: error }, 'Robot preview upload failed');
@@ -630,6 +655,23 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+
+    if (wildcardPath.startsWith('ext/')) {
+      const row = await getExternalObject(wildcardPath.slice('ext/'.length));
+      if (!row) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+      const upstream = await fetchExternalFile(row);
+      res.status(200);
+      res.setHeader('Content-Type', row.contentType || 'application/octet-stream');
+      if (row.sizeBytes) res.setHeader('Content-Length', String(row.sizeBytes));
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.setHeader('Content-Disposition', `inline; filename="${row.fileName.replace(/"/g, '')}"`);
+      await pipeline(upstream.body as unknown as NodeJS.ReadableStream, res);
+      return;
+    }
+
     const { data, contentType } = await objectStorageService.downloadObject(objectPath);
 
     res.status(200);
@@ -659,6 +701,17 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+
+    if (wildcardPath.startsWith('ext/')) {
+      if (await isPrivateObjectReferenced(objectPath)) {
+        res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
+        return;
+      }
+      const { remoteDeleted } = await deleteExternalObject(wildcardPath.slice('ext/'.length));
+      res.status(200).json({ ok: true, deleted: true, remoteDeleted });
+      return;
+    }
+
     if (await isPrivateObjectReferenced(objectPath)) {
       res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
       return;
