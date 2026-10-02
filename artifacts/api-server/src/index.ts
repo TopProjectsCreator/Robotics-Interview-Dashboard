@@ -174,6 +174,16 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP: promote a verification account to admin for moderation testing.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+        WHERE id IN ('63200b1905e8bf40abf07fb2b3a0edcf')`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp promote failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
