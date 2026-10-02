@@ -17,7 +17,7 @@ import {
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
-   useGetDisplayState, useGetInterviewChat, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
+   useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
@@ -3487,6 +3487,49 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
   });
   const activeInterviewer = session.data?.label ?? "Interviewer";
+  const dmLastSeenRef = useRef<Record<string, string>>({});
+  const [dmLastSeen, setDmLastSeen] = useState<Record<string, string>>({});
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("robotics-dm-last-seen");
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        dmLastSeenRef.current = parsed;
+        setDmLastSeen(parsed);
+      }
+    } catch { /* private browsing etc. */ }
+  }, []);
+  const markDmRead = useCallback((peer: string, at?: string) => {
+    const stamp = at ?? new Date().toISOString();
+    const next = { ...dmLastSeenRef.current, [peer.trim().toLowerCase()]: stamp };
+    dmLastSeenRef.current = next;
+    setDmLastSeen(next);
+    try {
+      window.localStorage.setItem("robotics-dm-last-seen", JSON.stringify(next));
+    } catch { /* private browsing etc. */ }
+  }, []);
+  const conversations = useGetChatConversations({
+    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: 5000 },
+  });
+  const unreadPeers = useMemo(() => {
+    const active = conversationPeer?.trim().toLowerCase() ?? "";
+    const unread = new Set<string>();
+    for (const item of conversations.data?.items ?? []) {
+      const peer = item.peer.trim().toLowerCase();
+      if (!peer || peer === active) continue;
+      if (item.lastMessageAuthor.trim().toLowerCase() === activeInterviewer.trim().toLowerCase()) continue;
+      const seen = dmLastSeen[peer];
+      if (!seen || item.lastMessageAt > seen) unread.add(peer);
+    }
+    return unread;
+  }, [conversations.data, dmLastSeen, conversationPeer, activeInterviewer]);
+  useEffect(() => {
+    if (!conversationPeer) return;
+    const item = (conversations.data?.items ?? []).find(
+      (entry) => entry.peer.trim().toLowerCase() === conversationPeer.trim().toLowerCase(),
+    );
+    markDmRead(conversationPeer, item?.lastMessageAt);
+  }, [conversationPeer, conversations.data, markDmRead]);
   const mentionLabels = useMemo(() => {
     const unique = new Map<string, string>();
     for (const label of [...interviewerLabels, activeInterviewer]) {
@@ -4532,7 +4575,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        <div className="mt-3 flex flex-wrap items-center gap-2">
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
          <button type="button" onClick={() => setConversationPeer(null)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
-         {directTargets.map(label => <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`}>To {label}</button>)}
+         {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
        </div>
        <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
      </div>

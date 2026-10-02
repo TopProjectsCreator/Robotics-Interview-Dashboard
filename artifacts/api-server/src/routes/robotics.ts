@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, dashboardChartsTable, db, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -35,6 +35,7 @@ import {
   AssignSeatBody,
   AssignSeatResponse,
   GetInterviewChatResponse,
+  GetChatConversationsResponse,
   ListChatCustomEmojisResponse,
   GetQueueResponse,
   GetQueueLabelsResponse,
@@ -3185,6 +3186,46 @@ router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promis
   }
 });
 
+router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  try {
+    // One row per direct thread, newest message wins. Threads are keyed by a
+    // sorted "labelA<US>labelB" pair, so match on the current label appearing
+    // anywhere in the key.
+    const { rows } = await pool.query(
+      `select distinct on (conversation_peer)
+              conversation_peer as "peerKey",
+              author,
+              message,
+              created_at
+         from interview_chat_messages
+        where conversation_scope = 'direct'
+          and position($1 in conversation_peer) > 0
+        order by conversation_peer, created_at desc`,
+      [account.displayName],
+    );
+    const items = (rows as { peerKey: string; author: string; message: string; created_at: Date }[])
+      .map((row) => {
+        const parts = String(row.peerKey).split("\u001f").filter(Boolean);
+        const peer = parts.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? parts[0] ?? "";
+        return {
+          peer,
+          lastMessageAt: new Date(row.created_at).toISOString(),
+          lastMessageAuthor: String(row.author),
+          lastMessage: String(row.message ?? "").slice(0, 140),
+        };
+      })
+      .filter((item) => item.peer)
+      .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+    res.json(GetChatConversationsResponse.parse({ items }));
+  } catch (error) {
+    req.log.error({ err: error }, "Direct conversation list failed");
+    res.status(500).json({ error: "Unable to load your direct messages." });
+  }
+});
+
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -3411,15 +3452,18 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     res.status(404).json({ error: "Message not found." });
     return;
   }
-  if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
-    res.status(403).json({ error: "You can only edit your own messages." });
-    return;
-  }
-  if (existing.conversationScope === "direct") {
-    const participants = (existing.conversationPeer ?? "").split("\u001f").filter(Boolean);
-    if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
-      res.status(403).json({ error: "You cannot edit a message outside your conversation." });
+  const isAdmin = account.role === "coordinator";
+  if (!isAdmin) {
+    if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
+      res.status(403).json({ error: "You can only edit your own messages." });
       return;
+    }
+    if (existing.conversationScope === "direct") {
+      const participants = (existing.conversationPeer ?? "").split("\u001f").filter(Boolean);
+      if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
+        res.status(403).json({ error: "You cannot edit a message outside your conversation." });
+        return;
+      }
     }
   }
   const [updated] = await db.update(interviewChatMessagesTable)
@@ -3457,15 +3501,17 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     res.status(404).json({ error: "Message not found." });
     return;
   }
-  if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
-    res.status(403).json({ error: "You can only delete your own messages." });
-    return;
-  }
-  if (existingMessage.conversationScope === "direct") {
-    const participants = (existingMessage.conversationPeer ?? "").split("\u001f").filter(Boolean);
-    if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
-      res.status(403).json({ error: "You cannot delete a message outside your conversation." });
+  if (account.role !== "coordinator") {
+    if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
+      res.status(403).json({ error: "You can only delete your own messages." });
       return;
+    }
+    if (existingMessage.conversationScope === "direct") {
+      const participants = (existingMessage.conversationPeer ?? "").split("\u001f").filter(Boolean);
+      if (!participants.some((label) => label.toLowerCase() === account.displayName.toLowerCase())) {
+        res.status(403).json({ error: "You cannot delete a message outside your conversation." });
+        return;
+      }
     }
   }
   await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.messageId, messageId));

@@ -43,6 +43,7 @@ import type {
   BroadcastAck,
   BroadcastInput,
   BroadcastList,
+  ChatConversationList,
   ChatCustomEmoji,
   ChatCustomEmojiInput,
   ChatCustomEmojiList,
@@ -3196,6 +3197,83 @@ export const useUploadChatCustomEmoji = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUploadChatCustomEmojiMutationOptions(options));
     }
+
+export const getGetChatConversationsUrl = () => {
+
+
+
+
+  return `/api/queue/chat/conversations`
+}
+
+/**
+ * @summary List direct conversations involving the current interviewer
+ */
+export const getChatConversations = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatConversationList> => {
+
+  return customFetch<ChatConversationList>(getGetChatConversationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatConversationsQueryKey = () => {
+    return [
+    `/api/queue/chat/conversations`
+    ] as const;
+    }
+
+
+export const getGetChatConversationsQueryOptions = <TData = Awaited<ReturnType<typeof getChatConversations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatConversationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatConversations>>> = ({ signal }) => getChatConversations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof getChatConversations>>>
+export type GetChatConversationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List direct conversations involving the current interviewer
+ */
+
+export function useGetChatConversations<TData = Awaited<ReturnType<typeof getChatConversations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatConversationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getToggleChatReactionUrl = (messageId: string,) => {
 

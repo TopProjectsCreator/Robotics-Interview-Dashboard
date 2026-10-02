@@ -49,6 +49,8 @@ export * from './broadcastAck';
 export * from './broadcastInput';
 export * from './broadcastList';
 export * from './categoryParameter';
+export * from './chatConversationList';
+export * from './chatConversationSummary';
 export * from './chatCustomEmoji';
 export * from './chatCustomEmojiInput';
 export * from './chatCustomEmojiInputContentType';

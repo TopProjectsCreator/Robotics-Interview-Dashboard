@@ -1045,6 +1045,19 @@ export const UploadChatCustomEmojiResponse = zod.object({
 
 
 /**
+ * @summary List direct conversations involving the current interviewer
+ */
+export const GetChatConversationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "peer": zod.string(),
+  "lastMessageAt": zod.string(),
+  "lastMessageAuthor": zod.string(),
+  "lastMessage": zod.string()
+}))
+})
+
+
+/**
  * @summary Toggle an emoji reaction on a chat message
  */
 export const ToggleChatReactionParams = zod.object({

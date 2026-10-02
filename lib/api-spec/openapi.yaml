@@ -808,6 +808,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatCustomEmoji"
+  /queue/chat/conversations:
+    get:
+      operationId: getChatConversations
+      tags: [queue]
+      summary: List direct conversations involving the current interviewer
+      responses:
+        "200":
+          description: Direct conversation summaries, newest activity first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationList"
   /queue/chat/{messageId}/reactions:
     post:
       operationId: toggleChatReaction
@@ -3389,6 +3401,26 @@ components:
             $ref: "#/components/schemas/ChatReaction"
         createdAt:
           type: string
+    ChatConversationSummary:
+      type: object
+      required: [peer, lastMessageAt, lastMessageAuthor, lastMessage]
+      properties:
+        peer:
+          type: string
+        lastMessageAt:
+          type: string
+        lastMessageAuthor:
+          type: string
+        lastMessage:
+          type: string
+    ChatConversationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatConversationSummary"
     ChatReaction:
       type: object
       required: [emoji, count, authors]

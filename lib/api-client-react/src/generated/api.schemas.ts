@@ -970,6 +970,17 @@ export interface InterviewChatMessage {
   createdAt: string;
 }
 
+export interface ChatConversationSummary {
+  peer: string;
+  lastMessageAt: string;
+  lastMessageAuthor: string;
+  lastMessage: string;
+}
+
+export interface ChatConversationList {
+  items: ChatConversationSummary[];
+}
+
 export interface ChatReactionInput {
   /**
      * A single Unicode emoji or an existing team emoji shortcode such as :rover:.
