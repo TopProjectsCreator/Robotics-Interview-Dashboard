@@ -4566,7 +4566,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         })()}
       <ActivityPills activities={item.activities ?? []} />
       {item.poll && <div className="mt-2 space-y-1.5" data-testid={`chat-poll-${item.id}`}>
-        <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Poll · {item.poll.totalVotes} vote{item.poll.totalVotes === 1 ? "" : "s"}</p>
+        <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#7c8c91] dark:text-[#93a8b2]">Poll · {item.poll.totalVotes} vote{item.poll.totalVotes === 1 ? "" : "s"}</p>
         {item.poll.options.map(option => {
           const share = item.poll!.totalVotes > 0 ? Math.round((option.votes / item.poll!.totalVotes) * 100) : 0;
           const mine = item.poll!.yourVote === option.index;
@@ -4574,22 +4574,22 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             <>
               <span className="relative z-10 flex min-w-0 flex-1 items-center gap-2 text-left">
                 <span className="truncate">{option.text}</span>
-                {mine && <Check size={13} className="shrink-0 text-[#12737d]" />}
+                {mine && <Check size={13} className="shrink-0 text-[#12737d] dark:text-[#7fd3de]" />}
               </span>
-              <span className="mono relative z-10 shrink-0 text-[11px] font-semibold text-[#52666e]">{option.votes}</span>
+              <span className="mono relative z-10 shrink-0 text-[11px] font-semibold text-[#52666e] dark:text-[#b3c6cf]">{option.votes}</span>
             </>
           );
           const shell = mine
-            ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]"
-            : "border-[#d5e0e0] bg-white text-[#38555e] hover:border-[#16869a]";
+            ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d] dark:border-[#2f8090] dark:bg-[#15323a] dark:text-[#8fd7e0]"
+            : "border-[#d5e0e0] bg-white text-[#38555e] hover:border-[#16869a] dark:border-[#31495a] dark:bg-[#182935] dark:text-[#dde7ec] dark:hover:border-[#3f8492]";
           return item.poll!.yourVote === null
             ? <button key={option.index} type="button" onClick={() => voteOnPoll(item.id, option.index)} disabled={votePollMutation.isPending} data-testid={`poll-vote-${item.id}-${option.index}`} className={`relative flex w-full items-center overflow-hidden rounded-lg border px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${shell}`}>{content}</button>
             : <div key={option.index} className={`relative flex w-full items-center overflow-hidden rounded-lg border px-3 py-2 text-xs font-medium ${shell}`}>
-                <span className="absolute inset-y-0 left-0 transition-all" style={{ width: `${share}%`, background: mine ? "rgba(22,134,154,.16)" : "rgba(137,164,171,.16)" }} />
+                <span className="absolute inset-y-0 left-0 transition-all" style={{ width: `${share}%`, background: mine ? "rgba(22,134,154,.18)" : "rgba(137,164,171,.18)" }} />
                 {content}
               </div>;
         })}
-        {item.poll.yourVote === null && <p className="text-[11px] text-[#8a999d]">Tap an option to vote. You can change it later.</p>}
+        {item.poll.yourVote === null && <p className="text-[11px] text-[#8a999d] dark:text-[#8ba0ab]">Tap an option to vote. You can change it later.</p>}
       </div>}
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {(item.reactions ?? []).map(r => {
@@ -4720,22 +4720,22 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
-        {pollOpen && <form onSubmit={submitPoll} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a]">New poll</p>
-          <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm outline-none focus:border-[#16869a]" />
+        {pollOpen && <form onSubmit={submitPoll} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
+          <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>
+          <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
           <div className="space-y-1.5">
             {pollOptions.map((option, index) => (
               <div key={index} className="flex items-center gap-1.5">
-                <input value={option} onChange={event => setPollOptions(current => current.map((value, i) => i === index ? event.target.value : value))} placeholder={`Option ${index + 1}`} data-testid={`input-poll-option-${index}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm outline-none focus:border-[#16869a]" />
-                {pollOptions.length > 2 && <button type="button" onClick={() => setPollOptions(current => current.filter((_, i) => i !== index))} aria-label={`Remove option ${index + 1}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] hover:bg-[#fff1ef]"><X size={13} /></button>}
+                <input value={option} onChange={event => setPollOptions(current => current.map((value, i) => i === index ? event.target.value : value))} placeholder={`Option ${index + 1}`} data-testid={`input-poll-option-${index}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
+                {pollOptions.length > 2 && <button type="button" onClick={() => setPollOptions(current => current.filter((_, i) => i !== index))} aria-label={`Remove option ${index + 1}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] hover:bg-[#fff1ef] dark:border-[#7d4038] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><X size={13} /></button>}
               </div>
             ))}
           </div>
-          {pollOptions.length < 8 && <button type="button" onClick={() => setPollOptions(current => [...current, ""])} data-testid="button-poll-add-option" className="rounded-lg border border-dashed border-[#9bbec0] px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-white">+ Add option</button>}
-          {pollError && <p className="text-xs text-[#ad4b43]" data-testid="poll-error">{pollError}</p>}
+          {pollOptions.length < 8 && <button type="button" onClick={() => setPollOptions(current => [...current, ""])} data-testid="button-poll-add-option" className="rounded-lg border border-dashed border-[#9bbec0] px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-white dark:border-[#3f6d75] dark:text-[#6fc3cf] dark:hover:bg-[#1b3038]">+ Add option</button>}
+          {pollError && <p className="text-xs text-[#ad4b43] dark:text-[#ef948b]" data-testid="poll-error">{pollError}</p>}
           <div className="flex items-center gap-2 pt-1">
-            <button type="submit" disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{pollBusy ? "Creating…" : "Post poll"}</button>
-            <button type="button" onClick={() => { setPollOpen(false); resetPollDraft(); }} data-testid="button-poll-cancel" className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e]">Cancel</button>
+            <button type="submit" disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#106d7a] disabled:opacity-50 dark:hover:bg-[#1c8b9d]">{pollBusy ? "Creating…" : "Post poll"}</button>
+            <button type="button" onClick={() => { setPollOpen(false); resetPollDraft(); }} data-testid="button-poll-cancel" className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e] dark:border-[#31495a] dark:bg-[#182935] dark:text-[#b3c6cf]">Cancel</button>
           </div>
         </form>}
      </form>
