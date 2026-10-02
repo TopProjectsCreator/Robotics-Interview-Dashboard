@@ -21,7 +21,7 @@ async function removeTestAccounts(): Promise<void> {
       `DELETE FROM interview_chat_messages WHERE author IN ('TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck', 'DmAlice', 'DmBob', 'ModCheck')`,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82', '394a0e6b93c19427e45f381cbdeae9c5', 'd83906beecb8aa4f3a592be99b6bf9bd', 'ef60effd88a020f38a5250e52dbfbcfe', '871c60bb520c061eb4dce907188a397b', 'd7e8e0f23ee1227c8b1a1df787f39344', 'c67f3c127956f0de9a219aa56c0c941c', '0194c92f204a2e856db530da0825c023', '0aaf1c02d1f90aef2b572a4ccf5f06fe', 'de920cd10775a08557c6f0f34f245077', 'f9f229712fec0e4189e769d30d546176', 'a9ac5b66b16dd06fc92da5a3627928b8', 'da5e191f50f37b420c19e74de7cf9939', '63200b1905e8bf40abf07fb2b3a0edcf', '90955ef55c2547b6c111b1029f17c201')`,
+      `DELETE FROM interviewer_accounts WHERE id IN ('465ffdbeed50cdeeca506ce3a3740044', 'a1a2a80e2420fbbd2dcb2feb5c229ff2', '892bf155a208770f41d2e25c35aaecdf', '7b7a5b1d09b8e1abb7117e411badc926', '91b9008adfde575891c65c8b184aea82', '394a0e6b93c19427e45f381cbdeae9c5', 'd83906beecb8aa4f3a592be99b6bf9bd', 'ef60effd88a020f38a5250e52dbfbcfe', '871c60bb520c061eb4dce907188a397b', 'd7e8e0f23ee1227c8b1a1df787f39344', 'c67f3c127956f0de9a219aa56c0c941c', '0194c92f204a2e856db530da0825c023', '0aaf1c02d1f90aef2b572a4ccf5f06fe', 'de920cd10775a08557c6f0f34f245077', 'f9f229712fec0e4189e769d30d546176', 'a9ac5b66b16dd06fc92da5a3627928b8', 'da5e191f50f37b420c19e74de7cf9939', '63200b1905e8bf40abf07fb2b3a0edcf', '90955ef55c2547b6c111b1029f17c201', '1e05ced62432f8059cb62d99dc9ecd4e')`,
     );
     await pool.query(
       `DELETE FROM parts_robots WHERE lower(name) IN ('previewverify', 'verifybot', 'verifybotrenamed', 'previewcheck', 'previewcheck2')`,
@@ -30,7 +30,7 @@ async function removeTestAccounts(): Promise<void> {
       `UPDATE interview_queue SET interviewer_labels = (
         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
         FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck', 'PartsCheck', 'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix', 'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim')
+        WHERE elem NOT IN ('TempVerify', 'RoleTest', 'test', 'test2', 'test3', 'DMCheck', 'MsgCheck', 'UpCheck', 'PartsCheck', 'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix', 'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel')
       ) WHERE id = 1`,
     );
     logger.info("Test accounts cleanup done");
@@ -173,16 +173,6 @@ async function ensureSchema(): Promise<void> {
     }
   }
   await removeTestAccounts();
-
-  // TEMP: promote verification account to admin for AI-message delete test.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE id IN ('1e05ced62432f8059cb62d99dc9ecd4e')`,
-    );
-  } catch (err) {
-    logger.error({ err }, "temp promote failed");
-  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
