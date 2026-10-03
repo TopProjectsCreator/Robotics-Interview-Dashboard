@@ -1,6 +1,6 @@
 const MIB = 1024 * 1024;
 
-export type SupportedPartsPreviewKind = "image" | "glb" | "stl" | "parasolid";
+export type SupportedPartsPreviewKind = "image" | "glb" | "stl" | "parasolid" | "step";
 
 export function partsPreviewKind(
   fileName: string,
@@ -19,6 +19,20 @@ export function partsPreviewKind(
   if ((extension === "x_t" || extension === "x_b") && contentType === "model/x-parasolid") {
     return "parasolid";
   }
+  // STEP/IGES/BREP render in the browser via OpenCascade WASM, so the server
+  // only needs to accept and validate them here.
+  if (
+    (extension === "step" || extension === "stp") &&
+    ["model/step", "application/step", "application/x-step", "text/plain", "application/octet-stream"].includes(contentType)
+  ) return "step";
+  if (
+    (extension === "iges" || extension === "igs") &&
+    ["model/iges", "text/plain", "application/octet-stream"].includes(contentType)
+  ) return "step";
+  if (
+    (extension === "brep" || extension === "brp") &&
+    ["model/brep", "application/octet-stream"].includes(contentType)
+  ) return "step";
   return null;
 }
 
@@ -27,6 +41,7 @@ export function partsPreviewMaxBytes(fileName: string, contentType: string): num
   if (kind === "image") return 25 * MIB;
   if (kind === "glb" || kind === "stl") return 100 * MIB;
   if (kind === "parasolid") return 200 * MIB;
+  if (kind === "step") return 200 * MIB;
   return null;
 }
 

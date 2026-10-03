@@ -489,6 +489,9 @@ importers:
       mammoth:
         specifier: ^1.12.3
         version: 1.12.3
+      occt-import-js:
+        specifier: ^0.0.23
+        version: 0.0.23
       three:
         specifier: ^0.183.2
         version: 0.183.2
@@ -4702,6 +4705,9 @@ packages:
   obug@2.2.1:
     resolution: {integrity: sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==}
     engines: {node: '>=12.20.0'}
+
+  occt-import-js@0.0.23:
+    resolution: {integrity: sha512-RFfYQXYFX5C1mB1Aywm0ShcUKzXOr/VzTnlzhBSDJOR6YCAPt1HYCzeXWg1vwwjn/cUxwqRNhhtf1dlewoZYCQ==}
 
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
@@ -10037,6 +10043,8 @@ snapshots:
   object-keys@1.1.1: {}
 
   obug@2.2.1: {}
+
+  occt-import-js@0.0.23: {}
 
   on-exit-leak-free@2.1.2: {}
 

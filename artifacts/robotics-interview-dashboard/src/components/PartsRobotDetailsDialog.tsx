@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { ChatGlbViewer } from "@/components/ChatGlbViewer";
 import { ChatParasolidViewer } from "@/components/ChatParasolidViewer";
 import { ChatStlViewer } from "@/components/ChatStlViewer";
+import { ChatStepViewer } from "@/components/ChatStepViewer";
 
 type PartsRobotDetailsDialogProps = {
   robot: PartsRobot | null;
@@ -52,7 +53,7 @@ type QuoteFormValue = {
   isStartingAt: boolean;
 };
 
-const SUPPORTED_PREVIEW_ACCEPT = ".jpg,.jpeg,.png,.webp,.gif,.glb,.stl,.x_t,.x_b";
+const SUPPORTED_PREVIEW_ACCEPT = ".jpg,.jpeg,.png,.webp,.gif,.glb,.stl,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
@@ -78,6 +79,9 @@ function previewContentType(file: File): string | null {
   if (extension === "glb") return "model/gltf-binary";
   if (extension === "stl") return "model/stl";
   if (extension === "x_t" || extension === "x_b") return "model/x-parasolid";
+  if (extension === "step" || extension === "stp") return "model/step";
+  if (extension === "iges" || extension === "igs") return "model/iges";
+  if (extension === "brep" || extension === "brp") return "model/brep";
   return null;
 }
 
@@ -163,6 +167,16 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
   }
   if (preview.contentType === "model/x-parasolid" || lowerName.endsWith(".x_t") || lowerName.endsWith(".x_b")) {
     return <ChatParasolidViewer name={preview.fileName} src={src} />;
+  }
+  if (
+    preview.contentType === "model/step" ||
+    preview.contentType === "application/step" ||
+    preview.contentType === "application/x-step" ||
+    preview.contentType === "model/iges" ||
+    preview.contentType === "model/brep" ||
+    [".step", ".stp", ".iges", ".igs", ".brep", ".brp"].some((extension) => lowerName.endsWith(extension))
+  ) {
+    return <ChatStepViewer name={preview.fileName} src={src} />;
   }
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground" role="alert">
@@ -482,7 +496,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
     if (!file) return;
     const contentType = previewContentType(file);
     if (!contentType) {
-      setPreviewError("Choose a JPEG, PNG, WebP, GIF, GLB, STL, X_T, or X_B file.");
+      setPreviewError("Choose a JPEG, PNG, WebP, GIF, GLB, STL, STEP, IGES, BREP, X_T, or X_B file.");
       return;
     }
     setPreviewError("");
@@ -617,7 +631,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
                       className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20"
                       data-testid="input-robot-preview-file"
                     />
-                    <p className="text-[11px] text-muted-foreground">JPG, PNG, WebP, GIF, GLB, STL, X_T, or X_B.</p>
+                    <p className="text-[11px] text-muted-foreground">JPG, PNG, WebP, GIF, GLB, STL, STEP, IGES, BREP, X_T, or X_B.</p>
                     {selectedFile && <p className="truncate text-xs text-foreground" data-testid="text-selected-preview-file">{selectedFile.name}</p>}
                     <div className="flex flex-wrap gap-2">
                       <Button type="submit" size="sm" disabled={!selectedFile || uploadMutation.isPending || updatePreviewMutation.isPending || deletePreviewMutation.isPending} data-testid="button-upload-robot-preview">

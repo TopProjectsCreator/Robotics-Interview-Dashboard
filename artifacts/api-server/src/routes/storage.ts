@@ -251,6 +251,9 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'model/gltf-binary',
   'model/stl',
   'model/x-parasolid',
+  'model/step',
+  'application/step',
+  'application/x-step',
 ];
 function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>

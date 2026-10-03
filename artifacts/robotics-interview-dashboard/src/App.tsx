@@ -75,6 +75,7 @@ import { ChatParasolidViewer } from "./components/ChatParasolidViewer";
 import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
+import { ChatStepViewer } from "./components/ChatStepViewer";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
@@ -559,7 +560,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "stl" | "text" | "video";
+type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -571,6 +572,12 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
   if (contentType === "model/gltf-binary" || extension === "glb") return "model";
   if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
+  if (
+    contentType === "model/step" ||
+    contentType === "application/step" ||
+    contentType === "application/x-step" ||
+    ["step", "stp", "iges", "igs", "brep", "brp"].includes(extension)
+  ) return "step";
   if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
   if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
   if (contentType === "application/pdf" || extension === "pdf") return "pdf";
@@ -801,6 +808,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
+  if (kind === "step" && objectUrl) return <ChatStepViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
@@ -4731,7 +4739,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">
