@@ -22,6 +22,7 @@ async function removeTestAccounts(): Promise<void> {
     'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel',
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot',
+    'CleanupBot', 'CleanupBot2', 'AdminCleaner', 'RealAdmin', 'ProbeBot',
     'test', 'test2', 'test3',
   ];
   try {
@@ -34,7 +35,8 @@ async function removeTestAccounts(): Promise<void> {
     );
     await pool.query(
       `DELETE FROM interviewer_accounts
-        WHERE lower(normalized_name) = ANY($1::text[])`,
+        WHERE lower(normalized_name) = ANY($1::text[])
+           OR lower(normalized_name) LIKE '%bot'`,
       [params],
     );
     await pool.query(
