@@ -308,9 +308,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [notifyState, setNotifyState] = useState(() => browserNotifyPermission());
   const [refreshed, setRefreshed] = useState(false);
   const [passwordAdminCode, setPasswordAdminCode] = useState("");
+  const eventPasscodeRef = useRef<HTMLInputElement>(null);
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [passwordNotice, setPasswordNotice] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [rowNotice, setRowNotice] = useState<Record<string, string>>({});
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
   const updateInterviewerPassword = useUpdateInterviewerPassword();
@@ -319,13 +321,21 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const deleteInterviewer = useDeleteInterviewer();
   const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
     updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
-      onSuccess: () => { setPasswordNotice("Access updated."); setPasswordError(""); qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() }); },
+      onSuccess: () => {
+        setPasswordNotice("Access updated.");
+        setPasswordError("");
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      },
       onError: () => { setPasswordError("Could not update access. Try again."); },
     });
   };
   const removeInterviewerAccount = (id: string, displayName: string) => {
     deleteInterviewer.mutate({ interviewerId: id }, {
-      onSuccess: () => { setPasswordNotice(`${displayName} was removed from the team.`); setPasswordError(""); qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() }); },
+      onSuccess: () => {
+        setPasswordNotice(`${displayName} was removed from the team.`);
+        setPasswordError("");
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      },
       onError: () => { setPasswordError("Could not remove that account. Try again."); },
     });
   };
@@ -347,12 +357,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const changeInterviewerPassword = (interviewerId: string, password: string | null, confirmLowExposure = false) => {
     setPasswordNotice("");
     setPasswordError("");
+    setRowNotice(current => ({ ...current, [interviewerId]: "" }));
     if (!passwordAdminCode.trim()) {
-      setPasswordError("Enter the event passcode first.");
+      setPasswordError("Add the team access code once, then press Enter on anyone's password.");
+      eventPasscodeRef.current?.focus();
       return;
     }
     if (password !== null && !password.trim()) {
-      setPasswordError("Enter a new password or use Reset.");
+      setPasswordError("Type the new password for that person.");
       return;
     }
     updateInterviewerPassword.mutate(
@@ -368,6 +380,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         onSuccess: () => {
           if (password !== null) {
             setPasswordDrafts(current => ({ ...current, [interviewerId]: "" }));
+            setRowNotice(current => ({ ...current, [interviewerId]: "Password saved" }));
           }
           finishPasswordAction(
             password === null ? "Password removed. That interviewer must set one up at next sign-in." : "Password updated.",
@@ -381,10 +394,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               changeInterviewerPassword(interviewerId, password, true);
               return;
             }
+            setRowNotice(current => ({ ...current, [interviewerId]: "Not saved — choose another password" }));
             setPasswordError("Password was not changed. Choose a different password.");
             return;
           }
-          setPasswordError(passwordSafetyErrorMessage(issue) ?? "Could not update that password. Check the event passcode and try again.");
+          setRowNotice(current => ({ ...current, [interviewerId]: "Not saved" }));
+          setPasswordError(passwordSafetyErrorMessage(issue) ?? "Could not update that password. Check the team access code and try again.");
         },
       },
     );
@@ -393,7 +408,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     setPasswordNotice("");
     setPasswordError("");
     if (!passwordAdminCode.trim()) {
-      setPasswordError("Enter the event passcode first.");
+      setPasswordError("Add the team access code first.");
+      eventPasscodeRef.current?.focus();
       return;
     }
     if (!window.confirm("Reset every interviewer password? Everyone will need to set up a new password before signing in again.")) return;
@@ -401,55 +417,65 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       { data: { eventPassword: passwordAdminCode.trim() } },
       {
         onSuccess: () => finishPasswordAction("All passwords were reset. Set up a new password to continue.", true),
-        onError: () => setPasswordError("Could not reset all passwords. Check the event passcode and try again."),
+        onError: () => setPasswordError("Could not reset all passwords. Check the team access code and try again."),
       },
     );
   };
   const passwordBusy = updateInterviewerPassword.isPending || resetAllInterviewerPasswords.isPending;
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" onClick={onClose} data-testid="settings-modal">
-    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
-      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91]">Saved on this device only — your co-coordinator keeps their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5]"><X size={16} /></button></div>
-      <div className="mt-4 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Profile</p>
-        <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Coordinator" className="h-10 w-44 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /></SettingRow>
-        <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className="mono h-10 w-20 rounded-lg border border-[#dce5e5] bg-white px-3 text-center text-sm font-bold uppercase outline-none focus:border-[#16869a]" /></SettingRow>
+  const field = "h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]";
+  const ghostButton = "rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]";
+  const dangerButton = "rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]";
+  const sectionLabel = "mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]";
+  const divider = "mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]";
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
+    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
+      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Saved on this device only — your co-coordinator keeps their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
+      <div className="mt-4 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
+        <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Coordinator" className={`${field} w-44`} /></SettingRow>
+        <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Appearance</p>
+      <div className={divider}><p className={sectionLabel}>Appearance</p>
         <SettingRow title="Theme" detail="Dark is easier on the eyes at night events"><Segmented options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={theme === "dark" ? "dark" : "light"} onChange={(v) => setTheme(v)} testId="segment-settings-theme" /></SettingRow>
         <SettingRow title="Row density" detail="Compact fits more applicants per screen"><Segmented options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} value={settings.density} onChange={(v) => update({ density: v })} testId="segment-settings-density" /></SettingRow>
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Applicants list</p>
-        <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm">{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
+      <div className={divider}><p className={sectionLabel}>Applicants list</p>
+        <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Live updates</p>
+      <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
         <SettingRow title="Instant updates" detail="Pushes changes in about a second via Supabase Realtime. Polling stays on as backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Notifications</p>
-       <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white">Enable</button>}</SettingRow>
+      <div className={divider}><p className={sectionLabel}>Notifications</p>
+       <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Interviewer passwords</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91]">Use the event passcode to set or remove a personal password. Removing one sends that interviewer through setup again.</p>
-        <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} data-testid="input-settings-event-passcode" className="h-10 w-full rounded-lg border border-[#dce5e5] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /></label>
-        <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa]">
-          {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91]">Loading interviewer accounts…</p>}
+      <div className={divider}><p className={sectionLabel}>Team passwords</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit.</p>
+        <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Team access code</span><input ref={eventPasscodeRef} type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} onKeyDown={e => { if (e.key !== "Enter") return; e.preventDefault(); const first = document.querySelector("[data-testid^='input-settings-password-']"); if (first instanceof HTMLElement) first.focus(); }} placeholder="Used once per visit" data-testid="input-settings-event-passcode" className={field} /></label>
+        <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa] dark:divide-[#243743] dark:border-[#2a3f4c] dark:bg-[#10202a]">
+          {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading interviewer accounts…</p>}
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">{account.displayName}</p><p className="text-[11px] text-[#7c8c91]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
-            <div className="flex flex-wrap gap-2"><input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="New password" data-testid={`input-settings-password-${account.id}`} className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs outline-none focus:border-[#16869a]" /><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? "")} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Set</button><button type="button" disabled={passwordBusy} onClick={() => changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] disabled:opacity-50">Reset</button></div>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className="rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46]">Remove</button>}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
+            <form onSubmit={e => { e.preventDefault(); void changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? ""); }} className="flex flex-wrap gap-2">
+              <input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="Type new password, press Enter" data-testid={`input-settings-password-${account.id}`} className={`${field} h-9 min-w-[160px] flex-1 text-xs`} />
+              <button type="submit" disabled={passwordBusy} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">Save</button>
+              <button type="button" disabled={passwordBusy} onClick={() => void changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className={dangerButton}>Reset</button>
+            </form>
+            {rowNotice[account.id] && <p className={`text-[11px] font-semibold ${rowNotice[account.id] === "Password saved" ? "text-[#247d63] dark:text-[#6fce8f]" : "text-[#b34a42] dark:text-[#e89087]"}`} data-testid={`settings-password-status-${account.id}`}>{rowNotice[account.id]}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
           </div>)}
         </div>
-        <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2.5 text-xs font-semibold text-[#a34d46] disabled:opacity-50"><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
-        {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63]" data-testid="settings-password-success">{passwordNotice}</p>}
-        {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42]" data-testid="settings-password-error">{passwordError}</p>}
+        <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
+        {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="settings-password-success">{passwordNotice}</p>}
+        {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
       </div>
-      <div className="mt-2 border-t border-[#e5ecec] pt-2"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91]">Data</p>
-        <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className="flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762]"><RefreshCw size={14} /> Reload</button></SettingRow>
-        <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46]"><RotateCcw size={14} /> Reset</button></SettingRow>
+      <div className={divider}><p className={sectionLabel}>Data</p>
+        <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
+        <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>
       </div>
-      <button onClick={onClose} data-testid="button-settings-done" className="mt-5 w-full rounded-xl bg-[#183a4b] py-3 text-sm font-semibold text-white">Done</button>
+      <button onClick={onClose} data-testid="button-settings-done" className="mt-5 w-full rounded-xl bg-[#183a4b] py-3 text-sm font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Done</button>
     </div>
   </div>;
 }
@@ -912,6 +938,64 @@ function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right"
   ));
 }
 
+const RAW_BLOCK_TAGS = ["details", "svg"] as const;
+
+type RawBlockTag = (typeof RAW_BLOCK_TAGS)[number];
+type RawBlock = { tag: RawBlockTag; text: string };
+
+function findRawBlockClose(source: string, tag: RawBlockTag, from: number): number {
+  const pattern = new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi");
+  pattern.lastIndex = from;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source))) {
+    if (!match[1]) {
+      depth += 1;
+      continue;
+    }
+    depth -= 1;
+    if (!depth) return match.index + match[0].length;
+  }
+  return -1;
+}
+
+function findRawBlocks(source: string): RawBlock[] {
+  const blocks: RawBlock[] = [];
+  const opener = new RegExp(`<(${RAW_BLOCK_TAGS.join("|")})\\b[^>]*>`, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = opener.exec(source))) {
+    const tag = match[1].toLowerCase() as RawBlockTag;
+    const close = findRawBlockClose(source, tag, match.index + match[0].length);
+    if (close < 0) continue;
+    blocks.push({ tag, text: source.slice(match.index, close) });
+    opener.lastIndex = close;
+  }
+  return blocks;
+}
+
+const DETAILS_SUMMARY_PATTERN = /^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i;
+
+function MarkdownDetails({ text, mentionPeople }: { text: string; mentionPeople: readonly ChatMentionPerson[] }) {
+  const attributes = text.match(/^<details\b([^>]*)>/i)?.[1] ?? "";
+  const isOpen = /(^|[\s"'])open(\s|=|["']|$)/i.test(attributes);
+  const inner = text.replace(/^<details\b[^>]*>/i, "").replace(/<\/details\s*>$/i, "");
+  const summary = inner.match(DETAILS_SUMMARY_PATTERN);
+  const summarySource = (summary?.[1] ?? "").replace(/\s+/g, " ").trim();
+  const body = summary ? inner.slice((summary.index ?? 0) + summary[0].length) : inner;
+  return (
+    <details open={isOpen} className="chat-markdown-details my-2 overflow-hidden rounded-xl border">
+      <summary className="chat-markdown-details-summary flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[13px] font-semibold">
+        <ChevronRight className="chat-markdown-details-marker size-3.5 shrink-0 transition-transform" />
+        <span className="min-w-0 flex-1">{renderInlineMarkdown(summarySource || "Details", mentionPeople)}</span>
+      </summary>
+      <div className="chat-markdown-details-body border-t px-3 py-2 text-[13px]">
+        <MarkdownContent source={body.trim()} className="text-[13px]" mentionPeople={mentionPeople} />
+      </div>
+    </details>
+  );
+}
+
+
 function MarkdownContent({
   source,
   className = "",
@@ -1025,21 +1109,26 @@ function MarkdownContent({
     paragraph.push(trimmed);
     });
   };
-  const svgPattern = /<svg[\s>][\s\S]*?<\/svg\s*>/gi;
-  let svgCursor = 0;
-  let svgMatch: RegExpExecArray | null;
-  while ((svgMatch = svgPattern.exec(capped))) {
-    if (svgMatch.index > svgCursor) renderTextSegment(capped.slice(svgCursor, svgMatch.index));
+  const rawBlocks = findRawBlocks(capped);
+  let rawCursor = 0;
+  for (const rawBlock of rawBlocks) {
+    const start = capped.indexOf(rawBlock.text, rawCursor);
+    if (start < 0) break;
+    if (start > rawCursor) renderTextSegment(capped.slice(rawCursor, start));
     flush();
-    const cleanSvg = sanitizeSvg(svgMatch[0]);
-    if (cleanSvg) {
-      blocks.push(<div key={`svg-${key++}`} className="overflow-x-auto rounded-xl border border-[#dce9e8] bg-white p-3 [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: cleanSvg }} />);
+    if (rawBlock.tag === "details") {
+      blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} />);
     } else {
-      blocks.push(<p key={`svg-${key++}`} className="text-xs text-[#8a999d]">(Embedded image omitted.)</p>);
+      const cleanSvg = sanitizeSvg(rawBlock.text);
+      if (cleanSvg) {
+        blocks.push(<div key={`svg-${key++}`} className="overflow-x-auto rounded-xl border border-[#dce9e8] bg-white p-3 [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: cleanSvg }} />);
+      } else {
+        blocks.push(<p key={`svg-${key++}`} className="text-xs text-[#8a999d]">(Embedded image omitted.)</p>);
+      }
     }
-    svgCursor = svgMatch.index + svgMatch[0].length;
+    rawCursor = start + rawBlock.text.length;
   }
-  if (svgCursor < capped.length) renderTextSegment(capped.slice(svgCursor));
+  if (rawCursor < capped.length) renderTextSegment(capped.slice(rawCursor));
   flush();
 
   return <div className={`prose prose-sm max-w-none prose-headings:my-0 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0 prose-hr:my-2 dark:prose-invert ${className}`}>{blocks}</div>;
