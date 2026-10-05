@@ -246,6 +246,30 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP: rename the placeholder interviewer account to Dylan.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts
+          SET display_name = 'Dylan',
+              normalized_name = 'dylan',
+              updated_at = now()
+        WHERE normalized_name <> 'dylan'
+          AND normalized_name NOT IN ('ishaan', 'maksim', 'clinton', 'aarav', 'arjun', 'yichen', 'vihaapte', 'suhasadavi', 'yishaan', 'lucasshamshurin')`,
+    );
+    await pool.query(
+      `UPDATE interview_queue
+          SET interviewer_labels = (
+            SELECT COALESCE(jsonb_agg(
+              CASE WHEN lower(elem) NOT IN ('ishaan', 'maksim', 'clinton', 'aarav', 'arjun', 'yichen', 'vihaapte', 'suhasadavi', 'yishaan', 'lucasshamshurin') THEN 'Dylan' ELSE elem END
+            ), '[]'::jsonb)::text
+              FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
+          )
+        WHERE id = 1`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp rename failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');

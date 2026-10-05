@@ -1335,6 +1335,8 @@ function serverErrorMessage(error: unknown, fallback: string): string {
 }
 
 const CHAT_PAGE_SIZE = 30;
+/** Chat message cap, in characters. Kept in step with the server. */
+const CHAT_MESSAGE_MAX_CHARS = 2000;
 
 function mergeChatItems<T extends { id: string; createdAt: string }>(...lists: T[][]): T[] {
   const seen = new Set<string>();
@@ -4609,7 +4611,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim() && !chatFiles.length) return;
-    if (message.trim().length > 900) { setChatError("Message is too long — shorten the text."); return; }
+    if (message.trim().length > CHAT_MESSAGE_MAX_CHARS) { setChatError("Message is too long — shorten the text."); return; }
     const draft = message.trim();
     if (failedAiReply && /@ai\b/i.test(draft)) {
       setChatError("Retry the saved AI reply before sending another @ai prompt.");

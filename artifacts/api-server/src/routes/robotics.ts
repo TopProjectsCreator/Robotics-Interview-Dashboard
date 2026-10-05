@@ -3331,6 +3331,9 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }));
 });
 
+/** Chat message cap, in characters. Doubled from 1000. */
+const CHAT_MESSAGE_MAX_CHARS = 2000;
+
 router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -3389,7 +3392,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const values = {
     id: parsed.data.idempotencyKey ?? randomUUID(),
     author: isAssistantMessage ? "AI assistant" : account.displayName,
-    message: parsed.data.message.trim().slice(0, 1000),
+    message: parsed.data.message.trim().slice(0, CHAT_MESSAGE_MAX_CHARS),
     conversationScope: conversation.scope,
     conversationPeer: conversation.key,
     parentMessageId,
@@ -3620,7 +3623,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     }
   }
   const [updated] = await db.update(interviewChatMessagesTable)
-    .set({ message: message.slice(0, 1000) })
+    .set({ message: message.slice(0, CHAT_MESSAGE_MAX_CHARS) })
     .where(eq(interviewChatMessagesTable.id, messageId))
     .returning();
   const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
