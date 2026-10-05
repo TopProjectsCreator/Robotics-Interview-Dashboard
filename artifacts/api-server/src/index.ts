@@ -246,6 +246,21 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP: remove the limit-check test account and its messages.
+  try {
+    await pool.query(`DELETE FROM interview_chat_messages WHERE author = 'LimitCheck'`);
+    await pool.query(`DELETE FROM interviewer_accounts WHERE normalized_name = 'limitcheck'`);
+    await pool.query(
+      `UPDATE interview_queue SET interviewer_labels = (
+         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
+           FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
+          WHERE lower(elem) <> 'limitcheck'
+       ) WHERE id = 1`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp cleanup failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
