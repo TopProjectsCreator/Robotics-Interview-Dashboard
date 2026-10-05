@@ -246,15 +246,6 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP: Maksim is a team member (interviewer), not an admin.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts SET role = 'interviewer', updated_at = now()
-        WHERE normalized_name = 'maksim' AND role <> 'interviewer'`,
-    );
-  } catch (err) {
-    logger.error({ err }, "temp role update failed");
-  }
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
