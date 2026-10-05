@@ -1814,11 +1814,14 @@ function attachmentContext(attachments: { fileName?: unknown; objectPath?: unkno
   return `\n\nFiles attached in chat (already uploaded, use preview_import/commit_import with these objectPaths):\n${lines.join("\n")}`;
 }
 
+/** How much recent interviewer chat the assistant is shown for an @ai mention. */
+const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
+
 function interviewChatContext(chatContext: { author?: unknown; message?: unknown }[] | undefined): string {
   if (!Array.isArray(chatContext) || chatContext.length === 0) return "";
   const lines = chatContext
     .filter((m) => m && typeof m === "object" && typeof (m as Record<string, unknown>).message === "string")
-    .slice(-15)
+    .slice(-CHAT_CONTEXT_MESSAGE_LIMIT)
     .map((m) => {
       const rec = m as Record<string, string>;
       const author = (rec.author || "Interviewer").slice(0, 80);

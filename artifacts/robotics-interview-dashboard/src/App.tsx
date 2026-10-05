@@ -77,6 +77,7 @@ import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
 import { CadThreeMfViewer } from "./components/CadThreeMfViewer";
+import { CadMeshViewer } from "./components/CadMeshViewer";
 import { ChatStepViewer } from "./components/ChatStepViewer";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
@@ -686,7 +687,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "step" | "stl" | "text" | "video";
+type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -700,6 +701,9 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
   // 3MF is a ZIP of XML mesh data, so it renders in the browser like STL.
   if (["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) || extension === "3mf") return "3mf";
+  // Plain triangle meshes; three.js parses both without a CAD kernel.
+  if (contentType === "model/obj" || extension === "obj") return "obj";
+  if (contentType === "model/ply" || contentType === "application/ply" || extension === "ply") return "ply";
   if (
     contentType === "model/step" ||
     contentType === "application/step" ||
@@ -937,6 +941,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
   if (kind === "3mf" && objectUrl) return <CadThreeMfViewer name={name} src={objectUrl} />;
+  if ((kind === "obj" || kind === "ply") && objectUrl) return <CadMeshViewer name={name} src={objectUrl} />;
   if (kind === "step" && objectUrl) return <ChatStepViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
@@ -1335,6 +1340,9 @@ function serverErrorMessage(error: unknown, fallback: string): string {
 }
 
 const CHAT_PAGE_SIZE = 30;
+
+/** How many recent chat messages the assistant is given for an @ai mention. */
+const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
 /** Chat message cap, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 2000;
 
@@ -3603,6 +3611,8 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   gif: "image/gif",
   glb: "model/gltf-binary",
   stl: "model/stl",
+  obj: "model/obj",
+  ply: "model/ply",
   "3mf": "model/3mf",
   x_b: "model/x-parasolid",
   x_t: "model/x-parasolid",
@@ -3674,7 +3684,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
-  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/3mf" || type === "application/3mf" || type === "model/x-parasolid") return "model";
+  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/3mf" || type === "application/3mf" || type === "model/obj" || type === "model/ply" || type === "application/ply" || type === "model/x-parasolid") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -4759,7 +4769,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-         const chatContext = [...chatItems, { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
+        // Pull the newest 100 messages straight from the API so the assistant
+        // sees real history, not just the page currently rendered. Falls back
+        // to what is loaded if the extra fetch fails.
+        let history = chatItems;
+        try {
+          const fresh = await withTimeout(
+            getInterviewChat({
+              limit: CHAT_CONTEXT_MESSAGE_LIMIT,
+              scope: conversationScope,
+              ...(conversationPeer ? { peer: conversationPeer } : {}),
+            }),
+            15000,
+            "history",
+          );
+          if (fresh.items.length) history = fresh.items;
+        } catch { /* fall back to the loaded page */ }
+        const chatContext = [...history, { author, message: submitted }]
+          .slice(-CHAT_CONTEXT_MESSAGE_LIMIT)
+          .map(item => ({ author: item.author, message: item.message }));
         const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
         assistantReplyForRetry = {
           answer: response.answer,
@@ -5006,7 +5034,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">
