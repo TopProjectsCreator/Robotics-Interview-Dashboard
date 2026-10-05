@@ -246,30 +246,20 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP: rename the placeholder interviewer account to Dylan.
+  // TEMP (diagnostic): report every interviewer account row so the rename
+  // can be made without guessing which rows are hidden from the label list.
   try {
-    await pool.query(
-      `UPDATE interviewer_accounts
-          SET display_name = 'Dylan',
-              normalized_name = 'dylan',
-              updated_at = now()
-        WHERE normalized_name <> 'dylan'
-          AND normalized_name NOT IN ('ishaan', 'maksim', 'clinton', 'aarav', 'arjun', 'yichen', 'vihaapte', 'suhasadavi', 'yishaan', 'lucasshamshurin')`,
+    const { rows } = await pool.query(
+      `select id, display_name, normalized_name,
+              (password_hash is not null) as has_password,
+              (id = any (select unnest(ARRAY(SELECT jsonb_array_elements_text((select interviewer_labels::jsonb from interview_queue where id = 1))))) as in_labels
+         from interviewer_accounts
+        order by normalized_name`,
     );
-    await pool.query(
-      `UPDATE interview_queue
-          SET interviewer_labels = (
-            SELECT COALESCE(jsonb_agg(
-              CASE WHEN lower(elem) NOT IN ('ishaan', 'maksim', 'clinton', 'aarav', 'arjun', 'yichen', 'vihaapte', 'suhasadavi', 'yishaan', 'lucasshamshurin') THEN 'Dylan' ELSE elem END
-            ), '[]'::jsonb)::text
-              FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-          )
-        WHERE id = 1`,
-    );
+    logger.info({ accounts: rows }, "interviewer account inventory");
   } catch (err) {
-    logger.error({ err }, "temp rename failed");
+    logger.error({ err }, "account inventory failed");
   }
-
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
