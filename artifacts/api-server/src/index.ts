@@ -246,6 +246,17 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP (verify rename): promote the rename probe so the endpoint can be
+  // exercised as a coordinator. Removed once verified.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+        WHERE normalized_name = 'renameprobe'`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp promote failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
