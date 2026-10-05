@@ -29,3 +29,4 @@ export * from "./snapshots";
 export * from "./interviewerAccounts";
 export * from "./whiteboards";
 export * from "./parts";
+export * from "./cad";

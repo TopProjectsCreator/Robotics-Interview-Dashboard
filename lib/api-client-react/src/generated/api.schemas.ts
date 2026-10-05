@@ -1803,6 +1803,183 @@ export interface AssistantHistory {
   items: AssistantHistoryItemsItem[];
 }
 
+export interface CadModelUpload {
+  /** Private storage path to reference from the model record */
+  objectPath: string;
+  /** Canonical CAD content type resolved from the file extension */
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface CadBot {
+  id: string;
+  name: string;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadFolder {
+  id: string;
+  botId: string;
+  /**
+     * Null when the folder sits at the top level of its bot
+     * @nullable
+     */
+  parentId?: string | null;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadModel {
+  id: string;
+  name: string;
+  fileName: string;
+  contentType: string;
+  objectPath: string;
+  sizeBytes: number;
+  /**
+     * Null while the model sits in Unfiled
+     * @nullable
+     */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  uploadedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadLibrary {
+  bots: CadBot[];
+  folders: CadFolder[];
+  models: CadModel[];
+}
+
+export interface CadBotInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 2000 */
+  notes?: string;
+}
+
+export interface CadBotUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export interface CadFolderInput {
+  botId: string;
+  /** @nullable */
+  parentId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+}
+
+export interface CadFolderUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /** @nullable */
+  parentId?: string | null;
+}
+
+export interface CadModelList {
+  items: CadModel[];
+}
+
+export interface CadModelInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name?: string;
+  /** @maxLength 200 */
+  objectPath: string;
+  /**
+     * Original upload name, which selects the renderer
+     * @minLength 1
+     * @maxLength 255
+     */
+  fileName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  contentType: string;
+  /** @minimum 0 */
+  sizeBytes: number;
+  /** @nullable */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /** @maxLength 2000 */
+  notes?: string;
+}
+
+export interface CadModelUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name?: string;
+  /** @nullable */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export type WorkspaceRole = typeof WorkspaceRole[keyof typeof WorkspaceRole];
+
+
+export const WorkspaceRole = {
+  coordinator: 'coordinator',
+  treasurer: 'treasurer',
+  interviewer: 'interviewer',
+} as const;
+
+export type WorkspaceRoleList = WorkspaceRole[];
+
+export interface WorkspaceVisibility {
+  interview: WorkspaceRoleList;
+  chat: WorkspaceRoleList;
+  parts: WorkspaceRoleList;
+  cad: WorkspaceRoleList;
+}
+
+export interface WorkspaceVisibilityInput {
+  interview?: WorkspaceRoleList;
+  chat?: WorkspaceRoleList;
+  parts?: WorkspaceRoleList;
+  cad?: WorkspaceRoleList;
+}
+
 /**
  * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
@@ -1962,5 +2139,25 @@ fileName: string;
  * @maxLength 100
  */
 contentType: string;
+};
+
+export type UploadCadModelFileParams = {
+/**
+ * @maxLength 255
+ */
+fileName: string;
+/**
+ * @maxLength 100
+ */
+contentType: string;
+};
+
+export type DeleteCadBotParams = {
+botId: string;
+};
+
+export type ListCadModelsParams = {
+botId?: string;
+folderId?: string;
 };
 

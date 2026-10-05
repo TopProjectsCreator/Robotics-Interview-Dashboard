@@ -1,7 +1,15 @@
 import { Router, type IRouter } from "express";
-import { GetSystemUsageResponse } from "@workspace/api-zod";
+import {
+  GetSystemUsageResponse,
+  GetWorkspaceVisibilityResponse,
+  UpdateWorkspaceVisibilityBody,
+} from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { requireAdmin } from "../middlewares/adminAuth";
+import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import {
+  readWorkspaceVisibility,
+  writeWorkspaceVisibility,
+} from "../lib/workspaceAccess";
 
 const MB = 1024 * 1024;
 
@@ -66,6 +74,33 @@ router.get("/system/usage", requireAdmin, async (_req, res): Promise<void> => {
       applicantCount: applicantCount ?? 0,
     }),
   );
+});
+
+// Which roles can open each workspace. Readable by any signed-in account so the
+// shell can hide links the viewer cannot use; only coordinators can change it.
+router.get("/workspaces/visibility", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    res.json(GetWorkspaceVisibilityResponse.parse(await readWorkspaceVisibility()));
+  } catch (error) {
+    req.log.error({ err: error }, "Workspace visibility read failed");
+    res.status(500).json({ error: "Unable to read workspace settings." });
+  }
+});
+
+router.put("/workspaces/visibility", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = UpdateWorkspaceVisibilityBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "The workspace settings are invalid." });
+    return;
+  }
+  try {
+    // Unknown workspaces and roles are discarded server side rather than
+    // trusted, so a stale client cannot grant access it should not.
+    res.json(GetWorkspaceVisibilityResponse.parse(await writeWorkspaceVisibility(parsed.data)));
+  } catch (error) {
+    req.log.error({ err: error }, "Workspace visibility update failed");
+    res.status(500).json({ error: "Unable to update workspace settings." });
+  }
 });
 
 export default router;

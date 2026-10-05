@@ -99,6 +99,7 @@
     "@tiptap/y-tiptap": "^3.0.9",
     "dompurify": "^3.4.15",
     "emoji-picker-react": "^4.22.2",
+    "fflate": "^0.8.3",
     "heic2any": "^0.0.4",
     "kitten-tts-webgpu": "^0.1.1",
     "kokoro-js": "^1.2.1",

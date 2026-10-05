@@ -59,6 +59,7 @@ const WORKSPACE_RETURN_PATHS = new Set([
   "/big-screen",
   "/parts/assistant",
   "/parts",
+  "/cad",
   "/assistant",
 ]);
 

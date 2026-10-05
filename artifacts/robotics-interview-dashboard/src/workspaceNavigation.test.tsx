@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { getWorkspaceNavigation, workspaceAreaForPath } from "./workspaceNavigation";
+import {
+  getWorkspaceNavigation,
+  workspaceAreaForPath,
+  type WorkspaceKey,
+} from "./workspaceNavigation";
 
 describe("workspace navigation", () => {
-  it("shows all three workspace choices on the overview", () => {
+  it("shows every workspace choice on the overview", () => {
     expect(workspaceAreaForPath("/dashboard")).toBe("overview");
     expect(getWorkspaceNavigation("overview").map(({ label, kind }) => [label, kind])).toEqual([
       ["Interview", "workspace"],
       ["Chat", "workspace"],
       ["Parts", "workspace"],
+      ["CAD", "workspace"],
     ]);
   });
 
@@ -20,6 +25,7 @@ describe("workspace navigation", () => {
       "Interview",
       "Chat",
       "Parts",
+      "CAD",
       "Applicants",
       "Interview queue",
       "Attendance",
@@ -38,19 +44,54 @@ describe("workspace navigation", () => {
       "Interview",
       "Chat",
       "Parts",
+      "CAD",
       "AI assistant",
     ]);
     expect(getWorkspaceNavigation("chat").find(({ label }) => label === "AI assistant")?.href)
       .toBe("/assistant");
   });
 
-  it("keeps parts routes in the dedicated parts workspace", () => {
+  it("keeps parts and CAD routes in their own workspaces", () => {
     expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(workspaceAreaForPath("/parts?search=shaft")).toBe("parts");
+    expect(workspaceAreaForPath("/cad")).toBe("cad");
+    expect(workspaceAreaForPath("/cad/")).toBe("cad");
+    expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(getWorkspaceNavigation("parts").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
       "Parts",
+      "CAD",
     ]);
+    expect(getWorkspaceNavigation("cad").map(({ label }) => label)).toEqual([
+      "Interview",
+      "Chat",
+      "Parts",
+      "CAD",
+    ]);
+  });
+
+  it("hides workspaces the viewer cannot open", () => {
+    const visible = new Set<WorkspaceKey>(["chat", "parts"]);
+    expect(getWorkspaceNavigation("overview", visible).map(({ label }) => label)).toEqual([
+      "Chat",
+      "Parts",
+    ]);
+    expect(getWorkspaceNavigation("chat", visible).map(({ label }) => label)).toEqual([
+      "Chat",
+      "Parts",
+      "AI assistant",
+    ]);
+  });
+
+  it("hides sections whose workspace is hidden", () => {
+    const visible = new Set<WorkspaceKey>(["chat", "parts"]);
+    expect(
+      getWorkspaceNavigation("interview", visible).map(({ label }) => label),
+    ).not.toContain("Interview queue");
+    const withoutChat = new Set<WorkspaceKey>(["parts"]);
+    expect(
+      getWorkspaceNavigation("chat", withoutChat).map(({ label }) => label),
+    ).not.toContain("AI assistant");
   });
 });

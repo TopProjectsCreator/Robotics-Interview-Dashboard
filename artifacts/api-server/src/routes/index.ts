@@ -8,6 +8,7 @@ import broadcastsRouter from "./broadcasts";
 import eventsRouter from "./events";
 import systemRouter from "./system";
 import partsRouter from "./parts";
+import cadRouter from "./cad";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(broadcastsRouter);
 router.use(eventsRouter);
 router.use(systemRouter);
 router.use(partsRouter);
+router.use(cadRouter);
 
 export default router;

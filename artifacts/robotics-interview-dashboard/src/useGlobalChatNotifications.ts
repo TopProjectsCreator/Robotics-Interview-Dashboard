@@ -99,16 +99,20 @@ export function useGlobalChatNotifications(options: {
       seenRef.current = readSeen();
     }
     const me = myLabel.trim().toLowerCase();
+    // Never trust the payload shape: a partial/empty response must not take
+    // the whole app down with it.
+    const items = Array.isArray(data.items) ? data.items : [];
+    const shared = data.shared ?? null;
 
     if (!primedRef.current) {
       // First poll after load: record watermarks without firing a backlog.
       primedRef.current = true;
-      for (const item of data.items) markSeen(`dm:${item.peer.trim().toLowerCase()}`, item.lastMessageAt);
-      if (data.shared) markSeen("shared", data.shared.lastMessageAt);
+      for (const item of items) markSeen(`dm:${item.peer.trim().toLowerCase()}`, item.lastMessageAt);
+      if (shared) markSeen("shared", shared.lastMessageAt);
       return;
     }
 
-    for (const item of data.items) {
+    for (const item of items) {
       const peer = item.peer.trim().toLowerCase();
       if (!peer) continue;
       const key = `dm:${peer}`;
@@ -130,7 +134,6 @@ export function useGlobalChatNotifications(options: {
       }
     }
 
-    const shared = data.shared;
     if (shared) {
       const seenAt = seenRef.current?.shared;
       const fromOther = shared.lastMessageAuthor.trim().toLowerCase() !== me;

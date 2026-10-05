@@ -1,4 +1,5 @@
-export type WorkspaceArea = "overview" | "interview" | "chat" | "parts";
+export type WorkspaceArea = "overview" | "interview" | "chat" | "parts" | "cad";
+export type WorkspaceKey = Exclude<WorkspaceArea, "overview">;
 export type WorkspaceNavIcon =
   | "interview"
   | "chat"
@@ -7,37 +8,52 @@ export type WorkspaceNavIcon =
   | "attendance"
   | "bigScreen"
   | "assistant"
-  | "parts";
+  | "parts"
+  | "cad";
 
 export type WorkspaceNavItem = {
   href: string;
   label: string;
   iconKey: WorkspaceNavIcon;
   kind: "workspace" | "section";
+  /** Which workspace grants access to this link. */
+  workspace: WorkspaceKey;
 };
 
+/**
+ * Workspace links in sidebar order. Access is not encoded here: it comes from the
+ * admin-configured visibility settings so opening a workspace up to another role
+ * is a settings change rather than a code change.
+ */
 const WORKSPACE_LINKS: WorkspaceNavItem[] = [
-  { href: "/interview", label: "Interview", iconKey: "interview", kind: "workspace" },
-  { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
-  { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
+  { href: "/interview", label: "Interview", iconKey: "interview", kind: "workspace", workspace: "interview" },
+  { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace", workspace: "chat" },
+  { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace", workspace: "parts" },
+  { href: "/cad", label: "CAD", iconKey: "cad", kind: "workspace", workspace: "cad" },
 ];
 
 const INTERVIEW_LINKS: WorkspaceNavItem[] = [
-  { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section" },
-  { href: "/queue", label: "Interview queue", iconKey: "queue", kind: "section" },
-  { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section" },
-  { href: "/big-screen", label: "Big screen", iconKey: "bigScreen", kind: "section" },
-  { href: "/interview/assistant", label: "AI assistant", iconKey: "assistant", kind: "section" },
+  { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section", workspace: "interview" },
+  { href: "/queue", label: "Interview queue", iconKey: "queue", kind: "section", workspace: "interview" },
+  { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section", workspace: "interview" },
+  { href: "/big-screen", label: "Big screen", iconKey: "bigScreen", kind: "section", workspace: "interview" },
+  { href: "/interview/assistant", label: "AI assistant", iconKey: "assistant", kind: "section", workspace: "interview" },
 ];
 
 const CHAT_LINKS: WorkspaceNavItem[] = [
-  { href: "/assistant", label: "AI assistant", iconKey: "assistant", kind: "section" },
+  { href: "/assistant", label: "AI assistant", iconKey: "assistant", kind: "section", workspace: "chat" },
+];
+
+/** Sections that live inside a workspace but are shared with other areas. */
+const SECTION_LINKS: WorkspaceNavItem[] = [
+  { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section", workspace: "interview" },
 ];
 
 export function workspaceAreaForPath(location: string): WorkspaceArea {
   const path = location.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
 
   if (path === "/dashboard") return "overview";
+  if (path === "/cad" || path.startsWith("/cad/")) return "cad";
   if (path === "/parts" || path.startsWith("/parts/")) return "parts";
   if (
     path === "/chat" ||
@@ -52,9 +68,34 @@ export function workspaceAreaForPath(location: string): WorkspaceArea {
   return "interview";
 }
 
-export function getWorkspaceNavigation(area: WorkspaceArea): WorkspaceNavItem[] {
-  if (area === "overview") return WORKSPACE_LINKS;
-  if (area === "interview") return [...WORKSPACE_LINKS, ...INTERVIEW_LINKS];
-  if (area === "chat") return [...WORKSPACE_LINKS, ...CHAT_LINKS];
+export function getWorkspaceLinks(): WorkspaceNavItem[] {
   return WORKSPACE_LINKS;
+}
+
+/**
+ * Nav for a workspace area. Workspaces the viewer cannot open are dropped, and
+ * a section is only offered when its own workspace is visible, so hiding a
+ * workspace hides everything that depends on it.
+ */
+export function getWorkspaceNavigation(
+  area: WorkspaceArea,
+  visible?: ReadonlySet<WorkspaceKey>,
+): WorkspaceNavItem[] {
+  const workspaces = visible
+    ? WORKSPACE_LINKS.filter((item) => visible.has(item.workspace))
+    : WORKSPACE_LINKS;
+  if (area === "overview") return workspaces;
+  const isVisible = (item: WorkspaceNavItem) => !visible || visible.has(item.workspace);
+  if (area === "interview") {
+    return [...workspaces, ...INTERVIEW_LINKS.filter(isVisible)];
+  }
+  if (area === "chat") return [...workspaces, ...CHAT_LINKS.filter(isVisible)];
+  if (area === "cad") return workspaces;
+  return workspaces;
+}
+
+/** Sections a role may reach that are not the workspace they are currently in. */
+export function getCrossWorkspaceSections(visible?: ReadonlySet<WorkspaceKey>): WorkspaceNavItem[] {
+  const isVisible = (item: WorkspaceNavItem) => !visible || visible.has(item.workspace);
+  return SECTION_LINKS.filter(isVisible);
 }

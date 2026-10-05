@@ -159,8 +159,11 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
 
+# Decided per package: a build script is only allowed when the install genuinely
+# needs it. Leaving a placeholder string here makes pnpm refuse to finish the
+# install, which leaves node_modules half-linked and every workspace broken.
 allowBuilds:
   esbuild: true
-  onnxruntime-node: set this to true or false
-  protobufjs: set this to true or false
-  sharp: set this to true or false
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

@@ -73,6 +73,13 @@ async function ensureSchema(): Promise<void> {
     "broadcasts",
     "chat_custom_emojis",
     "chat_message_reactions",
+    "chat_polls",
+    "chat_poll_votes",
+    "chat_custom_emojis",
+    "cad_bots",
+    "cad_folders",
+    "cad_models",
+    "workspace_settings",
     "dashboard_charts",
     "data_snapshots",
     "display_settings",
@@ -187,6 +194,46 @@ async function ensureSchema(): Promise<void> {
        "is_starting_at" boolean not null default false
      )`,
     `create index if not exists "parts_price_snapshots_part_captured_idx" on "parts_supplier_price_snapshots" ("part_id", "captured_at" desc)`,
+    `create table if not exists "workspace_settings" (
+       "id" integer primary key default 1 check ("id" = 1),
+       "visibility" jsonb not null default '{"interview":["coordinator"],"chat":["coordinator","treasurer","interviewer"],"parts":["coordinator","treasurer","interviewer"],"cad":["coordinator"]}'::jsonb,
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create table if not exists "cad_bots" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 120),
+       "notes" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "cad_bots_normalized_name_unique" on "cad_bots" (lower("name"))`,
+    `create table if not exists "cad_folders" (
+       "id" text primary key,
+       "bot_id" text not null references "cad_bots"("id") on delete cascade,
+       "parent_id" text references "cad_folders"("id") on delete cascade,
+       "name" text not null check (length("name") between 1 and 120),
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    // COALESCE lets a NULL parent (top level) take part in the unique index, so
+    // two sibling folders can never end up with the same name.
+    `create unique index if not exists "cad_folders_sibling_name_unique" on "cad_folders" ("bot_id", coalesce("parent_id", ''), lower("name"))`,
+    `create index if not exists "cad_folders_parent_idx" on "cad_folders" ("bot_id", "parent_id")`,
+    `create table if not exists "cad_models" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 255),
+       "file_name" text not null check (length("file_name") between 1 and 255),
+       "content_type" text not null,
+       "object_path" text not null check ("object_path" ~ '^/objects/[A-Za-z0-9/-]{8,160}$'),
+       "size_bytes" integer not null default 0 check ("size_bytes" >= 0),
+       "bot_id" text references "cad_bots"("id") on delete set null,
+       "folder_id" text references "cad_folders"("id") on delete set null,
+       "notes" text,
+       "uploaded_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "cad_models_folder_idx" on "cad_models" ("bot_id", "folder_id")`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {

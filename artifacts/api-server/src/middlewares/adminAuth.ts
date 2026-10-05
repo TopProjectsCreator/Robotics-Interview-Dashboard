@@ -2,6 +2,8 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
 import { db, interviewerAccountsTable, revokedSessionsTable } from "@workspace/db";
+import { roleCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
+import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 
 const SESSION_COOKIE = "robotics_admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -209,6 +211,92 @@ export function requireCoordinator(
         res.status(503).json({ error: "Authentication unavailable" });
       });
   });
+}
+
+/**
+ * Gates a route on the admin-configured workspace visibility settings. Used by
+ * the CAD workspace so that opening it up to more roles is a settings change
+ * rather than a redeploy. Defaults keep CAD coordinator-only.
+ */
+export function requireWorkspaceAccess(
+  workspace: WorkspaceKey,
+  message = "This workspace is not available for your role",
+) {
+  return function requireWorkspace(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    requireAdmin(req, res, () => {
+      const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+      if (!interviewerId) {
+        res.status(401).json({ error: "Interviewer session is invalid" });
+        return;
+      }
+      void (async () => {
+        const [visibility, [account]] = await Promise.all([
+          readWorkspaceVisibility(),
+          db
+            .select({ role: interviewerAccountsTable.role })
+            .from(interviewerAccountsTable)
+            .where(eq(interviewerAccountsTable.id, interviewerId))
+            .limit(1),
+        ]);
+        if (!roleCanSeeWorkspace(visibility, account?.role, workspace)) {
+          res.status(403).json({ error: message });
+          return;
+        }
+        next();
+      })().catch((error: unknown) => {
+        req.log.error({ err: error }, "Workspace access check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+    });
+  };
+}
+
+/**
+ * Grants access when the caller's role can open `workspace`, and always to
+ * coordinators. Used for capabilities that predate the configurable workspaces
+ * and are shared by several of them, so locking one workspace must never take
+ * a coordinator's existing features away with it.
+ */
+export function requireWorkspaceAccessOrCoordinator(
+  workspace: WorkspaceKey,
+  message = "This workspace is not available for your role",
+) {
+  return function requireWorkspaceOrCoordinator(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    requireAdmin(req, res, () => {
+      const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+      if (!interviewerId) {
+        res.status(401).json({ error: "Interviewer session is invalid" });
+        return;
+      }
+      void (async () => {
+        const [[account], visibility] = await Promise.all([
+          db
+            .select({ role: interviewerAccountsTable.role })
+            .from(interviewerAccountsTable)
+            .where(eq(interviewerAccountsTable.id, interviewerId))
+            .limit(1),
+          readWorkspaceVisibility(),
+        ]);
+        const role = account?.role;
+        if (role === "coordinator" || roleCanSeeWorkspace(visibility, role, workspace)) {
+          next();
+          return;
+        }
+        res.status(403).json({ error: message });
+      })().catch((error: unknown) => {
+        req.log.error({ err: error }, "Workspace access check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+    });
+  };
 }
 
 export function setAdminCookie(res: Response, session: string): void {

@@ -3119,6 +3119,336 @@ export const UploadPartsRobotPreviewFileResponse = zod.object({
 
 
 /**
+ * Stores a validated CAD file as a private object and returns its path. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
+ * @summary Upload a CAD model file for the CAD workspace
+ */
+export const uploadCadModelFileQueryFileNameMax = 255;
+
+export const uploadCadModelFileQueryContentTypeMax = 100;
+
+
+
+export const UploadCadModelFileQueryParams = zod.object({
+  "fileName": zod.coerce.string().max(uploadCadModelFileQueryFileNameMax),
+  "contentType": zod.coerce.string().max(uploadCadModelFileQueryContentTypeMax)
+})
+
+export const UploadCadModelFileResponse = zod.object({
+  "objectPath": zod.string().describe('Private storage path to reference from the model record'),
+  "contentType": zod.string().describe('Canonical CAD content type resolved from the file extension'),
+  "sizeBytes": zod.number().int()
+})
+
+
+/**
+ * @summary Which roles can open each workspace
+ */
+export const GetWorkspaceVisibilityResponse = zod.object({
+  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+})
+
+
+/**
+ * Coordinator-only. Unknown workspaces and roles are discarded.
+ * @summary Change which roles can open each workspace
+ */
+export const UpdateWorkspaceVisibilityBody = zod.object({
+  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
+  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
+  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional()
+})
+
+export const UpdateWorkspaceVisibilityResponse = zod.object({
+  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+})
+
+
+/**
+ * Bots, folders, and models together, because the workspace renders the whole tree at once and three round trips would show a half-built tree.
+ * @summary Load the whole CAD library in one request
+ */
+export const ListCadLibraryResponse = zod.object({
+  "bots": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "folders": zod.array(zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "models": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create a bot to group CAD models
+ */
+export const createCadBotBodyNameMax = 120;
+
+export const createCadBotBodyNotesMax = 2000;
+
+
+
+export const CreateCadBotBody = zod.object({
+  "name": zod.string().min(1).max(createCadBotBodyNameMax),
+  "notes": zod.string().max(createCadBotBodyNotesMax).optional()
+})
+
+export const CreateCadBotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Nested folders are removed with the bot. Models move to Unfiled and their files are deleted.
+ * @summary Delete a bot, its folders, and its models
+ */
+export const DeleteCadBotQueryParams = zod.object({
+  "botId": zod.coerce.string()
+})
+
+export const DeleteCadBotResponse = zod.void()
+
+
+/**
+ * @summary Rename a bot or edit its notes
+ */
+export const UpdateCadBotParams = zod.object({
+  "botId": zod.coerce.string()
+})
+
+export const updateCadBotBodyNameMax = 120;
+
+export const updateCadBotBodyNotesMax = 2000;
+
+
+
+export const UpdateCadBotBody = zod.object({
+  "name": zod.string().min(1).max(updateCadBotBodyNameMax).optional(),
+  "notes": zod.string().max(updateCadBotBodyNotesMax).nullish()
+})
+
+export const UpdateCadBotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Omit parentId for a top-level folder. Subfolders nest to any depth.
+ * @summary Create a folder inside a bot
+ */
+export const createCadFolderBodyNameMax = 120;
+
+
+
+export const CreateCadFolderBody = zod.object({
+  "botId": zod.string(),
+  "parentId": zod.string().nullish(),
+  "name": zod.string().min(1).max(createCadFolderBodyNameMax)
+})
+
+export const CreateCadFolderResponse = zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Rename a folder, move it, or nest it under another folder
+ */
+export const UpdateCadFolderParams = zod.object({
+  "folderId": zod.coerce.string()
+})
+
+export const updateCadFolderBodyNameMax = 120;
+
+
+
+export const UpdateCadFolderBody = zod.object({
+  "name": zod.string().min(1).max(updateCadFolderBodyNameMax).optional(),
+  "parentId": zod.string().nullish()
+})
+
+export const UpdateCadFolderResponse = zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Contained models move to Unfiled rather than being deleted.
+ * @summary Delete a folder and its subfolders
+ */
+export const DeleteCadFolderParams = zod.object({
+  "folderId": zod.coerce.string()
+})
+
+export const DeleteCadFolderResponse = zod.object({
+  "error": zod.string()
+})
+
+
+/**
+ * @summary List stored CAD models, optionally filtered by location
+ */
+export const ListCadModelsQueryParams = zod.object({
+  "botId": zod.coerce.string().optional(),
+  "folderId": zod.coerce.string().optional()
+})
+
+export const ListCadModelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * Call after the bytes are stored, then place the model in a bot or folder.
+ * @summary Record an uploaded CAD file in the library
+ */
+export const createCadModelBodyNameMax = 255;
+
+export const createCadModelBodyObjectPathMax = 200;
+
+export const createCadModelBodyFileNameMax = 255;
+
+export const createCadModelBodyContentTypeMax = 100;
+
+export const createCadModelBodySizeBytesMin = 0;
+
+export const createCadModelBodyNotesMax = 2000;
+
+
+
+export const CreateCadModelBody = zod.object({
+  "name": zod.string().min(1).max(createCadModelBodyNameMax).optional(),
+  "objectPath": zod.string().max(createCadModelBodyObjectPathMax),
+  "fileName": zod.string().min(1).max(createCadModelBodyFileNameMax).describe('Original upload name, which selects the renderer'),
+  "contentType": zod.string().min(1).max(createCadModelBodyContentTypeMax),
+  "sizeBytes": zod.number().int().min(createCadModelBodySizeBytesMin),
+  "botId": zod.string().nullish(),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().max(createCadModelBodyNotesMax).optional()
+})
+
+export const CreateCadModelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Rename a model, edit notes, or move it to another bot or folder
+ */
+export const UpdateCadModelParams = zod.object({
+  "modelId": zod.coerce.string()
+})
+
+export const updateCadModelBodyNameMax = 255;
+
+export const updateCadModelBodyNotesMax = 2000;
+
+
+
+export const UpdateCadModelBody = zod.object({
+  "name": zod.string().min(1).max(updateCadModelBodyNameMax).optional(),
+  "botId": zod.string().nullish(),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().max(updateCadModelBodyNotesMax).nullish()
+})
+
+export const UpdateCadModelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a CAD model and its stored file
+ */
+export const DeleteCadModelParams = zod.object({
+  "modelId": zod.coerce.string()
+})
+
+export const DeleteCadModelResponse = zod.void()
+
+
+/**
  * Set quantity to zero to remove the assignment. Total allocations cannot exceed owned stock.
  * @summary Set the number of catalog items assigned to a robot
  */

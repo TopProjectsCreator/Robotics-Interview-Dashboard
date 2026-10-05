@@ -115,6 +115,19 @@ button { cursor: pointer; }
 .dark .chat-markdown-table-export-label { color: #a9bac2; }
 .dark .chat-markdown-table-export-button { color: #cbd9de; background: #203943; }
 .dark .chat-markdown-table-export-button:hover:not(:disabled) { color: #f3f8fa; background: #2b4a56; }
+.chat-markdown-details { color: #52666e; border-color: #dce9e8; background: #fff; }
+.chat-markdown-details > .chat-markdown-details-summary { list-style: none; color: #183a4b; background: #f7faf9; }
+.chat-markdown-details > .chat-markdown-details-summary::-webkit-details-marker { display: none; }
+.chat-markdown-details > .chat-markdown-details-summary::before { content: none; }
+.chat-markdown-details > .chat-markdown-details-summary:hover { background: #eef5f4; }
+.chat-markdown-details .chat-markdown-details-marker { color: #16869a; }
+.chat-markdown-details[open] .chat-markdown-details-marker { transform: rotate(90deg); }
+.chat-markdown-details > .chat-markdown-details-body { border-color: #eef3f2; background: #fff; color: #52666e; }
+.dark .chat-markdown-details { color: #d6e2e7; border-color: #2b424d; background: #142630; }
+.dark .chat-markdown-details > .chat-markdown-details-summary { color: #eef5f7; background: #1c3944; }
+.dark .chat-markdown-details > .chat-markdown-details-summary:hover { background: #203944; }
+.dark .chat-markdown-details .chat-markdown-details-marker { color: #81d0da; }
+.dark .chat-markdown-details > .chat-markdown-details-body { border-color: #2b424d; background: #142630; color: #d6e2e7; }
 .assistant-model-picker-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .assistant-model-actions { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; }
 .assistant-model-trigger { display: flex; width: min(360px, calc(100vw - 32px)); min-width: min(280px, calc(100vw - 32px)); height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); padding: 0 12px; color: hsl(var(--foreground)); box-shadow: 0 2px 8px rgba(24,58,75,.06); transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }

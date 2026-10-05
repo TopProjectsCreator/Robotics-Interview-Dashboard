@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Check, ChevronRight, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronRight, CircleDot, ClipboardList,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
@@ -57,6 +57,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import { CadWorkspacePage } from "@/pages/CadWorkspacePage";
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -80,9 +81,18 @@ import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterview
 import { isDocumentData } from "./components/documentCollaboration";
 import {
   getWorkspaceNavigation,
+  getCrossWorkspaceSections,
   workspaceAreaForPath,
+  type WorkspaceKey,
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
+import {
+  useWorkspaceVisibility,
+  WORKSPACE_KEYS,
+  WORKSPACE_LABELS,
+  WORKSPACE_ROLE_LABELS,
+  WORKSPACE_ROLE_ORDER,
+} from "./useWorkspaceVisibility";
 
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
@@ -313,6 +323,37 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [passwordNotice, setPasswordNotice] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [rowNotice, setRowNotice] = useState<Record<string, string>>({});
+  const workspaceVisibility = useWorkspaceVisibility();
+  const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
+  // Re-sync the draft whenever the server value changes, so a save from another
+  // admin's tab is not silently reverted by a stale edit here.
+  useEffect(() => {
+    setVisibilityDraft(workspaceVisibility.visibility);
+  }, [workspaceVisibility.visibility]);
+  const workspaceVisibilityBusy = workspaceVisibility.isSaving;
+  const toggleVisibility = (key: WorkspaceKey, role: (typeof WORKSPACE_ROLE_ORDER)[number]) => {
+    // Admins are never locked out of a workspace they administer.
+    if (role === "coordinator") return;
+    setVisibilityDraft((current) => {
+      const existing = current[key];
+      return {
+        ...current,
+        [key]: existing.includes(role)
+          ? existing.filter((entry) => entry !== role)
+          : WORKSPACE_ROLE_ORDER.filter((entry) => entry === role || existing.includes(entry)),
+      };
+    });
+  };
+  const saveVisibility = async (next: typeof visibilityDraft) => {
+    setWorkspaceVisibilityNotice("");
+    try {
+      await workspaceVisibility.save(next);
+      setWorkspaceVisibilityNotice("Access updated for the whole team.");
+    } catch {
+      setWorkspaceVisibilityNotice("Could not save workspace access. Try again.");
+    }
+  };
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
   const updateInterviewerPassword = useUpdateInterviewerPassword();
@@ -470,6 +511,64 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
         {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="settings-password-success">{passwordNotice}</p>}
         {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
+      </div>
+      <div className={divider}><p className={sectionLabel}>Workspace access</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose who can open each workspace. Applies to everybody on the team, saved on the server. Admins can always open everything.</p>
+        <div className="mt-3 overflow-hidden rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#f8fbfa] text-[#63747c] dark:bg-[#10202a] dark:text-[#a9bcc6]">
+              <tr>
+                <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
+                {WORKSPACE_ROLE_ORDER.map(role => (
+                  <th key={role} scope="col" className="px-2 py-2 text-center font-semibold">
+                    {WORKSPACE_ROLE_LABELS[role]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf1f1] dark:divide-[#243743]">
+              {WORKSPACE_KEYS.map(key => (
+                <tr key={key} data-testid={`visibility-row-${key}`}>
+                  <th scope="row" className="px-3 py-2 font-semibold text-[#183a4b] dark:text-[#e6eef2]">
+                    {WORKSPACE_LABELS[key]}
+                  </th>
+                  {WORKSPACE_ROLE_ORDER.map(role => (
+                    <td key={role} className="px-2 py-2 text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={visibilityDraft[key].includes(role)}
+                        aria-label={`${WORKSPACE_ROLE_LABELS[role]} can open ${WORKSPACE_LABELS[key]}`}
+                        disabled={role === "coordinator" || workspaceVisibilityBusy}
+                        data-testid={`toggle-visibility-${key}-${role}`}
+                        onClick={() => toggleVisibility(key, role)}
+                        className={`mx-auto block h-6 w-11 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${visibilityDraft[key].includes(role) ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${visibilityDraft[key].includes(role) ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                      </button>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void saveVisibility(visibilityDraft)}
+            disabled={workspaceVisibilityBusy}
+            data-testid="button-save-visibility"
+            className="rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#137a8c] disabled:opacity-50"
+          >
+            {workspaceVisibilityBusy ? "Saving…" : "Save access"}
+          </button>
+          {workspaceVisibilityNotice && (
+            <span className="text-xs text-[#7c8c91] dark:text-[#93a8b2]" role="status" data-testid="visibility-notice">
+              {workspaceVisibilityNotice}
+            </span>
+          )}
+        </div>
       </div>
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
@@ -994,7 +1093,6 @@ function MarkdownDetails({ text, mentionPeople }: { text: string; mentionPeople:
     </details>
   );
 }
-
 
 function MarkdownContent({
   source,
@@ -2151,18 +2249,48 @@ function Shell({ children }: { children: ReactNode }) {
   const isTreasurer = session.data?.role === "treasurer";
   const shellPath = location.split(/[?#]/, 1)[0];
   const isPartsAssistant = shellPath === "/parts/assistant" || shellPath.startsWith("/parts/assistant/");
-  // Team members: chat + parts. Treasurers also get the read-only roster.
+  // Only fetch visibility for a signed-in account: no private request may be
+  // issued before sign-in.
+  const isSignedIn = session.data?.authenticated === true;
+  const workspaceVisibility = useWorkspaceVisibility(isSignedIn, session.data?.role);
+  // An account always has a role in the database; treating a missing one as the
+  // most restricted role fails safe if that ever stops being true.
+  const effectiveRole = session.data?.role ?? "interviewer";
+  const visibility = workspaceVisibility.visibility;
+  const visibleWorkspaces = useMemo(() => {
+    const set = new Set<WorkspaceKey>();
+    for (const key of WORKSPACE_KEYS) {
+      // Coordinators administer every workspace, so settings never lock one out.
+      if (isCoordinator || visibility[key].some((entry) => entry === effectiveRole)) {
+        set.add(key);
+      }
+    }
+    return set;
+  }, [visibility, effectiveRole, isCoordinator]);
+  const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const restrictedAllowed =
-    shellPath === "/chat" || shellPath.startsWith("/chat/") ||
-    shellPath === "/applicants" ||
-    shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant);
-  const restrictedBlocked = session.data?.authenticated === true && !isCoordinator && !isTreasurer && !restrictedAllowed;
+    // Admins and treasurers keep their existing reach; visibility only narrows
+    // the plain interviewer role.
+    isCoordinator || isTreasurer ||
+    (areaCanSee("chat") && (shellPath === "/chat" || shellPath.startsWith("/chat/") || shellPath === "/assistant" || shellPath.startsWith("/assistant/") || shellPath.startsWith("/spreadsheets/"))) ||
+    (areaCanSee("interview") && shellPath === "/applicants") ||
+    (areaCanSee("parts") && (shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant))) ||
+    (areaCanSee("cad") && (shellPath === "/cad" || shellPath.startsWith("/cad/")));
+  const restrictedBlocked = isSignedIn && !restrictedAllowed;
+  // Send someone who cannot open this workspace to the first one they can, so
+  // hiding a workspace also stops it being reachable by URL. The workspace
+  // chooser is coordinator-only, as it has always been.
+  const homeWorkspace = (["chat", "parts", "cad", "interview"] as const).find((key) =>
+    areaCanSee(key),
+  );
+  const blockedFromCurrent =
+    restrictedBlocked && !(homeWorkspace !== undefined && shellPath === `/${homeWorkspace}`);
   useEffect(() => {
-    if (restrictedBlocked) setLocation("/chat");
-  }, [restrictedBlocked, setLocation]);
+    if (blockedFromCurrent) setLocation(homeWorkspace ? `/${homeWorkspace}` : "/dashboard");
+  }, [blockedFromCurrent, setLocation, homeWorkspace]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
-  if (restrictedBlocked) return null;
+  if (blockedFromCurrent) return null;
   const workspaceArea = workspaceAreaForPath(location);
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
@@ -2173,30 +2301,23 @@ function Shell({ children }: { children: ReactNode }) {
     bigScreen: MonitorCheck,
     assistant: Bot,
     parts: Box,
+    cad: Boxes,
   };
-  const nav = (isCoordinator
-    ? getWorkspaceNavigation(workspaceArea)
-    : ([
-        { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
-        { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
-        ...(isTreasurer ? [{ href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section" }] : []),
-      ] as { href: string; label: string; iconKey: WorkspaceNavIcon; kind: "workspace" | "section" }[])).map((item) => ({
-    ...item,
-    icon: navIcons[item.iconKey],
-  }));
+  const nav = [
+    ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
+    // Treasurers keep the read-only applicant roster, which is granted
+    // separately from the rest of the Interview workspace.
+    ...(isTreasurer ? getCrossWorkspaceSections(visibleWorkspaces) : []),
+  ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace navigation">
-          {nav.map(({ href, label, icon: Icon, kind }) => {
+          {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
             const active = kind === "workspace"
-              ? (
-                  (href === "/interview" && workspaceArea === "interview") ||
-                  (href === "/chat" && workspaceArea === "chat") ||
-                  (href === "/parts" && workspaceArea === "parts")
-                )
+              ? workspaceArea === workspace
               : location === href ||
                 location.startsWith(`${href}/`) ||
                 (href === "/chat" && location.startsWith("/spreadsheets/"));
@@ -2418,6 +2539,12 @@ function CustomCharts() {
 }
 
 function WorkspaceOverview() {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, session.data?.role);
+  const role = session.data?.role ?? "interviewer";
+  const isCoordinator = session.data?.role === "coordinator";
+  const canSee = (key: WorkspaceKey) =>
+    isCoordinator || visibility[key].some((entry) => entry === role);
   return (
     <div className="fade-up min-h-[calc(100dvh-160px)] rounded-3xl bg-[#f1f5f4] px-4 py-5 text-[#182232] dark:bg-[#101b23] dark:text-[#e8eff2] sm:px-7 sm:py-7">
       <div className="mx-auto max-w-[1120px]">
@@ -2428,11 +2555,12 @@ function WorkspaceOverview() {
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            03 spaces
+            04 spaces
           </span>
         </header>
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="group" aria-label="Choose a workspace">
+        {canSee("interview") && (
         <Link
           href="/interview"
           data-testid="link-workspace-interview"
@@ -2478,7 +2606,9 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8c84a] text-[#182232] transition-transform group-hover:translate-x-1"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
 
+        {canSee("chat") && (
         <Link
           href="/chat"
           data-testid="link-workspace-chat"
@@ -2523,7 +2653,9 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#16869a] text-white transition-transform group-hover:translate-x-1 dark:bg-[#48b8ab] dark:text-[#10252d]"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
 
+        {canSee("parts") && (
         <Link
           href="/parts"
           data-testid="link-workspace-parts"
@@ -2559,6 +2691,45 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b47c16] text-white transition-transform group-hover:translate-x-1 dark:bg-[#f8c84a] dark:text-[#182232]"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
+
+        {canSee("cad") && (
+        <Link
+          href="/cad"
+          data-testid="link-workspace-cad"
+          className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#c9d6e6] bg-gradient-to-br from-[#eef3fa] via-[#e4ecf7] to-[#d5e1f0] p-6 text-[#1d2c3e] shadow-[0_20px_45px_rgba(38,62,96,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(38,62,96,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#263e60] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#3c506b] dark:bg-gradient-to-br dark:from-[#1d2c40] dark:via-[#233449] dark:to-[#2b4059] dark:text-[#e8eff2] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 -z-10 h-64 w-64 rounded-full border border-[#263e60]/15 dark:border-[#8fb3e0]/15" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-8 -z-10 h-52 w-52 rounded-full bg-[#4a6ea8]/[.10] blur-3xl dark:bg-[#7fa5dc]/[.08]" />
+
+          <span className="relative z-10 flex items-center justify-between">
+            <span className="mono inline-flex items-center gap-2 rounded-full border border-[#263e60]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#3d5878] dark:border-white/15 dark:bg-white/[.06] dark:text-[#cfdaea]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#263e60] dark:bg-[#8fb3e0]" />
+              Workspace 04
+            </span>
+            <span className="mono text-[10px] tracking-[.12em] text-[#5a7396] dark:text-[#b6c8e2]">CAD &amp; MODELS</span>
+          </span>
+
+          <span className="relative z-10 flex flex-1 items-center justify-end py-5">
+            <span aria-hidden="true" className="relative mr-2 flex h-[142px] w-[172px] items-center justify-center sm:mr-7 sm:h-[160px] sm:w-[190px]">
+              <span className="absolute right-4 top-2 h-32 w-32 rotate-12 rounded-[28px] border border-[#263e60]/20 bg-white/35 shadow-[0_18px_35px_rgba(38,62,96,.10)] dark:border-white/10 dark:bg-white/[.04]" />
+              <span className="relative flex h-24 w-24 rotate-[-7deg] items-center justify-center rounded-[26px] border border-[#263e60]/20 bg-[#fbfcff] text-[#263e60] shadow-[0_18px_32px_rgba(38,62,96,.16)] dark:border-white/15 dark:bg-[#33465f] dark:text-[#bcd4f2]">
+                <Boxes size={42} strokeWidth={1.6} />
+              </span>
+              <span className="absolute bottom-1 left-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-[#f8c84a] text-[#182232] shadow-lg transition duration-300 group-hover:-translate-y-1 group-hover:rotate-[-6deg]"><Boxes size={19} /></span>
+            </span>
+          </span>
+
+          <span className="relative z-10">
+            <h2 className="text-[2rem] font-semibold leading-none tracking-[-.055em] sm:text-[2.35rem]">CAD</h2>
+            <span className="mt-2 block max-w-[300px] text-sm leading-6 text-[#42566f] dark:text-[#cddaea]">Drop in models, file them under bots and folders, and preview STEP, IGES, 3MF, and more in the browser.</span>
+          </span>
+          <span className="relative z-10 mt-5 flex items-center justify-between border-t border-[#263e60]/20 pt-4 text-sm font-semibold dark:border-white/15">
+            <span>Open CAD workspace</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#263e60] text-white transition-transform group-hover:translate-x-1 dark:bg-[#8fb3e0] dark:text-[#182232]"><ArrowRight size={17} /></span>
+          </span>
+        </Link>
+        )}
       </div>
       </div>
     </div>
@@ -5965,6 +6136,7 @@ function Router() {
         <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>
         <Route path="/parts/assistant"><Shell><ConversationAssistant partsMode /></Shell></Route>
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
+        <Route path="/cad"><Shell><CadWorkspacePage /></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

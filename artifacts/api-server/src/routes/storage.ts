@@ -2,6 +2,7 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UploadPartsRobotPreviewFileResponse,
+  UploadCadModelFileResponse,
   CreateChunkUploadUrlBody,
   CreateChunkUploadUrlResponse,
   CompleteChunkUploadBody,
@@ -25,9 +26,20 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
-import { authenticatedInterviewerId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import {
+  authenticatedInterviewerId,
+  requireAdmin,
+  requireCoordinator,
+  requireWorkspaceAccess,
+  requireWorkspaceAccessOrCoordinator,
+} from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
+import {
+  cadFileMatchesKind,
+  cadModelMaxBytes,
+  resolveCadUploadKind,
+} from "../lib/cadModels";
 import {
   CHUNKED_UPLOAD_THRESHOLD_BYTES,
   chunkStoragePath,
@@ -437,15 +449,82 @@ router.post(
 );
 
 /**
+ * POST /storage/cad-models
+ *
+ * Store a CAD file for the CAD workspace. The extension picks the renderer, so
+ * both the extension and the bytes are validated before anything is written.
+ * Larger CAD files should use the chunked upload endpoints instead so they never
+ * pass through this process.
+ */
+const CAD_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
+router.post(
+  '/storage/cad-models',
+  requireWorkspaceAccess('cad'),
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    if (!data || !Buffer.isBuffer(data)) {
+      res.status(400).json({ error: 'No CAD file data received' });
+      return;
+    }
+    const fileName = typeof req.query.fileName === 'string' ? req.query.fileName.trim() : '';
+    const contentType = typeof req.query.contentType === 'string'
+      ? req.query.contentType.trim().toLowerCase()
+      : '';
+    const resolved = resolveCadUploadKind(fileName, contentType);
+    if ('error' in resolved) {
+      res.status(400).json({ error: resolved.error });
+      return;
+    }
+    const { kind } = resolved;
+    if (data.length === 0) {
+      res.status(400).json({ error: 'The CAD file is empty' });
+      return;
+    }
+    if (data.length > CAD_UPLOAD_MAX_BYTES) {
+      res.status(413).json({ error: 'File too big (max 200 MB)' });
+      return;
+    }
+    const maxBytes = cadModelMaxBytes(kind);
+    if (maxBytes !== null && data.length > maxBytes) {
+      res.status(413).json({
+        error: `This file exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB limit for its type.`,
+      });
+      return;
+    }
+    if (!cadFileMatchesKind(kind, data)) {
+      res.status(400).json({ error: `This is not a valid ${kind.toUpperCase()} model` });
+      return;
+    }
+    try {
+      const objectPath = await objectStorageService.uploadChatImage(data, resolved.contentType);
+      res.status(201).json(UploadCadModelFileResponse.parse({
+        objectPath,
+        contentType: resolved.contentType,
+        sizeBytes: data.length,
+      }));
+    } catch (error) {
+      req.log.error({ err: error }, 'CAD model upload failed');
+      res.status(500).json({ error: 'Unable to store this CAD file' });
+    }
+  },
+);
+
+/**
  * POST /storage/parasolid-preview
  *
  * Convert a private Parasolid attachment locally. Large X_T files use the
  * bundled strict-tolerance CAD converter; smaller files and X_B retain the
  * existing local worker. The temporary GLB is returned only to the requester.
+ *
+ * Gated on CAD workspace access, plus coordinators, because the CAD library can
+ * be opened up to other roles in settings and they still need Parasolid
+ * previews to work. Coordinators keep access even if CAD is later locked.
  */
 router.post(
   '/storage/parasolid-preview',
-  requireCoordinator,
+  requireWorkspaceAccessOrCoordinator('cad'),
   express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
     let data = req.body as Buffer | undefined;

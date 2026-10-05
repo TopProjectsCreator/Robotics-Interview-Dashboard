@@ -26,6 +26,10 @@ tags:
     description: AI-assisted analysis
   - name: system
     description: Service and usage info
+  - name: cad
+    description: CAD model library
+  - name: workspaces
+    description: Workspace visibility settings
 paths:
   /healthz:
     get:
@@ -2025,6 +2029,365 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "413":
           description: Preview file exceeds its size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /storage/cad-models:
+    post:
+      operationId: uploadCadModelFile
+      tags: [storage]
+      summary: Upload a CAD model file for the CAD workspace
+      description: >
+        Stores a validated CAD file as a private object and returns its path.
+        The file name decides the renderer, so the extension must match the
+        bytes. Large files should use the chunked upload endpoints instead.
+      parameters:
+        - name: fileName
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+        - name: contentType
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: CAD model object stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModelUpload"
+        "400":
+          description: Unsupported or invalid CAD file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: CAD file exceeds its size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /workspaces/visibility:
+    get:
+      operationId: getWorkspaceVisibility
+      tags: [workspaces]
+      summary: Which roles can open each workspace
+      responses:
+        "200":
+          description: Workspace visibility map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceVisibility"
+    put:
+      operationId: updateWorkspaceVisibility
+      tags: [workspaces]
+      summary: Change which roles can open each workspace
+      description: Coordinator-only. Unknown workspaces and roles are discarded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceVisibilityInput"
+      responses:
+        "200":
+          description: Updated workspace visibility
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceVisibility"
+  /cad/library:
+    get:
+      operationId: listCadLibrary
+      tags: [cad]
+      summary: Load the whole CAD library in one request
+      description: >
+        Bots, folders, and models together, because the workspace renders the
+        whole tree at once and three round trips would show a half-built tree.
+      responses:
+        "200":
+          description: Bots with their folders and models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadLibrary"
+    post:
+      operationId: createCadBot
+      tags: [cad]
+      summary: Create a bot to group CAD models
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadBotInput"
+      responses:
+        "201":
+          description: Created bot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadBot"
+        "409":
+          description: A bot with that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadBot
+      tags: [cad]
+      summary: Delete a bot, its folders, and its models
+      description: Nested folders are removed with the bot. Models move to Unfiled and their files are deleted.
+      parameters:
+        - name: botId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Bot deleted
+        "404":
+          description: Bot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/bots/{botId}:
+    patch:
+      operationId: updateCadBot
+      tags: [cad]
+      summary: Rename a bot or edit its notes
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadBotUpdateInput"
+      responses:
+        "200":
+          description: Updated bot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadBot"
+        "404":
+          description: Bot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/folders:
+    post:
+      operationId: createCadFolder
+      tags: [cad]
+      summary: Create a folder inside a bot
+      description: Omit parentId for a top-level folder. Subfolders nest to any depth.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadFolderInput"
+      responses:
+        "201":
+          description: Created folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadFolder"
+        "404":
+          description: Bot or parent folder not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A sibling folder already has that name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/folders/{folderId}:
+    patch:
+      operationId: updateCadFolder
+      tags: [cad]
+      summary: Rename a folder, move it, or nest it under another folder
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadFolderUpdateInput"
+      responses:
+        "200":
+          description: Updated folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadFolder"
+        "400":
+          description: A folder cannot be moved inside itself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Folder or new parent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadFolder
+      tags: [cad]
+      summary: Delete a folder and its subfolders
+      description: Contained models move to Unfiled rather than being deleted.
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/models:
+    get:
+      operationId: listCadModels
+      tags: [cad]
+      summary: List stored CAD models, optionally filtered by location
+      parameters:
+        - name: botId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CAD models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModelList"
+    post:
+      operationId: createCadModel
+      tags: [cad]
+      summary: Record an uploaded CAD file in the library
+      description: Call after the bytes are stored, then place the model in a bot or folder.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadModelInput"
+      responses:
+        "201":
+          description: Created model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModel"
+        "400":
+          description: Unknown location or unusable object path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/models/{modelId}:
+    patch:
+      operationId: updateCadModel
+      tags: [cad]
+      summary: Rename a model, edit notes, or move it to another bot or folder
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadModelUpdateInput"
+      responses:
+        "200":
+          description: Updated model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModel"
+        "400":
+          description: Unknown location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadModel
+      tags: [cad]
+      summary: Delete a CAD model and its stored file
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Model and file deleted
+        "404":
+          description: Model not found
           content:
             application/json:
               schema:
@@ -4499,3 +4862,216 @@ components:
                   $ref: "#/components/schemas/AssistantActivity"
               createdAt:
                 type: string
+
+    CadModelUpload:
+      type: object
+      required: [objectPath, contentType, sizeBytes]
+      properties:
+        objectPath:
+          type: string
+          description: Private storage path to reference from the model record
+        contentType:
+          type: string
+          description: Canonical CAD content type resolved from the file extension
+        sizeBytes:
+          type: integer
+    CadBot:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadLibrary:
+      type: object
+      required: [bots, folders, models]
+      properties:
+        bots:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadBot"
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadFolder"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadModel"
+    CadBotInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        notes:
+          type: string
+          maxLength: 2000
+    CadBotUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        notes:
+          type: ["string", "null"]
+          maxLength: 2000
+    CadFolder:
+      type: object
+      required: [id, botId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        botId:
+          type: string
+        parentId:
+          type: ["string", "null"]
+          description: Null when the folder sits at the top level of its bot
+        name:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadFolderInput:
+      type: object
+      required: [botId, name]
+      properties:
+        botId:
+          type: string
+        parentId:
+          type: ["string", "null"]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+    CadFolderUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        parentId:
+          type: ["string", "null"]
+    CadModel:
+      type: object
+      required: [id, name, fileName, contentType, objectPath, sizeBytes, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        fileName:
+          type: string
+        contentType:
+          type: string
+        objectPath:
+          type: string
+        sizeBytes:
+          type: integer
+        botId:
+          type: ["string", "null"]
+          description: Null while the model sits in Unfiled
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        uploadedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadModel"
+    CadModelInput:
+      type: object
+      required: [objectPath, fileName, contentType, sizeBytes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        objectPath:
+          type: string
+          maxLength: 200
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Original upload name, which selects the renderer
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sizeBytes:
+          type: integer
+          minimum: 0
+        botId:
+          type: ["string", "null"]
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: string
+          maxLength: 2000
+    CadModelUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        botId:
+          type: ["string", "null"]
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+          maxLength: 2000
+    WorkspaceRole:
+      type: string
+      enum: [coordinator, treasurer, interviewer]
+    WorkspaceRoleList:
+      type: array
+      items:
+        $ref: "#/components/schemas/WorkspaceRole"
+    WorkspaceVisibility:
+      type: object
+      required: [interview, chat, parts, cad]
+      properties:
+        interview:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        chat:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        parts:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        cad:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+    WorkspaceVisibilityInput:
+      type: object
+      properties:
+        interview:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        chat:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        parts:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        cad:
+          $ref: "#/components/schemas/WorkspaceRoleList"

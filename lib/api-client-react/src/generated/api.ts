@@ -43,6 +43,18 @@ import type {
   BroadcastAck,
   BroadcastInput,
   BroadcastList,
+  CadBot,
+  CadBotInput,
+  CadBotUpdateInput,
+  CadFolder,
+  CadFolderInput,
+  CadFolderUpdateInput,
+  CadLibrary,
+  CadModel,
+  CadModelInput,
+  CadModelList,
+  CadModelUpdateInput,
+  CadModelUpload,
   ChatConversationList,
   ChatCustomEmoji,
   ChatCustomEmojiInput,
@@ -65,6 +77,7 @@ import type {
   DashboardChartList,
   DashboardChartUpdate,
   DashboardSummary,
+  DeleteCadBotParams,
   DisplaySettings,
   DisplaySettingsInput,
   DisplayState,
@@ -93,6 +106,7 @@ import type {
   InterviewerPasswordUpdateInput,
   InterviewerRoleUpdateInput,
   ListApplicantsParams,
+  ListCadModelsParams,
   ListInterviewWhiteboardsParams,
   ListPartsCatalogParams,
   LoginInput,
@@ -141,9 +155,12 @@ import type {
   SpreadsheetCreateInput,
   SpreadsheetUpdateInput,
   SystemUsage,
+  UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
-  UploadResponse
+  UploadResponse,
+  WorkspaceVisibility,
+  WorkspaceVisibilityInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -7645,6 +7662,1050 @@ export const useUploadPartsRobotPreviewFile = <TError = ErrorType<ErrorResponse>
         TContext
       > => {
       return useMutation(getUploadPartsRobotPreviewFileMutationOptions(options));
+    }
+
+export const getUploadCadModelFileUrl = (params: UploadCadModelFileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/storage/cad-models?${stringifiedParams}` : `/api/storage/cad-models`
+}
+
+/**
+ * Stores a validated CAD file as a private object and returns its path. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
+ * @summary Upload a CAD model file for the CAD workspace
+ */
+export const uploadCadModelFile = async (uploadCadModelFileBody: Blob,
+    params: UploadCadModelFileParams, options?: Parameters<typeof customFetch>[1]): Promise<CadModelUpload> => {
+
+  return customFetch<CadModelUpload>(getUploadCadModelFileUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadCadModelFileBody
+  }
+);}
+
+
+
+
+
+export const getUploadCadModelFileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadCadModelFile>>, TError,{data: BodyType<Blob>;params: UploadCadModelFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadCadModelFile>>, TError,{data: BodyType<Blob>;params: UploadCadModelFileParams}, TContext> => {
+
+const mutationKey = ['uploadCadModelFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadCadModelFile>>, {data: BodyType<Blob>;params: UploadCadModelFileParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  uploadCadModelFile(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadCadModelFileMutationResult = NonNullable<Awaited<ReturnType<typeof uploadCadModelFile>>>
+    export type UploadCadModelFileMutationBody = BodyType<Blob>
+    export type UploadCadModelFileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload a CAD model file for the CAD workspace
+ */
+export const useUploadCadModelFile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadCadModelFile>>, TError,{data: BodyType<Blob>;params: UploadCadModelFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadCadModelFile>>,
+        TError,
+        {data: BodyType<Blob>;params: UploadCadModelFileParams},
+        TContext
+      > => {
+      return useMutation(getUploadCadModelFileMutationOptions(options));
+    }
+
+export const getGetWorkspaceVisibilityUrl = () => {
+
+
+
+
+  return `/api/workspaces/visibility`
+}
+
+/**
+ * @summary Which roles can open each workspace
+ */
+export const getWorkspaceVisibility = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceVisibility> => {
+
+  return customFetch<WorkspaceVisibility>(getGetWorkspaceVisibilityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspaceVisibilityQueryKey = () => {
+    return [
+    `/api/workspaces/visibility`
+    ] as const;
+    }
+
+
+export const getGetWorkspaceVisibilityQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspaceVisibilityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspaceVisibility>>> = ({ signal }) => getWorkspaceVisibility({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspaceVisibilityQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspaceVisibility>>>
+export type GetWorkspaceVisibilityQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Which roles can open each workspace
+ */
+
+export function useGetWorkspaceVisibility<TData = Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspaceVisibilityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateWorkspaceVisibilityUrl = () => {
+
+
+
+
+  return `/api/workspaces/visibility`
+}
+
+/**
+ * Coordinator-only. Unknown workspaces and roles are discarded.
+ * @summary Change which roles can open each workspace
+ */
+export const updateWorkspaceVisibility = async (workspaceVisibilityInput: WorkspaceVisibilityInput, options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceVisibility> => {
+
+  return customFetch<WorkspaceVisibility>(getUpdateWorkspaceVisibilityUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(workspaceVisibilityInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateWorkspaceVisibilityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkspaceVisibility>>, TError,{data: BodyType<WorkspaceVisibilityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWorkspaceVisibility>>, TError,{data: BodyType<WorkspaceVisibilityInput>}, TContext> => {
+
+const mutationKey = ['updateWorkspaceVisibility'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWorkspaceVisibility>>, {data: BodyType<WorkspaceVisibilityInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateWorkspaceVisibility(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWorkspaceVisibilityMutationResult = NonNullable<Awaited<ReturnType<typeof updateWorkspaceVisibility>>>
+    export type UpdateWorkspaceVisibilityMutationBody = BodyType<WorkspaceVisibilityInput>
+    export type UpdateWorkspaceVisibilityMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Change which roles can open each workspace
+ */
+export const useUpdateWorkspaceVisibility = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkspaceVisibility>>, TError,{data: BodyType<WorkspaceVisibilityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWorkspaceVisibility>>,
+        TError,
+        {data: BodyType<WorkspaceVisibilityInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateWorkspaceVisibilityMutationOptions(options));
+    }
+
+export const getListCadLibraryUrl = () => {
+
+
+
+
+  return `/api/cad/library`
+}
+
+/**
+ * Bots, folders, and models together, because the workspace renders the whole tree at once and three round trips would show a half-built tree.
+ * @summary Load the whole CAD library in one request
+ */
+export const listCadLibrary = async ( options?: Parameters<typeof customFetch>[1]): Promise<CadLibrary> => {
+
+  return customFetch<CadLibrary>(getListCadLibraryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCadLibraryQueryKey = () => {
+    return [
+    `/api/cad/library`
+    ] as const;
+    }
+
+
+export const getListCadLibraryQueryOptions = <TData = Awaited<ReturnType<typeof listCadLibrary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCadLibrary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCadLibraryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCadLibrary>>> = ({ signal }) => listCadLibrary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCadLibrary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCadLibraryQueryResult = NonNullable<Awaited<ReturnType<typeof listCadLibrary>>>
+export type ListCadLibraryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Load the whole CAD library in one request
+ */
+
+export function useListCadLibrary<TData = Awaited<ReturnType<typeof listCadLibrary>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCadLibrary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCadLibraryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCadBotUrl = () => {
+
+
+
+
+  return `/api/cad/library`
+}
+
+/**
+ * @summary Create a bot to group CAD models
+ */
+export const createCadBot = async (cadBotInput: CadBotInput, options?: Parameters<typeof customFetch>[1]): Promise<CadBot> => {
+
+  return customFetch<CadBot>(getCreateCadBotUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadBotInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCadBotMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadBot>>, TError,{data: BodyType<CadBotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCadBot>>, TError,{data: BodyType<CadBotInput>}, TContext> => {
+
+const mutationKey = ['createCadBot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCadBot>>, {data: BodyType<CadBotInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCadBot(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCadBotMutationResult = NonNullable<Awaited<ReturnType<typeof createCadBot>>>
+    export type CreateCadBotMutationBody = BodyType<CadBotInput>
+    export type CreateCadBotMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a bot to group CAD models
+ */
+export const useCreateCadBot = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadBot>>, TError,{data: BodyType<CadBotInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCadBot>>,
+        TError,
+        {data: BodyType<CadBotInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCadBotMutationOptions(options));
+    }
+
+export const getDeleteCadBotUrl = (params: DeleteCadBotParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/cad/library?${stringifiedParams}` : `/api/cad/library`
+}
+
+/**
+ * Nested folders are removed with the bot. Models move to Unfiled and their files are deleted.
+ * @summary Delete a bot, its folders, and its models
+ */
+export const deleteCadBot = async (params: DeleteCadBotParams, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteCadBotUrl(params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCadBotMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadBot>>, TError,{params: DeleteCadBotParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCadBot>>, TError,{params: DeleteCadBotParams}, TContext> => {
+
+const mutationKey = ['deleteCadBot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCadBot>>, {params: DeleteCadBotParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  deleteCadBot(params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCadBotMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCadBot>>>
+
+    export type DeleteCadBotMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a bot, its folders, and its models
+ */
+export const useDeleteCadBot = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadBot>>, TError,{params: DeleteCadBotParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCadBot>>,
+        TError,
+        {params: DeleteCadBotParams},
+        TContext
+      > => {
+      return useMutation(getDeleteCadBotMutationOptions(options));
+    }
+
+export const getUpdateCadBotUrl = (botId: string,) => {
+
+
+
+
+  return `/api/cad/bots/${botId}`
+}
+
+/**
+ * @summary Rename a bot or edit its notes
+ */
+export const updateCadBot = async (botId: string,
+    cadBotUpdateInput: CadBotUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<CadBot> => {
+
+  return customFetch<CadBot>(getUpdateCadBotUrl(botId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadBotUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCadBotMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadBot>>, TError,{botId: string;data: BodyType<CadBotUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCadBot>>, TError,{botId: string;data: BodyType<CadBotUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateCadBot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCadBot>>, {botId: string;data: BodyType<CadBotUpdateInput>}> = (props) => {
+          const {botId,data} = props ?? {};
+
+          return  updateCadBot(botId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCadBotMutationResult = NonNullable<Awaited<ReturnType<typeof updateCadBot>>>
+    export type UpdateCadBotMutationBody = BodyType<CadBotUpdateInput>
+    export type UpdateCadBotMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Rename a bot or edit its notes
+ */
+export const useUpdateCadBot = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadBot>>, TError,{botId: string;data: BodyType<CadBotUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCadBot>>,
+        TError,
+        {botId: string;data: BodyType<CadBotUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCadBotMutationOptions(options));
+    }
+
+export const getCreateCadFolderUrl = () => {
+
+
+
+
+  return `/api/cad/folders`
+}
+
+/**
+ * Omit parentId for a top-level folder. Subfolders nest to any depth.
+ * @summary Create a folder inside a bot
+ */
+export const createCadFolder = async (cadFolderInput: CadFolderInput, options?: Parameters<typeof customFetch>[1]): Promise<CadFolder> => {
+
+  return customFetch<CadFolder>(getCreateCadFolderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadFolderInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCadFolderMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadFolder>>, TError,{data: BodyType<CadFolderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCadFolder>>, TError,{data: BodyType<CadFolderInput>}, TContext> => {
+
+const mutationKey = ['createCadFolder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCadFolder>>, {data: BodyType<CadFolderInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCadFolder(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCadFolderMutationResult = NonNullable<Awaited<ReturnType<typeof createCadFolder>>>
+    export type CreateCadFolderMutationBody = BodyType<CadFolderInput>
+    export type CreateCadFolderMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a folder inside a bot
+ */
+export const useCreateCadFolder = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadFolder>>, TError,{data: BodyType<CadFolderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCadFolder>>,
+        TError,
+        {data: BodyType<CadFolderInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCadFolderMutationOptions(options));
+    }
+
+export const getUpdateCadFolderUrl = (folderId: string,) => {
+
+
+
+
+  return `/api/cad/folders/${folderId}`
+}
+
+/**
+ * @summary Rename a folder, move it, or nest it under another folder
+ */
+export const updateCadFolder = async (folderId: string,
+    cadFolderUpdateInput: CadFolderUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<CadFolder> => {
+
+  return customFetch<CadFolder>(getUpdateCadFolderUrl(folderId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadFolderUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCadFolderMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadFolder>>, TError,{folderId: string;data: BodyType<CadFolderUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCadFolder>>, TError,{folderId: string;data: BodyType<CadFolderUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateCadFolder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCadFolder>>, {folderId: string;data: BodyType<CadFolderUpdateInput>}> = (props) => {
+          const {folderId,data} = props ?? {};
+
+          return  updateCadFolder(folderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCadFolderMutationResult = NonNullable<Awaited<ReturnType<typeof updateCadFolder>>>
+    export type UpdateCadFolderMutationBody = BodyType<CadFolderUpdateInput>
+    export type UpdateCadFolderMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Rename a folder, move it, or nest it under another folder
+ */
+export const useUpdateCadFolder = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadFolder>>, TError,{folderId: string;data: BodyType<CadFolderUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCadFolder>>,
+        TError,
+        {folderId: string;data: BodyType<CadFolderUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCadFolderMutationOptions(options));
+    }
+
+export const getDeleteCadFolderUrl = (folderId: string,) => {
+
+
+
+
+  return `/api/cad/folders/${folderId}`
+}
+
+/**
+ * Contained models move to Unfiled rather than being deleted.
+ * @summary Delete a folder and its subfolders
+ */
+export const deleteCadFolder = async (folderId: string, options?: Parameters<typeof customFetch>[1]): Promise<ErrorResponse> => {
+
+  return customFetch<ErrorResponse>(getDeleteCadFolderUrl(folderId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCadFolderMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadFolder>>, TError,{folderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCadFolder>>, TError,{folderId: string}, TContext> => {
+
+const mutationKey = ['deleteCadFolder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCadFolder>>, {folderId: string}> = (props) => {
+          const {folderId} = props ?? {};
+
+          return  deleteCadFolder(folderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCadFolderMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCadFolder>>>
+
+    export type DeleteCadFolderMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a folder and its subfolders
+ */
+export const useDeleteCadFolder = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadFolder>>, TError,{folderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCadFolder>>,
+        TError,
+        {folderId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCadFolderMutationOptions(options));
+    }
+
+export const getListCadModelsUrl = (params?: ListCadModelsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/cad/models?${stringifiedParams}` : `/api/cad/models`
+}
+
+/**
+ * @summary List stored CAD models, optionally filtered by location
+ */
+export const listCadModels = async (params?: ListCadModelsParams, options?: Parameters<typeof customFetch>[1]): Promise<CadModelList> => {
+
+  return customFetch<CadModelList>(getListCadModelsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCadModelsQueryKey = (params?: ListCadModelsParams,) => {
+    return [
+    `/api/cad/models`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCadModelsQueryOptions = <TData = Awaited<ReturnType<typeof listCadModels>>, TError = ErrorType<unknown>>(params?: ListCadModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCadModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCadModelsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCadModels>>> = ({ signal }) => listCadModels(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCadModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCadModelsQueryResult = NonNullable<Awaited<ReturnType<typeof listCadModels>>>
+export type ListCadModelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List stored CAD models, optionally filtered by location
+ */
+
+export function useListCadModels<TData = Awaited<ReturnType<typeof listCadModels>>, TError = ErrorType<unknown>>(
+ params?: ListCadModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCadModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCadModelsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCadModelUrl = () => {
+
+
+
+
+  return `/api/cad/models`
+}
+
+/**
+ * Call after the bytes are stored, then place the model in a bot or folder.
+ * @summary Record an uploaded CAD file in the library
+ */
+export const createCadModel = async (cadModelInput: CadModelInput, options?: Parameters<typeof customFetch>[1]): Promise<CadModel> => {
+
+  return customFetch<CadModel>(getCreateCadModelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadModelInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCadModelMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadModel>>, TError,{data: BodyType<CadModelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCadModel>>, TError,{data: BodyType<CadModelInput>}, TContext> => {
+
+const mutationKey = ['createCadModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCadModel>>, {data: BodyType<CadModelInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCadModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCadModelMutationResult = NonNullable<Awaited<ReturnType<typeof createCadModel>>>
+    export type CreateCadModelMutationBody = BodyType<CadModelInput>
+    export type CreateCadModelMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Record an uploaded CAD file in the library
+ */
+export const useCreateCadModel = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCadModel>>, TError,{data: BodyType<CadModelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCadModel>>,
+        TError,
+        {data: BodyType<CadModelInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCadModelMutationOptions(options));
+    }
+
+export const getUpdateCadModelUrl = (modelId: string,) => {
+
+
+
+
+  return `/api/cad/models/${modelId}`
+}
+
+/**
+ * @summary Rename a model, edit notes, or move it to another bot or folder
+ */
+export const updateCadModel = async (modelId: string,
+    cadModelUpdateInput: CadModelUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<CadModel> => {
+
+  return customFetch<CadModel>(getUpdateCadModelUrl(modelId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadModelUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCadModelMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadModel>>, TError,{modelId: string;data: BodyType<CadModelUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCadModel>>, TError,{modelId: string;data: BodyType<CadModelUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateCadModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCadModel>>, {modelId: string;data: BodyType<CadModelUpdateInput>}> = (props) => {
+          const {modelId,data} = props ?? {};
+
+          return  updateCadModel(modelId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCadModelMutationResult = NonNullable<Awaited<ReturnType<typeof updateCadModel>>>
+    export type UpdateCadModelMutationBody = BodyType<CadModelUpdateInput>
+    export type UpdateCadModelMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Rename a model, edit notes, or move it to another bot or folder
+ */
+export const useUpdateCadModel = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadModel>>, TError,{modelId: string;data: BodyType<CadModelUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCadModel>>,
+        TError,
+        {modelId: string;data: BodyType<CadModelUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCadModelMutationOptions(options));
+    }
+
+export const getDeleteCadModelUrl = (modelId: string,) => {
+
+
+
+
+  return `/api/cad/models/${modelId}`
+}
+
+/**
+ * @summary Delete a CAD model and its stored file
+ */
+export const deleteCadModel = async (modelId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteCadModelUrl(modelId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCadModelMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadModel>>, TError,{modelId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCadModel>>, TError,{modelId: string}, TContext> => {
+
+const mutationKey = ['deleteCadModel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCadModel>>, {modelId: string}> = (props) => {
+          const {modelId} = props ?? {};
+
+          return  deleteCadModel(modelId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCadModelMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCadModel>>>
+
+    export type DeleteCadModelMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a CAD model and its stored file
+ */
+export const useDeleteCadModel = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCadModel>>, TError,{modelId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCadModel>>,
+        TError,
+        {modelId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCadModelMutationOptions(options));
     }
 
 export const getSetPartsRobotAllocationUrl = (robotId: string,
