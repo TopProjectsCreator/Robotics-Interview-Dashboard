@@ -246,17 +246,23 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (diagnostic): report every interviewer account row so the rename
-  // can be made without guessing which rows are hidden from the label list.
+  // TEMP (diagnostic): report every interviewer account row, including any
+  // that are not queue labels and so are invisible in the team list.
   try {
+    const [labelsRow] = await db.select().from(interviewQueueTable).limit(1);
+    const labels: string[] = JSON.parse(labelsRow?.interviewerLabels ?? "[]");
     const { rows } = await pool.query(
-      `select id, display_name, normalized_name,
-              (password_hash is not null) as has_password,
-              (id = any (select unnest(ARRAY(SELECT jsonb_array_elements_text((select interviewer_labels::jsonb from interview_queue where id = 1))))) as in_labels
+      `select id, display_name, normalized_name, (password_hash is not null) as has_password
          from interviewer_accounts
         order by normalized_name`,
     );
-    logger.info({ accounts: rows }, "interviewer account inventory");
+    logger.info({
+      accounts: rows.map((row: Record<string, unknown>) => ({
+        name: String(row.normalized_name).slice(0, 46),
+        pw: Boolean(row.has_password),
+        inLabels: labels.some((label) => label.trim().toLowerCase() === String(row.normalized_name)),
+      })),
+    }, "interviewer account inventory");
   } catch (err) {
     logger.error({ err }, "account inventory failed");
   }
