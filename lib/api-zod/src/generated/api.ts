@@ -149,6 +149,30 @@ export const DeleteInterviewerResponse = zod.void()
 
 
 /**
+ * Updates the account, the interviewer labels used by queue assignment, chat authorship, and existing direct-message threads so history is preserved.
+ * @summary Rename an interviewer (coordinators only)
+ */
+export const UpdateInterviewerNameParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+export const updateInterviewerNameBodyDisplayNameMax = 80;
+
+
+
+export const UpdateInterviewerNameBody = zod.object({
+  "displayName": zod.string().min(1).max(updateInterviewerNameBodyDisplayNameMax).describe('New display name for this interviewer')
+})
+
+export const UpdateInterviewerNameResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean(),
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+})
+
+
+/**
  * @summary Change an interviewer role (coordinators only)
  */
 export const UpdateInterviewerRoleParams = zod.object({

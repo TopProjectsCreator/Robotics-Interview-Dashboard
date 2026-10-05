@@ -1,7 +1,7 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import { db, interviewerAccountsTable } from "@workspace/db";
+import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable } from "@workspace/db";
 import {
   CreateInterviewerBody,
   CreateInterviewerResponse,
@@ -17,6 +17,7 @@ import {
   UpdateInterviewerPasswordResponse,
   ResetAllInterviewerPasswordsResponse,
   UpdateInterviewerRoleResponse,
+  UpdateInterviewerNameResponse,
   ResetAllInterviewerPasswordsBody,
   VerifyEventPasscodeBody,
   VerifyEventPasscodeResponse,
@@ -314,6 +315,120 @@ router.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async
     return;
   }
   res.json(UpdateInterviewerRoleResponse.parse(publicAccount(updated)));
+});
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
+}
+
+/** Interviewer label separator used to build direct-message thread keys. */
+const PEER_SEPARATOR = "\u001f";
+
+/**
+ * Renames an interviewer everywhere their name is stored: the account row,
+ * the queue labels that drive interviewer selection, chat authorship, and the
+ * direct-message thread keys (which embed both participant names, so leaving
+ * them stale would orphan existing DM history).
+ */
+async function renameInterviewerReferences(previousName: string, nextName: string): Promise<void> {
+  const [queue] = await db.select().from(interviewQueueTable).limit(1);
+  try {
+    const labels = JSON.parse(queue?.interviewerLabels ?? "[]") as unknown;
+    if (Array.isArray(labels)) {
+      const renamed = labels.map((label) =>
+        typeof label === "string" && label.trim().toLowerCase() === previousName.toLowerCase()
+          ? nextName
+          : label,
+      );
+      await db
+        .update(interviewQueueTable)
+        .set({ interviewerLabels: JSON.stringify(renamed), updatedAt: new Date() })
+        .where(eq(interviewQueueTable.id, queue?.id ?? 1));
+    }
+  } catch {
+    // Leave labels untouched if the stored value is unreadable.
+  }
+
+  await db
+    .update(interviewChatMessagesTable)
+    .set({ author: nextName })
+    .where(eq(interviewChatMessagesTable.author, previousName));
+
+  // Thread keys are "<label><SEP><label>" with the pair sorted; replace only
+  // the segment that matches this interviewer.
+  const rows = await db
+    .select({ id: interviewChatMessagesTable.id, peer: interviewChatMessagesTable.conversationPeer })
+    .from(interviewChatMessagesTable);
+  for (const row of rows) {
+    if (!row.peer) continue;
+    const parts = row.peer.split(PEER_SEPARATOR);
+    if (!parts.some((part) => part.trim().toLowerCase() === previousName.toLowerCase())) continue;
+    const swapped = parts.map((part) =>
+      part.trim().toLowerCase() === previousName.toLowerCase() ? nextName : part,
+    );
+    const key = [...swapped]
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b))
+      .join(PEER_SEPARATOR);
+    await db
+      .update(interviewChatMessagesTable)
+      .set({ conversationPeer: key })
+      .where(eq(interviewChatMessagesTable.id, row.id));
+  }
+}
+
+router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async (req, res): Promise<void> => {
+  const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
+  const displayName = typeof (req.body as Record<string, unknown> | undefined)?.displayName === "string"
+    ? String((req.body as Record<string, unknown>).displayName).trim().replace(/\s+/g, " ")
+    : "";
+  if (!interviewerId || !displayName) {
+    res.status(400).json({ error: "Enter a name for this person." });
+    return;
+  }
+  if (displayName.length > 80) {
+    res.status(400).json({ error: "Names are limited to 80 characters." });
+    return;
+  }
+  const account = await accountById(interviewerId);
+  if (!account) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const normalizedName = normalizeInterviewerName(displayName);
+  const previousName = account.displayName;
+  if (normalizedName === account.normalizedName) {
+    res.json(UpdateInterviewerNameResponse.parse(publicAccount(account)));
+    return;
+  }
+  const clash = await db
+    .select({ id: interviewerAccountsTable.id })
+    .from(interviewerAccountsTable)
+    .where(eq(interviewerAccountsTable.normalizedName, normalizedName))
+    .limit(1);
+  if (clash.length) {
+    res.status(409).json({ error: "Someone already uses that name." });
+    return;
+  }
+  try {
+    const [updated] = await db
+      .update(interviewerAccountsTable)
+      .set({ displayName, normalizedName, updatedAt: new Date() })
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .returning();
+    if (!updated) {
+      res.status(500).json({ error: "Could not rename this person." });
+      return;
+    }
+    await renameInterviewerReferences(previousName, displayName);
+    res.json(UpdateInterviewerNameResponse.parse(publicAccount(updated)));
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      res.status(409).json({ error: "Someone already uses that name." });
+      return;
+    }
+    req.log.error({ err: error, interviewerId }, "Interviewer rename failed");
+    res.status(500).json({ error: "Could not rename this person." });
+  }
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {

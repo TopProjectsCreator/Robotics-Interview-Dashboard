@@ -103,6 +103,7 @@ import type {
   InterviewWhiteboardUpdateInput,
   InterviewerAccount,
   InterviewerAccountList,
+  InterviewerNameUpdateInput,
   InterviewerPasswordUpdateInput,
   InterviewerRoleUpdateInput,
   ListApplicantsParams,
@@ -852,6 +853,79 @@ export const useDeleteInterviewer = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteInterviewerMutationOptions(options));
+    }
+
+export const getUpdateInterviewerNameUrl = (interviewerId: string,) => {
+
+
+
+
+  return `/api/auth/interviewers/${interviewerId}/name`
+}
+
+/**
+ * Updates the account, the interviewer labels used by queue assignment, chat authorship, and existing direct-message threads so history is preserved.
+ * @summary Rename an interviewer (coordinators only)
+ */
+export const updateInterviewerName = async (interviewerId: string,
+    interviewerNameUpdateInput: InterviewerNameUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getUpdateInterviewerNameUrl(interviewerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(interviewerNameUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateInterviewerNameMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerName>>, TError,{interviewerId: string;data: BodyType<InterviewerNameUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerName>>, TError,{interviewerId: string;data: BodyType<InterviewerNameUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateInterviewerName'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInterviewerName>>, {interviewerId: string;data: BodyType<InterviewerNameUpdateInput>}> = (props) => {
+          const {interviewerId,data} = props ?? {};
+
+          return  updateInterviewerName(interviewerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateInterviewerNameMutationResult = NonNullable<Awaited<ReturnType<typeof updateInterviewerName>>>
+    export type UpdateInterviewerNameMutationBody = BodyType<InterviewerNameUpdateInput>
+    export type UpdateInterviewerNameMutationError = ErrorType<void>
+
+    /**
+ * @summary Rename an interviewer (coordinators only)
+ */
+export const useUpdateInterviewerName = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateInterviewerName>>, TError,{interviewerId: string;data: BodyType<InterviewerNameUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateInterviewerName>>,
+        TError,
+        {interviewerId: string;data: BodyType<InterviewerNameUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateInterviewerNameMutationOptions(options));
     }
 
 export const getUpdateInterviewerRoleUrl = (interviewerId: string,) => {

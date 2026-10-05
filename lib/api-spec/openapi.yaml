@@ -230,6 +230,41 @@ paths:
           description: Interviewer deleted
         "404":
           description: Interviewer not found
+  /auth/interviewers/{interviewerId}/name:
+    patch:
+      operationId: updateInterviewerName
+      tags: [auth]
+      summary: Rename an interviewer (coordinators only)
+      description: >-
+        Updates the account, the interviewer labels used by queue assignment,
+        chat authorship, and existing direct-message threads so history is
+        preserved.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewerNameUpdateInput"
+      responses:
+        "200":
+          description: Updated interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+        "404":
+          description: Interviewer not found
+        "409":
+          description: Another interviewer already uses that name
   /auth/interviewers/{interviewerId}/role:
     patch:
       operationId: updateInterviewerRole
@@ -3164,6 +3199,15 @@ components:
         confirmLowExposure:
           type: boolean
           description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    InterviewerNameUpdateInput:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: New display name for this interviewer
     InterviewerRoleUpdateInput:
       type: object
       required: [role]

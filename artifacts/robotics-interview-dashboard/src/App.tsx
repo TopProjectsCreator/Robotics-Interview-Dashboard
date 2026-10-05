@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -325,6 +325,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [passwordNotice, setPasswordNotice] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [rowNotice, setRowNotice] = useState<Record<string, string>>({});
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
@@ -362,6 +363,31 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
   const deleteInterviewer = useDeleteInterviewer();
+  const updateInterviewerName = useUpdateInterviewerName();
+  const renameInterviewer = (id: string, displayName: string) => {
+    const name = displayName.trim();
+    if (!name) {
+      setPasswordError("Enter a name for this person.");
+      return;
+    }
+    setPasswordNotice("");
+    setPasswordError("");
+    setRowNotice((current) => ({ ...current, [id]: "" }));
+    updateInterviewerName.mutate({ interviewerId: id, data: { displayName: name } }, {
+      onSuccess: () => {
+        setNameDrafts((current) => ({ ...current, [id]: "" }));
+        setRowNotice((current) => ({ ...current, [id]: "Name updated" }));
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      },
+      onError: (error) => {
+        const body = (error as { data?: { error?: unknown } }).data;
+        const message = typeof body?.error === "string" ? body.error : error instanceof Error && error.message ? error.message : "Could not rename this person.";
+        setRowNotice((current) => ({ ...current, [id]: "Not renamed" }));
+        setPasswordError(message);
+      },
+    });
+  };
   const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
     updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
       onSuccess: () => {
@@ -507,6 +533,17 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <button type="button" disabled={passwordBusy} onClick={() => void changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className={dangerButton}>Reset</button>
             </form>
             {rowNotice[account.id] && <p className={`text-[11px] font-semibold ${rowNotice[account.id] === "Password saved" ? "text-[#247d63] dark:text-[#6fce8f]" : "text-[#b34a42] dark:text-[#e89087]"}`} data-testid={`settings-password-status-${account.id}`}>{rowNotice[account.id]}</p>}
+            <form onSubmit={e => { e.preventDefault(); renameInterviewer(account.id, nameDrafts[account.id] ?? ""); }} className="mt-2 flex flex-wrap gap-2">
+              <input
+                value={nameDrafts[account.id] ?? ""}
+                onChange={e => setNameDrafts(current => ({ ...current, [account.id]: e.target.value }))}
+                placeholder={`Rename ${account.displayName}`}
+                aria-label={`Rename ${account.displayName}`}
+                data-testid={`input-settings-name-${account.id}`}
+                className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
+              />
+              <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
+            </form>
             <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
           </div>)}
         </div>

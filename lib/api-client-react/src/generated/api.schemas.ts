@@ -529,6 +529,15 @@ export interface InterviewerPasswordUpdateInput {
   confirmLowExposure?: boolean;
 }
 
+export interface InterviewerNameUpdateInput {
+  /**
+     * New display name for this interviewer
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
+}
+
 export type InterviewerRoleUpdateInputRole = typeof InterviewerRoleUpdateInputRole[keyof typeof InterviewerRoleUpdateInputRole];
 
 
