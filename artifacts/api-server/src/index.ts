@@ -21,7 +21,7 @@ async function removeTestAccounts(): Promise<void> {
     'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix',
     'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel',
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
-    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot',
+    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck', 'MonitorCheck',
     'CleanupBot', 'CleanupBot2', 'AdminCleaner', 'RealAdmin', 'ProbeBot',
     'test', 'test2', 'test3',
   ];
