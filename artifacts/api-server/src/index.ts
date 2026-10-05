@@ -246,15 +246,14 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP: restore Maksim (accidentally demoted during testing) and drop probe data.
+  // TEMP: Maksim is a team member (interviewer), not an admin.
   try {
     await pool.query(
-      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'maksim' AND role <> 'coordinator'`,
+      `UPDATE interviewer_accounts SET role = 'interviewer', updated_at = now()
+        WHERE normalized_name = 'maksim' AND role <> 'interviewer'`,
     );
-    await pool.query(`DELETE FROM cad_bots WHERE name LIKE 'Probe Bot%'`);
   } catch (err) {
-    logger.error({ err }, "temp restore failed");
+    logger.error({ err }, "temp role update failed");
   }
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
