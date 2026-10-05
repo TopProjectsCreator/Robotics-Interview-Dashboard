@@ -162,11 +162,16 @@ export function CadWorkspacePage() {
         if (successMessage) setNotice(successMessage);
         refresh();
       } catch (actionError) {
-        const response = (actionError as { response?: { data?: { error?: unknown } } }).response;
+        // ApiError exposes the parsed body on `data`; `response` is the raw
+        // fetch Response, so reading `response.data` here always lost the
+        // server's real reason and showed a generic message instead.
+        const body = (actionError as { data?: { error?: unknown } }).data;
         setNotice(
-          typeof response?.data?.error === "string"
-            ? response.data.error
-            : "That change could not be saved. Try again.",
+          typeof body?.error === "string"
+            ? body.error
+            : actionError instanceof Error && actionError.message
+              ? actionError.message
+              : "That change could not be saved. Try again.",
         );
       } finally {
         setBusy(false);

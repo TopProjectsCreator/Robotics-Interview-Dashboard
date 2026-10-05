@@ -27,11 +27,13 @@ export function storageUrl(objectPath: string): string {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
+  // ApiError keeps the parsed error body on `data`; `response` is the raw
+  // fetch Response object and has no body on it.
   if (typeof error === "object" && error !== null) {
-    const response = (error as { response?: { data?: { error?: unknown } } }).response;
-    if (typeof response?.data?.error === "string") return response.data.error;
+    const body = (error as { data?: { error?: unknown } }).data;
+    if (typeof body?.error === "string") return body.error;
   }
+  if (error instanceof Error && error.message) return error.message;
   return fallback;
 }
 

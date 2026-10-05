@@ -21,7 +21,7 @@ async function removeTestAccounts(): Promise<void> {
     'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix',
     'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel',
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
-    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck', 'MonitorCheck',
+    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck', 'BotProbe', 'MonitorCheck',
     'CleanupBot', 'CleanupBot2', 'AdminCleaner', 'RealAdmin', 'ProbeBot',
     'test', 'test2', 'test3',
   ];
@@ -246,17 +246,16 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (monitor only): promote the probe account so CAD writes can be
-  // reproduced as a coordinator. Removed once diagnosed.
+  // TEMP: restore Maksim (accidentally demoted during testing) and drop probe data.
   try {
     await pool.query(
       `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'botprobe'`,
+        WHERE normalized_name = 'maksim' AND role <> 'coordinator'`,
     );
+    await pool.query(`DELETE FROM cad_bots WHERE name LIKE 'Probe Bot%'`);
   } catch (err) {
-    logger.error({ err }, "temp promote failed");
+    logger.error({ err }, "temp restore failed");
   }
-
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
