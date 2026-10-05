@@ -246,25 +246,32 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (diagnostic): report every interviewer account row, including any
-  // that are not queue labels and so are invisible in the team list.
+  // TEMP: rename only the placeholder "Michael Jordan…" account to Dylan.
+  // Matched by prefix so no other teammate can be touched.
   try {
-    const [labelsRow] = await db.select().from(interviewQueueTable).limit(1);
-    const labels: string[] = JSON.parse(labelsRow?.interviewerLabels ?? "[]");
-    const { rows } = await pool.query(
-      `select id, display_name, normalized_name, (password_hash is not null) as has_password
-         from interviewer_accounts
-        order by normalized_name`,
+    const renamed = await pool.query(
+      `update interviewer_accounts
+          set display_name = 'Dylan',
+              normalized_name = 'dylan',
+              updated_at = now()
+        where normalized_name like 'michael jordan%'
+        returning id`,
     );
-    logger.info({
-      accounts: rows.map((row: Record<string, unknown>) => ({
-        name: String(row.normalized_name).slice(0, 46),
-        pw: Boolean(row.has_password),
-        inLabels: labels.some((label) => label.trim().toLowerCase() === String(row.normalized_name)),
-      })),
-    }, "interviewer account inventory");
+    if (renamed.rowCount) {
+      await pool.query(
+        `update interview_queue
+            set interviewer_labels = (
+              select coalesce(jsonb_agg(
+                case when lower(elem) like 'michael jordan%' then 'Dylan' else elem end
+              ), '[]'::jsonb)::text
+                from jsonb_array_elements_text(interviewer_labels::jsonb) as elem
+            )
+          where id = 1`,
+      );
+      logger.info({ renamed: renamed.rowCount }, "renamed placeholder account to Dylan");
+    }
   } catch (err) {
-    logger.error({ err }, "account inventory failed");
+    logger.error({ err }, "temp rename failed");
   }
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
