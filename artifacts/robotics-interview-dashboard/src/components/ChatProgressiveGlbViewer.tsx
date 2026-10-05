@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { attachTrackpadPan } from "../lib/trackpadPan";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -94,6 +95,8 @@ export function ChatProgressiveGlbViewer({
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
+    // Without this the browser claims two-finger gestures for page scroll.
+    renderer.domElement.style.touchAction = "none";
     host.appendChild(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x526273, 2.0));
@@ -104,6 +107,8 @@ export function ChatProgressiveGlbViewer({
     fillLight.position.set(-5, 1, -4);
     scene.add(fillLight);
 
+    // Registered before OrbitControls so it consumes pan gestures first.
+    const detachTrackpadPan = attachTrackpadPan(renderer.domElement, () => controls);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
@@ -271,6 +276,7 @@ export function ChatProgressiveGlbViewer({
       tileRequests.clear();
       if (tileUpdateTimeout !== null) window.clearTimeout(tileUpdateTimeout);
       controls.removeEventListener("change", scheduleTileUpdate);
+      detachTrackpadPan();
       controls.dispose();
       resizeObserver.disconnect();
       renderer.setAnimationLoop(null);

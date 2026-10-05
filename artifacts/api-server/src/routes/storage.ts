@@ -242,7 +242,7 @@ function parseProgressiveManifest(value: unknown): {
     tiles,
   };
 }
-const CHAT_UPLOAD_CONTENT_TYPES = [
+export const CHAT_UPLOAD_CONTENT_TYPES = [
   'image/*',
   'video/*',
   'audio/*',
@@ -262,12 +262,15 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/tab-separated-values',
   'model/gltf-binary',
   'model/stl',
+  'model/3mf',
+  'application/3mf',
+  'application/vnd.ms-package.3dmanufacturing-3dmodel+xml',
   'model/x-parasolid',
   'model/step',
   'application/step',
   'application/x-step',
 ];
-function isAllowedChatUploadType(contentType: string): boolean {
+export function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
     allowed.endsWith('/*') ? contentType.startsWith(allowed.slice(0, -1)) : contentType === allowed,
   );
@@ -291,6 +294,13 @@ async function isValidGlbFile(filePath: string, fileSize: number): Promise<boole
   } finally {
     await file.close();
   }
+}
+export function isThreeMfUpload(contentType: string): boolean {
+  return (
+    contentType === 'model/3mf' ||
+    contentType === 'application/3mf' ||
+    contentType === 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml'
+  );
 }
 function isValidStl(data: Buffer): boolean {
   if (data.length >= 84) {
@@ -392,6 +402,12 @@ router.post(
       }
       if (contentType === 'model/stl' && !isValidStl(data)) {
         res.status(400).json({ error: 'This is not a valid STL model' });
+        return;
+      }
+      // A 3MF is a ZIP archive holding an XML model part. Checking it here means
+      // a renamed file is rejected at upload instead of failing in the viewer.
+      if (isThreeMfUpload(contentType) && !cadFileMatchesKind('three-mf', data)) {
+        res.status(400).json({ error: 'This is not a valid 3MF model' });
         return;
       }
       if (data.length > CHUNKED_UPLOAD_THRESHOLD_BYTES) {

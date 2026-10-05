@@ -76,6 +76,7 @@ import { ChatParasolidViewer } from "./components/ChatParasolidViewer";
 import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatGlbViewer } from "./components/ChatGlbViewer";
+import { CadThreeMfViewer } from "./components/CadThreeMfViewer";
 import { ChatStepViewer } from "./components/ChatStepViewer";
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
@@ -685,7 +686,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "step" | "stl" | "text" | "video";
+type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -697,6 +698,8 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
   if (contentType === "model/gltf-binary" || extension === "glb") return "model";
   if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
+  // 3MF is a ZIP of XML mesh data, so it renders in the browser like STL.
+  if (["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) || extension === "3mf") return "3mf";
   if (
     contentType === "model/step" ||
     contentType === "application/step" ||
@@ -933,6 +936,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
   if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
   if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
+  if (kind === "3mf" && objectUrl) return <CadThreeMfViewer name={name} src={objectUrl} />;
   if (kind === "step" && objectUrl) return <ChatStepViewer name={name} src={objectUrl} />;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
@@ -3597,6 +3601,7 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   gif: "image/gif",
   glb: "model/gltf-binary",
   stl: "model/stl",
+  "3mf": "model/3mf",
   x_b: "model/x-parasolid",
   x_t: "model/x-parasolid",
   heic: "image/heic",
@@ -3667,7 +3672,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
-  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/x-parasolid") return "model";
+  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/3mf" || type === "application/3mf" || type === "model/x-parasolid") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -4999,7 +5004,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            </div>
          </div>
        </div>
-        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">

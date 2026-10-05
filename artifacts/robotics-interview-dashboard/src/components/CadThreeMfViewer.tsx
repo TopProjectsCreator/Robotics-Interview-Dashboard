@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { attachTrackpadPan } from "../lib/trackpadPan";
+
 import { parseThreeMf, THREE_MF_MAX_TRIANGLES } from "../lib/threeMf";
 
 type CadThreeMfViewerProps = {
@@ -31,6 +33,7 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
     let resizeHandler: (() => void) | null = null;
     let renderer: import("three").WebGLRenderer | null = null;
     let controls: import("three/addons/controls/OrbitControls.js").OrbitControls | null = null;
+    let detachTrackpadPan: (() => void) | null = null;
     let scene: import("three").Scene | null = null;
     const geometries: import("three").BufferGeometry[] = [];
     const materials: import("three").Material[] = [];
@@ -100,6 +103,9 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
         viewerRenderer.domElement.setAttribute("aria-label", `3D preview of ${name}`);
         viewerRenderer.domElement.setAttribute("role", "img");
         viewerRenderer.domElement.tabIndex = 0;
+        // Without this the browser claims two-finger gestures for page scroll,
+        // so OrbitControls never receives them.
+        viewerRenderer.domElement.style.touchAction = "none";
         host.appendChild(viewerRenderer.domElement);
 
         viewerScene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -110,7 +116,13 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
         fillLight.position.set(-5, -3, -4);
         viewerScene.add(fillLight);
 
+        // Registered before OrbitControls so this handler sees the wheel event
+        // first and can consume the pan gestures OrbitControls would zoom.
+        detachTrackpadPan = attachTrackpadPan(viewerRenderer.domElement, () => viewerControls);
         const viewerControls = new OrbitControls(camera, viewerRenderer.domElement);
+        // Pan in the camera's screen plane; panning in the ground plane is
+        // disorienting for a part floating in space.
+        viewerControls.screenSpacePanning = true;
         controls = viewerControls;
         viewerControls.enableDamping = true;
         viewerControls.dampingFactor = 0.08;
@@ -245,6 +257,7 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
       abortController?.abort();
       resizeObserver?.disconnect();
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+      detachTrackpadPan?.();
       controls?.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
@@ -273,16 +286,27 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
   }
 
   return (
-    <div className="relative">
-      {!ready && (
-        <div
-          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#f7faf9] text-xs text-[#718189] dark:bg-[#10232d] dark:text-[#a8bac8]"
-          role="status"
-        >
-          Loading 3D preview…
-        </div>
-      )}
-      <div ref={hostRef} style={{ height }} className="w-full" data-testid="cad-3mf-viewer" />
-    </div>
+    <figure
+      className="overflow-hidden rounded-xl border border-[#dce5e5] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]"
+      data-testid="cad-3mf-viewer-figure"
+    >
+      <figcaption className="flex flex-wrap items-center justify-between gap-1 border-b border-[#dce5e5] px-3 py-2 text-[11px] dark:border-[#2a3f52]">
+        <span className="min-w-0 truncate font-semibold text-foreground">{name}</span>
+        <span className="text-muted-foreground">
+          3MF model · opened in your browser · drag to rotate · two fingers to pan and zoom
+        </span>
+      </figcaption>
+      <div className="relative">
+        {!ready && (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[#f7faf9] text-xs text-[#718189] dark:bg-[#10232d] dark:text-[#a8bac8]"
+            role="status"
+          >
+            Loading 3D preview…
+          </div>
+        )}
+        <div ref={hostRef} style={{ height }} className="w-full" data-testid="cad-3mf-viewer" />
+      </div>
+    </figure>
   );
 }

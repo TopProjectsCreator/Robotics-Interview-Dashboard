@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Buffer } from "node:buffer";
+import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 
@@ -12,6 +13,14 @@ vi.mock("heic2any", () => ({
 }));
 vi.mock("./components/ChatStlViewer", () => ({
   ChatStlViewer: ({ name }: { name: string }) => <div data-testid="chat-stl-attachment">{name} · STL model</div>,
+}));
+vi.mock("./components/CadThreeMfViewer", () => ({
+  CadThreeMfViewer: ({ name, src }: { name: string; src: string }) => (
+    <figure data-testid="chat-3mf-attachment">
+      <span>{name} · 3MF model</span>
+      <a href={src} download={name}>Download 3MF</a>
+    </figure>
+  ),
 }));
 vi.mock("./components/ChatParasolidViewer", () => ({
   ChatParasolidViewer: ({ name, src }: { name: string; src: string }) => (
@@ -76,6 +85,21 @@ function stlFixture(): Blob {
   return new Blob([bytes], { type: "model/stl" });
 }
 
+function threeMfFixture(): Blob {
+  const bytes = zipSync({
+    "[Content_Types].xml": strToU8('<?xml version="1.0"?><Types/>'),
+    "3D/3dmodel.model": strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">' +
+        '<resources><object id="1" type="model"><mesh>' +
+        '<vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices>' +
+        '<triangles><triangle v1="0" v2="1" v3="2"/></triangles>' +
+        "</mesh></object></resources><build><item objectid=\"1\"/></build></model>",
+    ),
+  });
+  return new Blob([bytes], { type: "model/3mf" });
+}
+
 function heicFixture(): Blob {
   // ISO Base Media File Format `ftyp` header with HEIC-compatible brands.
   const bytes = Buffer.alloc(20);
@@ -104,6 +128,16 @@ const fixtures: Fixture[] = [
     assertPreview: container => {
       expect(container.querySelector('[data-testid="chat-stl-attachment"]')).toBeInTheDocument();
       expect(container).toHaveTextContent("STL model");
+    },
+  },
+  {
+    name: "bracket.3mf",
+    contentType: "model/3mf",
+    body: threeMfFixture(),
+    assertPreview: container => {
+      expect(container.querySelector('[data-testid="chat-3mf-attachment"]')).toBeInTheDocument();
+      expect(container).toHaveTextContent("3MF model");
+      expect(container.querySelector("a[download='bracket.3mf']")).toHaveAttribute("href", expect.stringMatching(/^blob:/));
     },
   },
   {
