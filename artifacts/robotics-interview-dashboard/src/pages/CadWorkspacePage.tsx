@@ -89,6 +89,8 @@ export function CadWorkspacePage() {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [addingBot, setAddingBot] = useState(false);
+  const [newBotName, setNewBotName] = useState("");
   const [pageDragActive, setPageDragActive] = useState(false);
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -416,16 +418,55 @@ export function CadWorkspacePage() {
             type="button"
             variant="outline"
             onClick={() => {
-              const name = window.prompt("Name this bot");
-              if (name?.trim()) {
-                void runAction(() => createCadBot({ name: name.trim() }), "Bot created.");
-              }
+              setAddingBot(true);
+              setNotice(null);
             }}
             data-testid="cad-new-bot"
           >
             <Plus size={15} aria-hidden="true" />
             New bot
           </Button>
+          {addingBot && (
+            <form
+              className="flex w-full items-center gap-2 sm:w-auto"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const name = newBotName.trim();
+                if (!name) {
+                  setNotice("Give this bot a name.");
+                  return;
+                }
+                void runAction(() => createCadBot({ name }), "Bot created.").finally(() => {
+                  setNewBotName("");
+                  setAddingBot(false);
+                });
+              }}
+            >
+              <Input
+                autoFocus
+                value={newBotName}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setNewBotName(event.target.value)}
+                placeholder="Bot name"
+                aria-label="New bot name"
+                data-testid="input-new-bot-name"
+                className="h-9 min-w-[150px] flex-1 sm:w-52"
+              />
+              <Button type="submit" disabled={busy} data-testid="button-create-bot">
+                {busy ? "Creating…" : "Create"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setAddingBot(false);
+                  setNewBotName("");
+                }}
+                data-testid="button-cancel-new-bot"
+              >
+                Cancel
+              </Button>
+            </form>
+          )}
           <Button
             type="button"
             onClick={() => fileInputRef.current?.click()}
