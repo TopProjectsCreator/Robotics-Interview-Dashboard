@@ -7976,7 +7976,7 @@ export const getCreateCadBotUrl = () => {
 
 
 
-  return `/api/cad/library`
+  return `/api/cad/bots`
 }
 
 /**
@@ -8054,7 +8054,7 @@ export const getDeleteCadBotUrl = (params: DeleteCadBotParams,) => {
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/cad/library?${stringifiedParams}` : `/api/cad/library`
+  return stringifiedParams.length > 0 ? `/api/cad/bots?${stringifiedParams}` : `/api/cad/bots`
 }
 
 /**

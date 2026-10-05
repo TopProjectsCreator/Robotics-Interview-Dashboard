@@ -8,6 +8,8 @@ const MIB = 1024 * 1024;
 export type CadModelKind =
   | "glb"
   | "stl"
+  | "obj"
+  | "ply"
   | "three-mf"
   | "parasolid"
   | "step"
@@ -17,6 +19,8 @@ export type CadModelKind =
 const EXTENSION_KINDS: Record<string, CadModelKind> = {
   glb: "glb",
   stl: "stl",
+  obj: "obj",
+  ply: "ply",
   "3mf": "three-mf",
   x_t: "parasolid",
   x_b: "parasolid",
@@ -36,6 +40,10 @@ const EXTENSION_KINDS: Record<string, CadModelKind> = {
 const KIND_CONTENT_TYPES: Record<CadModelKind, string[]> = {
   glb: ["model/gltf-binary", "application/octet-stream", "binary/octet-stream"],
   stl: ["model/stl", "application/sla", "application/octet-stream", "binary/octet-stream", "text/plain"],
+  // OBJ and PLY are text/binary meshes with no registered media type in wide use,
+  // so the extension is authoritative and the content type is only advisory.
+  obj: ["model/obj", "text/plain", "text/model/obj", "application/octet-stream", "binary/octet-stream"],
+  ply: ["model/ply", "application/ply", "application/octet-stream", "binary/octet-stream"],
   "three-mf": ["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml", "application/octet-stream", "binary/octet-stream"],
   parasolid: ["model/x-parasolid", "application/x-parasolid", "application/octet-stream", "binary/octet-stream", "text/plain"],
   step: ["model/step", "application/step", "application/x-step", "application/octet-stream", "binary/octet-stream", "text/plain"],
@@ -47,6 +55,8 @@ const KIND_CONTENT_TYPES: Record<CadModelKind, string[]> = {
 export const CAD_KIND_CONTENT_TYPES: Record<CadModelKind, string> = {
   glb: "model/gltf-binary",
   stl: "model/stl",
+  obj: "model/obj",
+  ply: "model/ply",
   "three-mf": "model/3mf",
   parasolid: "model/x-parasolid",
   step: "model/step",
@@ -55,7 +65,7 @@ export const CAD_KIND_CONTENT_TYPES: Record<CadModelKind, string> = {
 };
 
 export const CAD_MODEL_ACCEPT =
-  ".glb,.stl,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
+  ".glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
 
 export function cadModelKind(fileName: string): CadModelKind | null {
   const extension = fileName.toLowerCase().split(".").pop();
@@ -67,6 +77,9 @@ export function cadModelMaxBytes(kind: CadModelKind): number {
   // Parasolid and the B-Rep text formats are large but convert in the browser;
   // meshes are already renderable so they are capped lower.
   if (kind === "glb" || kind === "stl" || kind === "three-mf") return 100 * MIB;
+  // OBJ is verbose ASCII and photogrammetry PLY can be very large, so both get
+  // the mesh budget rather than the more generous B-Rep one.
+  if (kind === "obj" || kind === "ply") return 100 * MIB;
   return 200 * MIB;
 }
 
@@ -85,7 +98,9 @@ export function resolveCadUploadKind(
   }
   const kind = cadModelKind(trimmedName);
   if (!kind) {
-    return { error: "Choose a GLB, STL, 3MF, STEP, IGES, BREP, X_T, or X_B file." };
+    return {
+      error: "Choose a GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, or X_B file.",
+    };
   }
   const normalizedType = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
   // An empty or generic type is fine; an explicit mismatched one is not, since
@@ -122,6 +137,35 @@ function isValidThreeMf(data: Buffer): boolean {
   return data.includes("3dmodel.model");
 }
 
+/**
+ * OBJ has no magic bytes, so require at least one vertex and one face line.
+ * This rejects a renamed GLB or a text document without inflating anything.
+ */
+function isValidObj(data: Buffer): boolean {
+  const text = sampleAscii(data, 512 * 1024);
+  if (!/^\s*v\s+[-\d.]/m.test(text)) return false;
+  return /^\s*f\s+\d/m.test(text);
+}
+
+/**
+ * PLY always begins with an ASCII `ply` line, including its binary variants,
+ * and the header must declare a supported body format and terminate.
+ */
+function isValidPly(data: Buffer): boolean {
+  if (data.length < 4) return false;
+  if (data.subarray(0, 3).toString("ascii") !== "ply") return false;
+  const header = sampleAscii(data, 512 * 1024);
+  if (!/\r?\nformat\s+(ascii|binary_little_endian|binary_big_endian)\r?\n/.test(header)) {
+    return false;
+  }
+  return header.includes("end_header");
+}
+
+/** Decodes a bounded prefix of a buffer, enough for any of these signatures. */
+function sampleAscii(data: Buffer, maxBytes: number): string {
+  return data.subarray(0, Math.min(data.length, maxBytes)).toString("latin1");
+}
+
 function isValidGlb(data: Buffer): boolean {
   return data.length >= 20 &&
     data.toString("ascii", 0, 4) === "glTF" &&
@@ -134,6 +178,8 @@ export function cadFileMatchesKind(kind: CadModelKind, data: Buffer): boolean {
   if (data.length === 0) return false;
   if (kind === "glb") return isValidGlb(data);
   if (kind === "stl") return isValidStl(data);
+  if (kind === "obj") return isValidObj(data);
+  if (kind === "ply") return isValidPly(data);
   if (kind === "three-mf") return isValidThreeMf(data);
   if (kind === "parasolid") {
     const looksBinary = data.subarray(0, Math.min(data.length, 512)).includes(0);

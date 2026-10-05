@@ -2126,6 +2126,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CadLibrary"
+  /cad/bots:
     post:
       operationId: createCadBot
       tags: [cad]

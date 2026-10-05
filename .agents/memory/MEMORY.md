@@ -30,3 +30,4 @@
 - [Trackpad panning in 3D viewers](trackpad-panning-viewers.md) — OrbitControls drops wheel deltaX, so two-finger trackpad pan needs a handler registered before it plus touch-action none.
 - [3MF inline rendering](three-mf-inline-rendering.md) — 3MF is a ZIP of XML triangles needing no CAD kernel; its 12-value transform is row-major and silently mispacks.
 - [Workspace visibility settings](workspace-visibility-settings.md) — per-workspace role access is server-enforced from a settings row; filter navigation, never hardcode role gates again.
+- [OBJ and PLY inline rendering](obj-ply-inline-rendering.md) — three.js ships both loaders; check declared sizes first because PLYLoader trusts the header and loops on it.

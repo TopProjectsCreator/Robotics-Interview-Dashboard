@@ -79,6 +79,10 @@ async function loadStorage(t) {
     CHAT_UPLOAD_CONTENT_TYPES: module.CHAT_UPLOAD_CONTENT_TYPES,
     isAllowedChatUploadType: module.isAllowedChatUploadType,
     isThreeMfUpload: module.isThreeMfUpload,
+    isPlainMeshUpload: module.isPlainMeshUpload,
+    isObjUpload: module.isObjUpload,
+    isPlyUpload: module.isPlyUpload,
+    meshKindFor: module.meshKindFor,
   };
 }
 
@@ -97,14 +101,28 @@ test("chat uploads accept 3MF under every type a browser might report", async (t
   }
 });
 
-test("the other CAD formats keep working alongside 3MF", async (t) => {
-  const { isAllowedChatUploadType } = await loadStorage(t);
-  for (const type of ["model/gltf-binary", "model/stl", "model/step", "model/x-parasolid"]) {
+test("the other CAD formats keep working alongside 3MF, OBJ, and PLY", async (t) => {
+  const { isAllowedChatUploadType, CHAT_UPLOAD_CONTENT_TYPES } = await loadStorage(t);
+  for (const type of [
+    "model/gltf-binary",
+    "model/stl",
+    "model/obj",
+    "model/ply",
+    "application/ply",
+    "model/step",
+    "model/x-parasolid",
+  ]) {
     assert.equal(isAllowedChatUploadType(type), true, `${type} should still be allowed`);
   }
   // Unrelated formats must stay rejected.
   assert.equal(isAllowedChatUploadType("application/x-msdownload"), false);
-  assert.equal(isAllowedChatUploadType("model/obj"), false);
+  assert.equal(isAllowedChatUploadType("application/octet-stream"), false);
+  // A duplicate entry would let a later edit drift out of sync.
+  assert.equal(
+    new Set(CHAT_UPLOAD_CONTENT_TYPES).size,
+    CHAT_UPLOAD_CONTENT_TYPES.length,
+    "the allow-list should not repeat a type",
+  );
 });
 
 test("identifies the 3MF content types so they can be signature-checked", async (t) => {
@@ -118,6 +136,22 @@ test("identifies the 3MF content types so they can be signature-checked", async 
   assert.equal(isThreeMfUpload("model/gltf-binary"), false);
   assert.equal(isThreeMfUpload("model/stl"), false);
   assert.equal(isThreeMfUpload("image/png"), false);
+});
+
+test("routes each plain mesh content type to the right signature check", async (t) => {
+  const { isPlainMeshUpload, isObjUpload, isPlyUpload, meshKindFor } = await loadStorage(t);
+  assert.equal(isObjUpload("model/obj"), true);
+  assert.equal(isObjUpload("model/ply"), false);
+  assert.equal(isPlyUpload("model/ply"), true);
+  assert.equal(isPlyUpload("application/ply"), true);
+  assert.equal(meshKindFor("model/obj"), "obj");
+  assert.equal(meshKindFor("application/ply"), "ply");
+  assert.equal(isPlainMeshUpload("model/obj"), true);
+  assert.equal(isPlainMeshUpload("model/ply"), true);
+  // Other CAD types must not be caught by the plain-mesh check.
+  assert.equal(isPlainMeshUpload("model/stl"), false);
+  assert.equal(isPlainMeshUpload("model/3mf"), false);
+  assert.equal(isPlainMeshUpload("image/png"), false);
 });
 
 test("the signature the upload route enforces accepts a real 3MF and nothing else", async (t) => {

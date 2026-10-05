@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 const CAD_CONTENT_TYPES: Record<string, string> = {
   glb: "model/gltf-binary",
   stl: "model/stl",
+  obj: "model/obj",
+  ply: "model/ply",
   "3mf": "model/3mf",
   step: "model/step",
   stp: "model/step",

@@ -4,6 +4,7 @@ import { ChatParasolidViewer } from "./ChatParasolidViewer";
 import { ChatStlViewer } from "./ChatStlViewer";
 import { ChatStepViewer } from "./ChatStepViewer";
 import { CadThreeMfViewer } from "./CadThreeMfViewer";
+import { CadMeshViewer } from "./CadMeshViewer";
 
 type CadModelViewerProps = {
   /** Original file name, which selects the renderer. */
@@ -23,6 +24,9 @@ export function CadModelViewer({ name, src, contentType, height }: CadModelViewe
 
   if (format === "glb") return <ChatGlbViewer name={name} src={src} />;
   if (format === "stl") return <ChatStlViewer name={name} src={src} />;
+  if (format === "obj" || format === "ply") {
+    return <CadMeshViewer name={name} src={src} height={height} />;
+  }
   if (format === "three-mf") return <CadThreeMfViewer name={name} src={src} height={height} />;
   if (format === "parasolid") return <ChatParasolidViewer name={name} src={src} />;
   if (format === "step" || format === "iges" || format === "brep") {

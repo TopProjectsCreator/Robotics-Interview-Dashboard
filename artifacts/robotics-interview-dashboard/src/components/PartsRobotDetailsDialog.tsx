@@ -34,6 +34,8 @@ import { ChatGlbViewer } from "@/components/ChatGlbViewer";
 import { ChatParasolidViewer } from "@/components/ChatParasolidViewer";
 import { ChatStlViewer } from "@/components/ChatStlViewer";
 import { ChatStepViewer } from "@/components/ChatStepViewer";
+import { CadMeshViewer } from "@/components/CadMeshViewer";
+import { CadThreeMfViewer } from "@/components/CadThreeMfViewer";
 
 type PartsRobotDetailsDialogProps = {
   robot: PartsRobot | null;
@@ -53,7 +55,7 @@ type QuoteFormValue = {
   isStartingAt: boolean;
 };
 
-const SUPPORTED_PREVIEW_ACCEPT = ".jpg,.jpeg,.png,.webp,.gif,.glb,.stl,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
+const SUPPORTED_PREVIEW_ACCEPT = ".jpg,.jpeg,.png,.webp,.gif,.glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
@@ -78,6 +80,8 @@ function previewContentType(file: File): string | null {
   if (extension === "gif") return "image/gif";
   if (extension === "glb") return "model/gltf-binary";
   if (extension === "stl") return "model/stl";
+  if (extension === "obj") return "model/obj";
+  if (extension === "ply") return "model/ply";
   if (extension === "x_t" || extension === "x_b") return "model/x-parasolid";
   if (extension === "step" || extension === "stp") return "model/step";
   if (extension === "iges" || extension === "igs") return "model/iges";
@@ -164,6 +168,17 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
   }
   if (preview.contentType === "model/stl" || lowerName.endsWith(".stl")) {
     return <ChatStlViewer name={preview.fileName} src={src} />;
+  }
+  if (
+    preview.contentType === "model/obj" ||
+    preview.contentType === "model/ply" ||
+    lowerName.endsWith(".obj") ||
+    lowerName.endsWith(".ply")
+  ) {
+    return <CadMeshViewer name={preview.fileName} src={src} />;
+  }
+  if (preview.contentType === "model/3mf" || lowerName.endsWith(".3mf")) {
+    return <CadThreeMfViewer name={preview.fileName} src={src} />;
   }
   if (preview.contentType === "model/x-parasolid" || lowerName.endsWith(".x_t") || lowerName.endsWith(".x_b")) {
     return <ChatParasolidViewer name={preview.fileName} src={src} />;

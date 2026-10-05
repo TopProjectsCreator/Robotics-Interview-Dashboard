@@ -1,6 +1,8 @@
 export type CadRenderFormat =
   | "glb"
   | "stl"
+  | "obj"
+  | "ply"
   | "three-mf"
   | "parasolid"
   | "step"
@@ -10,6 +12,8 @@ export type CadRenderFormat =
 const EXTENSION_FORMATS: Record<string, CadRenderFormat> = {
   glb: "glb",
   stl: "stl",
+  obj: "obj",
+  ply: "ply",
   "3mf": "three-mf",
   x_t: "parasolid",
   x_b: "parasolid",
@@ -24,6 +28,9 @@ const EXTENSION_FORMATS: Record<string, CadRenderFormat> = {
 const CONTENT_TYPE_FORMATS: Record<string, CadRenderFormat> = {
   "model/gltf-binary": "glb",
   "model/stl": "stl",
+  "model/obj": "obj",
+  "model/ply": "ply",
+  "application/ply": "ply",
   "model/3mf": "three-mf",
   "application/3mf": "three-mf",
   "application/vnd.ms-package.3dmanufacturing-3dmodel+xml": "three-mf",
@@ -36,7 +43,7 @@ const CONTENT_TYPE_FORMATS: Record<string, CadRenderFormat> = {
   "model/brep": "brep",
 };
 
-export const CAD_ACCEPT = ".glb,.stl,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
+export const CAD_ACCEPT = ".glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
 
 /**
  * The file extension decides the renderer. Browsers frequently report a vague
@@ -60,6 +67,10 @@ export function cadFormatLabel(format: CadRenderFormat): string {
       return "GLB";
     case "stl":
       return "STL";
+    case "obj":
+      return "OBJ";
+    case "ply":
+      return "PLY";
     case "three-mf":
       return "3MF";
     case "parasolid":
@@ -79,6 +90,8 @@ export function cadFormatHint(format: CadRenderFormat): string {
     case "glb":
       return "Rendered directly · drag to rotate";
     case "stl":
+    case "obj":
+    case "ply":
     case "three-mf":
       return "Mesh rendered in your browser · drag to rotate";
     case "parasolid":

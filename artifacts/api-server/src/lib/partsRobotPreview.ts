@@ -1,6 +1,6 @@
 const MIB = 1024 * 1024;
 
-export type SupportedPartsPreviewKind = "image" | "glb" | "stl" | "parasolid" | "step";
+export type SupportedPartsPreviewKind = "image" | "glb" | "stl" | "obj" | "ply" | "three-mf" | "parasolid" | "step";
 
 export function partsPreviewKind(
   fileName: string,
@@ -16,6 +16,18 @@ export function partsPreviewKind(
   if (extension === "gif" && contentType === "image/gif") return "image";
   if (extension === "glb" && contentType === "model/gltf-binary") return "glb";
   if (extension === "stl" && contentType === "model/stl") return "stl";
+  if (extension === "obj" && ["model/obj", "text/plain", "application/octet-stream"].includes(contentType)) {
+    return "obj";
+  }
+  if (
+    extension === "ply" &&
+    ["model/ply", "application/ply", "application/octet-stream"].includes(contentType)
+  ) {
+    return "ply";
+  }
+  if (extension === "3mf" && ["model/3mf", "application/3mf", "application/octet-stream"].includes(contentType)) {
+    return "three-mf";
+  }
   if ((extension === "x_t" || extension === "x_b") && contentType === "model/x-parasolid") {
     return "parasolid";
   }
@@ -39,7 +51,7 @@ export function partsPreviewKind(
 export function partsPreviewMaxBytes(fileName: string, contentType: string): number | null {
   const kind = partsPreviewKind(fileName, contentType);
   if (kind === "image") return 25 * MIB;
-  if (kind === "glb" || kind === "stl") return 100 * MIB;
+  if (kind === "glb" || kind === "stl" || kind === "obj" || kind === "ply" || kind === "three-mf") return 100 * MIB;
   if (kind === "parasolid") return 200 * MIB;
   if (kind === "step") return 200 * MIB;
   return null;
@@ -73,7 +85,7 @@ export function validatePartsPreviewFile(
   }
   const maxBytes = partsPreviewMaxBytes(fileName, contentType);
   if (maxBytes === null) {
-    return "Choose a JPEG, PNG, WebP, GIF, GLB, STL, X_T, or X_B file.";
+    return "Choose a JPEG, PNG, WebP, GIF, GLB, STL, OBJ, PLY, 3MF, X_T, or X_B file.";
   }
   if (data.length === 0) return "The preview file is empty.";
   if (data.length > maxBytes) {

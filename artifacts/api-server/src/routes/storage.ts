@@ -262,6 +262,9 @@ export const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/tab-separated-values',
   'model/gltf-binary',
   'model/stl',
+  'model/obj',
+  'model/ply',
+  'application/ply',
   'model/3mf',
   'application/3mf',
   'application/vnd.ms-package.3dmanufacturing-3dmodel+xml',
@@ -294,6 +297,18 @@ async function isValidGlbFile(filePath: string, fileSize: number): Promise<boole
   } finally {
     await file.close();
   }
+}
+export function isPlainMeshUpload(contentType: string): boolean {
+  return isObjUpload(contentType) || isPlyUpload(contentType);
+}
+export function isObjUpload(contentType: string): boolean {
+  return contentType === 'model/obj' || contentType === 'text/model/obj';
+}
+export function isPlyUpload(contentType: string): boolean {
+  return contentType === 'model/ply' || contentType === 'application/ply';
+}
+export function meshKindFor(contentType: string): 'obj' | 'ply' {
+  return isObjUpload(contentType) ? 'obj' : 'ply';
 }
 export function isThreeMfUpload(contentType: string): boolean {
   return (
@@ -408,6 +423,10 @@ router.post(
       // a renamed file is rejected at upload instead of failing in the viewer.
       if (isThreeMfUpload(contentType) && !cadFileMatchesKind('three-mf', data)) {
         res.status(400).json({ error: 'This is not a valid 3MF model' });
+        return;
+      }
+      if (isPlainMeshUpload(contentType) && !cadFileMatchesKind(meshKindFor(contentType), data)) {
+        res.status(400).json({ error: `This is not a valid ${contentType.includes('obj') ? 'OBJ' : 'PLY'} model` });
         return;
       }
       if (data.length > CHUNKED_UPLOAD_THRESHOLD_BYTES) {

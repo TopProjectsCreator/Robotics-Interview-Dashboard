@@ -14,6 +14,11 @@ vi.mock("heic2any", () => ({
 vi.mock("./components/ChatStlViewer", () => ({
   ChatStlViewer: ({ name }: { name: string }) => <div data-testid="chat-stl-attachment">{name} · STL model</div>,
 }));
+vi.mock("./components/CadMeshViewer", () => ({
+  CadMeshViewer: ({ name }: { name: string }) => (
+    <div data-testid="cad-mesh-attachment">{name} · mesh preview</div>
+  ),
+}));
 vi.mock("./components/CadThreeMfViewer", () => ({
   CadThreeMfViewer: ({ name, src }: { name: string; src: string }) => (
     <figure data-testid="chat-3mf-attachment">
@@ -100,6 +105,38 @@ function threeMfFixture(): Blob {
   return new Blob([bytes], { type: "model/3mf" });
 }
 
+function objFixture(): Blob {
+  return new Blob(
+    [
+      "# unit square\n",
+      "v 0 0 0\n",
+      "v 1 0 0\n",
+      "v 1 1 0\n",
+      "v 0 1 0\n",
+      "vn 0 0 1\n",
+      "f 1//1 2//1 3//1 4//1\n",
+    ],
+    { type: "model/obj" },
+  );
+}
+
+function plyFixture(): Blob {
+  return new Blob(
+    [
+      "ply\n",
+      "format ascii\n",
+      "element vertex 3\n",
+      "property float x\nproperty float y\nproperty float z\n",
+      "element face 1\n",
+      "property list uchar int vertex_indices\n",
+      "end_header\n",
+      "0 0 0\n1 0 0\n0 1 0\n",
+      "3 0 1 2\n",
+    ],
+    { type: "model/ply" },
+  );
+}
+
 function heicFixture(): Blob {
   // ISO Base Media File Format `ftyp` header with HEIC-compatible brands.
   const bytes = Buffer.alloc(20);
@@ -128,6 +165,24 @@ const fixtures: Fixture[] = [
     assertPreview: container => {
       expect(container.querySelector('[data-testid="chat-stl-attachment"]')).toBeInTheDocument();
       expect(container).toHaveTextContent("STL model");
+    },
+  },
+  {
+    name: "frame.obj",
+    contentType: "model/obj",
+    body: objFixture(),
+    assertPreview: container => {
+      expect(container.querySelector('[data-testid="cad-mesh-attachment"]')).toBeInTheDocument();
+      expect(container).toHaveTextContent("frame.obj");
+    },
+  },
+  {
+    name: "scan.ply",
+    contentType: "model/ply",
+    body: plyFixture(),
+    assertPreview: container => {
+      expect(container.querySelector('[data-testid="cad-mesh-attachment"]')).toBeInTheDocument();
+      expect(container).toHaveTextContent("scan.ply");
     },
   },
   {
