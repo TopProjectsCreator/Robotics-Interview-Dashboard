@@ -1,4 +1,5 @@
 import { shouldUseChunkedUpload, uploadChunked } from "@/lib/chunkedUpload";
+import { confirmAction } from "@/lib/dialogs";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -544,7 +545,12 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   };
 
   const removePreview = async () => {
-    if (!window.confirm(`Remove the preview from "${robot.name}"? The robot and its part allocations will remain.`)) {
+    if (!(await confirmAction({
+      title: `Remove the preview from "${robot.name}"?`,
+      detail: "The robot and its part allocations will remain.",
+      danger: true,
+      confirmLabel: "Remove",
+    }))) {
       return;
     }
 

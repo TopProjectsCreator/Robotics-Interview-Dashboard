@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InterviewChatPanel } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { SettingsProvider } from "./workspaceSettings";
+import { DialogHost } from "@/lib/dialogs";
 
 vi.mock("@google/model-viewer", () => ({}));
 
@@ -210,7 +211,6 @@ describe("chat attachment round trip", () => {
       return jsonResponse({ items: [], interviewerLabels: [] });
     });
     vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -220,12 +220,16 @@ describe("chat attachment round trip", () => {
               <InterviewChatPanel applicantIds={[]} />
             </WouterRouter>
           </SettingsProvider>
+          <DialogHost />
         </TooltipProvider>
       </QueryClientProvider>,
     );
 
     await screen.findByTestId("button-delete-chat-message-message-to-delete");
     fireEvent.click(screen.getByTestId("button-delete-chat-message-message-to-delete"));
+    // The in-app dialog replaces window.confirm.
+    await screen.findByTestId("app-dialog");
+    fireEvent.click(screen.getByTestId("app-dialog-confirm"));
 
     await waitFor(() => expect(order).toEqual(["message", "storage"]));
     const storageRequest = fetchMock.mock.calls.find(([input, init]) =>

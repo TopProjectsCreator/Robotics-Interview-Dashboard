@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CAD_ACCEPT, cadFormatLabel, cadRenderFormat } from "@/lib/cadFormats";
 import { useCadModelUpload, type CadDropTarget } from "@/lib/useCadModelUpload";
+import { askValue, confirmAction } from "@/lib/dialogs";
 
 /** Marks an internal drag so a drop can tell a model from an OS file. */
 const MODEL_DRAG_TYPE = "application/x-cad-model-id";
@@ -127,25 +128,6 @@ export function CadWorkspacePage() {
     return null;
   }, [location, folders]);
 
-  const visibleModels = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return models
-      .filter((model) => {
-        if (location.kind === "unfiled") return model.folderId === null && model.botId === null;
-        if (location.kind === "bot") {
-          return model.folderId === null && model.botId === location.botId;
-        }
-        return model.folderId === location.folderId;
-      })
-      .filter((model) =>
-        needle
-          ? model.name.toLowerCase().includes(needle) ||
-            model.fileName.toLowerCase().includes(needle)
-          : true,
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [models, location, search]);
-
   const childrenOf = useCallback(
     (botId: string, parentId: string | null) =>
       folders
@@ -155,6 +137,73 @@ export function CadWorkspacePage() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [folders],
   );
+
+  /**
+   * Every folder id in a folder's subtree, including itself. Parent rows and
+   * the grid both count/list nested models, so a model added to a subfolder
+   * still shows up when its parent (or bot) is selected instead of reading 0.
+   */
+  const descendantIdsByFolder = useMemo(() => {
+    const byParent = new Map<string, CadFolder[]>();
+    for (const folder of folders) {
+      const key = `${folder.botId}:${folder.parentId ?? "__root__"}`;
+      const list = byParent.get(key);
+      if (list) list.push(folder);
+      else byParent.set(key, [folder]);
+    }
+    const result = new Map<string, Set<string>>();
+    for (const folder of folders) {
+      const collected = new Set<string>([folder.id]);
+      const queue = [folder.id];
+      for (let index = 0; index < queue.length && collected.size < 1000; index += 1) {
+        const currentId = queue[index];
+        const kids = byParent.get(`${folder.botId}:${currentId}`) ?? [];
+        for (const kid of kids) {
+          if (!collected.has(kid.id)) {
+            collected.add(kid.id);
+            queue.push(kid.id);
+          }
+        }
+      }
+      result.set(folder.id, collected);
+    }
+    return result;
+  }, [folders]);
+
+  const folderById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders],
+  );
+
+  const countInFolder = useCallback(
+    (folderId: string): number => {
+      const ids = descendantIdsByFolder.get(folderId);
+      if (!ids) return models.filter((model) => model.folderId === folderId).length;
+      return models.filter((model) => model.folderId != null && ids.has(model.folderId)).length;
+    },
+    [models, descendantIdsByFolder],
+  );
+
+  const visibleModels = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return models
+      .filter((model) => {
+        if (location.kind === "unfiled") return model.folderId === null && model.botId === null;
+        if (location.kind === "bot") {
+          return model.botId === location.botId;
+        }
+        const ids = descendantIdsByFolder.get(location.folderId);
+        if (!ids) return model.folderId === location.folderId;
+        return model.folderId != null && ids.has(model.folderId);
+      })
+      .filter((model) =>
+        needle
+          ? model.name.toLowerCase().includes(needle) ||
+            model.fileName.toLowerCase().includes(needle)
+          : true,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [models, location, search, descendantIdsByFolder]);
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>, successMessage?: string) => {
@@ -243,7 +292,7 @@ export function CadWorkspacePage() {
     const key = `folder:${folder.id}`;
     const isCollapsed = collapsed[key] ?? false;
     const children = childrenOf(botId, folder.id);
-    const count = models.filter((model) => model.folderId === folder.id).length;
+    const count = countInFolder(folder.id);
     const selected = location.kind === "folder" && location.folderId === folder.id;
     const active = dropTarget === key;
     return (
@@ -290,11 +339,11 @@ export function CadWorkspacePage() {
             type="button"
             title="New subfolder"
             aria-label={`New subfolder in ${folder.name}`}
-            onClick={() => {
-              const name = window.prompt(`New folder inside ${folder.name}`);
-              if (name?.trim()) {
+            onClick={async () => {
+              const name = await askValue({ title: `New folder inside ${folder.name}`, label: "Folder name", placeholder: "Folder name" });
+              if (name) {
                 void runAction(
-                  () => createCadFolder({ botId, parentId: folder.id, name: name.trim() }),
+                  () => createCadFolder({ botId, parentId: folder.id, name }),
                   "Folder created.",
                 );
               }
@@ -307,11 +356,11 @@ export function CadWorkspacePage() {
             type="button"
             title="Rename folder"
             aria-label={`Rename ${folder.name}`}
-            onClick={() => {
-              const name = window.prompt("Folder name", folder.name);
-              if (name?.trim() && name.trim() !== folder.name) {
+            onClick={async () => {
+              const name = await askValue({ title: "Rename folder", label: "Folder name", initial: folder.name, confirmLabel: "Rename" });
+              if (name && name !== folder.name) {
                 void runAction(
-                  () => updateCadFolder(folder.id, { name: name.trim() }),
+                  () => updateCadFolder(folder.id, { name }),
                   "Folder renamed.",
                 );
               }
@@ -324,8 +373,13 @@ export function CadWorkspacePage() {
             type="button"
             title="Delete folder"
             aria-label={`Delete ${folder.name}`}
-            onClick={() => {
-              if (!window.confirm(`Delete "${folder.name}" and its subfolders? Models inside move to Unfiled.`)) {
+            onClick={async () => {
+              if (!(await confirmAction({
+                title: `Delete "${folder.name}"?`,
+                detail: "Its subfolders go too. Models inside move to Unfiled.",
+                danger: true,
+                confirmLabel: "Delete",
+              }))) {
                 return;
               }
               void runAction(() => deleteCadFolder(folder.id), "Folder deleted.");
@@ -537,9 +591,7 @@ export function CadWorkspacePage() {
               const isCollapsed = collapsed[key] ?? false;
               const selected = location.kind === "bot" && location.botId === bot.id;
               const topFolders = childrenOf(bot.id, null);
-              const rootCount = models.filter(
-                (model) => model.botId === bot.id && model.folderId === null,
-              ).length;
+              const rootCount = models.filter((model) => model.botId === bot.id).length;
               return (
                 <div
                   key={bot.id}
@@ -578,11 +630,11 @@ export function CadWorkspacePage() {
                       type="button"
                       title="New folder"
                       aria-label={`New folder in ${bot.name}`}
-                      onClick={() => {
-                        const name = window.prompt(`New folder inside ${bot.name}`);
-                        if (name?.trim()) {
+                      onClick={async () => {
+                        const name = await askValue({ title: `New folder inside ${bot.name}`, label: "Folder name", placeholder: "Folder name" });
+                        if (name) {
                           void runAction(
-                            () => createCadFolder({ botId: bot.id, name: name.trim() }),
+                            () => createCadFolder({ botId: bot.id, name }),
                             "Folder created.",
                           );
                         }
@@ -595,11 +647,11 @@ export function CadWorkspacePage() {
                       type="button"
                       title="Rename bot"
                       aria-label={`Rename ${bot.name}`}
-                      onClick={() => {
-                        const name = window.prompt("Bot name", bot.name);
-                        if (name?.trim() && name.trim() !== bot.name) {
+                      onClick={async () => {
+                        const name = await askValue({ title: "Rename bot", label: "Bot name", initial: bot.name, confirmLabel: "Rename" });
+                        if (name && name !== bot.name) {
                           void runAction(
-                            () => updateCadBot(bot.id, { name: name.trim() }),
+                            () => updateCadBot(bot.id, { name }),
                             "Bot renamed.",
                           );
                         }
@@ -612,11 +664,14 @@ export function CadWorkspacePage() {
                       type="button"
                       title="Delete bot"
                       aria-label={`Delete ${bot.name}`}
-                      onClick={() => {
+                      onClick={async () => {
                         if (
-                          !window.confirm(
-                            `Delete "${bot.name}"? Its folders go too, and every model inside is deleted with its file.`,
-                          )
+                          !(await confirmAction({
+                            title: `Delete "${bot.name}"?`,
+                            detail: "Its folders go too, and every model inside is deleted with its file.",
+                            danger: true,
+                            confirmLabel: "Delete",
+                          }))
                         ) {
                           return;
                         }
@@ -684,6 +739,11 @@ export function CadWorkspacePage() {
             <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {visibleModels.map((model) => {
                 const format = cadRenderFormat(model.fileName, model.contentType);
+                const modelFolder = model.folderId ? folderById.get(model.folderId) : null;
+                const showFolderHint =
+                  (location.kind === "bot" || location.kind === "folder") &&
+                  modelFolder &&
+                  (location.kind === "bot" || model.folderId !== location.folderId);
                 return (
                   <li key={model.id}>
                     <div
@@ -711,6 +771,7 @@ export function CadWorkspacePage() {
                         </span>
                         <span className="truncate text-[11px] text-muted-foreground">
                           {model.fileName} · {formatBytes(model.sizeBytes)}
+                          {showFolderHint ? ` · in ${modelFolder.name}` : ""}
                         </span>
                       </button>
                       <div className="flex items-center justify-between gap-2">
@@ -730,8 +791,8 @@ export function CadWorkspacePage() {
                           </a>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!window.confirm(`Delete "${model.name}" and its file?`)) return;
+                            onClick={async () => {
+                              if (!(await confirmAction({ title: `Delete "${model.name}" and its file?`, danger: true, confirmLabel: "Delete" }))) return;
                               void runAction(
                                 () => deleteCadModel(model.id),
                                 "Model deleted.",

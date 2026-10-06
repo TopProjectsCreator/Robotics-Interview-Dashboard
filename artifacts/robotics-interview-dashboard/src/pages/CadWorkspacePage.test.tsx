@@ -164,14 +164,23 @@ describe("CAD workspace tree", () => {
       ],
     });
 
-    // Intake holds the bracket but not the wheel, which is one level deeper.
+    // Intake includes nested models, so the wheel in Chassis shows up here too.
     fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
     expect(screen.getByTestId("cad-model-model-1")).toBeInTheDocument();
-    expect(screen.queryByTestId("cad-model-model-2")).not.toBeInTheDocument();
+    expect(screen.getByTestId("cad-model-model-2")).toBeInTheDocument();
+    // Parent badges count nested models, so Intake reads 2 and not 0.
+    expect(screen.getByTestId("cad-folder-folder-intake")).toHaveTextContent("2");
+    expect(screen.getByTestId("cad-bot-bot-1")).toHaveTextContent("2");
 
     fireEvent.click(screen.getByTestId("cad-folder-folder-chassis"));
     expect(screen.getByTestId("cad-model-model-2")).toBeInTheDocument();
     expect(screen.queryByTestId("cad-model-model-1")).not.toBeInTheDocument();
+
+    // The bot view includes every model filed under it, at any depth.
+    fireEvent.click(screen.getByTestId("cad-bot-bot-1"));
+    expect(screen.getByTestId("cad-model-model-1")).toBeInTheDocument();
+    expect(screen.getByTestId("cad-model-model-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("cad-model-model-3")).not.toBeInTheDocument();
 
     // Unfiled holds only the model with no bot or folder.
     fireEvent.click(screen.getByTestId("cad-location-unfiled"));

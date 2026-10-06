@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PartsRobotDetailsDialog } from "./PartsRobotDetailsDialog";
+import { DialogHost } from "@/lib/dialogs";
 
 const mocks = vi.hoisted(() => ({
   getDetails: vi.fn(),
@@ -94,6 +95,7 @@ function renderDialog(onClose = vi.fn(), onPreviewReplaced = vi.fn()) {
           onClose={onClose}
           onPreviewReplaced={onPreviewReplaced}
         />
+        <DialogHost />
       </QueryClientProvider>,
     ),
     onClose,
@@ -191,15 +193,15 @@ describe("PartsRobotDetailsDialog", () => {
   });
 
   it("asks before removing a preview and refreshes robot details after success", async () => {
-    const confirm = vi.fn().mockReturnValue(true);
-    vi.stubGlobal("confirm", confirm);
     const { onPreviewReplaced } = renderDialog();
 
     fireEvent.click(screen.getByTestId("button-remove-robot-preview"));
 
-    expect(confirm).toHaveBeenCalledWith(
-      'Remove the preview from "Scout"? The robot and its part allocations will remain.',
-    );
+    // In-app confirmation dialog replaces window.confirm.
+    const dialog = await screen.findByTestId("app-dialog");
+    expect(dialog).toHaveTextContent('Remove the preview from "Scout"?');
+    expect(dialog).toHaveTextContent("The robot and its part allocations will remain.");
+    fireEvent.click(screen.getByTestId("app-dialog-confirm"));
     await waitFor(() => expect(mocks.deletePreview).toHaveBeenCalledWith({ robotId: "robot-1" }));
     await waitFor(() => expect(onPreviewReplaced).toHaveBeenCalled());
     expect(screen.getByTestId("status-robot-preview")).toHaveTextContent("Preview removed.");
@@ -207,13 +209,14 @@ describe("PartsRobotDetailsDialog", () => {
     vi.unstubAllGlobals();
   });
 
-  it("does not remove a preview when the confirmation is cancelled", () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
+  it("does not remove a preview when the confirmation is cancelled", async () => {
     renderDialog();
 
     fireEvent.click(screen.getByTestId("button-remove-robot-preview"));
+    await screen.findByTestId("app-dialog");
+    fireEvent.click(screen.getByTestId("app-dialog-cancel"));
 
-    expect(mocks.deletePreview).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+    await waitFor(() => expect(mocks.deletePreview).not.toHaveBeenCalled());
+    expect(screen.queryByTestId("app-dialog")).not.toBeInTheDocument();
   });
 });

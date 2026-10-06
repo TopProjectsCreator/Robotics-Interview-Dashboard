@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { confirmAction } from "@/lib/dialogs";
 import { Download, Folder, Trash2, X } from "lucide-react";
 import {
   deleteCadModel,
@@ -207,8 +208,8 @@ export function CadModelPreviewDialog({
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-5">
           <button
             type="button"
-            onClick={() => {
-              if (!window.confirm(`Delete "${model.name}" and its file?`)) return;
+            onClick={async () => {
+              if (!(await confirmAction({ title: `Delete "${model.name}" and its file?`, danger: true, confirmLabel: "Delete" }))) return;
               void run(() => deleteCadModel(model.id)).then(onChanged);
             }}
             disabled={busy}

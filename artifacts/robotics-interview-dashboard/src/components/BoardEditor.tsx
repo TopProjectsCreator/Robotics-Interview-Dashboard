@@ -1,5 +1,6 @@
 import { useMemo, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { confirmAction } from "@/lib/dialogs";
 import {
   AlertCircle,
   CalendarDays,
@@ -206,7 +207,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
 
   const openDetail = (card: BoardCard) => beginEdit(card);
   const deleteCard = async () => {
-    if (!activeCard || !window.confirm(`Delete "${activeCard.title}"?`)) return;
+    if (!activeCard || !(await confirmAction({ title: `Delete "${activeCard.title}"?`, danger: true, confirmLabel: "Delete" }))) return;
     const result = await apply({ operation: "delete_card", cardId: activeCard.id });
     if (result) setActiveCard(null);
   };
@@ -250,12 +251,12 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
     if (result) { setModal(null); setColumnTitle(""); }
   };
   const deleteColumn = async (column: BoardColumn) => {
-    if (!window.confirm(`Delete "${column.title}"? Its cards will be moved to another column.`)) return;
+    if (!(await confirmAction({ title: `Delete "${column.title}"?`, detail: "Its cards will be moved to another column.", danger: true, confirmLabel: "Delete" }))) return;
     await apply({ operation: "delete_column", columnId: column.id });
   };
   const bulkAction = async (operation: "bulk_move_cards" | "bulk_delete_cards", targetColumnId?: string) => {
     if (!selected.length) return;
-    if (operation === "bulk_delete_cards" && !window.confirm(`Delete ${selected.length} selected cards?`)) return;
+    if (operation === "bulk_delete_cards" && !(await confirmAction({ title: `Delete ${selected.length} selected cards?`, danger: true, confirmLabel: "Delete all" }))) return;
     const result = await apply(operation === "bulk_move_cards" ? { operation, cardIds: selected, targetColumnId } : { operation, cardIds: selected });
     if (result) setSelected([]);
   };
