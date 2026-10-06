@@ -1,23 +1,28 @@
 @import 'tailwindcss';
 
-/* REPLACE THESE -- define your own palette and fonts for each video */
 :root {
-  --color-primary: #000000;
-  --color-secondary: #6b7280;
-  --color-accent: #3b82f6;
+  --color-primary: #183a4b;
+  --color-secondary: #52666e;
+  --color-accent: #f2c14e;
 
-  --color-bg-light: #ffffff;
-  --color-bg-dark: #0f172a;
-  --color-bg-muted: #f8fafc;
+  --color-bg-light: #f3f6f5;
+  --color-bg-dark: #0b1c27;
+  --color-bg-muted: #eaf3f5;
 
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
+  --color-text-primary: #182232;
+  --color-text-secondary: #63747c;
+  --color-text-muted: #809196;
   --color-text-inverse: #ffffff;
 
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
+  --color-success: #168d76;
+  --color-warning: #f2c14e;
+  --color-error: #b34a42;
+  --tutorial-teal: #16869a;
+  --tutorial-teal-light: #a1e4da;
+  --tutorial-navy: #0b1c27;
+  --tutorial-paper: #f3f6f5;
+  --tutorial-yellow: #f2c14e;
+  --tutorial-ink: #182232;
 
   --font-display: 'Space Grotesk', sans-serif;
   --font-body: 'DM Sans', sans-serif;
@@ -44,9 +49,20 @@
 }
 
 body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--tutorial-navy);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .video-media-frame {

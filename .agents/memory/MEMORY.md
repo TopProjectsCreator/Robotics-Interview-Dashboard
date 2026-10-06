@@ -26,3 +26,4 @@
 - [Wouter query routing](wouter-query-routing.md) — use Wouter's search hook for query-driven state; `useLocation` exposes only the pathname.
 - [Fragment navigation focus](fragment-navigation-focus.md) — make hash targets focusable so compact-menu link activation leaves focus on destination content across engines.
 - [Playwright WebKit on Nix](playwright-webkit-nix.md) — the bundled WPE launcher can hide Nix shared libraries; use a direct wrapper for local Safari-engine tests.
+- [Video preview autoplay](video-preview-autoplay.md) — iframe autoplay permissions vary; show a recoverable mute state and keep export audio independent.
