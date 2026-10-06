@@ -246,17 +246,26 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (verify rename): promote the rename probe so the endpoint can be
-  // exercised as a coordinator. Removed once verified.
+  // TEMP (verify rename): promote the rename probe and drop the earlier
+  // unusable one. Removed once the rename endpoint is verified.
   try {
     await pool.query(
       `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'renameprobe'`,
+        WHERE normalized_name = 'renametry'`,
     );
+    await pool.query(`DELETE FROM interview_chat_messages WHERE author = 'RenameProbe'`);
+    await pool.query(`DELETE FROM interviewer_accounts WHERE normalized_name = 'renameprobe'`);
+    await pool.query(
+      `UPDATE interview_queue SET interviewer_labels = (
+         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
+           FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
+          WHERE lower(elem) NOT IN ('renameprobe', 'renametry')
+       ) WHERE id = 1`,
+    );
+    logger.info("temp rename verification state prepared");
   } catch (err) {
     logger.error({ err }, "temp promote failed");
   }
-
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
