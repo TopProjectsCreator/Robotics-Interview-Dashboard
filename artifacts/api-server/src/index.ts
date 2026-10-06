@@ -246,21 +246,16 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (verify rename): promote the rename probe and drop the earlier
-  // unusable one. Removed once the rename endpoint is verified.
+  // TEMP (verify rename): give the rename probe a known password and admin
+  // rights so the endpoint can be exercised. Removed once verified.
   try {
     await pool.query(
-      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+      `UPDATE interviewer_accounts
+          SET role = 'coordinator',
+              password_hash = $1,
+              updated_at = now()
         WHERE normalized_name = 'renametry'`,
-    );
-    await pool.query(`DELETE FROM interview_chat_messages WHERE author = 'RenameProbe'`);
-    await pool.query(`DELETE FROM interviewer_accounts WHERE normalized_name = 'renameprobe'`);
-    await pool.query(
-      `UPDATE interview_queue SET interviewer_labels = (
-         SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
-           FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-          WHERE lower(elem) NOT IN ('renameprobe', 'renametry')
-       ) WHERE id = 1`,
+      ['a0dc80e2c66d0e8ad674ccf8ca9f7f37:3b2eff23c5376ebd38c1230e27cb61bcbf0e2d9c4d4691d3fec29aac72afeeb9486fc396dcefa916263dcc33aab9f003094ab4339ec36c204c7601c86a9c02f6'],
     );
     logger.info("temp rename verification state prepared");
   } catch (err) {
