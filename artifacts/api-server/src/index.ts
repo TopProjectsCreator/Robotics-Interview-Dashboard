@@ -13,51 +13,54 @@ initRealtime();
 // One-time removal of test accounts created during development. Best
 // effort and non-fatal; safe to keep running (no-op once they are gone).
 async function removeTestAccounts(): Promise<void> {
-  // Development/verification accounts, matched by name rather than id so a
-  // stray account can never survive by having its id missed here. Everything
-  // else (real coordinators, interviewers and treasurers) is left untouched.
+  // Development/verification accounts, matched by explicit name AND by
+  // pattern so a probe created and forgotten during testing can never
+  // survive a deploy. The same predicate is applied to accounts, their chat
+  // history and the interviewer labels — stripping the labels matters,
+  // otherwise a deleted account is re-created (passwordless) from the
+  // stale label on the next boot.
   const TEST_NAMES = [
     'TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck', 'PartsCheck',
     'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix',
     'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel',
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
-    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck', 'BotProbe', 'MonitorCheck',
-    'CleanupBot', 'CleanupBot2', 'AdminCleaner', 'RealAdmin', 'ProbeBot',
+    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
+    'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
+    'Label Prop Test', 'CtxCheck',
     'test', 'test2', 'test3',
   ];
+  // test-style names anywhere: check / probe / verify / temp / test / bot
+  const TEST_NAME_PATTERNS = ['%check%', '%probe%', '%verify%', '%temp%', '%test%', '%bot%'];
   try {
-    const params = TEST_NAMES.map((name) => name.toLowerCase());
-
+    const params = [TEST_NAMES.map((name) => name.toLowerCase()), TEST_NAME_PATTERNS];
     await pool.query(
-      `DELETE FROM interview_chat_messages
-        WHERE lower(author) = ANY($1::text[])`,
-      [params],
+      `delete from interview_chat_messages
+        where lower(author) = any($1::text[]) or lower(author) like any($2::text[])`,
+      params,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts
-        WHERE lower(normalized_name) = ANY($1::text[])
-           OR lower(normalized_name) LIKE '%bot'`,
-      [params],
+      `delete from interviewer_accounts
+        where lower(normalized_name) = any($1::text[]) or lower(normalized_name) like any($2::text[])`,
+      params,
     );
     await pool.query(
-      `DELETE FROM parts_robots
-        WHERE lower(name) IN ('previewverify', 'verifybot', 'verifybotrenamed', 'previewcheck', 'previewcheck2')`,
+      `delete from parts_robots where lower(name) in ('previewverify', 'verifybot', 'verifybotrenamed', 'previewcheck', 'previewcheck2')`,
     );
     await pool.query(
-      `UPDATE interview_queue
-          SET interviewer_labels = (
-            SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
-              FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-             WHERE lower(elem) <> ALL($1::text[])
-          )
-        WHERE id = 1`,
-      [params],
+      `update interview_queue set interviewer_labels = (
+         select coalesce(jsonb_agg(elem), '[]'::jsonb)::text
+           from jsonb_array_elements_text(interviewer_labels::jsonb) as elem
+          where not (lower(elem) = any($1::text[]) or lower(elem) like any($2::text[]))
+       ) where id = 1`,
+      params,
     );
-    logger.info({ removed: TEST_NAMES.length }, "Test accounts cleanup done");
+    logger.info("Test accounts cleanup done");
   } catch (err) {
     logger.error({ err }, "Test accounts cleanup failed (non-fatal)");
   }
 }
+
+
 
 
 // Self-healing schema: additive columns the code depends on are created at
@@ -246,21 +249,6 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
-  // TEMP (verify rename): give the rename probe a known password and admin
-  // rights so the endpoint can be exercised. Removed once verified.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts
-          SET role = 'coordinator',
-              password_hash = $1,
-              updated_at = now()
-        WHERE normalized_name = 'renametry'`,
-      ['a0dc80e2c66d0e8ad674ccf8ca9f7f37:3b2eff23c5376ebd38c1230e27cb61bcbf0e2d9c4d4691d3fec29aac72afeeb9486fc396dcefa916263dcc33aab9f003094ab4339ec36c204c7601c86a9c02f6'],
-    );
-    logger.info("temp rename verification state prepared");
-  } catch (err) {
-    logger.error({ err }, "temp promote failed");
-  }
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');

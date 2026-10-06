@@ -60,3 +60,5 @@ scripts/install-opencode-wrapper.sh
 
 Just all ofopencoode
 .opencode/
+.dev-secrets/
+
