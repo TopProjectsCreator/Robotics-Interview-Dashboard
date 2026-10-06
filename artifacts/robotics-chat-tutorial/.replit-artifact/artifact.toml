@@ -1,0 +1,29 @@
+kind = "video"
+videoAspectRatio = "16:9"
+previewPath = "/robotics-chat-tutorial/"
+title = "Robotics Chat Tutorial"
+description = "A concise animated guide that teaches robotics team members how to sign in and use team chat, direct messages, polls, uploads, voice tools, and shared workspace items."
+version = "1.0.0"
+id = "artifacts/robotics-chat-tutorial"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/robotics-chat-tutorial/" ]
+localPort = 20136
+
+[services.development]
+run = "pnpm --filter @workspace/robotics-chat-tutorial run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/robotics-chat-tutorial", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/robotics-chat-tutorial/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20136"
+BASE_PATH = "/robotics-chat-tutorial/"
