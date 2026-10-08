@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -54,7 +54,7 @@ import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
 import { confirmAction, DialogHost, notify } from "./lib/dialogs";
-import { browserSupportsPasskeys, loginWithPasskeyFlow } from "./lib/passkeyClient";
+import { browserSupportsPasskeys, loginWithPasskeyFlow, registerPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -411,6 +411,42 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       onError: () => { setPasswordError("Could not remove that account. Try again."); },
     });
   };
+  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const [passkeyLabel, setPasskeyLabel] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyNotice, setPasskeyNotice] = useState("");
+  const [passkeyError, setPasskeyError] = useState("");
+  const passkeyList = useListPasskeys({ query: { queryKey: getListPasskeysQueryKey() } });
+  const removePasskey = useDeletePasskey();
+  const addPasskey = async () => {
+    setPasskeyNotice("");
+    setPasskeyError("");
+    setPasskeyBusy(true);
+    try {
+      const label = await registerPasskeyFlow(passkeyLabel);
+      setPasskeyLabel("");
+      setPasskeyNotice(`${label} added — you can use it to sign in.`);
+      qc.invalidateQueries({ queryKey: getListPasskeysQueryKey() });
+      qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Passkey registration failed.";
+      setPasskeyError(`${message} — make sure this device has a screen lock (PIN, fingerprint, or face).`);
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+  const forgetPasskey = (credentialId: string) => {
+    setPasskeyNotice("");
+    setPasskeyError("");
+    removePasskey.mutate({ credentialId }, {
+      onSuccess: () => {
+        setPasskeyNotice("Passkey removed. Your password still works.");
+        qc.invalidateQueries({ queryKey: getListPasskeysQueryKey() });
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      },
+      onError: () => setPasskeyError("Could not remove that passkey. Try again."),
+    });
+  };
   const enableNotifications = async () => {
     try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ }
     setNotifyState(browserNotifyPermission());
@@ -611,6 +647,28 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </span>
           )}
         </div>
+      </div>
+      <div className={divider}><p className={sectionLabel}>Passkeys</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Sign in with your device (fingerprint, face, or PIN) instead of typing a password. Your password keeps working either way.</p>
+        {!passkeysAvailable && <p className="mt-3 rounded-lg border border-[#e0b8b4] bg-[#fff7f6] px-3 py-2 text-xs text-[#a34d46] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087]">This browser does not support passkeys. Use Chrome, Edge, Firefox 110+, or Safari 16+.</p>}
+        {passkeysAvailable && <div className="mt-3 space-y-2">
+          {passkeyList.isLoading && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading passkeys…</p>}
+          {(passkeyList.data?.items ?? []).map(credential => (
+            <div key={credential.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-3 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{credential.label}</p>
+                <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Added {new Date(credential.createdAt).toLocaleDateString()}{credential.lastUsedAt ? ` · last used ${new Date(credential.lastUsedAt).toLocaleDateString()}` : " · never used"}</p>
+              </div>
+              <button type="button" disabled={removePasskey.isPending} onClick={() => forgetPasskey(credential.id)} data-testid={`button-remove-passkey-${credential.id}`} className={dangerButton}>Remove</button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <input value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} placeholder="Label (optional, e.g. MacBook)" aria-label="Passkey label" data-testid="input-passkey-label" className={`${field} h-9 min-w-[160px] flex-1 text-xs`} />
+            <button type="button" disabled={passkeyBusy} onClick={() => void addPasskey()} data-testid="button-add-passkey" className="rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">{passkeyBusy ? "Waiting for device…" : "Add passkey"}</button>
+          </div>
+          {passkeyNotice && <p className="text-[11px] font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="passkey-success">{passkeyNotice}</p>}
+          {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
+        </div>}
       </div>
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
