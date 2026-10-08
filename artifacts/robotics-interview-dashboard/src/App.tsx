@@ -54,11 +54,13 @@ import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
 import { confirmAction, DialogHost, notify } from "./lib/dialogs";
+import { browserSupportsPasskeys, loginWithPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { CadWorkspacePage } from "@/pages/CadWorkspacePage";
+import { CodeWorkspacePage } from "@/pages/CodeWorkspacePage";
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -1878,7 +1880,8 @@ function Login() {
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
   const selected = teamAccounts.find(item => item.id === selectedId);
-  const busy = verifyEventPasscode.isPending || login.isPending || setup.isPending || create.isPending;
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const busy = verifyEventPasscode.isPending || login.isPending || setup.isPending || create.isPending || passkeyBusy;
   const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
 
   useEffect(() => {
@@ -1976,6 +1979,24 @@ function Login() {
         },
       },
     );
+  };
+
+  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const signInWithPasskey = async () => {
+    if (!selected || !eventPassword.trim()) {
+      setError("Enter the team access code first.");
+      return;
+    }
+    setError("");
+    setPasskeyBusy(true);
+    try {
+      finishLogin(await loginWithPasskeyFlow(eventPassword.trim(), selected.id));
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Passkey was rejected.";
+      setError(`${message} — use the password instead.`);
+    } finally {
+      setPasskeyBusy(false);
+    }
   };
 
   const submitPassword = (event: React.FormEvent) => {
@@ -2200,6 +2221,13 @@ function Login() {
                 </label>
                 {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
                 <button disabled={busy || !personalPassword} data-testid="button-personal-password" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Signing in…" : selected?.hasPassword ? <>Continue to workspace <ArrowRight size={17} /></> : <>Create password and continue <ArrowRight size={17} /></>}</button>
+                {selected?.hasPasskey && passkeysAvailable && (
+                  <div className="space-y-3 border-t border-[#d7e0e0] pt-4 dark:border-[#314955]">
+                    <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Faster — use a passkey</p>
+                    <button type="button" onClick={() => void signInWithPasskey()} disabled={busy} data-testid="button-passkey-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-[#cbd7da] bg-white font-semibold text-[#183a4b] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:hover:border-[#16869a]">{passkeyBusy ? "Waiting for passkey…" : <>Sign in with passkey <ArrowRight size={17} /></>}</button>
+                  <p className="text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Your device unlocks it (fingerprint, face, or PIN). The password still works whenever you prefer it.</p>
+                  </div>
+                )}
               </form>
             )}
 
@@ -2327,12 +2355,13 @@ function Shell({ children }: { children: ReactNode }) {
     (areaCanSee("chat") && (shellPath === "/chat" || shellPath.startsWith("/chat/") || shellPath === "/assistant" || shellPath.startsWith("/assistant/") || shellPath.startsWith("/spreadsheets/"))) ||
     (areaCanSee("interview") && shellPath === "/applicants") ||
     (areaCanSee("parts") && (shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant))) ||
-    (areaCanSee("cad") && (shellPath === "/cad" || shellPath.startsWith("/cad/")));
+    (areaCanSee("cad") && (shellPath === "/cad" || shellPath.startsWith("/cad/"))) ||
+    (areaCanSee("code") && (shellPath === "/code" || shellPath.startsWith("/code/")));
   const restrictedBlocked = isSignedIn && !restrictedAllowed;
   // Send someone who cannot open this workspace to the first one they can, so
   // hiding a workspace also stops it being reachable by URL. The workspace
   // chooser is coordinator-only, as it has always been.
-  const homeWorkspace = (["chat", "parts", "cad", "interview"] as const).find((key) =>
+  const homeWorkspace = (["chat", "parts", "cad", "code", "interview"] as const).find((key) =>
     areaCanSee(key),
   );
   const blockedFromCurrent =
@@ -2354,6 +2383,7 @@ function Shell({ children }: { children: ReactNode }) {
     assistant: Bot,
     parts: Box,
     cad: Boxes,
+    code: SquareTerminal,
   };
   const nav = [
     ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
@@ -2607,7 +2637,7 @@ function WorkspaceOverview() {
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            04 spaces
+            05 spaces
           </span>
         </header>
 
@@ -2779,6 +2809,47 @@ function WorkspaceOverview() {
           <span className="relative z-10 mt-5 flex items-center justify-between border-t border-[#263e60]/20 pt-4 text-sm font-semibold dark:border-white/15">
             <span>Open CAD workspace</span>
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#263e60] text-white transition-transform group-hover:translate-x-1 dark:bg-[#8fb3e0] dark:text-[#182232]"><ArrowRight size={17} /></span>
+          </span>
+        </Link>
+        )}
+
+        {canSee("code") && (
+        <Link
+          href="/code"
+          data-testid="link-workspace-code"
+          className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#3c4a57] bg-gradient-to-br from-[#232c36] via-[#2a3542] to-[#333f4e] p-6 text-[#eef2f5] shadow-[0_20px_45px_rgba(20,28,36,.20)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(20,28,36,.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f8c84a] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#4a5a6b] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 -z-10 h-64 w-64 rounded-full border border-[#f8c84a]/20" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-8 -z-10 h-52 w-52 rounded-full bg-[#0e639c]/[.25] blur-3xl" />
+
+          <span className="relative z-10 flex items-center justify-between">
+            <span className="mono inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#cfd8de]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f8c84a]" />
+              Workspace 05
+            </span>
+            <span className="mono text-[10px] tracking-[.12em] text-[#9fb0bc]">ROBOT CODE</span>
+          </span>
+
+          <span className="relative z-10 flex flex-1 items-center justify-end py-5">
+            <span aria-hidden="true" className="relative mr-2 flex h-[142px] w-[172px] items-center justify-center sm:mr-7 sm:h-[160px] sm:w-[190px]">
+              <span className="absolute inset-x-4 inset-y-3 rounded-[20px] border border-white/15 bg-[#1e1e1e] shadow-[0_18px_35px_rgba(0,0,0,.30)]" />
+              <span className="mono relative p-4 text-left text-[10px] leading-5">
+                <span className="block text-[#569cd6]">@TeleOp</span>
+                <span className="block text-[#9cdcfe]">runOpMode() {"{"}</span>
+                <span className="block pl-3 text-[#d4d4d4]">drive.setPower(1);</span>
+                <span className="block text-[#9cdcfe]">{"}"}</span>
+              </span>
+              <span className="absolute bottom-1 left-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-[#f8c84a] text-[#182232] shadow-lg transition duration-300 group-hover:-translate-y-1 group-hover:rotate-[-6deg]"><SquareTerminal size={19} /></span>
+            </span>
+          </span>
+
+          <span className="relative z-10">
+            <h2 className="text-[2rem] font-semibold leading-none tracking-[-.055em] sm:text-[2.35rem]">Code</h2>
+            <span className="mt-2 block max-w-[300px] text-sm leading-6 text-[#c3cfd6]">Edit FTC Java together live, commit to any git endpoint, and deploy to the REV hub over USB.</span>
+          </span>
+          <span className="relative z-10 mt-5 flex items-center justify-between border-t border-white/15 pt-4 text-sm font-semibold">
+            <span>Open code workspace</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8c84a] text-[#182232] transition-transform group-hover:translate-x-1"><ArrowRight size={17} /></span>
           </span>
         </Link>
         )}
@@ -6242,6 +6313,7 @@ function Router() {
         <Route path="/parts/assistant"><Shell><ConversationAssistant partsMode /></Shell></Route>
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
         <Route path="/cad"><Shell><CadWorkspacePage /></Shell></Route>
+        <Route path="/code"><Shell><CodeWorkspacePage /></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

@@ -70,6 +70,19 @@ import type {
   ChunkUploadStored,
   ChunkUploadUrl,
   ChunkUploadUrlInput,
+  CodeFileInput,
+  CodeFileList,
+  CodeFileUpdateInput,
+  CodePresenceInput,
+  CodePresenceList,
+  CodeProjectInput,
+  CodeProjectList,
+  CodeProjectUpdateInput,
+  CodeRevisionInput,
+  CodeRevisionList,
+  CreateCodeFile201,
+  CreateCodeProject201,
+  CreateCodeRevision201,
   CreateInterviewerInput,
   CreatePartsCatalogItemInput,
   DashboardChart,
@@ -130,6 +143,12 @@ import type {
   PartsRobotPreviewInput,
   PartsRobotPreviewUpload,
   PartsStockUpdateInput,
+  PasskeyCredential,
+  PasskeyCredentialList,
+  PasskeyLoginChallengeInput,
+  PasskeyLoginInput,
+  PasskeyPublicKeyOptions,
+  PasskeyRegistrationInput,
   PasswordSafetyError,
   PresenceHeartbeat,
   PresenceHeartbeatInput,
@@ -156,6 +175,8 @@ import type {
   SpreadsheetCreateInput,
   SpreadsheetUpdateInput,
   SystemUsage,
+  UpdateCodeFile200,
+  UpdateCodeProject200,
   UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
@@ -853,6 +874,440 @@ export const useDeleteInterviewer = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteInterviewerMutationOptions(options));
+    }
+
+export const getGetPasskeyRegisterOptionsUrl = () => {
+
+
+
+
+  return `/api/auth/passkey/register/options`
+}
+
+/**
+ * @summary WebAuthn options to register a passkey (coordinators only)
+ */
+export const getPasskeyRegisterOptions = async ( options?: Parameters<typeof customFetch>[1]): Promise<PasskeyPublicKeyOptions> => {
+
+  return customFetch<PasskeyPublicKeyOptions>(getGetPasskeyRegisterOptionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPasskeyRegisterOptionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getPasskeyRegisterOptions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getPasskeyRegisterOptions>>, TError,void, TContext> => {
+
+const mutationKey = ['getPasskeyRegisterOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getPasskeyRegisterOptions>>, void> = () => {
+
+
+          return  getPasskeyRegisterOptions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetPasskeyRegisterOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof getPasskeyRegisterOptions>>>
+
+    export type GetPasskeyRegisterOptionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary WebAuthn options to register a passkey (coordinators only)
+ */
+export const useGetPasskeyRegisterOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getPasskeyRegisterOptions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getPasskeyRegisterOptions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getGetPasskeyRegisterOptionsMutationOptions(options));
+    }
+
+export const getRegisterPasskeyUrl = () => {
+
+
+
+
+  return `/api/auth/passkey/register`
+}
+
+/**
+ * Requires a recent registration challenge issued by getPasskeyRegisterOptions.
+ * @summary Register a passkey for the signed-in account
+ */
+export const registerPasskey = async (passkeyRegistrationInput: PasskeyRegistrationInput, options?: Parameters<typeof customFetch>[1]): Promise<PasskeyCredential> => {
+
+  return customFetch<PasskeyCredential>(getRegisterPasskeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passkeyRegistrationInput)
+  }
+);}
+
+
+
+
+
+export const getRegisterPasskeyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerPasskey>>, TError,{data: BodyType<PasskeyRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerPasskey>>, TError,{data: BodyType<PasskeyRegistrationInput>}, TContext> => {
+
+const mutationKey = ['registerPasskey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerPasskey>>, {data: BodyType<PasskeyRegistrationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerPasskey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterPasskeyMutationResult = NonNullable<Awaited<ReturnType<typeof registerPasskey>>>
+    export type RegisterPasskeyMutationBody = BodyType<PasskeyRegistrationInput>
+    export type RegisterPasskeyMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Register a passkey for the signed-in account
+ */
+export const useRegisterPasskey = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerPasskey>>, TError,{data: BodyType<PasskeyRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof registerPasskey>>,
+        TError,
+        {data: BodyType<PasskeyRegistrationInput>},
+        TContext
+      > => {
+      return useMutation(getRegisterPasskeyMutationOptions(options));
+    }
+
+export const getListPasskeysUrl = () => {
+
+
+
+
+  return `/api/auth/passkey/list`
+}
+
+/**
+ * @summary Passkeys registered to the signed-in account
+ */
+export const listPasskeys = async ( options?: Parameters<typeof customFetch>[1]): Promise<PasskeyCredentialList> => {
+
+  return customFetch<PasskeyCredentialList>(getListPasskeysUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPasskeysQueryKey = () => {
+    return [
+    `/api/auth/passkey/list`
+    ] as const;
+    }
+
+
+export const getListPasskeysQueryOptions = <TData = Awaited<ReturnType<typeof listPasskeys>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPasskeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPasskeysQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPasskeys>>> = ({ signal }) => listPasskeys({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPasskeys>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPasskeysQueryResult = NonNullable<Awaited<ReturnType<typeof listPasskeys>>>
+export type ListPasskeysQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Passkeys registered to the signed-in account
+ */
+
+export function useListPasskeys<TData = Awaited<ReturnType<typeof listPasskeys>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPasskeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPasskeysQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeletePasskeyUrl = (credentialId: string,) => {
+
+
+
+
+  return `/api/auth/passkey/${credentialId}`
+}
+
+/**
+ * @summary Remove a passkey from the signed-in account
+ */
+export const deletePasskey = async (credentialId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeletePasskeyUrl(credentialId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePasskeyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePasskey>>, TError,{credentialId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePasskey>>, TError,{credentialId: string}, TContext> => {
+
+const mutationKey = ['deletePasskey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePasskey>>, {credentialId: string}> = (props) => {
+          const {credentialId} = props ?? {};
+
+          return  deletePasskey(credentialId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePasskeyMutationResult = NonNullable<Awaited<ReturnType<typeof deletePasskey>>>
+
+    export type DeletePasskeyMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a passkey from the signed-in account
+ */
+export const useDeletePasskey = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePasskey>>, TError,{credentialId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePasskey>>,
+        TError,
+        {credentialId: string},
+        TContext
+      > => {
+      return useMutation(getDeletePasskeyMutationOptions(options));
+    }
+
+export const getGetPasskeyLoginOptionsUrl = () => {
+
+
+
+
+  return `/api/auth/passkey/login/options`
+}
+
+/**
+ * @summary WebAuthn options to sign in with a passkey
+ */
+export const getPasskeyLoginOptions = async (passkeyLoginChallengeInput: PasskeyLoginChallengeInput, options?: Parameters<typeof customFetch>[1]): Promise<PasskeyPublicKeyOptions> => {
+
+  return customFetch<PasskeyPublicKeyOptions>(getGetPasskeyLoginOptionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passkeyLoginChallengeInput)
+  }
+);}
+
+
+
+
+
+export const getGetPasskeyLoginOptionsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getPasskeyLoginOptions>>, TError,{data: BodyType<PasskeyLoginChallengeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getPasskeyLoginOptions>>, TError,{data: BodyType<PasskeyLoginChallengeInput>}, TContext> => {
+
+const mutationKey = ['getPasskeyLoginOptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getPasskeyLoginOptions>>, {data: BodyType<PasskeyLoginChallengeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  getPasskeyLoginOptions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetPasskeyLoginOptionsMutationResult = NonNullable<Awaited<ReturnType<typeof getPasskeyLoginOptions>>>
+    export type GetPasskeyLoginOptionsMutationBody = BodyType<PasskeyLoginChallengeInput>
+    export type GetPasskeyLoginOptionsMutationError = ErrorType<void>
+
+    /**
+ * @summary WebAuthn options to sign in with a passkey
+ */
+export const useGetPasskeyLoginOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getPasskeyLoginOptions>>, TError,{data: BodyType<PasskeyLoginChallengeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getPasskeyLoginOptions>>,
+        TError,
+        {data: BodyType<PasskeyLoginChallengeInput>},
+        TContext
+      > => {
+      return useMutation(getGetPasskeyLoginOptionsMutationOptions(options));
+    }
+
+export const getLoginWithPasskeyUrl = () => {
+
+
+
+
+  return `/api/auth/passkey/login`
+}
+
+/**
+ * Session issues exactly like the password login; password auth remains available.
+ * @summary Sign in with a passkey instead of a password
+ */
+export const loginWithPasskey = async (passkeyLoginInput: PasskeyLoginInput, options?: Parameters<typeof customFetch>[1]): Promise<AuthSession> => {
+
+  return customFetch<AuthSession>(getLoginWithPasskeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passkeyLoginInput)
+  }
+);}
+
+
+
+
+
+export const getLoginWithPasskeyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginWithPasskey>>, TError,{data: BodyType<PasskeyLoginInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof loginWithPasskey>>, TError,{data: BodyType<PasskeyLoginInput>}, TContext> => {
+
+const mutationKey = ['loginWithPasskey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof loginWithPasskey>>, {data: BodyType<PasskeyLoginInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  loginWithPasskey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LoginWithPasskeyMutationResult = NonNullable<Awaited<ReturnType<typeof loginWithPasskey>>>
+    export type LoginWithPasskeyMutationBody = BodyType<PasskeyLoginInput>
+    export type LoginWithPasskeyMutationError = ErrorType<void>
+
+    /**
+ * @summary Sign in with a passkey instead of a password
+ */
+export const useLoginWithPasskey = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginWithPasskey>>, TError,{data: BodyType<PasskeyLoginInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof loginWithPasskey>>,
+        TError,
+        {data: BodyType<PasskeyLoginInput>},
+        TContext
+      > => {
+      return useMutation(getLoginWithPasskeyMutationOptions(options));
     }
 
 export const getUpdateInterviewerNameUrl = (interviewerId: string,) => {
@@ -7965,6 +8420,886 @@ export const useUpdateWorkspaceVisibility = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateWorkspaceVisibilityMutationOptions(options));
+    }
+
+export const getListCodeProjectsUrl = () => {
+
+
+
+
+  return `/api/code/projects`
+}
+
+/**
+ * @summary List server-persisted FTC code projects
+ */
+export const listCodeProjects = async ( options?: Parameters<typeof customFetch>[1]): Promise<CodeProjectList> => {
+
+  return customFetch<CodeProjectList>(getListCodeProjectsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCodeProjectsQueryKey = () => {
+    return [
+    `/api/code/projects`
+    ] as const;
+    }
+
+
+export const getListCodeProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listCodeProjects>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCodeProjectsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCodeProjects>>> = ({ signal }) => listCodeProjects({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCodeProjects>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCodeProjectsQueryResult = NonNullable<Awaited<ReturnType<typeof listCodeProjects>>>
+export type ListCodeProjectsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List server-persisted FTC code projects
+ */
+
+export function useListCodeProjects<TData = Awaited<ReturnType<typeof listCodeProjects>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCodeProjectsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCodeProjectUrl = () => {
+
+
+
+
+  return `/api/code/projects`
+}
+
+/**
+ * @summary Create an FTC code project
+ */
+export const createCodeProject = async (codeProjectInput: CodeProjectInput, options?: Parameters<typeof customFetch>[1]): Promise<CreateCodeProject201> => {
+
+  return customFetch<CreateCodeProject201>(getCreateCodeProjectUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeProjectInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCodeProjectMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeProject>>, TError,{data: BodyType<CodeProjectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCodeProject>>, TError,{data: BodyType<CodeProjectInput>}, TContext> => {
+
+const mutationKey = ['createCodeProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCodeProject>>, {data: BodyType<CodeProjectInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCodeProject(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCodeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof createCodeProject>>>
+    export type CreateCodeProjectMutationBody = BodyType<CodeProjectInput>
+    export type CreateCodeProjectMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create an FTC code project
+ */
+export const useCreateCodeProject = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeProject>>, TError,{data: BodyType<CodeProjectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCodeProject>>,
+        TError,
+        {data: BodyType<CodeProjectInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCodeProjectMutationOptions(options));
+    }
+
+export const getUpdateCodeProjectUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}`
+}
+
+/**
+ * @summary Rename a project or update its git endpoint config
+ */
+export const updateCodeProject = async (projectId: string,
+    codeProjectUpdateInput: CodeProjectUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<UpdateCodeProject200> => {
+
+  return customFetch<UpdateCodeProject200>(getUpdateCodeProjectUrl(projectId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeProjectUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCodeProjectMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodeProject>>, TError,{projectId: string;data: BodyType<CodeProjectUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCodeProject>>, TError,{projectId: string;data: BodyType<CodeProjectUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateCodeProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCodeProject>>, {projectId: string;data: BodyType<CodeProjectUpdateInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  updateCodeProject(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCodeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof updateCodeProject>>>
+    export type UpdateCodeProjectMutationBody = BodyType<CodeProjectUpdateInput>
+    export type UpdateCodeProjectMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Rename a project or update its git endpoint config
+ */
+export const useUpdateCodeProject = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodeProject>>, TError,{projectId: string;data: BodyType<CodeProjectUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCodeProject>>,
+        TError,
+        {projectId: string;data: BodyType<CodeProjectUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCodeProjectMutationOptions(options));
+    }
+
+export const getDeleteCodeProjectUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}`
+}
+
+/**
+ * @summary Delete a project and all of its files
+ */
+export const deleteCodeProject = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteCodeProjectUrl(projectId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCodeProjectMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCodeProject>>, TError,{projectId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCodeProject>>, TError,{projectId: string}, TContext> => {
+
+const mutationKey = ['deleteCodeProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCodeProject>>, {projectId: string}> = (props) => {
+          const {projectId} = props ?? {};
+
+          return  deleteCodeProject(projectId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCodeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCodeProject>>>
+
+    export type DeleteCodeProjectMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a project and all of its files
+ */
+export const useDeleteCodeProject = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCodeProject>>, TError,{projectId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCodeProject>>,
+        TError,
+        {projectId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCodeProjectMutationOptions(options));
+    }
+
+export const getListCodeFilesUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/files`
+}
+
+/**
+ * @summary List all files in a project
+ */
+export const listCodeFiles = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<CodeFileList> => {
+
+  return customFetch<CodeFileList>(getListCodeFilesUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCodeFilesQueryKey = (projectId: string,) => {
+    return [
+    `/api/code/projects/${projectId}/files`
+    ] as const;
+    }
+
+
+export const getListCodeFilesQueryOptions = <TData = Awaited<ReturnType<typeof listCodeFiles>>, TError = ErrorType<unknown>>(projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCodeFilesQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCodeFiles>>> = ({ signal }) => listCodeFiles(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCodeFiles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCodeFilesQueryResult = NonNullable<Awaited<ReturnType<typeof listCodeFiles>>>
+export type ListCodeFilesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all files in a project
+ */
+
+export function useListCodeFiles<TData = Awaited<ReturnType<typeof listCodeFiles>>, TError = ErrorType<unknown>>(
+ projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCodeFilesQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCodeFileUrl = () => {
+
+
+
+
+  return `/api/code/files`
+}
+
+/**
+ * @summary Create or overwrite a file by path
+ */
+export const createCodeFile = async (codeFileInput: CodeFileInput, options?: Parameters<typeof customFetch>[1]): Promise<CreateCodeFile201> => {
+
+  return customFetch<CreateCodeFile201>(getCreateCodeFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeFileInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCodeFileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeFile>>, TError,{data: BodyType<CodeFileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCodeFile>>, TError,{data: BodyType<CodeFileInput>}, TContext> => {
+
+const mutationKey = ['createCodeFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCodeFile>>, {data: BodyType<CodeFileInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCodeFile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCodeFileMutationResult = NonNullable<Awaited<ReturnType<typeof createCodeFile>>>
+    export type CreateCodeFileMutationBody = BodyType<CodeFileInput>
+    export type CreateCodeFileMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or overwrite a file by path
+ */
+export const useCreateCodeFile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeFile>>, TError,{data: BodyType<CodeFileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCodeFile>>,
+        TError,
+        {data: BodyType<CodeFileInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCodeFileMutationOptions(options));
+    }
+
+export const getUpdateCodeFileUrl = (fileId: string,) => {
+
+
+
+
+  return `/api/code/files/${fileId}`
+}
+
+/**
+ * @summary Update a file's content or path
+ */
+export const updateCodeFile = async (fileId: string,
+    codeFileUpdateInput: CodeFileUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<UpdateCodeFile200> => {
+
+  return customFetch<UpdateCodeFile200>(getUpdateCodeFileUrl(fileId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeFileUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCodeFileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodeFile>>, TError,{fileId: string;data: BodyType<CodeFileUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCodeFile>>, TError,{fileId: string;data: BodyType<CodeFileUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateCodeFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCodeFile>>, {fileId: string;data: BodyType<CodeFileUpdateInput>}> = (props) => {
+          const {fileId,data} = props ?? {};
+
+          return  updateCodeFile(fileId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCodeFileMutationResult = NonNullable<Awaited<ReturnType<typeof updateCodeFile>>>
+    export type UpdateCodeFileMutationBody = BodyType<CodeFileUpdateInput>
+    export type UpdateCodeFileMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a file's content or path
+ */
+export const useUpdateCodeFile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodeFile>>, TError,{fileId: string;data: BodyType<CodeFileUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCodeFile>>,
+        TError,
+        {fileId: string;data: BodyType<CodeFileUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCodeFileMutationOptions(options));
+    }
+
+export const getDeleteCodeFileUrl = (fileId: string,) => {
+
+
+
+
+  return `/api/code/files/${fileId}`
+}
+
+/**
+ * @summary Delete a file
+ */
+export const deleteCodeFile = async (fileId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteCodeFileUrl(fileId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCodeFileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCodeFile>>, TError,{fileId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCodeFile>>, TError,{fileId: string}, TContext> => {
+
+const mutationKey = ['deleteCodeFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCodeFile>>, {fileId: string}> = (props) => {
+          const {fileId} = props ?? {};
+
+          return  deleteCodeFile(fileId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCodeFileMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCodeFile>>>
+
+    export type DeleteCodeFileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a file
+ */
+export const useDeleteCodeFile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCodeFile>>, TError,{fileId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCodeFile>>,
+        TError,
+        {fileId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCodeFileMutationOptions(options));
+    }
+
+export const getListCodeRevisionsUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/revisions`
+}
+
+/**
+ * @summary List commit checkpoints for a project
+ */
+export const listCodeRevisions = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<CodeRevisionList> => {
+
+  return customFetch<CodeRevisionList>(getListCodeRevisionsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCodeRevisionsQueryKey = (projectId: string,) => {
+    return [
+    `/api/code/projects/${projectId}/revisions`
+    ] as const;
+    }
+
+
+export const getListCodeRevisionsQueryOptions = <TData = Awaited<ReturnType<typeof listCodeRevisions>>, TError = ErrorType<unknown>>(projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCodeRevisionsQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCodeRevisions>>> = ({ signal }) => listCodeRevisions(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCodeRevisions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCodeRevisionsQueryResult = NonNullable<Awaited<ReturnType<typeof listCodeRevisions>>>
+export type ListCodeRevisionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List commit checkpoints for a project
+ */
+
+export function useListCodeRevisions<TData = Awaited<ReturnType<typeof listCodeRevisions>>, TError = ErrorType<unknown>>(
+ projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodeRevisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCodeRevisionsQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCodeRevisionUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/revisions`
+}
+
+/**
+ * @summary Snapshot the project as a commit checkpoint
+ */
+export const createCodeRevision = async (projectId: string,
+    codeRevisionInput: CodeRevisionInput, options?: Parameters<typeof customFetch>[1]): Promise<CreateCodeRevision201> => {
+
+  return customFetch<CreateCodeRevision201>(getCreateCodeRevisionUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeRevisionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCodeRevisionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeRevision>>, TError,{projectId: string;data: BodyType<CodeRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCodeRevision>>, TError,{projectId: string;data: BodyType<CodeRevisionInput>}, TContext> => {
+
+const mutationKey = ['createCodeRevision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCodeRevision>>, {projectId: string;data: BodyType<CodeRevisionInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  createCodeRevision(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCodeRevisionMutationResult = NonNullable<Awaited<ReturnType<typeof createCodeRevision>>>
+    export type CreateCodeRevisionMutationBody = BodyType<CodeRevisionInput>
+    export type CreateCodeRevisionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Snapshot the project as a commit checkpoint
+ */
+export const useCreateCodeRevision = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCodeRevision>>, TError,{projectId: string;data: BodyType<CodeRevisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCodeRevision>>,
+        TError,
+        {projectId: string;data: BodyType<CodeRevisionInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCodeRevisionMutationOptions(options));
+    }
+
+export const getListCodePresenceUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/presence`
+}
+
+/**
+ * @summary Who is currently in a project
+ */
+export const listCodePresence = async (projectId: string, options?: Parameters<typeof customFetch>[1]): Promise<CodePresenceList> => {
+
+  return customFetch<CodePresenceList>(getListCodePresenceUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCodePresenceQueryKey = (projectId: string,) => {
+    return [
+    `/api/code/projects/${projectId}/presence`
+    ] as const;
+    }
+
+
+export const getListCodePresenceQueryOptions = <TData = Awaited<ReturnType<typeof listCodePresence>>, TError = ErrorType<unknown>>(projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodePresence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCodePresenceQueryKey(projectId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCodePresence>>> = ({ signal }) => listCodePresence(projectId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: projectId !== null && projectId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCodePresence>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCodePresenceQueryResult = NonNullable<Awaited<ReturnType<typeof listCodePresence>>>
+export type ListCodePresenceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Who is currently in a project
+ */
+
+export function useListCodePresence<TData = Awaited<ReturnType<typeof listCodePresence>>, TError = ErrorType<unknown>>(
+ projectId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCodePresence>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCodePresenceQueryOptions(projectId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCodePresenceUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/presence`
+}
+
+/**
+ * @summary Publish where I am in a project
+ */
+export const updateCodePresence = async (projectId: string,
+    codePresenceInput: CodePresenceInput, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUpdateCodePresenceUrl(projectId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codePresenceInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCodePresenceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodePresence>>, TError,{projectId: string;data: BodyType<CodePresenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCodePresence>>, TError,{projectId: string;data: BodyType<CodePresenceInput>}, TContext> => {
+
+const mutationKey = ['updateCodePresence'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCodePresence>>, {projectId: string;data: BodyType<CodePresenceInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  updateCodePresence(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCodePresenceMutationResult = NonNullable<Awaited<ReturnType<typeof updateCodePresence>>>
+    export type UpdateCodePresenceMutationBody = BodyType<CodePresenceInput>
+    export type UpdateCodePresenceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publish where I am in a project
+ */
+export const useUpdateCodePresence = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCodePresence>>, TError,{projectId: string;data: BodyType<CodePresenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCodePresence>>,
+        TError,
+        {projectId: string;data: BodyType<CodePresenceInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCodePresenceMutationOptions(options));
     }
 
 export const getListCadLibraryUrl = () => {

@@ -1,4 +1,4 @@
-export type WorkspaceArea = "overview" | "interview" | "chat" | "parts" | "cad";
+export type WorkspaceArea = "overview" | "interview" | "chat" | "parts" | "cad" | "code";
 export type WorkspaceKey = Exclude<WorkspaceArea, "overview">;
 export type WorkspaceNavIcon =
   | "interview"
@@ -9,7 +9,8 @@ export type WorkspaceNavIcon =
   | "bigScreen"
   | "assistant"
   | "parts"
-  | "cad";
+  | "cad"
+  | "code";
 
 export type WorkspaceNavItem = {
   href: string;
@@ -30,6 +31,7 @@ const WORKSPACE_LINKS: WorkspaceNavItem[] = [
   { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace", workspace: "chat" },
   { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace", workspace: "parts" },
   { href: "/cad", label: "CAD", iconKey: "cad", kind: "workspace", workspace: "cad" },
+  { href: "/code", label: "Code", iconKey: "code", kind: "workspace", workspace: "code" },
 ];
 
 const INTERVIEW_LINKS: WorkspaceNavItem[] = [
@@ -54,6 +56,7 @@ export function workspaceAreaForPath(location: string): WorkspaceArea {
 
   if (path === "/dashboard") return "overview";
   if (path === "/cad" || path.startsWith("/cad/")) return "cad";
+  if (path === "/code" || path.startsWith("/code/")) return "code";
   if (path === "/parts" || path.startsWith("/parts/")) return "parts";
   if (
     path === "/chat" ||
@@ -91,6 +94,7 @@ export function getWorkspaceNavigation(
   }
   if (area === "chat") return [...workspaces, ...CHAT_LINKS.filter(isVisible)];
   if (area === "cad") return workspaces;
+  if (area === "code") return workspaces;
   return workspaces;
 }
 

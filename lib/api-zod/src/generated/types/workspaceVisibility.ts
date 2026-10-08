@@ -12,4 +12,5 @@ export interface WorkspaceVisibility {
   chat: WorkspaceRoleList;
   parts: WorkspaceRoleList;
   cad: WorkspaceRoleList;
+  code: WorkspaceRoleList;
 }

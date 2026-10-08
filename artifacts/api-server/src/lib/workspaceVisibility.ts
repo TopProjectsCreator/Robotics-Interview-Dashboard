@@ -3,7 +3,7 @@
  * can be unit tested directly and reasoned about on their own.
  */
 
-export const WORKSPACE_KEYS = ["interview", "chat", "parts", "cad"] as const;
+export const WORKSPACE_KEYS = ["interview", "chat", "parts", "cad", "code"] as const;
 export type WorkspaceKey = (typeof WORKSPACE_KEYS)[number];
 
 export const WORKSPACE_ROLES = ["coordinator", "treasurer", "interviewer"] as const;
@@ -21,6 +21,7 @@ export const DEFAULT_WORKSPACE_VISIBILITY: WorkspaceVisibility = {
   chat: ["coordinator", "treasurer", "interviewer"],
   parts: ["coordinator", "treasurer", "interviewer"],
   cad: ["coordinator"],
+  code: ["coordinator"],
 };
 
 export function isWorkspaceKey(value: unknown): value is WorkspaceKey {

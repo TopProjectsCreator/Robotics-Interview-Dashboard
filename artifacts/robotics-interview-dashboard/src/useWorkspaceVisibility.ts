@@ -13,6 +13,7 @@ export const WORKSPACE_LABELS: Record<keyof WorkspaceVisibility, string> = {
   chat: "Chat",
   parts: "Parts",
   cad: "CAD",
+  code: "Code",
 };
 
 export const WORKSPACE_ROLE_LABELS: Record<WorkspaceRole, string> = {
@@ -39,18 +40,21 @@ const FALLBACK_BY_ROLE: Record<string, WorkspaceVisibility> = {
     chat: ["coordinator", "treasurer", "interviewer"],
     parts: ["coordinator", "treasurer", "interviewer"],
     cad: ["coordinator"],
+    code: ["coordinator"],
   },
   treasurer: {
     interview: [],
     chat: ["coordinator", "treasurer", "interviewer"],
     parts: ["coordinator", "treasurer", "interviewer"],
     cad: [],
+    code: [],
   },
   interviewer: {
     interview: [],
     chat: ["coordinator", "treasurer", "interviewer"],
     parts: ["coordinator", "treasurer", "interviewer"],
     cad: [],
+    code: [],
   },
 };
 

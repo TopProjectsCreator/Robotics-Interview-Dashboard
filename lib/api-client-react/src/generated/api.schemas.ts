@@ -498,6 +498,8 @@ export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
+  /** True when this account has at least one passkey registered */
+  hasPasskey?: boolean;
   /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
 }
@@ -527,6 +529,60 @@ export interface InterviewerPasswordUpdateInput {
   password: string | null;
   /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
   confirmLowExposure?: boolean;
+}
+
+/**
+ * PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded
+ */
+export type PasskeyPublicKeyOptionsPublicKey = { [key: string]: unknown };
+
+export interface PasskeyPublicKeyOptions {
+  /** PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded */
+  publicKey: PasskeyPublicKeyOptionsPublicKey;
+}
+
+/**
+ * RegistrationResponseJSON from the authenticator
+ */
+export type PasskeyRegistrationInputResponse = { [key: string]: unknown };
+
+export interface PasskeyRegistrationInput {
+  /** RegistrationResponseJSON from the authenticator */
+  response: PasskeyRegistrationInputResponse;
+  /** Friendly name shown in Settings, e.g. "MacBook touch bar" */
+  label?: string;
+}
+
+export interface PasskeyLoginChallengeInput {
+  /** @minLength 1 */
+  eventPassword: string;
+  interviewerId: string;
+}
+
+/**
+ * AuthenticationResponseJSON from the authenticator
+ */
+export type PasskeyLoginInputResponse = { [key: string]: unknown };
+
+export interface PasskeyLoginInput {
+  /** @minLength 1 */
+  eventPassword: string;
+  interviewerId: string;
+  /** AuthenticationResponseJSON from the authenticator */
+  response: PasskeyLoginInputResponse;
+}
+
+export interface PasskeyCredential {
+  id: string;
+  label: string;
+  createdAt: string;
+  /** @nullable */
+  lastUsedAt?: string | null;
+  transports?: string[];
+}
+
+export interface PasskeyCredentialList {
+  items: PasskeyCredential[];
 }
 
 export interface InterviewerNameUpdateInput {
@@ -1980,6 +2036,7 @@ export interface WorkspaceVisibility {
   chat: WorkspaceRoleList;
   parts: WorkspaceRoleList;
   cad: WorkspaceRoleList;
+  code: WorkspaceRoleList;
 }
 
 export interface WorkspaceVisibilityInput {
@@ -1987,6 +2044,115 @@ export interface WorkspaceVisibilityInput {
   chat?: WorkspaceRoleList;
   parts?: WorkspaceRoleList;
   cad?: WorkspaceRoleList;
+  code?: WorkspaceRoleList;
+}
+
+export type CodeProjectGitConfig = { [key: string]: unknown };
+
+export interface CodeProject {
+  id: string;
+  name: string;
+  sdkVersion: string;
+  gitConfig: CodeProjectGitConfig;
+  fileCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeProjectList {
+  projects: CodeProject[];
+}
+
+export interface CodeProjectInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 32 */
+  sdkVersion?: string;
+}
+
+export type CodeProjectUpdateInputGitConfig = { [key: string]: unknown };
+
+export interface CodeProjectUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  gitConfig?: CodeProjectUpdateInputGitConfig;
+}
+
+export interface CodeFile {
+  id: string;
+  projectId: string;
+  path: string;
+  content: string;
+  sizeBytes: number;
+  /** @nullable */
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeFileList {
+  files: CodeFile[];
+}
+
+export interface CodeFileInput {
+  projectId: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  path: string;
+  content?: string;
+}
+
+export interface CodeFileUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  path?: string;
+  content?: string;
+}
+
+export interface CodeRevision {
+  id: string;
+  projectId: string;
+  message: string;
+  /** @nullable */
+  author?: string | null;
+  createdAt: string;
+}
+
+export interface CodeRevisionList {
+  revisions: CodeRevision[];
+}
+
+export interface CodeRevisionInput {
+  /** @maxLength 200 */
+  message?: string;
+}
+
+export type CodePresenceListPresenceItem = {
+  displayName: string;
+  /** @nullable */
+  fileId?: string | null;
+  color: string;
+  updatedAt: string;
+};
+
+export interface CodePresenceList {
+  presence: CodePresenceListPresenceItem[];
+}
+
+export interface CodePresenceInput {
+  /** @nullable */
+  fileId?: string | null;
+  color?: string;
 }
 
 /**
@@ -2159,6 +2325,26 @@ fileName: string;
  * @maxLength 100
  */
 contentType: string;
+};
+
+export type CreateCodeProject201 = {
+  project: CodeProject;
+};
+
+export type UpdateCodeProject200 = {
+  project: CodeProject;
+};
+
+export type CreateCodeFile201 = {
+  file: CodeFile;
+};
+
+export type UpdateCodeFile200 = {
+  file: CodeFile;
+};
+
+export type CreateCodeRevision201 = {
+  revision: CodeRevision;
 };
 
 export type DeleteCadBotParams = {

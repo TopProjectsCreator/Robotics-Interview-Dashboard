@@ -14,6 +14,7 @@ describe("workspace navigation", () => {
       ["Chat", "workspace"],
       ["Parts", "workspace"],
       ["CAD", "workspace"],
+      ["Code", "workspace"],
     ]);
   });
 
@@ -26,6 +27,7 @@ describe("workspace navigation", () => {
       "Chat",
       "Parts",
       "CAD",
+      "Code",
       "Applicants",
       "Interview queue",
       "Attendance",
@@ -45,29 +47,41 @@ describe("workspace navigation", () => {
       "Chat",
       "Parts",
       "CAD",
+      "Code",
       "AI assistant",
     ]);
     expect(getWorkspaceNavigation("chat").find(({ label }) => label === "AI assistant")?.href)
       .toBe("/assistant");
   });
 
-  it("keeps parts and CAD routes in their own workspaces", () => {
+  it("keeps parts, CAD, and code routes in their own workspaces", () => {
     expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(workspaceAreaForPath("/parts?search=shaft")).toBe("parts");
     expect(workspaceAreaForPath("/cad")).toBe("cad");
     expect(workspaceAreaForPath("/cad/")).toBe("cad");
+    expect(workspaceAreaForPath("/code")).toBe("code");
+    expect(workspaceAreaForPath("/code/")).toBe("code");
     expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(getWorkspaceNavigation("parts").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
       "Parts",
       "CAD",
+      "Code",
     ]);
     expect(getWorkspaceNavigation("cad").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
       "Parts",
       "CAD",
+      "Code",
+    ]);
+    expect(getWorkspaceNavigation("code").map(({ label }) => label)).toEqual([
+      "Interview",
+      "Chat",
+      "Parts",
+      "CAD",
+      "Code",
     ]);
   });
 

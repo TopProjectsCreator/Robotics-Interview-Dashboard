@@ -230,6 +230,124 @@ paths:
           description: Interviewer deleted
         "404":
           description: Interviewer not found
+  /auth/passkey/register/options:
+    post:
+      operationId: getPasskeyRegisterOptions
+      tags: [auth]
+      summary: WebAuthn options to register a passkey (coordinators only)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registration options for the signed-in account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyPublicKeyOptions"
+  /auth/passkey/register:
+    post:
+      operationId: registerPasskey
+      tags: [auth]
+      summary: Register a passkey for the signed-in account
+      description: Requires a recent registration challenge issued by getPasskeyRegisterOptions.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegistrationInput"
+      responses:
+        "201":
+          description: Passkey stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCredential"
+        "400":
+          description: The passkey could not be verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/passkey/list:
+    get:
+      operationId: listPasskeys
+      tags: [auth]
+      summary: Passkeys registered to the signed-in account
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registered passkeys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCredentialList"
+  /auth/passkey/{credentialId}:
+    delete:
+      operationId: deletePasskey
+      tags: [auth]
+      summary: Remove a passkey from the signed-in account
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: credentialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Passkey removed
+        "404":
+          description: Passkey not found
+  /auth/passkey/login/options:
+    post:
+      operationId: getPasskeyLoginOptions
+      tags: [auth]
+      summary: WebAuthn options to sign in with a passkey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginChallengeInput"
+      responses:
+        "200":
+          description: Assertion options for that account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyPublicKeyOptions"
+        "401":
+          description: Event passcode rejected
+  /auth/passkey/login:
+    post:
+      operationId: loginWithPasskey
+      tags: [auth]
+      summary: Sign in with a passkey instead of a password
+      description: Session issues exactly like the password login; password auth remains available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginInput"
+      responses:
+        "200":
+          description: Authenticated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: The passkey was rejected
   /auth/interviewers/{interviewerId}/name:
     patch:
       operationId: updateInterviewerName
@@ -2146,6 +2264,261 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceVisibility"
+  /code/projects:
+    get:
+      operationId: listCodeProjects
+      tags: [code]
+      summary: List server-persisted FTC code projects
+      responses:
+        "200":
+          description: Code projects with file counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeProjectList"
+    post:
+      operationId: createCodeProject
+      tags: [code]
+      summary: Create an FTC code project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project]
+                properties:
+                  project:
+                    $ref: "#/components/schemas/CodeProject"
+        "409":
+          description: A project with that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}:
+    patch:
+      operationId: updateCodeProject
+      tags: [code]
+      summary: Rename a project or update its git endpoint config
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeProjectUpdateInput"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project]
+                properties:
+                  project:
+                    $ref: "#/components/schemas/CodeProject"
+    delete:
+      operationId: deleteCodeProject
+      tags: [code]
+      summary: Delete a project and all of its files
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Project deleted
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/files:
+    get:
+      operationId: listCodeFiles
+      tags: [code]
+      summary: List all files in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeFileList"
+  /code/files:
+    post:
+      operationId: createCodeFile
+      tags: [code]
+      summary: Create or overwrite a file by path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeFileInput"
+      responses:
+        "201":
+          description: Saved file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file]
+                properties:
+                  file:
+                    $ref: "#/components/schemas/CodeFile"
+  /code/files/{fileId}:
+    put:
+      operationId: updateCodeFile
+      tags: [code]
+      summary: Update a file's content or path
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeFileUpdateInput"
+      responses:
+        "200":
+          description: Updated file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file]
+                properties:
+                  file:
+                    $ref: "#/components/schemas/CodeFile"
+    delete:
+      operationId: deleteCodeFile
+      tags: [code]
+      summary: Delete a file
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: File deleted
+        "404":
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/revisions:
+    get:
+      operationId: listCodeRevisions
+      tags: [code]
+      summary: List commit checkpoints for a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Commit history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeRevisionList"
+    post:
+      operationId: createCodeRevision
+      tags: [code]
+      summary: Snapshot the project as a commit checkpoint
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeRevisionInput"
+      responses:
+        "201":
+          description: Created checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision]
+                properties:
+                  revision:
+                    $ref: "#/components/schemas/CodeRevision"
+  /code/projects/{projectId}/presence:
+    get:
+      operationId: listCodePresence
+      tags: [code]
+      summary: Who is currently in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active collaborators
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodePresenceList"
+    put:
+      operationId: updateCodePresence
+      tags: [code]
+      summary: Publish where I am in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodePresenceInput"
+      responses:
+        "204":
+          description: Presence updated
   /cad/library:
     get:
       operationId: listCadLibrary
@@ -3159,6 +3532,9 @@ components:
           type: string
         hasPassword:
           type: boolean
+        hasPasskey:
+          type: boolean
+          description: "True when this account has at least one passkey registered" 
         role:
           type: string
           description: "coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts"
@@ -3199,6 +3575,71 @@ components:
         confirmLowExposure:
           type: boolean
           description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    PasskeyPublicKeyOptions:
+      type: object
+      required: [publicKey]
+      properties:
+        publicKey:
+          type: object
+          description: PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded
+          additionalProperties: true
+    PasskeyRegistrationInput:
+      type: object
+      required: [response]
+      properties:
+        response:
+          type: object
+          description: RegistrationResponseJSON from the authenticator
+          additionalProperties: true
+        label:
+          type: string
+          description: Friendly name shown in Settings, e.g. "MacBook touch bar"
+    PasskeyLoginChallengeInput:
+      type: object
+      required: [eventPassword, interviewerId]
+      properties:
+        eventPassword:
+          type: string
+          minLength: 1
+        interviewerId:
+          type: string
+    PasskeyLoginInput:
+      type: object
+      required: [eventPassword, interviewerId, response]
+      properties:
+        eventPassword:
+          type: string
+          minLength: 1
+        interviewerId:
+          type: string
+        response:
+          type: object
+          description: AuthenticationResponseJSON from the authenticator
+          additionalProperties: true
+    PasskeyCredential:
+      type: object
+      required: [id, label, createdAt]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        createdAt:
+          type: string
+        lastUsedAt:
+          type: ["string", "null"]
+        transports:
+          type: array
+          items:
+            type: string
+    PasskeyCredentialList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PasskeyCredential"
     InterviewerNameUpdateInput:
       type: object
       required: [displayName]
@@ -5099,7 +5540,7 @@ components:
         $ref: "#/components/schemas/WorkspaceRole"
     WorkspaceVisibility:
       type: object
-      required: [interview, chat, parts, cad]
+      required: [interview, chat, parts, cad, code]
       properties:
         interview:
           $ref: "#/components/schemas/WorkspaceRoleList"
@@ -5108,6 +5549,8 @@ components:
         parts:
           $ref: "#/components/schemas/WorkspaceRoleList"
         cad:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        code:
           $ref: "#/components/schemas/WorkspaceRoleList"
     WorkspaceVisibilityInput:
       type: object
@@ -5120,3 +5563,155 @@ components:
           $ref: "#/components/schemas/WorkspaceRoleList"
         cad:
           $ref: "#/components/schemas/WorkspaceRoleList"
+        code:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+    CodeProject:
+      type: object
+      required: [id, name, sdkVersion, gitConfig, fileCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sdkVersion:
+          type: string
+        gitConfig:
+          type: object
+          additionalProperties: true
+        fileCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CodeProjectList:
+      type: object
+      required: [projects]
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeProject"
+    CodeProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        sdkVersion:
+          type: string
+          maxLength: 32
+    CodeProjectUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        gitConfig:
+          type: object
+          additionalProperties: true
+    CodeFile:
+      type: object
+      required: [id, projectId, path, content, sizeBytes, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        sizeBytes:
+          type: integer
+        updatedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CodeFileList:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeFile"
+    CodeFileInput:
+      type: object
+      required: [projectId, path]
+      properties:
+        projectId:
+          type: string
+        path:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content:
+          type: string
+    CodeFileUpdateInput:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content:
+          type: string
+    CodeRevision:
+      type: object
+      required: [id, projectId, message, createdAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        message:
+          type: string
+        author:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+    CodeRevisionList:
+      type: object
+      required: [revisions]
+      properties:
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeRevision"
+    CodeRevisionInput:
+      type: object
+      properties:
+        message:
+          type: string
+          maxLength: 200
+    CodePresenceList:
+      type: object
+      required: [presence]
+      properties:
+        presence:
+          type: array
+          items:
+            type: object
+            required: [displayName, color, updatedAt]
+            properties:
+              displayName:
+                type: string
+              fileId:
+                type: ["string", "null"]
+              color:
+                type: string
+              updatedAt:
+                type: string
+    CodePresenceInput:
+      type: object
+      properties:
+        fileId:
+          type: ["string", "null"]
+        color:
+          type: string

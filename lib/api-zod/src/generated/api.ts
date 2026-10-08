@@ -88,6 +88,7 @@ export const ListInterviewersResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 }))
 })
@@ -112,6 +113,7 @@ export const CreateInterviewerResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -134,6 +136,7 @@ export const SetupInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -146,6 +149,94 @@ export const DeleteInterviewerParams = zod.object({
 })
 
 export const DeleteInterviewerResponse = zod.void()
+
+
+/**
+ * @summary WebAuthn options to register a passkey (coordinators only)
+ */
+export const GetPasskeyRegisterOptionsResponse = zod.object({
+  "publicKey": zod.record(zod.string(), zod.unknown()).describe('PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded')
+})
+
+
+/**
+ * Requires a recent registration challenge issued by getPasskeyRegisterOptions.
+ * @summary Register a passkey for the signed-in account
+ */
+export const RegisterPasskeyBody = zod.object({
+  "response": zod.record(zod.string(), zod.unknown()).describe('RegistrationResponseJSON from the authenticator'),
+  "label": zod.string().optional().describe('Friendly name shown in Settings, e.g. \"MacBook touch bar\"')
+})
+
+export const RegisterPasskeyResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish(),
+  "transports": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Passkeys registered to the signed-in account
+ */
+export const ListPasskeysResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish(),
+  "transports": zod.array(zod.string()).optional()
+}))
+})
+
+
+/**
+ * @summary Remove a passkey from the signed-in account
+ */
+export const DeletePasskeyParams = zod.object({
+  "credentialId": zod.coerce.string()
+})
+
+export const DeletePasskeyResponse = zod.void()
+
+
+/**
+ * @summary WebAuthn options to sign in with a passkey
+ */
+
+
+
+export const GetPasskeyLoginOptionsBody = zod.object({
+  "eventPassword": zod.string().min(1),
+  "interviewerId": zod.string()
+})
+
+export const GetPasskeyLoginOptionsResponse = zod.object({
+  "publicKey": zod.record(zod.string(), zod.unknown()).describe('PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded')
+})
+
+
+/**
+ * Session issues exactly like the password login; password auth remains available.
+ * @summary Sign in with a passkey instead of a password
+ */
+
+
+
+export const LoginWithPasskeyBody = zod.object({
+  "eventPassword": zod.string().min(1),
+  "interviewerId": zod.string(),
+  "response": zod.record(zod.string(), zod.unknown()).describe('AuthenticationResponseJSON from the authenticator')
+})
+
+export const LoginWithPasskeyResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
+  "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
+})
 
 
 /**
@@ -168,6 +259,7 @@ export const UpdateInterviewerNameResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -187,6 +279,7 @@ export const UpdateInterviewerRoleResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -212,6 +305,7 @@ export const UpdateInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -3171,7 +3265,8 @@ export const GetWorkspaceVisibilityResponse = zod.object({
   "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
   "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
   "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
 })
 
 
@@ -3183,15 +3278,263 @@ export const UpdateWorkspaceVisibilityBody = zod.object({
   "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
   "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
   "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional()
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
+  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional()
 })
 
 export const UpdateWorkspaceVisibilityResponse = zod.object({
   "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
   "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
   "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
+  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
 })
+
+
+/**
+ * @summary List server-persisted FTC code projects
+ */
+export const ListCodeProjectsResponse = zod.object({
+  "projects": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create an FTC code project
+ */
+export const createCodeProjectBodyNameMax = 120;
+
+export const createCodeProjectBodySdkVersionMax = 32;
+
+
+
+export const CreateCodeProjectBody = zod.object({
+  "name": zod.string().min(1).max(createCodeProjectBodyNameMax),
+  "sdkVersion": zod.string().max(createCodeProjectBodySdkVersionMax).optional()
+})
+
+export const CreateCodeProjectResponse = zod.object({
+  "project": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Rename a project or update its git endpoint config
+ */
+export const UpdateCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const updateCodeProjectBodyNameMax = 120;
+
+
+
+export const UpdateCodeProjectBody = zod.object({
+  "name": zod.string().min(1).max(updateCodeProjectBodyNameMax).optional(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const UpdateCodeProjectResponse = zod.object({
+  "project": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Delete a project and all of its files
+ */
+export const DeleteCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const DeleteCodeProjectResponse = zod.void()
+
+
+/**
+ * @summary List all files in a project
+ */
+export const ListCodeFilesParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodeFilesResponse = zod.object({
+  "files": zod.array(zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create or overwrite a file by path
+ */
+export const createCodeFileBodyPathMax = 255;
+
+
+
+export const CreateCodeFileBody = zod.object({
+  "projectId": zod.string(),
+  "path": zod.string().min(1).max(createCodeFileBodyPathMax),
+  "content": zod.string().optional()
+})
+
+export const CreateCodeFileResponse = zod.object({
+  "file": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Update a file's content or path
+ */
+export const UpdateCodeFileParams = zod.object({
+  "fileId": zod.coerce.string()
+})
+
+export const updateCodeFileBodyPathMax = 255;
+
+
+
+export const UpdateCodeFileBody = zod.object({
+  "path": zod.string().min(1).max(updateCodeFileBodyPathMax).optional(),
+  "content": zod.string().optional()
+})
+
+export const UpdateCodeFileResponse = zod.object({
+  "file": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Delete a file
+ */
+export const DeleteCodeFileParams = zod.object({
+  "fileId": zod.coerce.string()
+})
+
+export const DeleteCodeFileResponse = zod.void()
+
+
+/**
+ * @summary List commit checkpoints for a project
+ */
+export const ListCodeRevisionsParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodeRevisionsResponse = zod.object({
+  "revisions": zod.array(zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "message": zod.string(),
+  "author": zod.string().nullish(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Snapshot the project as a commit checkpoint
+ */
+export const CreateCodeRevisionParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const createCodeRevisionBodyMessageMax = 200;
+
+
+
+export const CreateCodeRevisionBody = zod.object({
+  "message": zod.string().max(createCodeRevisionBodyMessageMax).optional()
+})
+
+export const CreateCodeRevisionResponse = zod.object({
+  "revision": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "message": zod.string(),
+  "author": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Who is currently in a project
+ */
+export const ListCodePresenceParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodePresenceResponse = zod.object({
+  "presence": zod.array(zod.object({
+  "displayName": zod.string(),
+  "fileId": zod.string().nullish(),
+  "color": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Publish where I am in a project
+ */
+export const UpdateCodePresenceParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const UpdateCodePresenceBody = zod.object({
+  "fileId": zod.string().nullish(),
+  "color": zod.string().optional()
+})
+
+export const UpdateCodePresenceResponse = zod.void()
 
 
 /**

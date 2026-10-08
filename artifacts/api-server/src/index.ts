@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
+import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { syncPublicPartsCatalogs } from "./routes/parts";
@@ -82,6 +83,10 @@ async function ensureSchema(): Promise<void> {
     "cad_bots",
     "cad_folders",
     "cad_models",
+    "code_projects",
+    "code_files",
+    "code_revisions",
+    "code_presence",
     "workspace_settings",
     "dashboard_charts",
     "data_snapshots",
@@ -145,6 +150,17 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "role" text not null default 'coordinator', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
+    `create table if not exists "webauthn_credentials" (
+       "id" text primary key,
+       "interviewer_id" text not null references "interviewer_accounts"("id") on delete cascade,
+       "credential_id" text not null unique,
+       "public_key" text not null,
+       "counter" integer not null default 0,
+       "transports" text not null default '[]',
+       "label" text,
+       "created_at" timestamptz not null default now(),
+       "last_used_at" timestamptz
+     )`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
@@ -237,6 +253,45 @@ async function ensureSchema(): Promise<void> {
        "updated_at" timestamptz not null default now()
      )`,
     `create index if not exists "cad_models_folder_idx" on "cad_models" ("bot_id", "folder_id")`,
+    `create table if not exists "code_projects" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 120),
+       "sdk_version" text not null default 'v12.0',
+       "git_config" jsonb not null default '{}'::jsonb,
+       "created_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "code_projects_normalized_name_unique" on "code_projects" (lower("name"))`,
+    `create table if not exists "code_files" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "path" text not null check (length("path") between 1 and 255),
+       "content" text not null default '' check (octet_length("content") <= 500000),
+       "updated_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "code_files_project_path_unique" on "code_files" ("project_id", "path")`,
+    `create index if not exists "code_files_project_idx" on "code_files" ("project_id")`,
+    `create table if not exists "code_revisions" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "message" text not null,
+       "author" text,
+       "snapshot" jsonb not null,
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "code_revisions_project_idx" on "code_revisions" ("project_id", "created_at")`,
+    `create table if not exists "code_presence" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "file_id" text,
+       "display_name" text not null,
+       "color" text not null default '#f8c84a',
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "code_presence_project_idx" on "code_presence" ("project_id", "updated_at")`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {
@@ -314,6 +369,7 @@ if (Number.isNaN(port) || port <= 0) {
 const server = createServer(app);
 setupDocumentCollaboration(server);
 setupWhiteboardCollaboration(server);
+setupCodeCollaboration(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");

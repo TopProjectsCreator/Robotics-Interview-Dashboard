@@ -1,7 +1,23 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
-import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable } from "@workspace/db";
+import { count, eq, inArray } from "drizzle-orm";
+import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable } from "@workspace/db";
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
+import {
+  base64urlToBytes,
+  credentialIdFromResponse,
+  bytesToBase64url,
+  clearPasskeyChallenge,
+  readPasskeyChallenge,
+  setPasskeyChallenge,
+  webauthnOrigin,
+  webauthnRPID,
+} from "../lib/passkey";
 import {
   CreateInterviewerBody,
   CreateInterviewerResponse,
@@ -17,6 +33,12 @@ import {
   UpdateInterviewerPasswordResponse,
   ResetAllInterviewerPasswordsResponse,
   UpdateInterviewerRoleResponse,
+  RegisterPasskeyBody,
+  RegisterPasskeyResponse,
+  ListPasskeysResponse,
+  GetPasskeyLoginOptionsBody,
+  LoginWithPasskeyBody,
+  LoginWithPasskeyResponse,
   UpdateInterviewerNameResponse,
   ResetAllInterviewerPasswordsBody,
   VerifyEventPasscodeBody,
@@ -159,7 +181,19 @@ function publicAccount(account: { id: string; displayName: string; passwordHash:
 
 router.get("/auth/interviewers", async (_req, res): Promise<void> => {
   const accounts = await syncInterviewerAccounts(await getInterviewSettings());
-  res.json(ListInterviewersResponse.parse({ items: accounts.map(publicAccount) }));
+  // One query for all credential counts so the login screen can offer a
+  // passkey instead of a password where one exists.
+  const passkeyCounts = accounts.length
+    ? await db
+        .select({ interviewerId: webauthnCredentialsTable.interviewerId, n: count() })
+        .from(webauthnCredentialsTable)
+        .where(inArray(webauthnCredentialsTable.interviewerId, accounts.map((account) => account.id)))
+        .groupBy(webauthnCredentialsTable.interviewerId)
+    : [];
+  const withPasskey = new Map(passkeyCounts.map((row) => [row.interviewerId, row.n > 0]));
+  res.json(ListInterviewersResponse.parse({
+    items: accounts.map((account) => ({ ...publicAccount(account), hasPasskey: withPasskey.get(account.id) ?? false })),
+  }));
 });
 
 router.post("/auth/interviewers", async (req, res): Promise<void> => {
@@ -428,6 +462,274 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
     }
     req.log.error({ err: error, interviewerId }, "Interviewer rename failed");
     res.status(500).json({ error: "Could not rename this person." });
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Passkeys: an optional, additive sign-in method. Password auth is unchanged;
+// a passkey simply skips typing the personal password after the event passcode.
+// ---------------------------------------------------------------------------
+
+const RP_NAME = "Robotics Interview Dashboard";
+
+function passkeySessionResponse(res: Response, account: { id: string; displayName: string }) {
+  const session = createInterviewerSession(account.id);
+  setAdminCookie(res, session);
+  return LoginWithPasskeyResponse.parse({
+    authenticated: true,
+    label: account.displayName,
+    interviewerId: account.id,
+    token: session,
+  });
+}
+
+router.post("/auth/passkey/register/options", requireAdmin, async (req, res): Promise<void> => {
+  const interviewerId = interviewerIdFromSession(requestAdminSession(req));
+  const account = interviewerId ? await accountById(interviewerId) : undefined;
+  if (!account) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const origin = webauthnOrigin(req);
+  try {
+    const existing = await db
+      .select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports })
+      .from(webauthnCredentialsTable)
+      .where(eq(webauthnCredentialsTable.interviewerId, account.id));
+    const options = await generateRegistrationOptions({
+      rpName: RP_NAME,
+      rpID: webauthnRPID(origin),
+      userName: account.displayName,
+      userID: new TextEncoder().encode(account.id),
+      userDisplayName: account.displayName,
+      attestationType: "none",
+      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+      excludeCredentials: existing.map((row) => ({
+        id: row.credentialId,
+        transports: JSON.parse(row.transports || "[]") as string[],
+      })),
+    });
+    setPasskeyChallenge(res, { mode: "register", challenge: options.challenge, interviewerId: account.id });
+    res.json({ publicKey: options });
+  } catch (error) {
+    req.log.error({ err: error }, "Passkey registration options failed");
+    res.status(500).json({ error: "Could not prepare passkey registration" });
+  }
+});
+
+router.post("/auth/passkey/register", requireAdmin, async (req, res): Promise<void> => {
+  const interviewerId = interviewerIdFromSession(requestAdminSession(req));
+  const account = interviewerId ? await accountById(interviewerId) : undefined;
+  if (!account) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const parsed = RegisterPasskeyBody.safeParse(req.body);
+  const challenge = readPasskeyChallenge(req);
+  if (!parsed.success || !challenge || challenge.mode !== "register" || challenge.interviewerId !== account.id) {
+    clearPasskeyChallenge(res);
+    res.status(400).json({ error: "Passkey registration expired. Try again." });
+    return;
+  }
+  const origin = webauthnOrigin(req);
+  try {
+    const verification = await verifyRegistrationResponse({
+      response: parsed.data.response as never,
+      expectedChallenge: challenge.challenge,
+      expectedOrigin: origin,
+      expectedRPID: webauthnRPID(origin),
+      requireUserVerification: false,
+    });
+    clearPasskeyChallenge(res);
+    if (!verification.verified || !verification.registrationInfo) {
+      res.status(400).json({ error: "This passkey could not be verified." });
+      return;
+    }
+    const credential = verification.registrationInfo.credential;
+    const label = parsed.data.label?.trim().slice(0, 60) || "Passkey";
+    const [row] = await db
+      .insert(webauthnCredentialsTable)
+      .values({
+        id: randomBytes(16).toString("hex"),
+        interviewerId: account.id,
+        credentialId: credential.id,
+        publicKey: bytesToBase64url(credential.publicKey),
+        counter: credential.counter ?? 0,
+        transports: JSON.stringify(credential.transports ?? []),
+        label,
+      })
+      .returning();
+    res.status(201).json(RegisterPasskeyResponse.parse({
+      id: row.credentialId,
+      label: row.label ?? "Passkey",
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: null,
+      transports: JSON.parse(row.transports || "[]") as string[],
+    }));
+  } catch (error) {
+    clearPasskeyChallenge(res);
+    req.log.error({ err: error }, "Passkey registration verification failed");
+    res.status(400).json({ error: "This passkey could not be verified." });
+  }
+});
+
+router.get("/auth/passkey/list", requireAdmin, async (req, res): Promise<void> => {
+  const interviewerId = interviewerIdFromSession(requestAdminSession(req));
+  if (!interviewerId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const rows = await db
+    .select().from(webauthnCredentialsTable)
+    .where(eq(webauthnCredentialsTable.interviewerId, interviewerId))
+    .orderBy(webauthnCredentialsTable.createdAt);
+  res.json(ListPasskeysResponse.parse({
+    items: rows.map((row) => ({
+      id: row.credentialId,
+      label: row.label ?? "Passkey",
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+      transports: JSON.parse(row.transports || "[]") as string[],
+    })),
+  }));
+});
+
+router.delete("/auth/passkey/:credentialId", requireAdmin, async (req, res): Promise<void> => {
+  const credentialId = typeof req.params.credentialId === "string" ? req.params.credentialId : "";
+  const interviewerId = interviewerIdFromSession(requestAdminSession(req));
+  if (!credentialId || !interviewerId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const [target] = await db
+    .select({ id: webauthnCredentialsTable.id, interviewerId: webauthnCredentialsTable.interviewerId, role: interviewerAccountsTable.role })
+    .from(webauthnCredentialsTable)
+    .innerJoin(interviewerAccountsTable, eq(webauthnCredentialsTable.interviewerId, interviewerAccountsTable.id))
+    .where(eq(webauthnCredentialsTable.credentialId, credentialId))
+    .limit(1);
+  if (!target) {
+    res.status(404).json({ error: "Passkey not found" });
+    return;
+  }
+  // Owners can remove their own passkey; coordinators may clean up any.
+  if (target.interviewerId !== interviewerId && target.role !== "coordinator") {
+    res.status(403).json({ error: "You can only remove your own passkeys." });
+    return;
+  }
+  await db.delete(webauthnCredentialsTable).where(eq(webauthnCredentialsTable.credentialId, credentialId));
+  res.status(204).end();
+});
+
+router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
+  const parsed = GetPasskeyLoginOptionsBody.safeParse(req.body);
+  if (!parsed.success || !eventPasswordMatches(parsed.data.eventPassword)) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  const ip = req.ip ?? "unknown";
+  if (!loginAllowed(ip)) {
+    res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
+    return;
+  }
+  const account = await accountById(parsed.data.interviewerId);
+  const credentials = account
+    ? await db.select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports })
+        .from(webauthnCredentialsTable)
+        .where(eq(webauthnCredentialsTable.interviewerId, account.id))
+    : [];
+  if (!account || !account.passwordHash && !credentials.length) {
+    // keep the error generic; the passcode already gated this request
+    res.status(401).json({ error: "This person has not been set up yet." });
+    return;
+  }
+  if (!credentials.length) {
+    res.status(404).json({ error: "This person has no passkey yet. Use their password instead." });
+    return;
+  }
+  const origin = webauthnOrigin(req);
+  try {
+    const options = await generateAuthenticationOptions({
+      rpID: webauthnRPID(origin),
+      allowCredentials: credentials.map((row) => ({
+        id: row.credentialId,
+        transports: JSON.parse(row.transports || "[]") as string[],
+      })),
+      userVerification: "preferred",
+    });
+    setPasskeyChallenge(res, { mode: "login", challenge: options.challenge, interviewerId: account.id });
+    res.json({ publicKey: options });
+  } catch (error) {
+    req.log.error({ err: error }, error instanceof Error ? error.message : "unknown");
+    res.status(500).json({ error: "Could not prepare passkey sign-in" });
+  }
+});
+
+router.post("/auth/passkey/login", async (req, res): Promise<void> => {
+  const parsed = LoginWithPasskeyBody.safeParse(req.body);
+  if (!parsed.success || !eventPasswordMatches(parsed.data.eventPassword)) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  const ip = req.ip ?? "unknown";
+  if (!loginAllowed(ip)) {
+    res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
+    return;
+  }
+  const challenge = readPasskeyChallenge(req);
+  if (!challenge || challenge.mode !== "login" || challenge.interviewerId !== parsed.data.interviewerId) {
+    clearPasskeyChallenge(res);
+    res.status(400).json({ error: "Passkey sign-in expired. Try again." });
+    return;
+  }
+  const account = await accountById(parsed.data.interviewerId);
+  if (!account) {
+    clearPasskeyChallenge(res);
+    res.status(401).json({ error: "Incorrect event passcode or person." });
+    return;
+  }
+  const [stored] = await db
+    .select().from(webauthnCredentialsTable)
+    .where(eq(webauthnCredentialsTable.credentialId, credentialIdFromResponse(parsed.data.response)))
+    .limit(1);
+  if (!stored || stored.interviewerId !== account.id) {
+    clearPasskeyChallenge(res);
+    recordLoginFailure(ip);
+    res.status(401).json({ error: "This passkey does not belong to that person." });
+    return;
+  }
+  const origin = webauthnOrigin(req);
+  try {
+    const verification = await verifyAuthenticationResponse({
+      response: parsed.data.response as never,
+      expectedChallenge: challenge.challenge,
+      expectedOrigin: origin,
+      expectedRPID: webauthnRPID(origin),
+      requireUserVerification: false,
+      credential: {
+        id: stored.credentialId,
+        publicKey: base64urlToBytes(stored.publicKey),
+        counter: stored.counter,
+        transports: JSON.parse(stored.transports || "[]") as string[],
+      },
+    });
+    clearPasskeyChallenge(res);
+    if (!verification.verified) {
+      recordLoginFailure(ip);
+      res.status(401).json({ error: "This passkey was rejected. Use the password instead." });
+      return;
+    }
+    loginFailures.delete(ip);
+    await db
+      .update(webauthnCredentialsTable)
+      .set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: new Date() })
+      .where(eq(webauthnCredentialsTable.credentialId, stored.credentialId));
+    res.json(passkeySessionResponse(res, account));
+  } catch (error) {
+    clearPasskeyChallenge(res);
+    recordLoginFailure(ip);
+    req.log.error({ err: error }, "Passkey login verification failed");
+    res.status(401).json({ error: "This passkey was rejected. Use the password instead." });
   }
 });
 
