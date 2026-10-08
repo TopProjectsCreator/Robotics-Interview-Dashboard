@@ -314,12 +314,11 @@ async function ensureSchema(): Promise<void> {
   await removeTestAccounts();
 
   // TEMP (verify uncapped assistant loop): promote probe to coordinator.
-  // Removed after verification; the account itself matches the %check%
-  // cleanup pattern and is deleted at the next boot.
+  // Removed after verification along with the probe account.
   try {
     await pool.query(
       `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'loopcheck'`,
+        WHERE normalized_name = 'looprunner'`,
     );
   } catch (err) {
     logger.error({ err }, "temp loopcheck promote failed");
