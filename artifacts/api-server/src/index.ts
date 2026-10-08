@@ -27,7 +27,7 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck',
+    'Label Prop Test', 'CtxCheck', 'SlowUser',
     'test', 'test2', 'test3',
   ];
   // test-style names anywhere: check / probe / verify / temp / test / bot
@@ -304,23 +304,6 @@ async function ensureSchema(): Promise<void> {
     }
   }
   await removeTestAccounts();
-
-  // TEMP (verify slowmode): promote a probe and turn slow mode on so the
-  // cooldown can be exercised as a coordinator. Removed once verified.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'slowuser'`,
-    );
-    await pool.query(
-      `insert into "chat_settings" ("id", "slowmode_seconds", "updated_at")
-       values ('1', 5, now())
-       on conflict ("id") do update set "slowmode_seconds" = 5, "updated_at" = now()`,
-    );
-    logger.info("temp slowmode verification state prepared");
-  } catch (err) {
-    logger.error({ err }, "temp slowmode setup failed");
-  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
