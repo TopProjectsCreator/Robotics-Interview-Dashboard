@@ -5033,7 +5033,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         const chatContext = [...history, { author, message: submitted }]
           .slice(-CHAT_CONTEXT_MESSAGE_LIMIT)
           .map(item => ({ author: item.author, message: item.message }));
-        const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
+        // No timeout here: the agent keeps calling tools until it is done, so
+        // a long multi-step answer must not be cut off at an arbitrary mark.
+        const response = await ask.mutateAsync({ data: { question, applicantIds, chatContext } });
         assistantReplyForRetry = {
           answer: response.answer,
           activities: response.activities ?? [],

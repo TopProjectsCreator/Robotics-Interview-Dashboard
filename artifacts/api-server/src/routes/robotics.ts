@@ -1017,11 +1017,13 @@ async function runAssistantTools(
   const imageMarkdowns: string[] = [];
   const images: GeneratedImage[] = [];
   const activities: AssistantActivity[] = [];
-  let searches = 0;
-  let pythonRuns = 0;
+  // No per-answer caps: the agent keeps calling tools until the model stops
+  // asking (the loops in /assistant/ask and /assistant/ask/stream run until
+  // there are no pending calls). Rename stays once-per-answer so the title
+  // does not flip mid-answer.
   let renamed = false;
   let changedModel: string | undefined;
-  for (const call of calls.slice(0, 8)) {
+  for (const call of calls) {
     const name = call.function?.name;
     if (
       name !== "generate_image" &&
@@ -1107,8 +1109,6 @@ async function runAssistantTools(
       images.push({ prompt: imagePrompt, url: serveUrl, dataUrl });
       activities.push({ tool: "generate_image", detail: imagePrompt.slice(0, 120) });
     } else if (name === "python_exec" || name === "python") {
-      if (pythonRuns >= 2) continue;
-      pythonRuns += 1;
       const code = String(args.code ?? "").trim().slice(0, 4000);
       if (!code) continue;
       const outcome = await runPythonCode(code, applicantsJson);
@@ -1738,8 +1738,6 @@ async function runAssistantTools(
         tool_call_id: call.id,
       });
     } else {
-      if (searches >= 2) continue;
-      searches += 1;
       const query = String(args.query ?? "").trim().slice(0, 300);
       if (!query) continue;
       const requested = normalizeSearchProvider((args as Record<string, unknown>).provider);
@@ -4083,14 +4081,16 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
     }];
   });
   // Multi-round tool loop: search results often feed a second action
-  // (e.g. search_applicants -> reorder_queue). Keep tools available on
-  // follow-ups so the model can act instead of hallucinating success.
+  // (e.g. search_applicants -> reorder_queue). No round cap — the agent
+  // keeps working until the model answers with no further tool calls.
+  // Keep tools available on follow-ups so the model can act instead of
+  // hallucinating success.
   let pendingCalls = toolCalls;
   // Files previewed during this answer. commit_import refuses paths that
   // were not previewed first, so blind commits are impossible.
   const previewedPaths = new Set<string>();
   const thread: AssistantThreadMessage[] = [...baseMessages];
-  for (let round = 0; round < 3 && pendingCalls.length > 0; round += 1) {
+  for (let round = 0; pendingCalls.length > 0; round += 1) {
     const executed = await runAssistantTools(pendingCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
           const scopedTitle = conversation.title.startsWith("[Parts] ") ? `[Parts] ${title}` : title;
@@ -4402,9 +4402,22 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
     let answer = first.text;
     const activities: AssistantActivity[] = [];
     const previewedPaths = new Set<string>();
-    if (first.calls.length > 0) {
+    // Follow-up text accumulates across rounds so the saved answer matches
+    // what streamed live (the client replaces streamed deltas with it).
+    const appendAnswer = (current: string, addition: string): string => {
+      const text = addition.trim();
+      if (!text) return current;
+      return current.trim() ? `${current.trim()}\n\n${text}` : text;
+    };
+    // Agentic loop with no round cap: keep executing tool calls and asking
+    // follow-ups (tools stay available on every turn) until the model
+    // answers with no further calls.
+    const thread: AssistantThreadMessage[] = [...baseMessages];
+    let streamCalls = first.calls;
+    let streamRound = 0;
+    while (streamCalls.length > 0) {
       send({ status: "working" });
-      const executed = await runAssistantTools(first.calls, JSON.stringify(context), {
+      const executed = await runAssistantTools(streamCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
           await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(eq(assistantConversationsTable.id, conversation.id));
         },
@@ -4420,58 +4433,48 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
         send({ model });
       }
       activities.push(...executed.activities);
-      if (executed.outgoingCalls.length > 0) {
-        req.log.info({ tools: executed.outgoingCalls.map((call) => call.function.name) }, "Assistant stream tools executed");
-        const seenImages = executed.images.filter((image) => image.dataUrl);
-        if (seenImages.length > 0) {
-          try {
-            const seen = await streamPass([
-              ...baseMessages,
-              {
-                role: "assistant" as const,
-                content: answer || null,
-                tool_calls: executed.outgoingCalls,
-              },
-              ...executed.toolMessages,
-              visionUserMessage(seenImages),
-            ], false, { model: VISION_MODEL, maxTokens: 1500 });
-            if (!seen.text.trim()) throw new Error("empty vision answer");
-            answer = executed.imageMarkdown ? `${seen.text.trim()}\n\n${executed.imageMarkdown.trim()}` : seen.text;
-            if (executed.imageMarkdown) send({ delta: `\n\n${executed.imageMarkdown}` });
-          } catch (visionError) {
-            req.log.warn({ err: visionError }, "Vision stream follow-up failed, falling back to text-only");
-            const followup = await streamPass([
-              ...baseMessages,
-              {
-                role: "assistant" as const,
-                content: answer || null,
-                tool_calls: executed.outgoingCalls,
-              },
-              ...executed.toolMessages,
-            ], false);
-            answer = followup.text || answer;
-            if (executed.imageMarkdown) {
-              answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
-              send({ delta: `\n\n${executed.imageMarkdown}` });
-            }
-          }
-        } else {
-          const followup = await streamPass([
-            ...baseMessages,
-            {
-              role: "assistant" as const,
-              content: answer || null,
-              tool_calls: executed.outgoingCalls,
-            },
-            ...executed.toolMessages,
-          ], false);
-          answer = followup.text || answer;
+      if (executed.outgoingCalls.length === 0) break;
+      req.log.info({ tools: executed.outgoingCalls.map((call) => call.function.name), round: streamRound }, "Assistant stream tools executed");
+      thread.push({
+        role: "assistant" as const,
+        content: answer || null,
+        tool_calls: executed.outgoingCalls,
+      });
+      thread.push(...executed.toolMessages);
+      const seenImages = executed.images.filter((image) => image.dataUrl);
+      if (seenImages.length > 0) {
+        // The vision model looks at what was just generated, so the answer
+        // describes the real image instead of the prompt. That ends the turn.
+        try {
+          const seen = await streamPass([...thread, visionUserMessage(seenImages)], false, { model: VISION_MODEL, maxTokens: 1500 });
+          if (!seen.text.trim()) throw new Error("empty vision answer");
+          answer = appendAnswer(answer, seen.text);
           if (executed.imageMarkdown) {
             answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
             send({ delta: `\n\n${executed.imageMarkdown}` });
           }
+        } catch (visionError) {
+          req.log.warn({ err: visionError }, "Vision stream follow-up failed, falling back to text-only");
+          const followup = await streamPass([...thread], true);
+          answer = appendAnswer(answer, followup.text);
+          if (executed.imageMarkdown) {
+            answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
+            send({ delta: `\n\n${executed.imageMarkdown}` });
+          }
+          streamCalls = followup.calls;
+          streamRound += 1;
+          continue;
         }
+        break;
       }
+      const followup = await streamPass([...thread], true);
+      answer = appendAnswer(answer, followup.text);
+      if (executed.imageMarkdown) {
+        answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
+        send({ delta: `\n\n${executed.imageMarkdown}` });
+      }
+      streamCalls = followup.calls;
+      streamRound += 1;
     }
     {
       // Same second-chance pass as the classic route: a followup that came
