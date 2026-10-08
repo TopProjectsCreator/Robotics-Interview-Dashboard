@@ -39,6 +39,7 @@ vi.mock("@workspace/api-client-react", () => ({
   updateCodeFile: vi.fn(),
   deleteCodeFile: vi.fn(),
   createCodeRevision: vi.fn(),
+  deployCodeProject: vi.fn(),
   listCodeFiles: vi.fn(),
   listCodePresence: vi.fn().mockResolvedValue({ presence: [] }),
   listCodeRevisions: vi.fn(),
@@ -129,6 +130,15 @@ describe("code workspace", () => {
     fireEvent.click(screen.getByTestId("code-side-ai"));
     expect(screen.getByTestId("code-ai-prompt")).toBeInTheDocument();
     expect(screen.getByTestId("code-ai-ask")).toBeInTheDocument();
+  });
+
+  it("uploads straight from the dashboard without opening the hub site", () => {
+    renderPage(project);
+    fireEvent.click(screen.getByTestId("code-side-deploy"));
+    expect(screen.getByTestId("code-hub-url")).toBeInTheDocument();
+    expect(screen.getByTestId("code-deploy-upload")).toBeInTheDocument();
+    expect(screen.getByTestId("code-deploy-browser")).toBeInTheDocument();
+    expect(screen.queryByTestId("code-deploy-manage")).not.toBeInTheDocument();
   });
 
   it("keeps JDK 21 and Java 8 visible in the status bar", () => {

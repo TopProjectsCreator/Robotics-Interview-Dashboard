@@ -35,6 +35,13 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
 });
 
 
+export const chatSettingsTable = pgTable("chat_settings", {
+  id: text("id").primaryKey().default("1"),
+  slowmodeSeconds: integer("slowmode_seconds").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 export const chunkedUploadsTable = pgTable("chunked_uploads", {
   uploadId: text("upload_id").primaryKey(),
   fileName: text("file_name").notNull(),

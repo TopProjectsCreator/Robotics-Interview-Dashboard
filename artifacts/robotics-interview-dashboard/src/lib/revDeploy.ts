@@ -151,3 +151,38 @@ export function onBotExport(files: CodeDeployFile[]): { name: string; content: s
     .filter((file) => file.path.endsWith(".java"))
     .map((file) => ({ name: onBotPathFor(file.path), content: file.content }));
 }
+
+/**
+ * Browser-direct upload fallback: POSTs each .java straight from this tab to
+ * the hub's OnBotJava server and triggers its on-hub build. `no-cors` means
+ * the hub's reply can't be read back here (NanoHTTPD sends no CORS headers),
+ * so this reports what was sent — use the dashboard-server upload above when
+ * build errors need to come back into the IDE.
+ */
+export async function browserDirectUpload(
+  hubBaseUrl: string,
+  files: CodeDeployFile[],
+  onStep: (line: string) => void,
+): Promise<number> {
+  const base = hubBaseUrl.trim().replace(/\/+$/, "");
+  const javaFiles = files.filter((file) => file.path.endsWith(".java")).slice(0, 60);
+  let sent = 0;
+  for (const file of javaFiles) {
+    const params = new URLSearchParams();
+    params.set("f", onBotPathFor(file.path));
+    params.set("data", file.content);
+    await fetch(`${base}/java/file/save`, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+    sent += 1;
+    onStep(`Saved ${onBotPathFor(file.path)} (${sent}/${javaFiles.length}) from this browser.`);
+  }
+  if (sent > 0) {
+    await fetch(`${base}/java/build/start`, { method: "GET", mode: "no-cors" });
+    onStep("Build triggered on the hub. New OpModes appear on the Driver Station list.");
+  }
+  return sent;
+}

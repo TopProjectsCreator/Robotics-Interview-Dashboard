@@ -141,6 +141,7 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
+    `create table if not exists "chat_settings" ("id" text primary key default '1', "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
     `create table if not exists "chunked_uploads" ("upload_id" text primary key, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "total_parts" integer not null, "part_size_bytes" integer not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
@@ -303,6 +304,23 @@ async function ensureSchema(): Promise<void> {
     }
   }
   await removeTestAccounts();
+
+  // TEMP (verify slowmode): promote a probe and turn slow mode on so the
+  // cooldown can be exercised as a coordinator. Removed once verified.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+        WHERE normalized_name = 'slowuser'`,
+    );
+    await pool.query(
+      `insert into "chat_settings" ("id", "slowmode_seconds", "updated_at")
+       values ('1', 5, now())
+       on conflict ("id") do update set "slowmode_seconds" = 5, "updated_at" = now()`,
+    );
+    logger.info("temp slowmode verification state prepared");
+  } catch (err) {
+    logger.error({ err }, "temp slowmode setup failed");
+  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {

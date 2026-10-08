@@ -53,6 +53,13 @@ scripts/fix-opencode-fork.py
 scripts/opencode-wrapper.sh
 scripts/install-opencode-wrapper.sh
 
+# Environment and secrets — never commit (Supabase, DATABASE_URL, session, etc.)
+.env
+.env.*
+!.env.example
+*.local.env
+.dev-secrets/
+
 # Local-only test-mode plugin (per-dev, not for commit)
 .opencode/plugins/test-mode.ts
 .opencode/plugins/test-mode.js

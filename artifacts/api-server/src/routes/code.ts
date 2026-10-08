@@ -4,6 +4,7 @@ import { pool } from "@workspace/db";
 import { requireWorkspaceAccess } from "../middlewares/adminAuth";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { deployProjectToHub, normalizeHubBaseUrl } from "../lib/hubDeploy";
 
 const router: IRouter = Router();
 const codeAccess = requireWorkspaceAccess("code");
@@ -347,6 +348,47 @@ router.post("/code/projects/:projectId/revisions", codeAccess, async (req, res):
   } catch (error) {
     req.log.error({ err: error }, "Code revision creation failed");
     res.status(500).json({ error: "Unable to save this commit." });
+  }
+});
+
+// Deploy: push straight to the hub and build there ---------------------------
+// Nobody opens the hub's Program & Manage site: the dashboard server saves
+// each .java to the hub's OnBotJava server and triggers its on-hub build,
+// then reports the compiler log back here.
+router.post("/code/projects/:projectId/deploy", codeAccess, async (req, res): Promise<void> => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const hubBaseUrl = normalizeHubBaseUrl(body.hubBaseUrl);
+  if (!hubBaseUrl) {
+    res.status(400).json({ error: "Enter the hub address, e.g. http://192.168.43.1:8080." });
+    return;
+  }
+  try {
+    let files: { path: string; content: string }[];
+    if (Array.isArray(body.files)) {
+      files = body.files
+        .filter((entry): entry is { path: string; content: string } =>
+          typeof entry === "object" && entry !== null &&
+          typeof (entry as { path?: unknown }).path === "string" &&
+          typeof (entry as { content?: unknown }).content === "string")
+        .map((entry) => ({ path: entry.path.slice(0, 255), content: entry.content.slice(0, 500_000) }));
+    } else {
+      const rows = await pool.query(
+        `select "path", "content" from "code_files" where "project_id" = $1 order by "path"`,
+        [req.params.projectId],
+      );
+      files = rows.rows.map((row) => ({ path: String(row.path), content: String(row.content ?? "") }));
+    }
+    if (!files.length) {
+      res.status(400).json({ error: "This project has no files to upload." });
+      return;
+    }
+    // A hub build compiles every file on the hub and can take a while.
+    req.setTimeout(180_000);
+    const result = await deployProjectToHub(hubBaseUrl, files);
+    res.json(result);
+  } catch (error) {
+    req.log.error({ err: error }, "Hub deploy failed");
+    res.status(502).json({ error: error instanceof Error ? error.message : "The hub upload failed." });
   }
 });
 

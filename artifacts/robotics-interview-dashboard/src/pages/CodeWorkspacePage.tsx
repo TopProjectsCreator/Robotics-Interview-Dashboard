@@ -18,6 +18,7 @@ import {
   Save,
   SquareTerminal,
   Trash2,
+  Upload,
   Usb,
   Users,
   X,
@@ -28,6 +29,7 @@ import {
   createCodeRevision,
   deleteCodeFile,
   deleteCodeProject,
+  deployCodeProject,
   getListCodeFilesQueryKey,
   getListCodePresenceQueryKey,
   getListCodeProjectsQueryKey,
@@ -53,6 +55,7 @@ import {
   BIOBUZZ_SDK_VERSION,
   defaultSeedFiles,
   highlightJavaLine,
+  hubPathFor,
   lintJava,
   templateForKind,
   type JavaProblem,
@@ -73,6 +76,7 @@ import {
 import { colorForName, createCodeCollab, type CodeCollabSession, type CodeCollabStatus } from "@/lib/codeCollab";
 import {
   buildTeamCodeZip,
+  browserDirectUpload,
   downloadBlob,
   onBotExport,
   openSerialConsole,
@@ -328,6 +332,9 @@ export function CodeWorkspacePage() {
   const serialRef = useRef<SerialConsole | null>(null);
   const [usbDevice, setUsbDevice] = useState<UsbDeviceSummary | null>(null);
   const [deployBusy, setDeployBusy] = useState(false);
+  const [hubUrl, setHubUrl] = useState("http://192.168.43.1:8080");
+  const [deployResult, setDeployResult] = useState<string | null>(null);
+  const [deployProblems, setDeployProblems] = useState<JavaProblem[]>([]);
 
   const projectsQuery = { queryKey: getListCodeProjectsQueryKey() };
   const projects = useListCodeProjects({ query: projectsQuery } as never) as unknown as {
@@ -364,6 +371,15 @@ export function CodeWorkspacePage() {
     if (typeof git.remoteUrl === "string") setRemoteUrl(git.remoteUrl);
     if (typeof git.branch === "string" && git.branch) setBranch(git.branch);
     if (typeof git.corsProxy === "string" && git.corsProxy) setCorsProxy(git.corsProxy);
+    if (typeof git.hubUrl === "string" && git.hubUrl) setHubUrl(git.hubUrl);
+    else {
+      try {
+        const saved = window.localStorage.getItem("code-hub-url");
+        if (saved) setHubUrl(saved);
+      } catch {
+        // Hub URL storage is best-effort.
+      }
+    }
     try {
       const token = window.localStorage.getItem(`code-git-token:${project.id}`) ?? "";
       setGitToken(token);
@@ -516,7 +532,9 @@ export function CodeWorkspacePage() {
     () => (activeFile && activeFile.path.endsWith(".java") ? lintJava(activeContent, activeFile.path) : []),
     [activeContent, activeFile],
   );
-  const errorCount = problems.filter((item) => item.severity === "error").length;
+  const errorCount =
+    problems.filter((item) => item.severity === "error").length +
+    deployProblems.filter((item) => item.severity === "error").length;
 
   // --- AI assistant ---------------------------------------------------------
   const runAi = () => {
@@ -576,7 +594,7 @@ export function CodeWorkspacePage() {
     } catch {
       // Token storage is best-effort; the token never leaves the browser otherwise.
     }
-    await updateCodeProject(project.id, { gitConfig: { remoteUrl, branch, corsProxy } as unknown as Record<string, never> });
+    await updateCodeProject(project.id, { gitConfig: { remoteUrl, branch, corsProxy, hubUrl } as unknown as Record<string, never> });
     await queryClient.invalidateQueries({ queryKey: getListCodeProjectsQueryKey() });
   };
 
@@ -696,6 +714,102 @@ export function CodeWorkspacePage() {
     const content = collab ? collab.text.toString() : activeFile.content;
     downloadBlob(fileNameOf(activeFile.path), content, "text/x-java-source");
     deployLog(`Exported ${fileNameOf(activeFile.path)} for OnBotJava upload.`);
+  };
+
+  const currentFiles = () =>
+    fileList.map((file) => ({
+      path: file.path,
+      content: file.id === activeId && collab ? collab.text.toString() : file.content,
+    }));
+
+  /** Pull hub compiler errors out of the javac log into the Problems panel. */
+  const parseHubLog = (log: string): JavaProblem[] => {
+    const found: JavaProblem[] = [];
+    const pattern = /(\S+\.java):(\d+):(\d+):\s*(warning:)?\s*([^\n]{1,300})/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(log)) && found.length < 50) {
+      found.push({
+        line: Number(match[2]),
+        column: Number(match[3]),
+        severity: match[4] ? "warning" : "error",
+        message: `Hub build — ${match[1].split("/").pop()}: ${match[5].trim()}`,
+      });
+    }
+    return found;
+  };
+
+  const uploadAndBuild = async () => {
+    if (!project || deployBusy) return;
+    if (!/^https?:\/\//i.test(hubUrl.trim())) {
+      setError("Enter the hub address, e.g. http://192.168.43.1:8080. It stays an address — nothing opens.");
+      return;
+    }
+    setDeployBusy(true);
+    setError(null);
+    setDeployResult(null);
+    setDeployProblems([]);
+    try {
+      window.localStorage.setItem("code-hub-url", hubUrl.trim());
+    } catch {
+      // Best-effort.
+    }
+    setBottomTab("terminal");
+    setBottomOpen(true);
+    const files = currentFiles();
+    deployLog(`Uploading ${files.length} project files to ${hubUrl.trim()} from this dashboard…`);
+    try {
+      const result = await deployCodeProject(project.id, {
+        hubBaseUrl: hubUrl.trim(),
+        files,
+      });
+      for (const skipped of result.skipped) deployLog(`Skipped ${skipped.path} (${skipped.reason}).`);
+      deployLog(`Saved ${result.pushed.length} files on the hub. Build ${result.buildStarted ? "started" : "did not start"}…`);
+      if (result.buildSuccessful === true) {
+        setDeployResult(`Build succeeded on the hub — ${result.pushed.length} files live. Check the Driver Station OpMode list.`);
+        deployLog("Build succeeded on the hub.");
+        setNotice(`Uploaded ${result.pushed.length} files and the hub build succeeded.`);
+      } else {
+        const hubErrors = parseHubLog(result.log ?? "");
+        setDeployProblems(hubErrors);
+        setDeployResult(
+          result.buildSuccessful === false
+            ? `Hub build failed with ${hubErrors.length || "compiler"} error(s) — see Problems and the terminal log.`
+            : "Upload finished but the build status is unknown — check the terminal log.",
+        );
+        for (const line of (result.log ?? "").split("\n").slice(-30)) {
+          if (line.trim()) deployLog(`[hub] ${line.trim()}`);
+        }
+      }
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "The hub upload failed.");
+      deployLog("Upload failed. Is this dashboard server on the same network as the hub?");
+    } finally {
+      setDeployBusy(false);
+    }
+  };
+
+  const uploadFromBrowser = async () => {
+    if (!project || deployBusy) return;
+    if (!/^https?:\/\//i.test(hubUrl.trim())) {
+      setError("Enter the hub address first, e.g. http://192.168.43.1:8080.");
+      return;
+    }
+    setDeployBusy(true);
+    setError(null);
+    setBottomTab("terminal");
+    setBottomOpen(true);
+    try {
+      const sent = await browserDirectUpload(hubUrl.trim(), currentFiles(), deployLog);
+      setDeployResult(
+        sent > 0
+          ? `Sent ${sent} files from this browser and triggered the hub build. Confirm on the Driver Station list.`
+          : "Nothing to send — the project has no Java files.",
+      );
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "The browser upload failed.");
+    } finally {
+      setDeployBusy(false);
+    }
   };
 
   const toggleSerial = async () => {
@@ -1074,16 +1188,29 @@ export function CodeWorkspacePage() {
 
               {sideTab === "deploy" && (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-[12px]">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">Deploy · REV hub over USB</p>
-                  <Button type="button" size="sm" disabled={deployBusy} onClick={downloadZip} data-testid="code-deploy-zip" className="justify-start bg-[#0e639c] text-white hover:bg-[#1177bb]">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">Deploy · upload from this dashboard</p>
+                  <label className="block">
+                    <span className="mb-1 block text-[#9d9d9d]">Hub address (just an address — nothing opens)</span>
+                    <Input value={hubUrl} onChange={(event) => setHubUrl(event.target.value)} placeholder="http://192.168.43.1:8080" data-testid="code-hub-url" className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
+                  </label>
+                  <Button type="button" size="sm" disabled={deployBusy || fileList.length === 0} onClick={uploadAndBuild} data-testid="code-deploy-upload" className="justify-start bg-[#0e639c] text-white hover:bg-[#1177bb]">
+                    {deployBusy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload + Build on Hub
+                  </Button>
+                  {deployResult && (
+                    <p role="status" data-testid="code-deploy-result" className="rounded-lg border border-white/10 bg-[#1e1e1e] p-2 text-[#d4d4d4]">
+                      {deployResult}
+                    </p>
+                  )}
+                  <Button type="button" size="sm" variant="outline" disabled={deployBusy || fileList.length === 0} onClick={uploadFromBrowser} data-testid="code-deploy-browser" className="justify-start border-white/15 bg-transparent text-white hover:bg-white/10">
+                    <Upload size={13} /> Upload from this browser instead
+                  </Button>
+                  <p className="-mt-1 text-[#6a6a6a]">Fallback when the dashboard server cannot see the hub. Sends files straight from this tab; build errors will not come back here.</p>
+                  <Button type="button" size="sm" variant="outline" disabled={deployBusy} onClick={downloadZip} data-testid="code-deploy-zip" className="justify-start border-white/15 bg-transparent text-white hover:bg-white/10">
                     <Download size={13} /> Download TeamCode ZIP
                   </Button>
                   <Button type="button" size="sm" variant="outline" disabled={!activeFile} onClick={downloadOnBot} data-testid="code-deploy-onbot" className="justify-start border-white/15 bg-transparent text-white hover:bg-white/10">
                     <FileText size={13} /> Export open file for OnBotJava
                   </Button>
-                  <a href="http://192.168.43.1:8080" target="_blank" rel="noreferrer" data-testid="code-deploy-manage" className="rounded-lg border border-white/15 px-3 py-2 text-center text-white hover:bg-white/10">
-                    Open Program &amp; Manage (:8080)
-                  </a>
                   <div className="rounded-lg border border-white/10 p-2">
                     <p className="mb-1.5 font-semibold text-white">USB device</p>
                     {usbDevice ? (
@@ -1107,9 +1234,8 @@ export function CodeWorkspacePage() {
                   </div>
                   <ol className="list-decimal space-y-1 pl-4 text-[#9d9d9d]">
                     <li>Save + fix every red problem below.</li>
-                    <li>Download the TeamCode ZIP.</li>
-                    <li>Copy into your SDK {BIOBUZZ_SDK_VERSION} checkout.</li>
-                    <li>Plug in USB-C → Run in Android Studio.</li>
+                    <li>Press Upload + Build on Hub — files go straight from this dashboard.</li>
+                    <li>Pick the new OpMode on the Driver Station list.</li>
                   </ol>
                 </div>
               )}
@@ -1217,18 +1343,32 @@ export function CodeWorkspacePage() {
               {bottomOpen && (
                 <div className="max-h-44 min-h-[104px] overflow-auto border-t border-white/10 px-3 py-2 text-[12px]" data-testid="code-bottom-panel">
                   {bottomTab === "problems" ? (
-                    problems.length === 0 ? (
+                    problems.length === 0 && deployProblems.length === 0 ? (
                       <p className="flex items-center gap-1.5 text-[#6a6a6a]">
                         <Check size={13} className="text-emerald-400" /> No problems — JDK 21 toolchain, Java 8 source level, SDK {BIOBUZZ_SDK_VERSION}.
                       </p>
                     ) : (
-                      problems.map((problem, index) => (
-                        <div key={index} className="flex items-start gap-2 py-0.5" data-testid={`code-problem-${index}`}>
-                          <span className={problem.severity === "error" ? "text-red-400" : "text-amber-300"}>{problem.severity === "error" ? "error" : "warning"}</span>
-                          <span className="mono text-[#9d9d9d]">Ln {problem.line}, Col {problem.column}</span>
-                          <span className="text-[#d4d4d4]">{problem.message}</span>
-                        </div>
-                      ))
+                      <>
+                        {deployProblems.length > 0 && (
+                          <p className="mono mb-1 text-[10px] uppercase tracking-[.14em] text-[#9d9d9d]">
+                            From the last hub build
+                          </p>
+                        )}
+                        {deployProblems.map((problem, index) => (
+                          <div key={`hub-${index}`} className="flex items-start gap-2 py-0.5" data-testid={`code-hub-problem-${index}`}>
+                            <span className={problem.severity === "error" ? "text-red-400" : "text-amber-300"}>{problem.severity === "error" ? "error" : "warning"}</span>
+                            <span className="mono text-[#9d9d9d]">Ln {problem.line}, Col {problem.column}</span>
+                            <span className="text-[#d4d4d4]">{problem.message}</span>
+                          </div>
+                        ))}
+                        {problems.map((problem, index) => (
+                          <div key={index} className="flex items-start gap-2 py-0.5" data-testid={`code-problem-${index}`}>
+                            <span className={problem.severity === "error" ? "text-red-400" : "text-amber-300"}>{problem.severity === "error" ? "error" : "warning"}</span>
+                            <span className="mono text-[#9d9d9d]">Ln {problem.line}, Col {problem.column}</span>
+                            <span className="text-[#d4d4d4]">{problem.message}</span>
+                          </div>
+                        ))}
+                      </>
                     )
                   ) : (
                     <div>
@@ -1271,7 +1411,7 @@ export function CodeWorkspacePage() {
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-sm font-semibold">OnBotJava drop files</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Single-file OpModes flattened to hub paths — drag these into Program &amp; Manage, then press Build on the hub.
+            Single-file OpModes flattened to hub paths — matches exactly what Upload sends.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {onBotExport(fileList.map((file) => ({ path: file.path, content: file.content }))).map((entry) => (

@@ -33,6 +33,7 @@ import {
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useUpdateQueueSettings,
   useUpdateApplicant,
+  useGetChatSettings, useUpdateChatSettings, getGetChatSettingsQueryKey,
   useInterpretApplicantSearch,
   useGetSystemUsage,
   useCreateSpreadsheet,
@@ -412,6 +413,23 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     });
   };
   const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const chatSettings = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
+  const updateChatSettings = useUpdateChatSettings();
+  const [slowmodeBusy, setSlowmodeBusy] = useState(false);
+  const setSlowmode = (seconds: number) => {
+    setSlowmodeBusy(true);
+    updateChatSettings.mutate({ data: { slowmodeSeconds: seconds } }, {
+      onSuccess: () => {
+        setSlowmodeBusy(false);
+        setPasswordNotice(seconds > 0 ? `Slow mode on — one message every ${seconds < 60 ? `${seconds}s` : "1m"}.` : "Slow mode off.");
+        setPasswordError("");
+      },
+      onError: () => {
+        setSlowmodeBusy(false);
+        setPasswordError("Could not save slow mode. Try again.");
+      },
+    });
+  };
   const [passkeyLabel, setPasskeyLabel] = useState("");
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyNotice, setPasskeyNotice] = useState("");
@@ -669,6 +687,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           {passkeyNotice && <p className="text-[11px] font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="passkey-success">{passkeyNotice}</p>}
           {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
         </div>}
+      </div>
+      <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Like Discord: each person on the team chat may only send one message every N seconds. The send button counts down for them. Direct messages are never slowed.</p>
+        <SettingRow title="Slow mode" detail={chatSettings.isLoading ? "Loading…" : `One message every ${(() => { const v = chatSettings.data?.slowmodeSeconds ?? 0; return v === 0 ? "no limit" : v < 60 ? `${v}s` : "1m"; })()}`}>
+          <Segmented options={[{ value: 0, label: "Off" }, { value: 5, label: "5s" }, { value: 10, label: "10s" }, { value: 30, label: "30s" }, { value: 60, label: "1m" }]} value={chatSettings.data?.slowmodeSeconds ?? 0} onChange={(v) => setSlowmode(v)} testId="segment-settings-slowmode" />
+        </SettingRow>
+        {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
       </div>
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
@@ -4164,6 +4189,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     saveChatDraft(chatDraftStorageKey, message);
   }, [chatDraftStorageKey, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
+  const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
+  const [slowDeadline, setSlowDeadline] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
+  // 429s can happen without a local send (e.g. a stale tab), so tick whenever
+  // a deadline is pending and stop again once it has elapsed.
+  useEffect(() => {
+    if (slowDeadline === 0) return;
+    const tick = () => {
+      const nowTs = Date.now();
+      setClock(nowTs);
+      if (nowTs >= slowDeadline) setSlowDeadline(0);
+    };
+    const timer = setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, [slowDeadline]);
+  const slowmodeRemaining = slowDeadline > 0 ? Math.max(0, Math.ceil((slowDeadline - clock) / 1000)) : 0;
+  const startSlowmodeCountdown = (seconds: number) => {
+    if (seconds > 0) setSlowDeadline(Date.now() + seconds * 1000);
+  };
   const [failedAiReply, setFailedAiReply] = useState<{
     answer: string;
     activities: { tool: string; detail: string }[];
@@ -4963,6 +5007,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         },
       }), 30000, "send");
       userPosted = true;
+      const configuredSlowmode = slowmodeConfig.data?.slowmodeSeconds ?? 0;
+      if (configuredSlowmode > 0 && conversationScope === "shared") startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
       if (/@ai\b/i.test(submitted)) {
@@ -5044,6 +5090,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           : userPosted
             ? "The AI answer failed. Your message was saved — try again."
             : serverErrorMessage(error, "Couldn't send — nothing was posted. Try again.");
+      if (error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 429) {
+        const data = (error as { data?: { retryAfter?: number } }).data;
+        const waitSeconds = Math.max(1, Number(data?.retryAfter ?? 10));
+        startSlowmodeCountdown(waitSeconds);
+      }
       setChatError(errorMessage);
     } finally {
       setChatUploading(false);
@@ -5229,7 +5280,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                 <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
              </div>
-              <button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label="Send message" data-testid="button-send-interviewer-chat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-white transition hover:bg-[#106d7a] disabled:opacity-40">{chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>

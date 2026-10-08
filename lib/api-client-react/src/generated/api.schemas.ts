@@ -962,6 +962,15 @@ export interface UploadResponse {
   metadata: UploadResponseMetadata;
 }
 
+export interface ChatSettings {
+  /**
+     * Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.
+     * @minimum 0
+     * @maximum 600
+     */
+  slowmodeSeconds: number;
+}
+
 export interface QueueLabels {
   interviewerLabels: string[];
 }
@@ -2153,6 +2162,41 @@ export interface CodePresenceInput {
   /** @nullable */
   fileId?: string | null;
   color?: string;
+}
+
+export type CodeDeployInputFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface CodeDeployInput {
+  /**
+     * Hub address, e.g. http://192.168.43.1:8080
+     * @maxLength 200
+     */
+  hubBaseUrl: string;
+  /** Defaults to the project's stored files when omitted */
+  files?: CodeDeployInputFilesItem[];
+}
+
+export type CodeDeployResultPushedItem = {
+  path: string;
+  hubPath: string;
+};
+
+export type CodeDeployResultSkippedItem = {
+  path: string;
+  reason: string;
+};
+
+export interface CodeDeployResult {
+  hubBaseUrl: string;
+  pushed: CodeDeployResultPushedItem[];
+  skipped: CodeDeployResultSkippedItem[];
+  buildStarted: boolean;
+  /** @nullable */
+  buildSuccessful?: boolean | null;
+  log?: string;
 }
 
 /**

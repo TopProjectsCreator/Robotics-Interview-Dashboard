@@ -11,6 +11,7 @@ import {
 import { requestAdminSession } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getClientIp } from "../lib/presence";
+import { pushRealtimeHint } from "../lib/realtime";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,7 @@ router.post("/broadcasts", async (req, res): Promise<void> => {
         expiresAt: new Date(Date.now() + ttl * 60 * 1000),
       })
       .returning();
+    pushRealtimeHint("broadcasts", "INSERT");
     res.status(201).json(PostBroadcastResponse.parse(broadcastResponse(created)));
   } catch (error) {
     req.log.error({ err: error }, "Broadcast create failed");

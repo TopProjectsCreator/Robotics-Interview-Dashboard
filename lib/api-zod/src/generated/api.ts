@@ -910,6 +910,41 @@ export const GetQueueResponse = zod.object({
 
 
 /**
+ * @summary Read chat settings (slow mode)
+ */
+export const getChatSettingsResponseSlowmodeSecondsMin = 0;
+export const getChatSettingsResponseSlowmodeSecondsMax = 600;
+
+
+
+export const GetChatSettingsResponse = zod.object({
+  "slowmodeSeconds": zod.number().int().min(getChatSettingsResponseSlowmodeSecondsMin).max(getChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+
+/**
+ * @summary Update chat settings (coordinators only)
+ */
+export const updateChatSettingsBodySlowmodeSecondsMin = 0;
+export const updateChatSettingsBodySlowmodeSecondsMax = 600;
+
+
+
+export const UpdateChatSettingsBody = zod.object({
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsBodySlowmodeSecondsMin).max(updateChatSettingsBodySlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+export const updateChatSettingsResponseSlowmodeSecondsMin = 0;
+export const updateChatSettingsResponseSlowmodeSecondsMax = 600;
+
+
+
+export const UpdateChatSettingsResponse = zod.object({
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsResponseSlowmodeSecondsMin).max(updateChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+
+/**
  * @summary List interviewer labels (used for direct messages)
  */
 export const GetQueueLabelsResponse = zod.object({
@@ -3459,6 +3494,42 @@ export const DeleteCodeFileParams = zod.object({
 })
 
 export const DeleteCodeFileResponse = zod.void()
+
+
+/**
+ * The dashboard server saves each Java file to the hub's OnBotJava server and triggers its on-hub build, then returns the compiler log. Nobody opens the hub's Program and Manage site.
+ * @summary Upload a project straight to the REV hub and build it there
+ */
+export const DeployCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const deployCodeProjectBodyHubBaseUrlMax = 200;
+
+
+
+export const DeployCodeProjectBody = zod.object({
+  "hubBaseUrl": zod.string().max(deployCodeProjectBodyHubBaseUrlMax).describe('Hub address, e.g. http:\/\/192.168.43.1:8080'),
+  "files": zod.array(zod.object({
+  "path": zod.string(),
+  "content": zod.string()
+})).optional().describe('Defaults to the project\'s stored files when omitted')
+})
+
+export const DeployCodeProjectResponse = zod.object({
+  "hubBaseUrl": zod.string(),
+  "pushed": zod.array(zod.object({
+  "path": zod.string(),
+  "hubPath": zod.string()
+})),
+  "skipped": zod.array(zod.object({
+  "path": zod.string(),
+  "reason": zod.string()
+})),
+  "buildStarted": zod.boolean(),
+  "buildSuccessful": zod.boolean().nullish(),
+  "log": zod.string().optional()
+})
 
 
 /**

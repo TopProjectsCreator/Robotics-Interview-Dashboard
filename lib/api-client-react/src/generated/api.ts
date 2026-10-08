@@ -66,10 +66,13 @@ import type {
   ChatPollVoteInput,
   ChatReactionInput,
   ChatReactionList,
+  ChatSettings,
   ChunkUploadCompleteInput,
   ChunkUploadStored,
   ChunkUploadUrl,
   ChunkUploadUrlInput,
+  CodeDeployInput,
+  CodeDeployResult,
   CodeFileInput,
   CodeFileList,
   CodeFileUpdateInput,
@@ -3299,6 +3302,154 @@ export function useGetQueue<TData = Awaited<ReturnType<typeof getQueue>>, TError
 
 
 
+
+export const getGetChatSettingsUrl = () => {
+
+
+
+
+  return `/api/chat/settings`
+}
+
+/**
+ * @summary Read chat settings (slow mode)
+ */
+export const getChatSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatSettings> => {
+
+  return customFetch<ChatSettings>(getGetChatSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatSettingsQueryKey = () => {
+    return [
+    `/api/chat/settings`
+    ] as const;
+    }
+
+
+export const getGetChatSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getChatSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatSettings>>> = ({ signal }) => getChatSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getChatSettings>>>
+export type GetChatSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read chat settings (slow mode)
+ */
+
+export function useGetChatSettings<TData = Awaited<ReturnType<typeof getChatSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateChatSettingsUrl = () => {
+
+
+
+
+  return `/api/chat/settings`
+}
+
+/**
+ * @summary Update chat settings (coordinators only)
+ */
+export const updateChatSettings = async (chatSettings: ChatSettings, options?: Parameters<typeof customFetch>[1]): Promise<ChatSettings> => {
+
+  return customFetch<ChatSettings>(getUpdateChatSettingsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatSettings)
+  }
+);}
+
+
+
+
+
+export const getUpdateChatSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatSettings>>, TError,{data: BodyType<ChatSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateChatSettings>>, TError,{data: BodyType<ChatSettings>}, TContext> => {
+
+const mutationKey = ['updateChatSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateChatSettings>>, {data: BodyType<ChatSettings>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateChatSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateChatSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateChatSettings>>>
+    export type UpdateChatSettingsMutationBody = BodyType<ChatSettings>
+    export type UpdateChatSettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update chat settings (coordinators only)
+ */
+export const useUpdateChatSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatSettings>>, TError,{data: BodyType<ChatSettings>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateChatSettings>>,
+        TError,
+        {data: BodyType<ChatSettings>},
+        TContext
+      > => {
+      return useMutation(getUpdateChatSettingsMutationOptions(options));
+    }
 
 export const getGetQueueLabelsUrl = () => {
 
@@ -9002,6 +9153,79 @@ export const useDeleteCodeFile = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getDeleteCodeFileMutationOptions(options));
+    }
+
+export const getDeployCodeProjectUrl = (projectId: string,) => {
+
+
+
+
+  return `/api/code/projects/${projectId}/deploy`
+}
+
+/**
+ * The dashboard server saves each Java file to the hub's OnBotJava server and triggers its on-hub build, then returns the compiler log. Nobody opens the hub's Program and Manage site.
+ * @summary Upload a project straight to the REV hub and build it there
+ */
+export const deployCodeProject = async (projectId: string,
+    codeDeployInput: CodeDeployInput, options?: Parameters<typeof customFetch>[1]): Promise<CodeDeployResult> => {
+
+  return customFetch<CodeDeployResult>(getDeployCodeProjectUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(codeDeployInput)
+  }
+);}
+
+
+
+
+
+export const getDeployCodeProjectMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deployCodeProject>>, TError,{projectId: string;data: BodyType<CodeDeployInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deployCodeProject>>, TError,{projectId: string;data: BodyType<CodeDeployInput>}, TContext> => {
+
+const mutationKey = ['deployCodeProject'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deployCodeProject>>, {projectId: string;data: BodyType<CodeDeployInput>}> = (props) => {
+          const {projectId,data} = props ?? {};
+
+          return  deployCodeProject(projectId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeployCodeProjectMutationResult = NonNullable<Awaited<ReturnType<typeof deployCodeProject>>>
+    export type DeployCodeProjectMutationBody = BodyType<CodeDeployInput>
+    export type DeployCodeProjectMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload a project straight to the REV hub and build it there
+ */
+export const useDeployCodeProject = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deployCodeProject>>, TError,{projectId: string;data: BodyType<CodeDeployInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deployCodeProject>>,
+        TError,
+        {projectId: string;data: BodyType<CodeDeployInput>},
+        TContext
+      > => {
+      return useMutation(getDeployCodeProjectMutationOptions(options));
     }
 
 export const getListCodeRevisionsUrl = (projectId: string,) => {

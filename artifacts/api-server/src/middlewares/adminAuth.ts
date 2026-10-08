@@ -91,6 +91,14 @@ function bearerSession(req: Request): string | undefined {
 export function requestAdminSession(req: Request): string | undefined {
   const bearer = bearerSession(req);
   if (bearer && isValidAdminSession(bearer)) return bearer;
+  // EventSource cannot set an Authorization header, so the SSE client
+  // passes the stored session token as ?access_token= (same convention as
+  // the whiteboard/document/code WebSocket upgrades). Accept it here so the
+  // realtime stream works when cookies are blocked (embedded iframe, etc.).
+  const queryToken = (req.query as Record<string, unknown> | undefined)?.["access_token"];
+  if (typeof queryToken === "string" && queryToken.trim() && isValidAdminSession(queryToken.trim())) {
+    return queryToken.trim();
+  }
   return req.cookies?.[SESSION_COOKIE];
 }
 

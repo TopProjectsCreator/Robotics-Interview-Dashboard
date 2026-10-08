@@ -9,8 +9,9 @@ import {
   visibleWorkspacesForRole,
 } from "./workspaceVisibility.ts";
 
-test("CAD is admin-only by default and matches pre-existing role behaviour", () => {
+test("CAD and Code are admin-only by default and match pre-existing role behaviour", () => {
   assert.deepEqual(DEFAULT_WORKSPACE_VISIBILITY.cad, ["coordinator"]);
+  assert.deepEqual(DEFAULT_WORKSPACE_VISIBILITY.code, ["coordinator"]);
   assert.deepEqual(DEFAULT_WORKSPACE_VISIBILITY.interview, ["coordinator"]);
   assert.deepEqual(DEFAULT_WORKSPACE_VISIBILITY.chat, [
     "coordinator",
@@ -90,6 +91,7 @@ test("lists the workspaces a role can open in canonical order", () => {
     "chat",
     "parts",
     "cad",
+    "code",
   ]);
   assert.deepEqual(visibleWorkspacesForRole(visibility, "treasurer"), ["chat", "parts", "cad"]);
   assert.deepEqual(visibleWorkspacesForRole(visibility, "interviewer"), ["chat", "parts"]);

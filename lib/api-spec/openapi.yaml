@@ -854,6 +854,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /chat/settings:
+    get:
+      operationId: getChatSettings
+      tags: [queue]
+      summary: Read chat settings (slow mode)
+      responses:
+        "200":
+          description: Current chat settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSettings"
+    post:
+      operationId: updateChatSettings
+      tags: [queue]
+      summary: Update chat settings (coordinators only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatSettings"
+      responses:
+        "200":
+          description: Saved chat settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSettings"
   /queue/labels:
     get:
       operationId: getQueueLabels
@@ -2433,6 +2462,40 @@ paths:
           description: File deleted
         "404":
           description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/deploy:
+    post:
+      operationId: deployCodeProject
+      tags: [code]
+      summary: Upload a project straight to the REV hub and build it there
+      description: >
+        The dashboard server saves each Java file to the hub's OnBotJava
+        server and triggers its on-hub build, then returns the compiler log.
+        Nobody opens the hub's Program and Manage site.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeDeployInput"
+      responses:
+        "200":
+          description: Hub upload and build outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeDeployResult"
+        "502":
+          description: The hub could not be reached or refused the upload
           content:
             application/json:
               schema:
@@ -4231,6 +4294,17 @@ components:
               type: integer
             contentType:
               type: string
+    ChatSettings:
+      type: object
+      required: [slowmodeSeconds]
+      properties:
+        slowmodeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: >-
+            Slow mode for the team chat: an author must wait this many seconds
+            between messages. 0 turns it off.
     QueueLabels:
       type: object
       required: [interviewerLabels]
@@ -5714,4 +5788,55 @@ components:
         fileId:
           type: ["string", "null"]
         color:
+          type: string
+    CodeDeployInput:
+      type: object
+      required: [hubBaseUrl]
+      properties:
+        hubBaseUrl:
+          type: string
+          description: Hub address, e.g. http://192.168.43.1:8080
+          maxLength: 200
+        files:
+          type: array
+          description: Defaults to the project's stored files when omitted
+          items:
+            type: object
+            required: [path, content]
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+    CodeDeployResult:
+      type: object
+      required: [hubBaseUrl, pushed, skipped, buildStarted]
+      properties:
+        hubBaseUrl:
+          type: string
+        pushed:
+          type: array
+          items:
+            type: object
+            required: [path, hubPath]
+            properties:
+              path:
+                type: string
+              hubPath:
+                type: string
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path:
+                type: string
+              reason:
+                type: string
+        buildStarted:
+          type: boolean
+        buildSuccessful:
+          type: ["boolean", "null"]
+        log:
           type: string

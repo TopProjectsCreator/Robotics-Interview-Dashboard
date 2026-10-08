@@ -14,6 +14,8 @@ const WATCHED_TABLES = [
   "broadcasts",
   "seating_settings",
   "dashboard_charts",
+  "interview_whiteboards",
+  "chat_settings",
 ] as const;
 
 export interface RealtimeHint {

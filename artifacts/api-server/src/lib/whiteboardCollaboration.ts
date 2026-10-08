@@ -9,7 +9,6 @@ import {
   isValidAdminSession,
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
-import { isDocumentCollaborationPath } from "./documentCollaboration";
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
 const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
@@ -353,8 +352,12 @@ export function setupWhiteboardCollaboration(server: Server): void {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     const match = WHITEBOARD_PATH.exec(url.pathname);
     if (!match) {
-      if (isDocumentCollaborationPath(url.pathname)) return;
-      socket.destroy();
+      // Do not destroy the socket here: the same HTTP server also handles
+      // document-collab (/api/whiteboards/:id/document-collab) and code-collab
+      // (/api/code/:fileId/collab) upgrades in other listeners. Destroying an
+      // unmatched socket would kill those connections before their handler
+      // runs (notably the code IDE). Just return and let the matching handler
+      // (or nothing, for unknown paths) deal with it.
       return;
     }
     const whiteboardId = decodeURIComponent(match[1]);

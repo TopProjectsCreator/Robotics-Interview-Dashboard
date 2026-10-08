@@ -106,6 +106,8 @@ export async function cloneEndpoint(options: {
 }): Promise<{ dir: string; defaultBranch: string }> {
   const fs = fsFor(options.scope);
   const dir = "/repo";
+  // Start from a clean checkout so re-clones never fail on a dirty tree.
+  await wipeDir(fs, dir);
   const onAuth = () => (options.token ? { username: options.token } : undefined);
   await git.clone({
     fs: fs as never,
@@ -129,6 +131,35 @@ export async function cloneEndpoint(options: {
     // Fall back to the requested ref.
   }
   return { dir, defaultBranch: branch };
+}
+
+async function wipeDir(fs: LightningFS, path: string): Promise<void> {
+  const promises = pfs(fs) as {
+    readdir: (p: string) => Promise<string[]>;
+    unlink: (p: string) => Promise<void>;
+    rmdir: (p: string) => Promise<void>;
+    stat: (p: string) => Promise<{ type: "file" | "dir" }>;
+  };
+  let entries: string[];
+  try {
+    entries = await promises.readdir(path);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = `${path}/${entry}`;
+    try {
+      const stat = await promises.stat(full);
+      if (stat.type === "dir") {
+        await wipeDir(fs, full);
+        await promises.rmdir(full);
+      } else {
+        await promises.unlink(full);
+      }
+    } catch {
+      // Best-effort cleanup; clone recreates what it needs.
+    }
+  }
 }
 
 export async function readWorkingTree(scope: string): Promise<{ path: string; content: string }[]> {
@@ -181,6 +212,11 @@ export async function gitCommitAll(
   author: { name: string; email?: string },
 ): Promise<string> {
   const fs = fsFor(scope);
+  try {
+    await git.resolveRef({ fs: fs as never, dir: "/repo", ref: "HEAD" });
+  } catch {
+    await git.init({ fs: fs as never, dir: "/repo", defaultBranch: "main" });
+  }
   const matrix = await git.statusMatrix({ fs: fs as never, dir: "/repo" });
   for (const [filepath, , workdir] of matrix) {
     if (workdir === 0) await git.remove({ fs: fs as never, dir: "/repo", filepath });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -1953,6 +1953,7 @@ router.post("/dashboard/charts", requireCoordinator, async (req, res): Promise<v
     yAxis,
     position,
   }).returning();
+  pushRealtimeHint("dashboard_charts");
   res.status(201).json(CreateDashboardChartResponse.parse(dashboardChartResponse(created)));
 });
 
@@ -1998,6 +1999,7 @@ router.patch("/dashboard/charts/:chartId", requireCoordinator, async (req, res):
     res.status(404).json({ error: "Chart not found." });
     return;
   }
+  pushRealtimeHint("dashboard_charts");
   res.json(UpdateDashboardChartResponse.parse(dashboardChartResponse(updated)));
 });
 
@@ -2017,6 +2019,7 @@ router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res)
     res.status(404).json({ error: "Chart not found." });
     return;
   }
+  pushRealtimeHint("dashboard_charts");
   res.status(204).end();
 });
 
@@ -2188,6 +2191,8 @@ router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<vo
     const seated = await assignSeat(params.data.id, row, col);
     if (seated) result = seated;
   }
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.json(UpdateApplicantResponse.parse(applicantResponse(result)));
 });
 
@@ -2202,6 +2207,8 @@ router.delete("/applicants/:id", requireCoordinator, async (req, res): Promise<v
     res.status(404).json({ error: "Applicant not found" });
     return;
   }
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.status(204).end();
 });
 
@@ -2314,6 +2321,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
       res.status(404).json({ error: "Applicant not found" });
       return;
     }
+    pushRealtimeHint("applicants");
     res.json(GetApplicantResponse.parse(applicantResponse(updated)));
   } catch (error) {
     const limited = isRateLimit(error);
@@ -2475,6 +2483,8 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
       parsed.data.rowCount,
       parsed.data.onlyNew === true,
     );
+    pushRealtimeHint("applicants");
+    pushRealtimeHint("interview_queue");
     res.status(201).json(CommitImportResponse.parse(result));
   } catch (error) {
     req.log.error({ err: error }, "Failed to commit file import");
@@ -2511,6 +2521,8 @@ router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void
     notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
     updatedAt: new Date(),
   }).where(eq(applicantsTable.id, applicant.id));
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
@@ -2535,6 +2547,8 @@ router.post("/queue/callback", requireCoordinator, async (req, res): Promise<voi
     notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
     updatedAt: new Date(),
   }).where(eq(applicantsTable.id, applicant.id));
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
@@ -2549,6 +2563,8 @@ router.post("/queue/reset", requireCoordinator, async (_req, res): Promise<void>
       updatedAt: now,
     }).where(eq(applicantsTable.id, applicant.id));
   }
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
@@ -2567,6 +2583,7 @@ router.post("/queue/settings", requireCoordinator, async (req, res): Promise<voi
     target: interviewQueueTable.id,
     set: { interviewerLabels: JSON.stringify(labels), updatedAt: new Date() },
   });
+  pushRealtimeHint("interview_queue");
   res.json(GetQueueResponse.parse(await getQueueState()));
 });
 
@@ -3337,6 +3354,40 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 /** Chat message cap, in characters. Doubled from 1000. */
 const CHAT_MESSAGE_MAX_CHARS = 2000;
 
+const SLOWMODE_MAX_SECONDS = 600;
+
+/** Slow mode window for the team chat, in seconds (0 = off). */
+async function chatSlowmodeSeconds(): Promise<number> {
+  try {
+    const [row] = await db.select().from(chatSettingsTable).limit(1);
+    const seconds = row?.slowmodeSeconds ?? 0;
+    return Number.isFinite(seconds) ? Math.max(0, Math.min(SLOWMODE_MAX_SECONDS, Math.floor(seconds))) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+router.get("/chat/settings", requireAdmin, async (_req, res): Promise<void> => {
+  res.json({ slowmodeSeconds: await chatSlowmodeSeconds() });
+});
+
+router.post("/chat/settings", requireCoordinator, async (req, res): Promise<void> => {
+  const seconds = Number((req.body as Record<string, unknown> | undefined)?.slowmodeSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > SLOWMODE_MAX_SECONDS) {
+    res.status(400).json({ error: `Slow mode must be between 0 and ${SLOWMODE_MAX_SECONDS} seconds.` });
+    return;
+  }
+  const value = Math.floor(seconds);
+  await pool.query(
+    `insert into "chat_settings" ("id", "slowmode_seconds", "updated_at")
+     values ('1', $1, now())
+     on conflict ("id") do update set "slowmode_seconds" = $1, "updated_at" = now()`,
+    [value],
+  );
+  pushRealtimeHint("chat_settings");
+  res.json({ slowmodeSeconds: value });
+});
+
 router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -3354,6 +3405,33 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
     return;
+  }
+
+  // Discord-style slow mode, enforced server-side on the team channel only.
+  if (conversation.scope === "shared") {
+    const slowmodeSeconds = await chatSlowmodeSeconds();
+    if (slowmodeSeconds > 0) {
+      const [lastMessage] = await db
+        .select({ createdAt: interviewChatMessagesTable.createdAt })
+        .from(interviewChatMessagesTable)
+        .where(and(
+          eq(interviewChatMessagesTable.author, account.displayName),
+          isNull(interviewChatMessagesTable.conversationPeer),
+        ))
+        .orderBy(desc(interviewChatMessagesTable.createdAt))
+        .limit(1);
+      if (lastMessage) {
+        const elapsedSeconds = (Date.now() - lastMessage.createdAt.getTime()) / 1000;
+        const retryAfter = Math.ceil(slowmodeSeconds - elapsedSeconds);
+        if (retryAfter > 0) {
+          res.status(429).json({
+            error: `Slow mode is on — wait ${retryAfter}s before sending again.`,
+            retryAfter,
+          });
+          return;
+        }
+      }
+    }
   }
   const parentMessageId = parsed.data.parentMessageId?.trim() || null;
   if (parentMessageId) {
@@ -3707,6 +3785,8 @@ router.post("/queue/reorder", requireCoordinator, async (req, res): Promise<void
   for (const [index, id] of ordered.entries()) {
     await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(eq(applicantsTable.id, id));
   }
+  pushRealtimeHint("applicants");
+  pushRealtimeHint("interview_queue");
   res.json(ReorderQueueResponse.parse(await getQueueState()));
 });
 
@@ -3797,6 +3877,7 @@ router.post("/display/settings", requireCoordinator, async (req, res): Promise<v
       announce: patch.announce ?? true,
     }).returning();
   }
+  pushRealtimeHint("display_settings");
   res.json(UpdateDisplaySettingsResponse.parse(displaySettingsResponse(row)));
 });
 
@@ -3835,6 +3916,8 @@ router.post("/seating/settings", requireCoordinator, async (req, res): Promise<v
       and(isNotNull(applicantsTable.seatCol), or(gt(applicantsTable.seatCol, cols - 1), lt(applicantsTable.seatCol, 0))),
     ),
   );
+  pushRealtimeHint("seating_settings");
+  pushRealtimeHint("applicants");
   res.json(UpdateSeatingSettingsResponse.parse(seatingSettingsResponse(row)));
 });
 
@@ -3861,6 +3944,8 @@ router.post("/seating/assign", requireCoordinator, async (req, res): Promise<voi
     res.status(404).json({ error: "Applicant not found" });
     return;
   }
+  pushRealtimeHint("seating_settings");
+  pushRealtimeHint("applicants");
   res.json(AssignSeatResponse.parse(applicantResponse(seated)));
 });
 

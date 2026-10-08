@@ -8,6 +8,7 @@ import {
   getListApplicantsQueryKey,
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
+import { getStoredAuthToken } from "./authSession";
 
 // Subscribes to the server's realtime relay (Supabase Realtime -> SSE).
 // Events carry only table names; rows are refetched through the
@@ -20,7 +21,13 @@ export function useRealtimeSync(authenticated: boolean) {
   useEffect(() => {
     if (!on) return;
     let stopped = false;
-    const source = new EventSource(`${import.meta.env.BASE_URL}api/events`, {
+    // EventSource cannot send an Authorization header, so attach the stored
+    // session token as ?access_token= (same convention as the WS collab
+    // endpoints). The server also accepts the session cookie, so this keeps
+    // working when cookies are blocked (embedded iframe, etc.).
+    const token = getStoredAuthToken();
+    const query = token ? `?access_token=${encodeURIComponent(token)}` : "";
+    const source = new EventSource(`${import.meta.env.BASE_URL}api/events${query}`, {
       withCredentials: true,
     });
     source.onmessage = (event) => {
@@ -31,10 +38,19 @@ export function useRealtimeSync(authenticated: boolean) {
           void qc.invalidateQueries({
             predicate: ({ queryKey }) => {
               const key = JSON.stringify(queryKey);
-              return key.includes("/api/boards") || key.includes("/api/whiteboards");
+              return (
+                key.includes("/api/boards") ||
+                key.includes("/api/whiteboards") ||
+                key.includes("/api/spreadsheets") ||
+                key.includes("/whiteboards")
+              );
             },
           });
-          return;
+          // Whiteboard-family artifacts (boards, documents, spreadsheets all
+          // live in interview_whiteboards) still fall through to the broad
+          // refresh below so chat/queue badges stay live too.
+        } else {
+          // Unknown realtime messages still trigger the broad refresh below.
         }
       } catch {
         // Unknown realtime messages still trigger the broad refresh below.
