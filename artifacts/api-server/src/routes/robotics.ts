@@ -4399,7 +4399,10 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
         first = await streamPass(baseMessages, false);
       }
     }
-    let answer = first.text;
+    // When the first pass leads with tool calls, its text is usually just
+    // planning filler ("I'll look that up...") — the real answer comes from
+    // follow-ups, so seed empty and accumulate those instead.
+    let answer = first.calls.length > 0 ? "" : first.text;
     const activities: AssistantActivity[] = [];
     const previewedPaths = new Set<string>();
     // Follow-up text accumulates across rounds so the saved answer matches
