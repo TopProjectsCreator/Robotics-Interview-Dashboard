@@ -4,6 +4,7 @@ import {
   BIOBUZZ_SDK_VERSION,
   defaultSeedFiles,
   highlightJavaLine,
+  hubPathFor,
   lintJava,
   onBotPathFor,
   templateForKind,
@@ -69,5 +70,13 @@ describe("onbot paths", () => {
     expect(onBotPathFor("TeamCode/src/main/java/org/firstinspires/ftc/teamcode/A.java")).toBe(
       "org/firstinspires/ftc/teamcode/A.java",
     );
+  });
+
+  it("only uploads Java files and rejects escapes", () => {
+    expect(hubPathFor("TeamCode/src/main/java/org/firstinspires/ftc/teamcode/A.java")).toBe(
+      "org/firstinspires/ftc/teamcode/A.java",
+    );
+    expect(hubPathFor("README.md")).toBe(null);
+    expect(hubPathFor("../escape.java")).toBe(null);
   });
 });

@@ -7,10 +7,6 @@ export function supportsWebSerial(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
-export function supportsWebUSB(): boolean {
-  return typeof navigator !== "undefined" && "usb" in navigator;
-}
-
 export type SerialConsole = {
   close: () => Promise<void>;
   send: (line: string) => Promise<void>;
@@ -83,29 +79,6 @@ export async function openSerialConsole(options: {
       }
     },
   };
-}
-
-export type UsbDeviceSummary = {
-  productName: string;
-  vendorId: string;
-  productId: string;
-  serialNumber: string;
-  manufacturerName: string;
-};
-
-export async function requestUsbDevice(): Promise<UsbDeviceSummary> {
-  const usb = (navigator as Navigator & { usb: USB }).usb;
-  const device = await usb.requestDevice({ filters: [] });
-  await device.open().catch(() => undefined);
-  const summary: UsbDeviceSummary = {
-    productName: device.productName ?? "Unknown USB device",
-    vendorId: `0x${device.vendorId.toString(16).padStart(4, "0")}`,
-    productId: `0x${device.productId.toString(16).padStart(4, "0")}`,
-    serialNumber: device.serialNumber ?? "—",
-    manufacturerName: device.manufacturerName ?? "—",
-  };
-  await device.close().catch(() => undefined);
-  return summary;
 }
 
 export function downloadBlob(fileName: string, data: Uint8Array | string, mime: string): void {

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initRealtime } from "./lib/realtime";
+import { ensureRealtimePublication, initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
@@ -302,6 +302,14 @@ async function ensureSchema(): Promise<void> {
       logger.error({ err, sql }, "Schema migration failed");
       throw err;
     }
+  }
+  // Tables must be in the supabase_realtime publication or the Supabase
+  // relay subscribes to them forever without receiving a single event.
+  // Idempotent and a no-op on plain Postgres; never block boot on it.
+  try {
+    await ensureRealtimePublication();
+  } catch (err) {
+    logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
   await removeTestAccounts();
 

@@ -34,6 +34,7 @@ const BUILD_POLL_INTERVAL_MS = 2_000;
 export function hubPathFor(repoPath: string): string | null {
   const normalized = repoPath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   if (!normalized.endsWith(".java")) return null;
+  if (normalized.split("/").includes("..")) return null;
   const marker = "org/firstinspires/ftc/teamcode/";
   const index = normalized.indexOf(marker);
   const hubPath = index >= 0 ? normalized.slice(index) : (normalized.split("/").pop() ?? "");

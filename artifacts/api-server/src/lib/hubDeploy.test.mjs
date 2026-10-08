@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import test from "node:test";
-import {
-  deployProjectToHub,
-  hubPathFor,
-  normalizeHubBaseUrl,
-} from "./hubDeploy.ts";
+import test, { before } from "node:test";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -22,6 +17,15 @@ registerHooks({
       throw error;
     }
   },
+});
+
+// Static imports resolve before the hooks above register, so the subject
+// under test is loaded dynamically like boardOperations.test.mjs does.
+let deployProjectToHub;
+let hubPathFor;
+let normalizeHubBaseUrl;
+before(async () => {
+  ({ deployProjectToHub, hubPathFor, normalizeHubBaseUrl } = await import("./hubDeploy.ts"));
 });
 
 test("hub paths accept TeamCode files and reject the rest", () => {

@@ -5,6 +5,8 @@ import { requireWorkspaceAccess } from "../middlewares/adminAuth";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { deployProjectToHub, normalizeHubBaseUrl } from "../lib/hubDeploy";
+import { applyCodeFileContent } from "../lib/codeCollaboration";
+import { pushRealtimeHint } from "../lib/realtime";
 
 const router: IRouter = Router();
 const codeAccess = requireWorkspaceAccess("code");
@@ -213,7 +215,12 @@ router.post("/code/files", codeAccess, async (req, res): Promise<void> => {
       [randomUUID(), projectId, path, content, by],
     );
     await pool.query(`update "code_projects" set "updated_at" = now() where "id" = $1`, [projectId]);
-    res.status(201).json({ file: mapFile(inserted.rows[0]) });
+    const saved = mapFile(inserted.rows[0]);
+    // Fold the write into the live Yjs room (if open) so peers with this
+    // file open see it immediately, then hint every IDE to refresh lists.
+    applyCodeFileContent(saved.id, content);
+    pushRealtimeHint("code_files", "INSERT");
+    res.status(201).json({ file: saved });
   } catch (error) {
     req.log.error({ err: error }, "Code file save failed");
     res.status(500).json({ error: "Unable to save this file." });
@@ -261,7 +268,13 @@ router.put("/code/files/:fileId", codeAccess, async (req, res): Promise<void> =>
       res.status(404).json({ error: "File not found." });
       return;
     }
-    res.json({ file: mapFile(updated.rows[0]) });
+    const saved = mapFile(updated.rows[0]);
+    if (body.content !== undefined) {
+      // Sync the live Yjs room so open editors converge on this save now.
+      applyCodeFileContent(saved.id, saved.content);
+    }
+    pushRealtimeHint("code_files");
+    res.json({ file: saved });
   } catch (error) {
     if (typeof error === "object" && error !== null && (error as { code?: string }).code === "23505") {
       res.status(409).json({ error: "A file with that path already exists." });
@@ -281,6 +294,7 @@ router.delete("/code/files/:fileId", codeAccess, async (req, res): Promise<void>
       res.status(404).json({ error: "File not found." });
       return;
     }
+    pushRealtimeHint("code_files", "DELETE");
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "Code file deletion failed");

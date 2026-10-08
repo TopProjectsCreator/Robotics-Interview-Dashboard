@@ -310,6 +310,7 @@ export function onBotPathFor(repoPath: string): string {
 export function hubPathFor(repoPath: string): string | null {
   const normalized = repoPath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   if (!normalized.endsWith(".java")) return null;
+  if (normalized.split("/").includes("..")) return null;
   const hubPath = onBotPathFor(normalized);
   if (!hubPath || hubPath.includes("..") || hubPath.length > 255) return null;
   return hubPath;

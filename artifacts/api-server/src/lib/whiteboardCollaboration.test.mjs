@@ -19,7 +19,11 @@ registerHooks({
         !specifier.endsWith(".ts") &&
         !specifier.endsWith(".js")
       ) {
-        return nextResolve(`${specifier}.ts`, context);
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
       }
       throw error;
     }
@@ -132,8 +136,19 @@ const db = {
   },
 };
 
-function watchMessages(socket) {
-  const messages = [];
+function mockDatabase() {
+  mock.module("@workspace/db", {
+    namedExports: {
+      db,
+      pool: {},
+      interviewerAccountsTable,
+      revokedSessionsTable,
+      interviewWhiteboardsTable,
+    },
+  });
+}
+
+function watchMessages(socket) {  const messages = [];
   const waiters = [];
 
   socket.on("message", (raw) => {
@@ -437,6 +452,7 @@ test("acknowledges a Yjs edit only after persistence and reloads it from saved s
     return [document];
   });
 
+  mockDatabase();
   const [{ createInterviewerSession }, { setupDocumentCollaboration }] = await Promise.all([
     import("../middlewares/adminAuth.ts"),
     import("./documentCollaboration.ts"),
@@ -535,6 +551,7 @@ test("reports document persistence failures without sending a saved acknowledgem
     throw new Error("test database write failure");
   });
 
+  mockDatabase();
   const [{ createInterviewerSession }, { setupDocumentCollaboration }] = await Promise.all([
     import("../middlewares/adminAuth.ts"),
     import("./documentCollaboration.ts"),

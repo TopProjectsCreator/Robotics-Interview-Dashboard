@@ -80,12 +80,15 @@ import {
   downloadBlob,
   onBotExport,
   openSerialConsole,
-  requestUsbDevice,
   supportsWebSerial,
-  supportsWebUSB,
   type SerialConsole,
-  type UsbDeviceSummary,
 } from "@/lib/revDeploy";
+import {
+  connectHubUsb,
+  isUsbAdbSupported,
+  uploadAndBuildViaUsb,
+  type HubAdbConnection,
+} from "@/lib/hubAdb";
 import { askValue, confirmAction } from "@/lib/dialogs";
 
 type SideTab = "explorer" | "git" | "ai" | "deploy";
@@ -330,7 +333,9 @@ export function CodeWorkspacePage() {
   const [serialOpen, setSerialOpen] = useState(false);
   const [serialInput, setSerialInput] = useState("");
   const serialRef = useRef<SerialConsole | null>(null);
-  const [usbDevice, setUsbDevice] = useState<UsbDeviceSummary | null>(null);
+  const [usbAdb, setUsbAdb] = useState<HubAdbConnection | null>(null);
+  const usbAdbRef = useRef<HubAdbConnection | null>(null);
+  usbAdbRef.current = usbAdb;
   const [deployBusy, setDeployBusy] = useState(false);
   const [hubUrl, setHubUrl] = useState("http://192.168.43.1:8080");
   const [deployResult, setDeployResult] = useState<string | null>(null);
@@ -850,24 +855,70 @@ export function CodeWorkspacePage() {
     }
   };
 
-  const connectUsb = async () => {
-    if (!supportsWebUSB()) {
-      setError("WebUSB is not available. Use Chrome or Edge on desktop.");
+  const connectUsbAdb = async () => {
+    if (usbAdbRef.current) {
+      await usbAdbRef.current.close().catch(() => undefined);
+      setUsbAdb(null);
+      deployLog("USB ADB connection closed.");
       return;
     }
+    if (!isUsbAdbSupported()) {
+      setError("WebUSB is not available. Use Chrome or Edge on desktop over HTTPS.");
+      return;
+    }
+    setError(null);
     try {
-      const summary = await requestUsbDevice();
-      setUsbDevice(summary);
-      deployLog(`USB device: ${summary.productName} (${summary.vendorId}:${summary.productId}).`);
+      const connection = await connectHubUsb((line) => deployLog(line));
+      setUsbAdb(connection);
+      setBottomTab("terminal");
+      setBottomOpen(true);
     } catch (actionError) {
       if (actionError instanceof Error && actionError.name === "NotFoundError") return;
-      setError(actionError instanceof Error ? actionError.message : "Could not open the USB device.");
+      setError(actionError instanceof Error ? actionError.message : "Could not open the hub over USB.");
+    }
+  };
+
+  const uploadViaUsb = async () => {
+    if (!project || deployBusy) return;
+    if (!usbAdbRef.current) {
+      setError("Connect the hub over USB first, then upload.");
+      return;
+    }
+    setDeployBusy(true);
+    setError(null);
+    setDeployResult(null);
+    setDeployProblems([]);
+    setBottomTab("terminal");
+    setBottomOpen(true);
+    try {
+      const result = await uploadAndBuildViaUsb(usbAdbRef.current, currentFiles(), (line) => deployLog(line));
+      for (const skipped of result.skipped) deployLog(`Skipped ${skipped.path} (${skipped.reason}).`);
+      if (result.buildSuccessful === true) {
+        setDeployResult(`Hub build succeeded over USB — ${result.pushed.length} files live. Check the Driver Station OpMode list.`);
+        setNotice(`Uploaded ${result.pushed.length} files over USB and the hub build succeeded.`);
+      } else {
+        const hubErrors = parseHubLog(result.log);
+        setDeployProblems(hubErrors);
+        setDeployResult(
+          result.buildSuccessful === false
+            ? `Hub build failed with ${hubErrors.length || "compiler"} error(s) — see Problems and the terminal log.`
+            : "Upload finished but the build status is unknown — check the terminal log.",
+        );
+        for (const line of result.log.split("\n").slice(-30)) {
+          if (line.trim()) deployLog(`[hub] ${line.trim()}`);
+        }
+      }
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "The USB upload failed.");
+    } finally {
+      setDeployBusy(false);
     }
   };
 
   useEffect(
     () => () => {
       void serialRef.current?.close().catch(() => undefined);
+      void usbAdbRef.current?.close().catch(() => undefined);
     },
     [],
   );
@@ -1189,6 +1240,24 @@ export function CodeWorkspacePage() {
               {sideTab === "deploy" && (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-[12px]">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">Deploy · upload from this dashboard</p>
+                  <div className="rounded-lg border border-white/10 p-2">
+                    <p className="mb-1.5 font-semibold text-white">
+                      Hub over USB {usbAdb && <span className="text-emerald-300">· {usbAdb.label} connected</span>}
+                    </p>
+                    {!usbAdb ? (
+                      <p className="mb-1.5 text-[#6a6a6a]">Plug the hub in over USB-C. Works from anywhere — even with the dashboard hosted in the cloud.</p>
+                    ) : (
+                      <p className="mono mb-1.5 text-[11px] text-[#9d9d9d]" data-testid="code-usb-summary">ADB serial {usbAdb.serial}</p>
+                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button type="button" size="sm" variant="outline" onClick={connectUsbAdb} data-testid="code-usb-connect" className="border-white/15 bg-transparent text-white hover:bg-white/10">
+                        <Usb size={13} /> {usbAdb ? "Disconnect" : "Connect hub over USB"}
+                      </Button>
+                      <Button type="button" size="sm" disabled={deployBusy || !usbAdb || fileList.length === 0} onClick={uploadViaUsb} data-testid="code-deploy-usb" className="bg-[#0e639c] text-white hover:bg-[#1177bb]">
+                        {deployBusy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload + Build via USB
+                      </Button>
+                    </div>
+                  </div>
                   <label className="block">
                     <span className="mb-1 block text-[#9d9d9d]">Hub address (just an address — nothing opens)</span>
                     <Input value={hubUrl} onChange={(event) => setHubUrl(event.target.value)} placeholder="http://192.168.43.1:8080" data-testid="code-hub-url" className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
@@ -1205,26 +1274,13 @@ export function CodeWorkspacePage() {
                     <Upload size={13} /> Upload from this browser instead
                   </Button>
                   <p className="-mt-1 text-[#6a6a6a]">Fallback when the dashboard server cannot see the hub. Sends files straight from this tab; build errors will not come back here.</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">Other routes</p>
                   <Button type="button" size="sm" variant="outline" disabled={deployBusy} onClick={downloadZip} data-testid="code-deploy-zip" className="justify-start border-white/15 bg-transparent text-white hover:bg-white/10">
                     <Download size={13} /> Download TeamCode ZIP
                   </Button>
                   <Button type="button" size="sm" variant="outline" disabled={!activeFile} onClick={downloadOnBot} data-testid="code-deploy-onbot" className="justify-start border-white/15 bg-transparent text-white hover:bg-white/10">
                     <FileText size={13} /> Export open file for OnBotJava
                   </Button>
-                  <div className="rounded-lg border border-white/10 p-2">
-                    <p className="mb-1.5 font-semibold text-white">USB device</p>
-                    {usbDevice ? (
-                      <div className="text-[#c5c5c5]" data-testid="code-usb-summary">
-                        <p>{usbDevice.productName}</p>
-                        <p className="mono text-[11px] text-[#9d9d9d]">{usbDevice.vendorId}:{usbDevice.productId} · {usbDevice.manufacturerName} · S/N {usbDevice.serialNumber}</p>
-                      </div>
-                    ) : (
-                      <p className="text-[#6a6a6a]">No device picked. Plug the hub in over USB-C first.</p>
-                    )}
-                    <Button type="button" size="sm" variant="outline" onClick={connectUsb} data-testid="code-usb-connect" className="mt-2 border-white/15 bg-transparent text-white hover:bg-white/10">
-                      <Usb size={13} /> {usbDevice ? "Pick a different device" : "Connect USB device"}
-                    </Button>
-                  </div>
                   <div className="rounded-lg border border-white/10 p-2">
                     <p className="mb-1 font-semibold text-white">Serial console {serialOpen && <span className="text-emerald-300">· open</span>}</p>
                     <p className="mb-1.5 text-[#6a6a6a]">115200 8N1 — Expansion Hub FTDI debugging.</p>

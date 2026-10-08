@@ -149,6 +149,25 @@ function roomFor(fileId: string, content: string): CodeRoom {
   return room;
 }
 
+// A REST save (flush-on-close, import, git pull, assistant edit) writes the
+// database directly, bypassing the Yjs room. Without this, every editor that
+// already has the file open keeps serving its in-memory copy until reopen.
+// Fold the new content into the live room so all connected IDEs update now.
+const REST_SAVE_ORIGIN = "rest-save";
+export function applyCodeFileContent(fileId: string, content: string): boolean {
+  const room = rooms.get(fileId);
+  if (!room) return false;
+  const next = content.slice(0, MAX_CODE_BYTES);
+  const current = room.doc.getText("content").toString();
+  if (current === next) return false;
+  room.doc.transact(() => {
+    const text = room.doc.getText("content");
+    text.delete(0, text.length);
+    if (next) text.insert(0, next);
+  }, REST_SAVE_ORIGIN);
+  return true;
+}
+
 async function open(socket: WebSocket, fileId: string, displayName: string): Promise<void> {
   const [file] = await db.select({
     id: codeFilesTable.id, content: codeFilesTable.content,

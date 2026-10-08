@@ -135,6 +135,8 @@ describe("code workspace", () => {
   it("uploads straight from the dashboard without opening the hub site", () => {
     renderPage(project);
     fireEvent.click(screen.getByTestId("code-side-deploy"));
+    expect(screen.getByTestId("code-usb-connect")).toBeInTheDocument();
+    expect(screen.getByTestId("code-deploy-usb")).toBeInTheDocument();
     expect(screen.getByTestId("code-hub-url")).toBeInTheDocument();
     expect(screen.getByTestId("code-deploy-upload")).toBeInTheDocument();
     expect(screen.getByTestId("code-deploy-browser")).toBeInTheDocument();

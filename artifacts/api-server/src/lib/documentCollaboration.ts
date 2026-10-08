@@ -22,6 +22,7 @@ import {
   isValidAdminSession,
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
+import { pushRealtimeHint } from "./realtime";
 
 const MAX_DOCUMENT_DATA_BYTES = 1_500_000;
 const DOCUMENT_PATH = /^\/api\/whiteboards\/([^/]+)\/document-collab$/;
@@ -432,6 +433,9 @@ async function openDocumentRoom(
       .set({ title, updatedAt })
       .where(eq(interviewWhiteboardsTable.id, documentId))
       .then(() => {
+        // Room members get the title over their socket; everyone else only
+        // sees it when their document list refetches, so hint the SSE relay.
+        pushRealtimeHint("interview_whiteboards");
         for (const peer of room.clients) sendJson(peer.socket, { type: "saved" });
       })
       .catch((error) => logger.error({ err: error, documentId }, "Collaborative document title update failed"));

@@ -60,6 +60,9 @@ scripts/install-opencode-wrapper.sh
 *.local.env
 .dev-secrets/
 
+# Supabase CLI local cache (machine-specific, may embed a project ref)
+supabase/.temp/
+
 # Local-only test-mode plugin (per-dev, not for commit)
 .opencode/plugins/test-mode.ts
 .opencode/plugins/test-mode.js
