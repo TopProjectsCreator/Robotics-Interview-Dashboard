@@ -21,13 +21,13 @@ export default function Landing() {
   const closeMenu = () => setMenuOpen(false);
   const workflow = [
     { number: "01", title: "Check the room in", copy: "One arrival view gives your front desk a clean handoff: who is here, who is next, and what needs attention.", label: "Arrival desk", tone: "yellow" },
-    { number: "02", title: "Move the queue", copy: "Advance applicants with one deliberate action. Interviewers see the same lane, without radio chatter or hallway guesswork.", label: "Interview bay", tone: "teal" },
+    { number: "02", title: "Move the queue", copy: "Advance applicants with one deliberate action. The team sees the same lane, without radio chatter or hallway guesswork.", label: "Interview bay", tone: "teal" },
     { number: "03", title: "Keep the room aligned", copy: "The public display turns the next instruction into a shared source of truth for applicants, families, and volunteers.", label: "Big screen", tone: "mint" },
   ];
   const faqs = [
-    { q: "Who is this built for?", a: "Wolverines / Team 23442 tryout coordinators who need a calm, shared operating view while interviews are moving." },
+    { q: "Who is this built for?", a: "Wolverines / Team 23442 team admins who need a calm, shared operating view while interviews are moving." },
     { q: "Does the public display expose applicant details?", a: "No. The display is intentionally limited to the current instruction and the names or lanes you choose to show." },
-    { q: "Can two coordinators work at once?", a: "Yes. The coordinator workspace is designed for a front desk and a room lead to stay in step as the queue changes." },
+    { q: "Can two admins work at once?", a: "Yes. The admin workspace is designed for a front desk and a room lead to stay in step as the queue changes." },
   ];
   return (
     <main className="landing-page noise min-h-[100dvh] overflow-hidden bg-[#f4f7f4] text-[#182232]" data-testid="landing-page">
@@ -45,7 +45,7 @@ export default function Landing() {
             <a href="#questions" onClick={closeMenu} data-testid="link-questions">Questions</a>
             <Link href="/display" target="_blank" onClick={closeMenu} className="landing-nav-display" data-testid="link-public-display"><Monitor size={14} /> Public display</Link>
           </div>
-          <Link href="/auth" onClick={closeMenu} className="landing-nav-cta" data-testid="link-coordinator-login">Coordinator login <ArrowRight size={15} /></Link>
+          <Link href="/auth" onClick={closeMenu} className="landing-nav-cta" data-testid="link-coordinator-login">Admin login <ArrowRight size={15} /></Link>
           <button className="landing-menu-button" onClick={() => setMenuOpen(value => !value)} aria-label="Toggle navigation" aria-expanded={menuOpen} data-testid="button-landing-menu"><Menu size={20} /></button>
         </nav>
       </header>
@@ -56,10 +56,10 @@ export default function Landing() {
           <h1>Make the room<br /><em>feel ready.</em></h1>
           <p className="landing-lede">A precise control room for Wolverines tryouts — from the first arrival to the final interview, every handoff stays visible.</p>
           <div className="landing-actions">
-            <Link href="/auth" className="landing-primary-button" data-testid="link-hero-coordinator-login">Open coordinator workspace <ArrowRight size={17} /></Link>
+            <Link href="/auth" className="landing-primary-button" data-testid="link-hero-coordinator-login">Open admin workspace <ArrowRight size={17} /></Link>
             <a href="#control-room" className="landing-secondary-button" data-testid="link-see-control-room">See the operating view <ChevronRight size={16} /></a>
           </div>
-          <div className="landing-hero-note"><ShieldCheck size={15} /><span>Private coordinator workspace</span><span className="landing-note-separator" /><span>No applicant data on the public display</span></div>
+          <div className="landing-hero-note"><ShieldCheck size={15} /><span>Private admin workspace</span><span className="landing-note-separator" /><span>No applicant data on the public display</span></div>
         </div>
         <div className="landing-hero-visual fade-up delay-2" aria-label="Illustration of the live interview control room">
           <div className="landing-visual-label mono"><span className="landing-live-dot" /> EVENT LINK / ACTIVE</div>
@@ -109,7 +109,7 @@ export default function Landing() {
             <div className="landing-display-preview"><p className="mono">LIVE INTERVIEW QUEUE</p><strong>Now calling</strong><b>Jordan M.</b><small>Corresponding interviewer · Bay 02</small><div /></div>
           </div>
           <div className="landing-room-panel landing-room-panel-quote">
-            <span className="landing-quote-mark">“</span><blockquote>The best event tool is the one people stop talking about because the room simply works.</blockquote><div><span className="landing-quote-avatar">MC</span><span><b>Morgan C.</b><small>Tryout coordinator · Team 23442</small></span></div>
+            <span className="landing-quote-mark">“</span><blockquote>The best event tool is the one people stop talking about because the room simply works.</blockquote><div><span className="landing-quote-avatar">MC</span><span><b>Morgan C.</b><small>Tryout admin · Team 23442</small></span></div>
           </div>
         </div>
       </section>
@@ -120,7 +120,7 @@ export default function Landing() {
           <img src={officialDisplayImages[2]} alt="Wolverines teammates building a robot" className="landing-image-small" />
           <span className="landing-image-caption mono">BUILDING THE TEAM / 2025</span>
         </div>
-        <div className="landing-image-copy"><p className="landing-eyebrow mono">The point is the people</p><h2>More attention<br /><em>where it counts.</em></h2><p>When the queue is legible, coordinators get their eyes back. On the applicant who needs a second look. On the interviewer who needs a hand. On making a good team.</p><div className="landing-proof-list"><div><Check size={16} /><span>Designed around real room handoffs</span></div><div><Check size={16} /><span>Shared state for coordinators and display</span></div><div><Check size={16} /><span>Focused on the next useful action</span></div></div></div>
+        <div className="landing-image-copy"><p className="landing-eyebrow mono">The point is the people</p><h2>More attention<br /><em>where it counts.</em></h2><p>When the queue is legible, admins get their eyes back. On the applicant who needs a second look. On the teammate who needs a hand. On making a good team.</p><div className="landing-proof-list"><div><Check size={16} /><span>Designed around real room handoffs</span></div><div><Check size={16} /><span>Shared state for admins and display</span></div><div><Check size={16} /><span>Focused on the next useful action</span></div></div></div>
       </section>
 
       <section className="landing-trust-section">
@@ -135,7 +135,7 @@ export default function Landing() {
 
       <section className="landing-final-cta">
         <div><p className="landing-eyebrow mono">Before the first applicant arrives</p><h2>Put the room<br /><em>on the same page.</em></h2></div>
-        <div className="landing-final-actions"><p>Open the coordinator workspace or preview the public display. The operating view is ready when you are.</p><Link href="/auth" className="landing-primary-button" data-testid="link-final-coordinator-login">Enter coordinator workspace <ArrowRight size={17} /></Link><Link href="/display" target="_blank" className="landing-final-display-link" data-testid="link-final-public-display"><Monitor size={15} /> Preview public display</Link></div>
+        <div className="landing-final-actions"><p>Open the admin workspace or preview the public display. The operating view is ready when you are.</p><Link href="/auth" className="landing-primary-button" data-testid="link-final-coordinator-login">Enter admin workspace <ArrowRight size={17} /></Link><Link href="/display" target="_blank" className="landing-final-display-link" data-testid="link-final-public-display"><Monitor size={15} /> Preview public display</Link></div>
       </section>
 
       <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><span className="landing-brand-mark"><CircleDot size={19} strokeWidth={2.5} /><span /></span><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="mono landing-footer-meta">WOLVERINES / TEAM 23442 · PLMS · SAMMAMISH, WASHINGTON</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>

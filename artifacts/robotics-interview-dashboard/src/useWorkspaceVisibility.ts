@@ -19,7 +19,7 @@ export const WORKSPACE_LABELS: Record<keyof WorkspaceVisibility, string> = {
 export const WORKSPACE_ROLE_LABELS: Record<WorkspaceRole, string> = {
   coordinator: "Admins",
   treasurer: "Treasurers",
-  interviewer: "Interviewers",
+  interviewer: "Team members",
 };
 
 export const WORKSPACE_ROLE_ORDER: WorkspaceRole[] = [

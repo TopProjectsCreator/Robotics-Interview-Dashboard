@@ -209,7 +209,7 @@ export function requireCoordinator(
       .limit(1)
       .then(([account]) => {
         if (account?.role !== "coordinator") {
-          res.status(403).json({ error: "Coordinators only" });
+          res.status(403).json({ error: "Admins only" });
           return;
         }
         next();

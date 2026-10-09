@@ -27,7 +27,7 @@ export async function ensureDemoData(): Promise<void> {
         grade,
         aiScore,
         aiRecommendation,
-        aiSummary: aiRecommendation === "Strong Yes" ? "A promising candidate with a clear learning mindset and evidence of practical robotics work." : "Review the application carefully during the coordinator interview.",
+        aiSummary: aiRecommendation === "Strong Yes" ? "A promising candidate with a clear learning mindset and evidence of practical robotics work." : "Review the application carefully during the interview.",
         aiStrengths: aiRecommendation === "Strong Yes" ? "hands-on building; problem-solving; commitment" : "Application review required",
         aiConcerns: aiScore < 0 ? "Invalid or bug score" : aiScore < 50 ? "Needs interview follow-up" : "",
         roboticsExperience,

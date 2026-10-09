@@ -112,7 +112,7 @@ export function messageMentionsInterviewer(
   if (!token) return false;
   const people = mentionPeople ?? [
     { token, label: token, detail: "", initials: "", kind: "interviewer" as const },
-    { token: "all", label: "All interviewers", detail: "", initials: "", kind: "group" as const },
+    { token: "all", label: "All team members", detail: "", initials: "", kind: "group" as const },
   ];
   return findChatMentions(message, people).some(({ person }) =>
     person.kind === "group" ||
