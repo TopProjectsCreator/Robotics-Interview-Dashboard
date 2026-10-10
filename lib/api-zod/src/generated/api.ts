@@ -51,6 +51,7 @@ export const LoginResponse = zod.object({
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -124,6 +125,7 @@ export const GetSessionResponse = zod.object({
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -289,6 +291,7 @@ export const LoginWithPasskeyResponse = zod.object({
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -999,6 +1002,84 @@ export const updateChatSettingsResponseSlowmodeSecondsMax = 600;
 
 export const UpdateChatSettingsResponse = zod.object({
   "slowmodeSeconds": zod.number().int().min(updateChatSettingsResponseSlowmodeSecondsMin).max(updateChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+
+/**
+ * @summary List feature requests (own team; site owner sees every team)
+ */
+export const ListFeatureRequestsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Send a feature request to the site owner
+ */
+export const createFeatureRequestBodyMessageMax = 2000;
+
+
+
+export const CreateFeatureRequestBody = zod.object({
+  "message": zod.string().min(1).max(createFeatureRequestBodyMessageMax)
+})
+
+export const CreateFeatureRequestResponse = zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Mark a feature request open or done (site owner only)
+ */
+export const UpdateFeatureRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const UpdateFeatureRequestBody = zod.object({
+  "status": zod.enum(['open', 'done'])
+})
+
+export const UpdateFeatureRequestResponse = zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Site-wide stats for the site owner (teams, people, requests)
+ */
+export const GetSiteStatsResponse = zod.object({
+  "teams": zod.number().int().describe('Number of teams'),
+  "people": zod.number().int().describe('Number of team member accounts across all teams'),
+  "requests": zod.number().int().describe('Total feature requests across all teams'),
+  "openRequests": zod.number().int().describe('Feature requests still open'),
+  "teamsById": zod.array(zod.object({
+  "teamId": zod.string(),
+  "teamName": zod.string(),
+  "people": zod.number().int(),
+  "requests": zod.number().int(),
+  "openRequests": zod.number().int()
+}))
 })
 
 

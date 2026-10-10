@@ -946,6 +946,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatSettings"
+  /feature-requests:
+    get:
+      operationId: listFeatureRequests
+      tags: [site]
+      summary: List feature requests (own team; site owner sees every team)
+      responses:
+        "200":
+          description: Feature requests, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequestList"
+    post:
+      operationId: createFeatureRequest
+      tags: [site]
+      summary: Send a feature request to the site owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFeatureRequestInput"
+      responses:
+        "201":
+          description: Saved feature request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequest"
+  /feature-requests/{requestId}:
+    patch:
+      operationId: updateFeatureRequest
+      tags: [site]
+      summary: Mark a feature request open or done (site owner only)
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFeatureRequestInput"
+      responses:
+        "200":
+          description: Updated feature request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequest"
+  /site/stats:
+    get:
+      operationId: getSiteStats
+      tags: [site]
+      summary: Site-wide stats for the site owner (teams, people, requests)
+      responses:
+        "200":
+          description: Site stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteStats"
   /queue/labels:
     get:
       operationId: getQueueLabels
@@ -3658,6 +3723,9 @@ components:
         teamName:
           type: string
           description: Display name of the team this session belongs to
+        isSiteOwner:
+          type: boolean
+          description: True when this account is the site owner (sees every team's feature requests and site stats)
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
@@ -4441,6 +4509,83 @@ components:
           description: >-
             Slow mode for the team chat: an author must wait this many seconds
             between messages. 0 turns it off.
+    FeatureRequest:
+      type: object
+      required: [id, authorName, message, status, createdAt]
+      properties:
+        id:
+          type: string
+        teamId:
+          type: string
+          description: Team that filed the request (absent for legacy rows)
+        teamName:
+          type: string
+          description: Display name of the team that filed the request
+        authorName:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum: [open, done]
+        createdAt:
+          type: string
+          format: date-time
+    FeatureRequestList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureRequest"
+    CreateFeatureRequestInput:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    UpdateFeatureRequestInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [open, done]
+    SiteStats:
+      type: object
+      required: [teams, people, requests, openRequests, teamsById]
+      properties:
+        teams:
+          type: integer
+          description: Number of teams
+        people:
+          type: integer
+          description: Number of team member accounts across all teams
+        requests:
+          type: integer
+          description: Total feature requests across all teams
+        openRequests:
+          type: integer
+          description: Feature requests still open
+        teamsById:
+          type: array
+          items:
+            type: object
+            required: [teamId, teamName, people, requests, openRequests]
+            properties:
+              teamId:
+                type: string
+              teamName:
+                type: string
+              people:
+                type: integer
+              requests:
+                type: integer
+              openRequests:
+                type: integer
     QueueLabels:
       type: object
       required: [interviewerLabels]

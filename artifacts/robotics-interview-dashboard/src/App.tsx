@@ -34,6 +34,8 @@ import {
   useUpdateQueueSettings,
   useUpdateApplicant,
   useGetChatSettings, useUpdateChatSettings, getGetChatSettingsQueryKey,
+  useListFeatureRequests, getListFeatureRequestsQueryKey, useCreateFeatureRequest, useUpdateFeatureRequest,
+  useGetSiteStats, getGetSiteStatsQueryKey,
   useInterpretApplicantSearch,
   useGetSystemUsage,
   useCreateSpreadsheet,
@@ -42,6 +44,7 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
+import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
@@ -318,6 +321,99 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   </div>;
 }
 const SORT_OPTIONS = [{ value: "rank", label: "Rank" }, { value: "queue", label: "Queue order" }, { value: "score", label: "AI score" }, { value: "name", label: "Name" }, { value: "grade", label: "Grade" }, { value: "skill", label: "Skill" }, { value: "gender", label: "Gender" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }];
+function FeatureRequestSection() {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const isOwner = session.data?.isSiteOwner === true;
+  const qc = useQueryClient();
+  const requests = useListFeatureRequests({ query: { queryKey: getListFeatureRequestsQueryKey() } });
+  const stats = useGetSiteStats({ query: { queryKey: getGetSiteStatsQueryKey(), enabled: isOwner } });
+  const createRequest = useCreateFeatureRequest();
+  const updateRequest = useUpdateFeatureRequest();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: getListFeatureRequestsQueryKey() });
+    void qc.invalidateQueries({ queryKey: getGetSiteStatsQueryKey() });
+  };
+  const submit = () => {
+    const message = draft.trim();
+    if (!message) {
+      setError("Write the idea first — one or two sentences is plenty.");
+      return;
+    }
+    setError("");
+    createRequest.mutate({ data: { message: message.slice(0, 2000) } }, {
+      onSuccess: () => {
+        setDraft("");
+        setDialogOpen(false);
+        refresh();
+        notify({ title: "Request sent", description: "Ishaan will see it in the site inbox." });
+      },
+      onError: (err) => setError(err instanceof Error ? err.message : "Could not send the request. Try again."),
+    });
+  };
+  const setStatus = (item: FeatureRequest, status: "open" | "done") => {
+    updateRequest.mutate({ requestId: item.id, data: { status } }, { onSuccess: refresh });
+  };
+  const items = requests.data?.items ?? [];
+  const openCount = items.filter((item) => item.status !== "done").length;
+  return <div className="mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">Request a feature</p>
+    <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Ideas go straight to Ishaan Bansal, who built this site.{isOwner ? " You are the site owner, so every team's requests land in your inbox below." : ""}</p>
+    <div className="mt-3">
+      <button type="button" onClick={() => { setDraft(""); setError(""); setDialogOpen(true); }} data-testid="button-request-feature" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={14} /> Request a feature</button>
+    </div>
+    {dialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#112433]/55 p-4" data-testid="dialog-feature-request"><div role="dialog" aria-modal="true" aria-label="Request a feature" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
+      <p className="text-base font-semibold text-[#182232] dark:text-[#e8eef2]">Request a feature</p>
+      <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Describe the idea — Ishaan reads every request.</p>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4} maxLength={2000} autoFocus placeholder="e.g. A dark big-screen theme for night events…" aria-label="Feature request" data-testid="input-feature-request" className="mt-3 h-28 w-full resize-y rounded-xl border border-[#cbd7da] bg-white px-4 py-3 text-sm text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
+      {error && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="feature-request-error">{error}</p>}
+      <div className="mt-4 flex gap-2">
+        <button type="button" disabled={createRequest.isPending} onClick={submit} data-testid="button-send-feature-request" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={15} /> {createRequest.isPending ? "Sending…" : "Send request"}</button>
+        <button type="button" onClick={() => setDialogOpen(false)} data-testid="button-cancel-feature-request" className="rounded-xl border border-[#cbd7da] px-4 py-2.5 text-sm font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">Cancel</button>
+      </div>
+    </div></div>}
+    {isOwner && <div className="mt-4" data-testid="site-inbox">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Site inbox · every team</p>
+      {stats.data && <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[["Teams", stats.data.teams], ["People", stats.data.people], ["Requests", stats.data.requests], ["Open", stats.data.openRequests]].map(([label, value]) => (
+          <div key={label as string} className="rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 text-center dark:border-[#2a3f4c] dark:bg-[#10202a]">
+            <p className="text-xl font-semibold text-[#183a4b] dark:text-[#e8eef2]">{value as number}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2]">{label as string}</p>
+          </div>
+        ))}
+      </div>}
+      {requests.isLoading && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading requests…</p>}
+      {!requests.isLoading && items.length === 0 && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">No requests yet.</p>}
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className={`rounded-xl border px-3 py-3 dark:bg-[#10202a] ${item.status === "done" ? "border-[#e5ecec] bg-[#f8fbfa] opacity-70 dark:border-[#2a3f4c]" : "border-[#dce5e5] bg-white dark:border-[#2a3f4c]"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              {item.teamName && <span className="rounded-md bg-[#e3f4f2] px-1.5 py-0.5 text-[10px] font-semibold text-[#12737d] dark:bg-[#1c3c43] dark:text-[#9bdbe2]">{item.teamName}</span>}
+              <span className="text-[11px] font-semibold text-[#385762] dark:text-[#c3d3db]">{item.authorName}</span>
+              <span className="text-[10px] text-[#9aa7aa]">{new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</span>
+              <button type="button" disabled={updateRequest.isPending} onClick={() => setStatus(item, item.status === "done" ? "open" : "done")} data-testid={`button-resolve-request-${item.id}`} className="ml-auto rounded-md border border-[#cbd7da] px-2 py-1 text-[10px] font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">{item.status === "done" ? "Reopen" : "Done"}</button>
+            </div>
+            <p className="mt-1.5 text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+          </div>
+        ))}
+      </div>
+      {!requests.isLoading && items.length > 0 && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{openCount} open across every team.</p>}
+    </div>}
+    {!isOwner && !requests.isLoading && items.length > 0 && <div className="mt-3" data-testid="team-requests">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Your team's requests · {openCount} open</p>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className="rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+            <p className="text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+            <p className="mt-1 text-[10px] text-[#9aa7aa]">{item.authorName} · {new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</p>
+          </div>
+        ))}
+      </div>
+    </div>}
+  </div>;
+}
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
@@ -740,6 +836,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         </SettingRow>
         {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
       </div>
+      <FeatureRequestSection />
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
         <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>

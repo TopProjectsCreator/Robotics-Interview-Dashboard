@@ -86,6 +86,7 @@ import type {
   CreateCodeFile201,
   CreateCodeProject201,
   CreateCodeRevision201,
+  CreateFeatureRequestInput,
   CreateInterviewerInput,
   CreatePartsCatalogItemInput,
   DashboardChart,
@@ -99,6 +100,8 @@ import type {
   DisplayState,
   ErrorResponse,
   EventPasswordInput,
+  FeatureRequest,
+  FeatureRequestList,
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
@@ -173,6 +176,7 @@ import type {
   SeatingSettings,
   SeatingSettingsInput,
   SetupInterviewerPasswordInput,
+  SiteStats,
   Snapshot,
   SnapshotInput,
   SnapshotList,
@@ -187,6 +191,7 @@ import type {
   TeamVerifyResponse,
   UpdateCodeFile200,
   UpdateCodeProject200,
+  UpdateFeatureRequestInput,
   UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
@@ -3620,6 +3625,303 @@ export const useUpdateChatSettings = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUpdateChatSettingsMutationOptions(options));
     }
+
+export const getListFeatureRequestsUrl = () => {
+
+
+
+
+  return `/api/feature-requests`
+}
+
+/**
+ * @summary List feature requests (own team; site owner sees every team)
+ */
+export const listFeatureRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<FeatureRequestList> => {
+
+  return customFetch<FeatureRequestList>(getListFeatureRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListFeatureRequestsQueryKey = () => {
+    return [
+    `/api/feature-requests`
+    ] as const;
+    }
+
+
+export const getListFeatureRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listFeatureRequests>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFeatureRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFeatureRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFeatureRequests>>> = ({ signal }) => listFeatureRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFeatureRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListFeatureRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listFeatureRequests>>>
+export type ListFeatureRequestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List feature requests (own team; site owner sees every team)
+ */
+
+export function useListFeatureRequests<TData = Awaited<ReturnType<typeof listFeatureRequests>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFeatureRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListFeatureRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateFeatureRequestUrl = () => {
+
+
+
+
+  return `/api/feature-requests`
+}
+
+/**
+ * @summary Send a feature request to the site owner
+ */
+export const createFeatureRequest = async (createFeatureRequestInput: CreateFeatureRequestInput, options?: Parameters<typeof customFetch>[1]): Promise<FeatureRequest> => {
+
+  return customFetch<FeatureRequest>(getCreateFeatureRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createFeatureRequestInput)
+  }
+);}
+
+
+
+
+
+export const getCreateFeatureRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFeatureRequest>>, TError,{data: BodyType<CreateFeatureRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createFeatureRequest>>, TError,{data: BodyType<CreateFeatureRequestInput>}, TContext> => {
+
+const mutationKey = ['createFeatureRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFeatureRequest>>, {data: BodyType<CreateFeatureRequestInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createFeatureRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateFeatureRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createFeatureRequest>>>
+    export type CreateFeatureRequestMutationBody = BodyType<CreateFeatureRequestInput>
+    export type CreateFeatureRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a feature request to the site owner
+ */
+export const useCreateFeatureRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createFeatureRequest>>, TError,{data: BodyType<CreateFeatureRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createFeatureRequest>>,
+        TError,
+        {data: BodyType<CreateFeatureRequestInput>},
+        TContext
+      > => {
+      return useMutation(getCreateFeatureRequestMutationOptions(options));
+    }
+
+export const getUpdateFeatureRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/feature-requests/${requestId}`
+}
+
+/**
+ * @summary Mark a feature request open or done (site owner only)
+ */
+export const updateFeatureRequest = async (requestId: string,
+    updateFeatureRequestInput: UpdateFeatureRequestInput, options?: Parameters<typeof customFetch>[1]): Promise<FeatureRequest> => {
+
+  return customFetch<FeatureRequest>(getUpdateFeatureRequestUrl(requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateFeatureRequestInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateFeatureRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFeatureRequest>>, TError,{requestId: string;data: BodyType<UpdateFeatureRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateFeatureRequest>>, TError,{requestId: string;data: BodyType<UpdateFeatureRequestInput>}, TContext> => {
+
+const mutationKey = ['updateFeatureRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFeatureRequest>>, {requestId: string;data: BodyType<UpdateFeatureRequestInput>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  updateFeatureRequest(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateFeatureRequestMutationResult = NonNullable<Awaited<ReturnType<typeof updateFeatureRequest>>>
+    export type UpdateFeatureRequestMutationBody = BodyType<UpdateFeatureRequestInput>
+    export type UpdateFeatureRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark a feature request open or done (site owner only)
+ */
+export const useUpdateFeatureRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFeatureRequest>>, TError,{requestId: string;data: BodyType<UpdateFeatureRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateFeatureRequest>>,
+        TError,
+        {requestId: string;data: BodyType<UpdateFeatureRequestInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateFeatureRequestMutationOptions(options));
+    }
+
+export const getGetSiteStatsUrl = () => {
+
+
+
+
+  return `/api/site/stats`
+}
+
+/**
+ * @summary Site-wide stats for the site owner (teams, people, requests)
+ */
+export const getSiteStats = async ( options?: Parameters<typeof customFetch>[1]): Promise<SiteStats> => {
+
+  return customFetch<SiteStats>(getGetSiteStatsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSiteStatsQueryKey = () => {
+    return [
+    `/api/site/stats`
+    ] as const;
+    }
+
+
+export const getGetSiteStatsQueryOptions = <TData = Awaited<ReturnType<typeof getSiteStats>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSiteStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSiteStatsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSiteStats>>> = ({ signal }) => getSiteStats({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSiteStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSiteStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getSiteStats>>>
+export type GetSiteStatsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Site-wide stats for the site owner (teams, people, requests)
+ */
+
+export function useGetSiteStats<TData = Awaited<ReturnType<typeof getSiteStats>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSiteStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSiteStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetQueueLabelsUrl = () => {
 

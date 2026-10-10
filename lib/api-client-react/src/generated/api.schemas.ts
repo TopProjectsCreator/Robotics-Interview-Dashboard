@@ -494,6 +494,8 @@ export interface AuthSession {
   teamId?: string;
   /** Display name of the team this session belongs to */
   teamName?: string;
+  /** True when this account is the site owner (sees every team's feature requests and site stats) */
+  isSiteOwner?: boolean;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }
@@ -1018,6 +1020,70 @@ export interface ChatSettings {
      * @maximum 600
      */
   slowmodeSeconds: number;
+}
+
+export type FeatureRequestStatus = typeof FeatureRequestStatus[keyof typeof FeatureRequestStatus];
+
+
+export const FeatureRequestStatus = {
+  open: 'open',
+  done: 'done',
+} as const;
+
+export interface FeatureRequest {
+  id: string;
+  /** Team that filed the request (absent for legacy rows) */
+  teamId?: string;
+  /** Display name of the team that filed the request */
+  teamName?: string;
+  authorName: string;
+  message: string;
+  status: FeatureRequestStatus;
+  createdAt: string;
+}
+
+export interface FeatureRequestList {
+  items: FeatureRequest[];
+}
+
+export interface CreateFeatureRequestInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  message: string;
+}
+
+export type UpdateFeatureRequestInputStatus = typeof UpdateFeatureRequestInputStatus[keyof typeof UpdateFeatureRequestInputStatus];
+
+
+export const UpdateFeatureRequestInputStatus = {
+  open: 'open',
+  done: 'done',
+} as const;
+
+export interface UpdateFeatureRequestInput {
+  status: UpdateFeatureRequestInputStatus;
+}
+
+export type SiteStatsTeamsByIdItem = {
+  teamId: string;
+  teamName: string;
+  people: number;
+  requests: number;
+  openRequests: number;
+};
+
+export interface SiteStats {
+  /** Number of teams */
+  teams: number;
+  /** Number of team member accounts across all teams */
+  people: number;
+  /** Total feature requests across all teams */
+  requests: number;
+  /** Feature requests still open */
+  openRequests: number;
+  teamsById: SiteStatsTeamsByIdItem[];
 }
 
 export interface QueueLabels {

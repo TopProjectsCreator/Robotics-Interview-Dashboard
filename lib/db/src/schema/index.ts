@@ -33,3 +33,4 @@ export * from "./cad";
 export * from "./code";
 export * from "./webauthn";
 export * from "./teams";
+export * from "./featureRequests";

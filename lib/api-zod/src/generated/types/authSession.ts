@@ -16,6 +16,8 @@ export interface AuthSession {
   teamId?: string;
   /** Display name of the team this session belongs to */
   teamName?: string;
+  /** True when this account is the site owner (sees every team's feature requests and site stats) */
+  isSiteOwner?: boolean;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }
