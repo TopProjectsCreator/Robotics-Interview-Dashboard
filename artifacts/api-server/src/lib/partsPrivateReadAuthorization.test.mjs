@@ -100,6 +100,9 @@ test("signed-out visitors cannot read private Parts records from any GET endpoin
       db: {},
       interviewerAccountsTable: {},
       revokedSessionsTable: {},
+      teamsTable: {},
+      DEFAULT_TEAM_ID: "default",
+      normalizeTeamName: (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase(),
     },
   });
   mock.method(globalThis, "fetch", async () => new Response("", { status: 503 }));

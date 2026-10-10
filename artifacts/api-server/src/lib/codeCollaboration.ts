@@ -8,7 +8,7 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, codeFilesTable, interviewerAccountsTable } from "@workspace/db";
+import { db, codeFilesTable, interviewerAccountsTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
@@ -57,7 +57,7 @@ function sessionOf(req: IncomingMessage, url: URL): string | undefined {
   return isValidAdminSession(cookie) ? cookie : undefined;
 }
 
-async function identity(session: string): Promise<{ id: string; displayName: string } | null> {
+async function identity(session: string): Promise<{ id: string; displayName: string; teamId: string } | null> {
   if (await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
   if (!id) return null;
@@ -65,8 +65,20 @@ async function identity(session: string): Promise<{ id: string; displayName: str
     id: interviewerAccountsTable.id,
     displayName: interviewerAccountsTable.displayName,
     passwordHash: interviewerAccountsTable.passwordHash,
+    teamId: interviewerAccountsTable.teamId,
   }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-  return account?.passwordHash ? { id: account.id, displayName: account.displayName } : null;
+  if (!account?.passwordHash) return null;
+  return {
+    id: account.id,
+    displayName: account.displayName,
+    teamId: account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID,
+  };
+}
+
+/** True when a code file row belongs to `teamId` (legacy NULL = default team). */
+function fileInTeam(fileTeamId: string | null | undefined, teamId: string): boolean {
+  const owner = fileTeamId?.trim() ? fileTeamId : DEFAULT_TEAM_ID;
+  return owner === teamId;
 }
 
 function bytes(raw: RawData): Uint8Array {
@@ -168,13 +180,18 @@ export function applyCodeFileContent(fileId: string, content: string): boolean {
   return true;
 }
 
-async function open(socket: WebSocket, fileId: string, displayName: string): Promise<void> {
+async function open(socket: WebSocket, fileId: string, displayName: string, teamId: string): Promise<void> {
   const [file] = await db.select({
-    id: codeFilesTable.id, content: codeFilesTable.content,
+    id: codeFilesTable.id, content: codeFilesTable.content, teamId: codeFilesTable.teamId,
   }).from(codeFilesTable).where(eq(codeFilesTable.id, fileId)).limit(1);
   if (!file) {
     sendJson(socket, { type: "error", message: "That file no longer exists." });
     socket.close(4404, "not found");
+    return;
+  }
+  if (!fileInTeam(file.teamId, teamId)) {
+    sendJson(socket, { type: "error", message: "That file belongs to another team." });
+    socket.close(4403, "forbidden");
     return;
   }
   const room = roomFor(fileId, file.content ?? "");
@@ -247,7 +264,7 @@ export function setupCodeCollaboration(server: Server): void {
           client.close(4401, "unauthorized");
           return;
         }
-        void open(client, fileId, who.displayName).catch((error) => {
+        void open(client, fileId, who.displayName, who.teamId).catch((error) => {
           logger.error({ err: error, fileId }, "Code collaboration connection failed");
           try { client.close(1011, "error"); } catch { /* closed */ }
         });

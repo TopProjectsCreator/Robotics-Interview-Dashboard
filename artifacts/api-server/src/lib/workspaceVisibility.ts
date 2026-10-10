@@ -9,7 +9,13 @@ export type WorkspaceKey = (typeof WORKSPACE_KEYS)[number];
 export const WORKSPACE_ROLES = ["coordinator", "treasurer", "interviewer"] as const;
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
-export type WorkspaceVisibility = Record<WorkspaceKey, WorkspaceRole[]>;
+/**
+ * Per-user workspace access: each workspace holds the interviewer account IDs
+ * that may open it. Legacy role names ("coordinator", "treasurer",
+ * "interviewer") are still accepted inside these lists so stored settings
+ * written before the per-user switch keep working until an admin re-saves.
+ */
+export type WorkspaceVisibility = Record<WorkspaceKey, string[]>;
 
 /**
  * Interview stays coordinator-only and the CAD library starts admin-only, which
@@ -33,13 +39,16 @@ export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
 }
 
 /**
- * Normalises an arbitrary stored value into a complete, in-range visibility map.
- * Unknown workspaces are dropped and unknown roles are discarded, so a hand-edited
- * row can never hand a role access it should not have.
+ * Normalises an arbitrary stored value into a complete visibility map.
+ * Unknown workspaces are dropped. Each list keeps every non-empty string
+ * entry: interviewer account IDs (per-user access) plus legacy role names,
+ * which keep working until an admin re-saves. Entries are de-duplicated with
+ * legacy roles first in canonical order, then user IDs sorted, so responses
+ * are stable regardless of save order.
  *
  * A workspace whose stored value is missing or not an array falls back to its
- * default. A workspace whose value is a list containing only invalid roles ends
- * up with no access, which is the safe direction to fail.
+ * default. A workspace whose value is a list containing only invalid entries
+ * ends up with no access, which is the safe direction to fail.
  */
 export function normalizeWorkspaceVisibility(value: unknown): WorkspaceVisibility {
   const source = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
@@ -50,11 +59,19 @@ export function normalizeWorkspaceVisibility(value: unknown): WorkspaceVisibilit
       normalized[key] = [...DEFAULT_WORKSPACE_VISIBILITY[key]];
       continue;
     }
-    const seen = new Set<WorkspaceRole>();
+    const roles = new Set<string>();
+    const users = new Set<string>();
     for (const entry of raw) {
-      if (isWorkspaceRole(entry)) seen.add(entry);
+      if (typeof entry !== "string") continue;
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      if (isWorkspaceRole(trimmed)) roles.add(trimmed);
+      else users.add(trimmed);
     }
-    normalized[key] = WORKSPACE_ROLES.filter((role) => seen.has(role));
+    normalized[key] = [
+      ...WORKSPACE_ROLES.filter((role) => roles.has(role)),
+      ...[...users].sort(),
+    ];
   }
   return normalized;
 }
@@ -74,4 +91,32 @@ export function visibleWorkspacesForRole(
   role: string | undefined,
 ): WorkspaceKey[] {
   return WORKSPACE_KEYS.filter((key) => roleCanSeeWorkspace(visibility, role, key));
+}
+
+/**
+ * Per-user access check. Coordinators always pass so settings can never lock
+ * an admin out. Otherwise access is granted when the caller's account ID is
+ * listed, or — for settings saved before the per-user switch — when the
+ * caller's legacy role is listed.
+ */
+export function userCanSeeWorkspace(
+  visibility: WorkspaceVisibility,
+  userId: string | undefined | null,
+  role: string | undefined | null,
+  workspace: WorkspaceKey,
+): boolean {
+  if (role === "coordinator") return true;
+  const list = visibility[workspace] ?? [];
+  if (typeof userId === "string" && userId.trim() && list.includes(userId.trim())) return true;
+  if (typeof role === "string" && role.trim() && list.includes(role.trim())) return true;
+  return false;
+}
+
+/** Workspaces a specific user can open, in canonical order. */
+export function visibleWorkspacesForUser(
+  visibility: WorkspaceVisibility,
+  userId: string | undefined | null,
+  role: string | undefined | null,
+): WorkspaceKey[] {
+  return WORKSPACE_KEYS.filter((key) => userCanSeeWorkspace(visibility, userId, role, key));
 }

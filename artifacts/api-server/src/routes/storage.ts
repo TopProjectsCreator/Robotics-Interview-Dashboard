@@ -28,6 +28,7 @@ import {
 } from '../lib/objectStorage';
 import {
   authenticatedInterviewerId,
+  requestTeamId,
   requireAdmin,
   requireCoordinator,
   requireWorkspaceAccess,
@@ -45,6 +46,7 @@ import {
   chunkStoragePath,
   deleteChunkParts,
   getChunkUpload,
+  getChunkUploadForTeam,
   isChunkUploadId,
   streamChunkedUpload,
 } from "../lib/chunkedUploads";
@@ -386,7 +388,16 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     partSizeBytes: Number(partSizeBytes) || 0,
   };
   try {
-    await db.insert(chunkedUploadsTable).values({ uploadId, ...manifest, createdBy: account.displayName })
+    // Manifests carry the uploader's team; a foreign manifest under the same
+    // uploadId is never overwritten, so teams cannot hijack each other's
+    // uploads.
+    const teamId = await requestTeamId(req);
+    const existing = await getChunkUpload(uploadId);
+    if (existing && !(await getChunkUploadForTeam(uploadId, teamId))) {
+      res.status(403).json({ error: 'This upload belongs to another team' });
+      return;
+    }
+    await db.insert(chunkedUploadsTable).values({ uploadId, teamId, ...manifest, createdBy: account.displayName })
       .onConflictDoUpdate({ target: chunkedUploadsTable.uploadId, set: manifest });
     res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `/objects/chunk/${uploadId}` }));
   } catch (error) {
@@ -830,7 +841,9 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
 
     if (wildcardPath.startsWith('chunk/')) {
       const uploadId = wildcardPath.slice('chunk/'.length);
-      const manifest = await getChunkUpload(uploadId);
+      // Team-scoped: foreign manifests read as missing, so one team can
+      // neither download nor probe another team's uploads.
+      const manifest = await getChunkUploadForTeam(uploadId, await requestTeamId(req));
       if (!manifest) {
         res.status(404).json({ error: 'Object not found' });
         return;
@@ -884,11 +897,14 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
         res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
         return;
       }
-      const manifest = await getChunkUpload(uploadId);
-      if (manifest) {
-        await deleteChunkParts(uploadId, manifest.totalParts);
-        await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
+      // Team-scoped: only the owning team may delete its manifests and parts.
+      const manifest = await getChunkUploadForTeam(uploadId, await requestTeamId(req));
+      if (!manifest) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
       }
+      await deleteChunkParts(uploadId, manifest.totalParts);
+      await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
       res.status(200).json({ ok: true, deleted: true });
       return;
     }

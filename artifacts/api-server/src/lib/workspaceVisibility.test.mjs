@@ -6,7 +6,9 @@ import {
   isWorkspaceRole,
   normalizeWorkspaceVisibility,
   roleCanSeeWorkspace,
+  userCanSeeWorkspace,
   visibleWorkspacesForRole,
+  visibleWorkspacesForUser,
 } from "./workspaceVisibility.ts";
 
 test("CAD and Code are admin-only by default and match pre-existing role behaviour", () => {
@@ -45,26 +47,26 @@ test("falls back to defaults for missing, malformed, and hostile input", () => {
   );
 });
 
-test("drops unknown roles and unknown workspaces rather than trusting them", () => {
+test("drops unknown workspaces, keeps user IDs and legacy roles", () => {
   const normalized = normalizeWorkspaceVisibility({
-    cad: ["coordinator", "superuser", "treasurer", "coordinator"],
+    cad: ["coordinator", "abc123user", "treasurer", "coordinator", "", 42, null],
     admin: ["coordinator"],
     interview: ["admin"],
   });
-  assert.deepEqual(normalized.cad, ["coordinator", "treasurer"]);
+  assert.deepEqual(normalized.cad, ["coordinator", "treasurer", "abc123user"]);
   assert.equal("admin" in normalized, false, "unknown workspace is not smuggled in");
   assert.deepEqual(
     normalized.interview,
-    [],
-    "a present-but-invalid role list yields no access, not default access",
+    ["admin"],
+    "a present-but-unknown string is kept as a user ID (safe: matches nobody)",
   );
 });
 
-test("returns role lists in a stable canonical order", () => {
+test("returns entries in a stable order: roles first, then sorted user IDs", () => {
   const normalized = normalizeWorkspaceVisibility({
-    parts: ["interviewer", "coordinator", "treasurer"],
+    parts: ["zz-user", "interviewer", "aa-user", "coordinator", "treasurer"],
   });
-  assert.deepEqual(normalized.parts, ["coordinator", "treasurer", "interviewer"]);
+  assert.deepEqual(normalized.parts, ["coordinator", "treasurer", "interviewer", "aa-user", "zz-user"]);
 });
 
 test("gates workspaces by role, treating unknown roles as no access", () => {
@@ -78,7 +80,7 @@ test("gates workspaces by role, treating unknown roles as no access", () => {
   assert.equal(roleCanSeeWorkspace(visibility, "admin", "cad"), false);
 });
 
-test("an emptied role list locks a workspace for everyone", () => {
+test("an emptied role list locks a workspace for that role", () => {
   const visibility = normalizeWorkspaceVisibility({ chat: [] });
   assert.equal(roleCanSeeWorkspace(visibility, "coordinator", "chat"), false);
   assert.equal(roleCanSeeWorkspace(visibility, "interviewer", "chat"), false);
@@ -96,4 +98,33 @@ test("lists the workspaces a role can open in canonical order", () => {
   assert.deepEqual(visibleWorkspacesForRole(visibility, "treasurer"), ["chat", "parts", "cad"]);
   assert.deepEqual(visibleWorkspacesForRole(visibility, "interviewer"), ["chat", "parts"]);
   assert.deepEqual(visibleWorkspacesForRole(visibility, undefined), []);
+});
+
+test("coordinators always pass the per-user check so settings never lock them out", () => {
+  const visibility = normalizeWorkspaceVisibility({ chat: [] });
+  assert.equal(userCanSeeWorkspace(visibility, "any-id", "coordinator", "chat"), true);
+  assert.equal(userCanSeeWorkspace(visibility, undefined, "coordinator", "cad"), true);
+});
+
+test("grants access by account ID, with legacy role fallback", () => {
+  const visibility = normalizeWorkspaceVisibility({
+    chat: ["user-1", "user-2"],
+    parts: ["interviewer"],
+    cad: ["coordinator"],
+  });
+  assert.equal(userCanSeeWorkspace(visibility, "user-1", "interviewer", "chat"), true);
+  assert.equal(userCanSeeWorkspace(visibility, "user-9", "interviewer", "chat"), false);
+  assert.equal(userCanSeeWorkspace(visibility, "user-9", "interviewer", "parts"), true, "legacy role still grants");
+  assert.equal(userCanSeeWorkspace(visibility, undefined, "interviewer", "parts"), true);
+  assert.equal(userCanSeeWorkspace(visibility, "user-9", "interviewer", "cad"), false);
+  assert.equal(userCanSeeWorkspace(visibility, undefined, undefined, "chat"), false);
+});
+
+test("lists the workspaces a user can open in canonical order", () => {
+  const visibility = normalizeWorkspaceVisibility({
+    chat: ["user-1"],
+    code: ["user-1"],
+  });
+  assert.deepEqual(visibleWorkspacesForUser(visibility, "user-1", "interviewer"), ["chat", "parts", "code"]);
+  assert.deepEqual(visibleWorkspacesForUser(visibility, "user-9", "interviewer"), ["parts"]);
 });

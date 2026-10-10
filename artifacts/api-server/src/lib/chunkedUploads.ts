@@ -47,6 +47,21 @@ export async function getChunkUpload(uploadId: string) {
   return row ?? null;
 }
 
+/**
+ * Team-scoped manifest read. Returns the manifest only when it belongs to
+ * `teamId` (legacy NULL manifests belong to the default team); otherwise
+ * null, so callers treat foreign manifests as missing and never touch
+ * another team's parts. Omit `teamId` for the legacy global read.
+ */
+export async function getChunkUploadForTeam(uploadId: string, teamId?: string | null) {
+  const manifest = await getChunkUpload(uploadId);
+  if (!manifest) return null;
+  if (teamId === undefined) return manifest;
+  const team = teamId?.trim() ? teamId : "default";
+  const owner = manifest.teamId?.trim() ? manifest.teamId : "default";
+  return owner === team ? manifest : null;
+}
+
 export async function deleteChunkParts(uploadId: string, totalParts: number): Promise<void> {
   const paths = Array.from({ length: totalParts }, (_, index) => chunkStoragePath(uploadId, index));
   if (!paths.length) return;

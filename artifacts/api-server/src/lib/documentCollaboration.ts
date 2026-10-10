@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as decoding from "lib0/decoding";
 import * as Y from "yjs";
 import {
@@ -9,7 +9,7 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
 import {
   applyDocumentAssistantContent,
   documentDocFromEnvelope,
@@ -23,6 +23,7 @@ import {
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
 import { pushRealtimeHint } from "./realtime";
+import { teamFilter } from "./teams";
 
 const MAX_DOCUMENT_DATA_BYTES = 1_500_000;
 const DOCUMENT_PATH = /^\/api\/whiteboards\/([^/]+)\/document-collab$/;
@@ -38,6 +39,7 @@ type DocumentCollaborationClient = {
 
 type DocumentRoom = {
   id: string;
+  teamId: string;
   doc: Y.Doc;
   awareness: Awareness;
   clients: Set<DocumentCollaborationClient>;
@@ -87,7 +89,7 @@ function canAccessDocument(
 async function authenticateUpgrade(
   request: IncomingMessage,
   url: URL,
-): Promise<{ id: string; displayName: string } | null> {
+): Promise<{ id: string; displayName: string; teamId: string } | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
@@ -96,8 +98,10 @@ async function authenticateUpgrade(
     id: interviewerAccountsTable.id,
     displayName: interviewerAccountsTable.displayName,
     passwordHash: interviewerAccountsTable.passwordHash,
+    teamId: interviewerAccountsTable.teamId,
   }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-  return account?.passwordHash ? { id: account.id, displayName: account.displayName } : null;
+  if (!account?.passwordHash) return null;
+  return { id: account.id, displayName: account.displayName, teamId: account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID };
 }
 
 function rawBytes(raw: RawData): Uint8Array {
@@ -143,7 +147,7 @@ function schedulePersist(room: DocumentRoom): void {
       try {
         await db.update(interviewWhiteboardsTable)
           .set({ data, updatedAt: new Date() })
-          .where(eq(interviewWhiteboardsTable.id, room.id));
+          .where(and(eq(interviewWhiteboardsTable.id, room.id), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)));
         if (room.revision === revision) {
           for (const client of room.clients) sendJson(client.socket, { type: "saved" });
         }
@@ -165,6 +169,7 @@ function roomFor(
   id: string,
   title: string,
   storedData: string,
+  teamId?: string | null,
 ): DocumentRoom {
   const existing = rooms.get(id);
   if (existing) return existing;
@@ -178,6 +183,7 @@ function roomFor(
   }
   const room: DocumentRoom = {
     id,
+    teamId: teamId?.trim() ? teamId : DEFAULT_TEAM_ID,
     doc,
     awareness: new Awareness(doc),
     clients: new Set(),
@@ -218,9 +224,11 @@ function isDocumentEnvelope(raw: string): boolean {
 export async function readDocumentForAssistant(
   documentId: string,
   displayName: string,
+  teamId?: string | null,
 ): Promise<{ ok: true; title: string; content: string } | { ok: false; error: string }> {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const [document] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, documentId))
+    .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, team)))
     .limit(1);
   if (!document || !canAccessDocument(document, displayName) || !isDocumentEnvelope(document.data)) {
     return { ok: false, error: "Document not found or not accessible." };
@@ -244,7 +252,9 @@ export async function editDocumentForAssistant(
   mode: DocumentAssistantEditMode,
   content: string,
   requestedTitle?: string,
+  teamId?: string | null,
 ): Promise<{ ok: true; title: string; content: string } | { ok: false; error: string }> {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const title = requestedTitle?.trim();
   if (requestedTitle !== undefined && (!title || title.length > 120)) {
     return { ok: false, error: "Document titles must contain 1 to 120 characters." };
@@ -270,7 +280,7 @@ export async function editDocumentForAssistant(
   try {
     result = await db.transaction(async (tx) => {
       const [document] = await tx.select().from(interviewWhiteboardsTable)
-        .where(eq(interviewWhiteboardsTable.id, documentId))
+        .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, team)))
         .limit(1)
         .for("update");
       if (!document || !canAccessDocument(document, displayName) || !isDocumentEnvelope(document.data)) {
@@ -304,7 +314,7 @@ export async function editDocumentForAssistant(
         : undefined;
       await tx.update(interviewWhiteboardsTable)
         .set({ data: serializedData, title: nextTitle, updatedAt: new Date() })
-        .where(eq(interviewWhiteboardsTable.id, documentId));
+        .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, team)));
       return {
         ok: true as const,
         title: nextTitle,
@@ -363,10 +373,10 @@ function candidateDocumentSize(doc: Y.Doc, update: Uint8Array): number {
 async function openDocumentRoom(
   socket: WebSocket,
   documentId: string,
-  identity: { id: string; displayName: string },
+  identity: { id: string; displayName: string; teamId: string },
 ): Promise<void> {
   const [document] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, documentId))
+    .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, identity.teamId)))
     .limit(1);
   if (!document || !canAccessDocument(document, identity.displayName)) {
     sendJson(socket, { type: "error", message: "Document not found." });
@@ -381,7 +391,7 @@ async function openDocumentRoom(
     return;
   }
 
-  const room = roomFor(documentId, document.title, document.data);
+  const room = roomFor(documentId, document.title, document.data, identity.teamId);
   const client: DocumentCollaborationClient = { socket, awarenessClientIds: new Set() };
   room.clients.add(client);
   sendJson(socket, { type: "meta", title: room.title, participants: room.clients.size });
@@ -431,7 +441,7 @@ async function openDocumentRoom(
     const updatedAt = new Date();
     void db.update(interviewWhiteboardsTable)
       .set({ title, updatedAt })
-      .where(eq(interviewWhiteboardsTable.id, documentId))
+      .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
       .then(() => {
         // Room members get the title over their socket; everyone else only
         // sees it when their document list refetches, so hint the SSE relay.
@@ -459,7 +469,7 @@ async function openDocumentRoom(
       void room.persistChain
         .then(() => db.update(interviewWhiteboardsTable)
           .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
-          .where(eq(interviewWhiteboardsTable.id, documentId)))
+          .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId))))
         .catch((error) => logger.error({ err: error, documentId }, "Collaborative document final persist failed"))
         .finally(() => {
           room.awareness.destroy();

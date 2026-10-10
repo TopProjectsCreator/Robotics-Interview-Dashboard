@@ -3,8 +3,9 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, gt, lt } from "drizzle-orm";
 import { db, presenceHeartbeatsTable } from "@workspace/db";
 import { GetPresenceStatsResponse, GetPresenceResponse, KickPresenceBody, KickPresenceResponse, PostPresenceHeartbeatBody, PostPresenceHeartbeatResponse } from "@workspace/api-zod";
-import { isRevokedAdminSession, isValidAdminSession, requestAdminSession } from "../middlewares/adminAuth";
+import { isRevokedAdminSession, isValidAdminSession, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
 import { closeOpenVisits, geoLookup, getClientIp, getIpStats, rotatePageVisit } from "../lib/presence";
+import { teamFilter } from "../lib/teams";
 
 const router: IRouter = Router();
 
@@ -67,6 +68,7 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
   const notifyPermission = ["granted", "denied", "default", "unsupported"].includes(rawNotify) ? rawNotify : "";
   try {
     await pruneStale();
+    const teamId = await requestTeamId(req);
     const [existing] = await db
       .select()
       .from(presenceHeartbeatsTable)
@@ -87,16 +89,21 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
     const nextNotify = notifyPermission || existingNotify;
     await db
       .insert(presenceHeartbeatsTable)
-      .values({ sessionHash: hash, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, createdAt: now, updatedAt: now })
+      .values({ sessionHash: hash, teamId, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, createdAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: presenceHeartbeatsTable.sessionHash,
-        set: { ip, userAgent, city, region, country, page, notifyPermission: nextNotify, updatedAt: now },
+        set: { teamId, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, updatedAt: now },
       });
-    await rotatePageVisit(hash, ip, page, existing?.page ?? "");
+    await rotatePageVisit(hash, ip, page, existing?.page ?? "", teamId);
     const online = await db
       .select({ sessionHash: presenceHeartbeatsTable.sessionHash })
       .from(presenceHeartbeatsTable)
-      .where(gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)));
+      .where(
+        and(
+          teamFilter(presenceHeartbeatsTable.teamId, teamId),
+          gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)),
+        ),
+      );
     res.json(PostPresenceHeartbeatResponse.parse({ onlineCount: online.length }));
   } catch (error) {
     req.log.error({ err: error }, "Presence heartbeat failed");
@@ -109,10 +116,16 @@ router.get("/presence", async (req, res): Promise<void> => {
   if (!hash) return;
   try {
     await pruneStale();
+    const teamId = await requestTeamId(req);
     const rows = await db
       .select()
       .from(presenceHeartbeatsTable)
-      .where(gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)))
+      .where(
+        and(
+          teamFilter(presenceHeartbeatsTable.teamId, teamId),
+          gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)),
+        ),
+      )
       .orderBy(desc(presenceHeartbeatsTable.updatedAt));
     res.json(
       GetPresenceResponse.parse({
@@ -144,12 +157,14 @@ router.get("/presence/stats", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const stats = await getIpStats(ip);
+    const teamId = await requestTeamId(req);
+    const stats = await getIpStats(ip, teamId);
     const online = await db
       .select({ notifyPermission: presenceHeartbeatsTable.notifyPermission })
       .from(presenceHeartbeatsTable)
       .where(
         and(
+          teamFilter(presenceHeartbeatsTable.teamId, teamId),
           eq(presenceHeartbeatsTable.ip, ip),
           gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)),
         ),
@@ -187,7 +202,18 @@ router.post("/presence/kick", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const victims = await db.select({ sessionHash: presenceHeartbeatsTable.sessionHash }).from(presenceHeartbeatsTable).where(eq(presenceHeartbeatsTable.ip, ip));
+    // Kick only sessions belonging to the requester's team; victims are
+    // matched by IP *and* team so one team cannot boot another's devices.
+    const teamId = await requestTeamId(req);
+    const victims = await db
+      .select({ sessionHash: presenceHeartbeatsTable.sessionHash })
+      .from(presenceHeartbeatsTable)
+      .where(
+        and(
+          teamFilter(presenceHeartbeatsTable.teamId, teamId),
+          eq(presenceHeartbeatsTable.ip, ip),
+        ),
+      );
     const hashes = victims.map((r) => r.sessionHash).filter((h) => h && h !== hash);
     if (hashes.length === 0) {
       const selfOnly = victims.some((r) => r.sessionHash === hash);

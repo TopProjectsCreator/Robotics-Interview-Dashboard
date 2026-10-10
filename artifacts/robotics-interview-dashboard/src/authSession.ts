@@ -60,6 +60,7 @@ const WORKSPACE_RETURN_PATHS = new Set([
   "/parts/assistant",
   "/parts",
   "/cad",
+  "/code",
   "/assistant",
 ]);
 

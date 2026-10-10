@@ -37,7 +37,8 @@ import {
   type PartsVendorSyncState,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { requireAdmin } from "../middlewares/adminAuth";
+import { requestTeamId, requireAdmin } from "../middlewares/adminAuth";
+import { teamSqlCondition } from "../lib/teams";
 import {
   fallbackProductSearchMetadata,
   extractProductPageMetadata,
@@ -162,6 +163,28 @@ async function withTransaction<T>(
   }
 }
 
+/**
+ * Appends a team predicate for `alias."team_id"` to a raw-SQL where clause.
+ * Pass the requester's team id from routes; omit (undefined) for legacy
+ * global callers (assistant tools, background sync) whose behaviour is
+ * unchanged. The default team also matches legacy NULL rows so pre-migration
+ * data is never lost; other teams only ever see their own rows.
+ */
+function withTeamScope(
+  whereSql: string,
+  values: unknown[],
+  teamId: string | undefined,
+  alias: string,
+): { whereSql: string; values: unknown[] } {
+  if (!teamId) return { whereSql, values };
+  const placeholder = `$${values.length + 1}`;
+  const condition = teamSqlCondition(`${alias}."team_id"`, placeholder);
+  return {
+    whereSql: whereSql ? `${whereSql} and ${condition}` : `where ${condition}`,
+    values: [...values, teamId],
+  };
+}
+
 async function upsertCatalogRecord(
   client: PoolClient,
   input: {
@@ -175,18 +198,67 @@ async function upsertCatalogRecord(
     imageUrl: string | null;
     isManual: boolean;
   },
+  teamId?: string,
 ): Promise<{ id: string; created: boolean }> {
-  const existing = await client.query(
-    `select "id" from "parts_catalog_items" where "vendor_key" = $1 and "external_key" = $2`,
-    [input.vendorKey, input.externalKey],
-  );
+  const lookupValues: unknown[] = [input.vendorKey, input.externalKey];
+  let lookupSql =
+    `select "id" from "parts_catalog_items" where "vendor_key" = $1 and "external_key" = $2`;
+  if (teamId) {
+    lookupValues.push(teamId);
+    lookupSql += ` and ${teamSqlCondition('"team_id"', `$${lookupValues.length}`)}`;
+  }
+  const existing = await client.query(lookupSql, lookupValues);
+  if (teamId && existing.rowCount !== 0) {
+    // A row for this team already exists (possibly a legacy NULL row adopted
+    // by the default team): update it in place instead of inserting, so the
+    // per-team unique index can never produce a same-team duplicate.
+    const id = String(existing.rows[0].id);
+    await client.query(
+      `update "parts_catalog_items" set
+         "name" = $2,
+         "sku" = coalesce($3, "sku"),
+         "category" = coalesce($4, "category"),
+         "description" = coalesce($5, "description"),
+         "product_url" = coalesce($6, "product_url"),
+         "image_url" = coalesce($7, "image_url"),
+         "is_manual" = "is_manual" or $8,
+         "updated_at" = now()
+       where "id" = $1`,
+      [
+        id,
+        input.name,
+        input.sku,
+        input.category,
+        input.description,
+        input.productUrl,
+        input.imageUrl,
+        input.isManual,
+      ],
+    );
+    await client.query(
+      `insert into "parts_inventory" ("part_id", "quantity_owned")
+       values ($1, 0) on conflict ("part_id") do nothing`,
+      [id],
+    );
+    return { id, created: false };
+  }
   const created = existing.rowCount === 0;
   const id = created ? randomUUID() : String(existing.rows[0].id);
+  const columns = teamId
+    ? `("id", "team_id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")`
+    : `("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")`;
+  const conflictTarget = teamId
+    ? `("team_id", "vendor_key", "external_key")`
+    : `("vendor_key", "external_key")`;
+  const insertValues: unknown[] = teamId
+    ? [id, teamId, input.vendorKey, input.externalKey, input.name, input.sku, input.category, input.description, input.productUrl, input.imageUrl, input.isManual]
+    : [id, input.vendorKey, input.externalKey, input.name, input.sku, input.category, input.description, input.productUrl, input.imageUrl, input.isManual];
+  const placeholders = insertValues.map((_, index) => `$${index + 1}`).join(", ");
   const saved = await client.query(
     `insert into "parts_catalog_items"
-       ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     on conflict ("vendor_key", "external_key") do update set
+       ${columns}
+     values (${placeholders})
+     on conflict ${conflictTarget} do update set
        "name" = excluded."name",
        "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
        "category" = coalesce(excluded."category", "parts_catalog_items"."category"),
@@ -196,18 +268,7 @@ async function upsertCatalogRecord(
        "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
        "updated_at" = now()
      returning "id"`,
-    [
-      id,
-      input.vendorKey,
-      input.externalKey,
-      input.name,
-      input.sku,
-      input.category,
-      input.description,
-      input.productUrl,
-      input.imageUrl,
-      input.isManual,
-    ],
+    insertValues,
   );
   const savedId = String(saved.rows[0].id);
   await client.query(
@@ -222,11 +283,17 @@ async function setOwnedQuantity(
   client: PoolClient,
   partId: string,
   quantity: number,
+  teamId?: string,
 ): Promise<{ exists: boolean; allocated: number }> {
-  const part = await client.query(
-    `select "id" from "parts_catalog_items" where "id" = $1 for update`,
-    [partId],
-  );
+  const lookupValues: unknown[] = [partId];
+  let partSql = `select "id" from "parts_catalog_items" where "id" = $1 for update`;
+  if (teamId) {
+    lookupValues.push(teamId);
+    partSql =
+      `select "id" from "parts_catalog_items" where "id" = $1` +
+      ` and ${teamSqlCondition('"team_id"', `$${lookupValues.length}`)} for update`;
+  }
+  const part = await client.query(partSql, lookupValues);
   if (part.rowCount === 0) return { exists: false, allocated: 0 };
   const assignedResult = await client.query(
     `select coalesce(sum("quantity"), 0)::int as "assigned"
@@ -254,20 +321,32 @@ async function saveRobotAllocation(
   robotId: string,
   partId: string,
   quantity: number,
+  teamId?: string,
 ): Promise<RobotAllocationResult> {
   return withTransaction(async (client) => {
-    const robotResult = await client.query(
-      `select "id", "name" from "parts_robots" where "id" = $1`,
-      [robotId],
-    );
+    const robotValues: unknown[] = [robotId];
+    let robotSql = `select "id", "name" from "parts_robots" where "id" = $1`;
+    if (teamId) {
+      robotValues.push(teamId);
+      robotSql += ` and ${teamSqlCondition('"team_id"', `$${robotValues.length}`)}`;
+    }
+    const robotResult = await client.query(robotSql, robotValues);
     if (robotResult.rowCount === 0) return { missing: "robot" as const };
-    const partResult = await client.query(
+    const partValues: unknown[] = [partId];
+    let partSql =
       `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
        from "parts_catalog_items" c
        left join "parts_inventory" i on i."part_id" = c."id"
-       where c."id" = $1 for update of c`,
-      [partId],
-    );
+       where c."id" = $1 for update of c`;
+    if (teamId) {
+      partValues.push(teamId);
+      partSql =
+        `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
+         from "parts_catalog_items" c
+         left join "parts_inventory" i on i."part_id" = c."id"
+         where c."id" = $1 and ${teamSqlCondition('c."team_id"', `$${partValues.length}`)} for update of c`;
+    }
+    const partResult = await client.query(partSql, partValues);
     if (partResult.rowCount === 0) return { missing: "part" as const };
     const otherAssignments = await client.query(
       `select coalesce(sum("quantity"), 0)::int as "quantity"
@@ -400,6 +479,7 @@ async function searchSyncedCatalog(
   vendor: VendorConfig | undefined,
   limit: number,
   offset: number,
+  teamId?: string,
 ) {
   const clauses: string[] = [];
   const values: unknown[] = [];
@@ -416,13 +496,16 @@ async function searchSyncedCatalog(
       or coalesce(c."category", '') ilike any(${patternArray})
       or coalesce(c."description", '') ilike any(${patternArray}))`,
   );
-  const whereSql = `where ${clauses.join(" and ")}`;
+  const baseWhere = `where ${clauses.join(" and ")}`;
+  const scoped = withTeamScope(baseWhere, values, teamId, "c");
+  const whereSql = scoped.whereSql;
+  const scopedValues = scoped.values;
   const [countResult, rows] = await Promise.all([
     pool.query(
       `select count(*)::int as "total" from "parts_catalog_items" c ${whereSql}`,
-      values,
+      scopedValues,
     ),
-    queryCatalogRows(whereSql, values, limit, offset),
+    queryCatalogRows(whereSql, scopedValues, limit, offset),
   ]);
   return {
     items: rows.map(mapCatalogRow),
@@ -432,8 +515,9 @@ async function searchSyncedCatalog(
   };
 }
 
-async function getCatalogItem(partId: string) {
-  const rows = await queryCatalogRows(`where c."id" = $1`, [partId], 1, 0);
+async function getCatalogItem(partId: string, teamId?: string) {
+  const scoped = withTeamScope(`where c."id" = $1`, [partId], teamId, "c");
+  const rows = await queryCatalogRows(scoped.whereSql, scoped.values, 1, 0);
   return rows[0] ? mapCatalogRow(rows[0]) : null;
 }
 
@@ -1484,19 +1568,26 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
 
 router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => {
   try {
+    const teamId = await requestTeamId(req);
     const [robotsResult, totalsResult, syncStates] = await Promise.all([
       pool.query(
         `select "id", "name", "preview_object_path" as "previewObjectPath",
                 "preview_file_name" as "previewFileName",
                 "preview_content_type" as "previewContentType",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"
-         from "parts_robots" order by lower("name")`,
+         from "parts_robots" where ${teamSqlCondition('"team_id"', "$1")} order by lower("name")`,
+        [teamId],
       ),
       pool.query(
         `select
-           (select count(*)::int from "parts_catalog_items") as "catalogItems",
-           (select coalesce(sum("quantity_owned"), 0)::int from "parts_inventory") as "ownedUnits",
-           (select coalesce(sum("quantity"), 0)::int from "parts_robot_allocations") as "assignedUnits"`,
+           (select count(*)::int from "parts_catalog_items" c where ${teamSqlCondition('c."team_id"', "$1")}) as "catalogItems",
+           (select coalesce(sum("quantity_owned"), 0)::int from "parts_inventory" i
+             join "parts_catalog_items" c on c."id" = i."part_id"
+             where ${teamSqlCondition('c."team_id"', "$1")}) as "ownedUnits",
+           (select coalesce(sum("quantity"), 0)::int from "parts_robot_allocations" a
+             join "parts_robots" r on r."id" = a."robot_id"
+             where ${teamSqlCondition('r."team_id"', "$1")}) as "assignedUnits"`,
+        [teamId],
       ),
       readPartsSupplierSyncStates(),
     ]);
@@ -1559,12 +1650,14 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       );
     }
     const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
+    const teamId = await requestTeamId(req);
+    const scoped = withTeamScope(whereSql, values, teamId, "c");
     const [countResult, rows] = await Promise.all([
       pool.query(
-        `select count(*)::int as "total" from "parts_catalog_items" c ${whereSql}`,
-        values,
+        `select count(*)::int as "total" from "parts_catalog_items" c ${scoped.whereSql}`,
+        scoped.values,
       ),
-      queryCatalogRows(whereSql, values, limit, offset),
+      queryCatalogRows(scoped.whereSql, scoped.values, limit, offset),
     ]);
     res.json(
       ListPartsCatalogResponse.parse({
@@ -1595,7 +1688,8 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     return;
   }
   try {
-    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset);
+    const teamId = await requestTeamId(req);
+    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
     let results: PublicCatalogSearchResult[] = [];
     let liveSearchStatus: "available" | "unavailable" = "available";
     try {
@@ -1651,14 +1745,15 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       imageUrl,
       isManual: true,
     };
+    const teamId = await requestTeamId(req);
     const itemId = await withTransaction(async (client) => {
-      const saved = await upsertCatalogRecord(client, item);
+      const saved = await upsertCatalogRecord(client, item, teamId);
       if (Object.prototype.hasOwnProperty.call(req.body, "quantityOwned")) {
-        await setOwnedQuantity(client, saved.id, input.quantityOwned ?? 0);
+        await setOwnedQuantity(client, saved.id, input.quantityOwned ?? 0, teamId);
       }
       return saved.id;
     });
-    const savedItem = await getCatalogItem(itemId);
+    const savedItem = await getCatalogItem(itemId, teamId);
     res.status(201).json(CreatePartsCatalogItemResponse.parse(savedItem));
   } catch (error) {
     if (error instanceof BadInputError) {
@@ -1820,14 +1915,15 @@ router.patch("/parts/catalog/:partId/stock", requireAdmin, async (req, res): Pro
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const result = await withTransaction((client) =>
-      setOwnedQuantity(client, params.data.partId, body.data.quantityOwned),
+      setOwnedQuantity(client, params.data.partId, body.data.quantityOwned, teamId),
     );
     if (!result.exists) {
       res.status(404).json({ error: "Catalog item not found." });
       return;
     }
-    const savedItem = await getCatalogItem(params.data.partId);
+    const savedItem = await getCatalogItem(params.data.partId, teamId);
     res.json(UpdatePartsCatalogStockResponse.parse(savedItem));
   } catch (error) {
     if (error instanceof StockConflictError) {
@@ -1856,18 +1952,19 @@ router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Prom
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const updated = await pool.query(
       `update "parts_catalog_items"
        set "unit_cost" = $2, "cost_currency" = $3, "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$4")}
        returning "id"`,
-      [params.data.partId, unitCost, costCurrency],
+      [params.data.partId, unitCost, costCurrency, teamId],
     );
     if (updated.rowCount === 0) {
       res.status(404).json({ error: "Catalog item not found." });
       return;
     }
-    const savedItem = await getCatalogItem(params.data.partId);
+    const savedItem = await getCatalogItem(params.data.partId, teamId);
     res.json(UpdatePartsCatalogCostResponse.parse(savedItem));
   } catch (error) {
     req.log.error({ err: error }, "Parts saved cost update failed");
@@ -1886,9 +1983,10 @@ router.post(
       return;
     }
     try {
+      const teamId = await requestTeamId(req);
       const partResult = await pool.query(
-        `select "vendor_key" as "vendorKey" from "parts_catalog_items" where "id" = $1`,
-        [params.data.partId],
+        `select "vendor_key" as "vendorKey" from "parts_catalog_items" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [params.data.partId, teamId],
       );
       if (partResult.rowCount === 0) {
         res.status(404).json({ error: "Catalog item not found." });
@@ -1951,13 +2049,14 @@ router.get(
       return;
     }
     try {
+      const teamId = await requestTeamId(req);
       const robotResult = await pool.query(
         `select "id", "name", "preview_object_path" as "previewObjectPath",
                 "preview_file_name" as "previewFileName",
                 "preview_content_type" as "previewContentType",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"
-         from "parts_robots" where "id" = $1`,
-        [params.data.robotId],
+         from "parts_robots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [params.data.robotId, teamId],
       );
       if (robotResult.rowCount === 0) {
         res.status(404).json({ error: "Robot not found." });
@@ -2065,14 +2164,15 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const result = await pool.query(
-      `insert into "parts_robots" ("id", "name")
-       values ($1, $2)
+      `insert into "parts_robots" ("id", "team_id", "name")
+       values ($1, $2, $3)
        returning "id", "name", "preview_object_path" as "previewObjectPath",
                  "preview_file_name" as "previewFileName",
                  "preview_content_type" as "previewContentType",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [randomUUID(), name],
+      [randomUUID(), teamId, name],
     );
     if (result.rowCount === 0) {
       res.status(409).json({ error: "A robot with that name already exists." });
@@ -2102,14 +2202,15 @@ router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<v
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const result = await pool.query(
       `update "parts_robots" set "name" = $2, "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$3")}
        returning "id", "name", "preview_object_path" as "previewObjectPath",
                  "preview_file_name" as "previewFileName",
                  "preview_content_type" as "previewContentType",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.robotId, name],
+      [params.data.robotId, name, teamId],
     );
     if (result.rowCount === 0) {
       res.status(404).json({ error: "Robot not found." });
@@ -2145,23 +2246,24 @@ router.patch(
       return;
     }
     try {
+      const teamId = await requestTeamId(req);
       const result = await withTransaction(async (client) => {
         const current = await client.query(
           `select "preview_object_path" as "previewObjectPath"
-           from "parts_robots" where "id" = $1 for update`,
-          [params.data.robotId],
+           from "parts_robots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} for update`,
+          [params.data.robotId, teamId],
         );
         if (current.rowCount === 0) return null;
         const updated = await client.query(
           `update "parts_robots"
            set "preview_object_path" = $2, "preview_file_name" = $3,
                "preview_content_type" = $4, "updated_at" = now()
-           where "id" = $1
+           where "id" = $1 and ${teamSqlCondition('"team_id"', "$5")}
            returning "id", "name", "preview_object_path" as "previewObjectPath",
                      "preview_file_name" as "previewFileName",
                      "preview_content_type" as "previewContentType",
                      "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-          [params.data.robotId, preview.objectPath, preview.fileName, preview.contentType],
+          [params.data.robotId, preview.objectPath, preview.fileName, preview.contentType, teamId],
         );
         return {
           robot: updated.rows[0],
@@ -2198,11 +2300,12 @@ router.delete(
     }
 
     try {
+      const teamId = await requestTeamId(req);
       const result = await withTransaction(async (client) => {
         const current = await client.query(
           `select "preview_object_path" as "previewObjectPath"
-           from "parts_robots" where "id" = $1 for update`,
-          [params.data.robotId],
+           from "parts_robots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} for update`,
+          [params.data.robotId, teamId],
         );
         if (current.rowCount === 0) return null;
 
@@ -2210,12 +2313,12 @@ router.delete(
           `update "parts_robots"
            set "preview_object_path" = null, "preview_file_name" = null,
                "preview_content_type" = null, "updated_at" = now()
-           where "id" = $1
+           where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
            returning "id", "name", "preview_object_path" as "previewObjectPath",
                      "preview_file_name" as "previewFileName",
                      "preview_content_type" as "previewContentType",
                      "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-          [params.data.robotId],
+          [params.data.robotId, teamId],
         );
         return {
           robot: updated.rows[0],
@@ -2271,6 +2374,7 @@ router.put(
         params.data.robotId,
         params.data.partId,
         body.data.quantity,
+        await requestTeamId(req),
       );
       if ("missing" in allocation) {
         res.status(404).json({

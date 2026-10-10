@@ -384,6 +384,54 @@ export default function PublicDashboard() {
                 Explore parts <ArrowRight size={14} />
               </Link>
             </article>
+
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              data-testid="card-code-entry"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#c8b7ff] dark:bg-[#203f49]">
+                  <MessageSquare size={17} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">Code workspace</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
+                    Collaborative FTC Java editing, checkpoints, and hub deploys.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/code-landing"
+                className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
+                data-testid="link-code-entry"
+              >
+                Explore code <ArrowRight size={14} />
+              </Link>
+            </article>
+
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-[#d9e6e1] bg-[#edf4f1] p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              data-testid="card-cad-entry"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#153642] text-[#f1cc67] dark:bg-[#203f49]">
+                  <Cpu size={17} aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#153642] dark:text-[#e3efeb]">CAD workspace</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">
+                    Bots, folders, model uploads, and 3D previews for FTC design.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/cad-landing"
+                className="inline-flex shrink-0 items-center gap-2 self-start text-xs font-bold text-[#167f88] hover:text-[#105c64] dark:text-[#7edbd0] dark:hover:text-[#b1f0e7] sm:self-center"
+                data-testid="link-cad-entry"
+              >
+                Explore CAD <ArrowRight size={14} />
+              </Link>
+            </article>
           </div>
         </section>
 

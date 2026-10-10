@@ -6,6 +6,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 
 const app: Express = express();
@@ -55,6 +56,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Canonical sitemap for crawlers. Registered before static + SPA fallback
+// so GET /sitemap.xml returns XML instead of index.html. The same handler
+// also serves GET /api/sitemap.xml via routes/index.ts.
+app.get("/sitemap.xml", sitemapHandler);
 
 // Serve the production frontend build from the same origin so the
 // coordinator app can use relative `/api` URLs and cookie sessions.

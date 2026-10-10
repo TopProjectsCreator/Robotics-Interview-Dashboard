@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const pageVisitsTable = pgTable("page_visits", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   sessionHash: text("session_hash").notNull(),
   ip: text("ip").notNull().default(""),
   page: text("page").notNull().default(""),

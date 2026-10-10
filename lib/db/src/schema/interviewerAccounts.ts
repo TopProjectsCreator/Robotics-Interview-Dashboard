@@ -4,8 +4,10 @@ import { z } from "zod/v4";
 
 export const interviewerAccountsTable = pgTable("interviewer_accounts", {
   id: text("id").primaryKey(),
+  // NULL = legacy row belonging to the default team; never lost, always visible to it.
+  teamId: text("team_id"),
   displayName: text("display_name").notNull(),
-  normalizedName: text("normalized_name").notNull().unique(),
+  normalizedName: text("normalized_name").notNull(),
   passwordHash: text("password_hash"),
   role: text("role").notNull().default("coordinator"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

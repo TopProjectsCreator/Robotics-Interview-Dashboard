@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import {
   applicantsTable,
   dashboardChartsTable,
   dataSnapshotsTable,
   db,
+  DEFAULT_TEAM_ID,
   interviewQueueTable,
   type Applicant,
 } from "@workspace/db";
 import { getInterviewSettings } from "./roboticsData";
+import { teamFilter } from "./teams";
+
+function tid(teamId?: string | null): string {
+  return teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
+}
 
 const MAX_SNAPSHOTS = 50;
 
@@ -70,10 +76,11 @@ function parsePayload(raw: string): SnapshotPayload {
   return payload as SnapshotPayload;
 }
 
-async function enforceRetention(): Promise<void> {
+async function enforceRetention(team: string): Promise<void> {
   const rows = await db
     .select({ id: dataSnapshotsTable.id })
     .from(dataSnapshotsTable)
+    .where(teamFilter(dataSnapshotsTable.teamId, team))
     .orderBy(desc(dataSnapshotsTable.createdAt));
   const overflow = rows.slice(MAX_SNAPSHOTS);
   for (const row of overflow) {
@@ -81,9 +88,10 @@ async function enforceRetention(): Promise<void> {
   }
 }
 
-export async function captureSnapshot(label: string, createdBy: string): Promise<SnapshotSummary> {
-  const applicants = await db.select().from(applicantsTable);
-  const interviewLabels = await getInterviewSettings();
+export async function captureSnapshot(label: string, createdBy: string, teamId?: string | null): Promise<SnapshotSummary> {
+  const team = tid(teamId);
+  const applicants = await db.select().from(applicantsTable).where(teamFilter(applicantsTable.teamId, team));
+  const interviewLabels = await getInterviewSettings(team);
   const charts = await db
     .select({
       source: dashboardChartsTable.source,
@@ -93,6 +101,7 @@ export async function captureSnapshot(label: string, createdBy: string): Promise
       position: dashboardChartsTable.position,
     })
     .from(dashboardChartsTable)
+    .where(teamFilter(dashboardChartsTable.teamId, team))
     .orderBy(asc(dashboardChartsTable.position));
   const payload: SnapshotPayload = {
     version: 1,
@@ -105,33 +114,37 @@ export async function captureSnapshot(label: string, createdBy: string): Promise
     .insert(dataSnapshotsTable)
     .values({
       id: randomUUID(),
+      teamId: team,
       label: cleanLabel,
       createdBy: createdBy === "assistant" ? "assistant" : "coordinator",
       applicantCount: applicants.length,
       payload: JSON.stringify(payload),
     })
     .returning();
-  await enforceRetention();
+  await enforceRetention(team);
   return summarize(row);
 }
 
-export async function listSnapshots(): Promise<SnapshotSummary[]> {
+export async function listSnapshots(teamId?: string | null): Promise<SnapshotSummary[]> {
+  const team = tid(teamId);
   const rows = await db
     .select()
     .from(dataSnapshotsTable)
+    .where(teamFilter(dataSnapshotsTable.teamId, team))
     .orderBy(desc(dataSnapshotsTable.createdAt));
   return rows.map(summarize);
 }
 
-export async function diffSnapshot(id: string): Promise<{ summary: SnapshotSummary; diff: SnapshotDiff }> {
-  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
+export async function diffSnapshot(id: string, teamId?: string | null): Promise<{ summary: SnapshotSummary; diff: SnapshotDiff }> {
+  const team = tid(teamId);
+  const [row] = await db.select().from(dataSnapshotsTable).where(and(eq(dataSnapshotsTable.id, id), teamFilter(dataSnapshotsTable.teamId, team)));
   if (!row) throw new Error("Snapshot not found");
   const payload = parsePayload(row.payload);
-  const current = await db.select().from(applicantsTable);
-  const labelsNow = await getInterviewSettings();
+  const current = await db.select().from(applicantsTable).where(teamFilter(applicantsTable.teamId, team));
+  const labelsNow = await getInterviewSettings(team);
   const labelsBefore = payload.interviewLabels;
   const chartsNow = (
-    await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable)
+    await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable).where(teamFilter(dashboardChartsTable.teamId, team))
   ).length;
   const before = new Map(payload.applicants.map((a) => [String((a as Record<string, unknown>).id), a]));
   const now = new Map(current.map((a) => [a.id, a]));
@@ -194,19 +207,22 @@ export async function diffSnapshot(id: string): Promise<{ summary: SnapshotSumma
 export async function restoreSnapshot(
   id: string,
   actor: string,
+  teamId?: string | null,
 ): Promise<{ restoredId: string; preRestoreId: string; applicantCount: number }> {
-  const [row] = await db.select().from(dataSnapshotsTable).where(eq(dataSnapshotsTable.id, id));
+  const team = tid(teamId);
+  const [row] = await db.select().from(dataSnapshotsTable).where(and(eq(dataSnapshotsTable.id, id), teamFilter(dataSnapshotsTable.teamId, team)));
   if (!row) throw new Error("Snapshot not found");
   const payload = parsePayload(row.payload);
   // Append-only history: the present is saved first, so restoring forward
   // and back is always possible.
-  const pre = await captureSnapshot(`Before restoring "${row.label}"`, actor);
+  const pre = await captureSnapshot(`Before restoring "${row.label}"`, actor, team);
   await db.transaction(async (tx) => {
-    await tx.delete(applicantsTable);
+    await tx.delete(applicantsTable).where(teamFilter(applicantsTable.teamId, team));
     for (const raw of payload.applicants) {
       const rec = raw as unknown as Record<string, unknown>;
       await tx.insert(applicantsTable).values({
         id: String(rec.id),
+        teamId: team,
         name: String(rec.name ?? "Unnamed applicant"),
         grade: String(rec.grade ?? "Unknown"),
         email: (rec.email as string | null) ?? null,
@@ -234,17 +250,27 @@ export async function restoreSnapshot(
         updatedAt: new Date(),
       });
     }
-    await tx
-      .insert(interviewQueueTable)
-      .values({ id: 1, interviewerLabels: JSON.stringify(payload.interviewLabels) })
-      .onConflictDoUpdate({
-        target: interviewQueueTable.id,
-        set: { interviewerLabels: JSON.stringify(payload.interviewLabels), updatedAt: new Date() },
-      });
-    await tx.delete(dashboardChartsTable);
+    const [queueRow] = await tx
+      .select({ id: interviewQueueTable.id })
+      .from(interviewQueueTable)
+      .where(teamFilter(interviewQueueTable.teamId, team))
+      .limit(1);
+    if (queueRow) {
+      await tx
+        .update(interviewQueueTable)
+        .set({ interviewerLabels: JSON.stringify(payload.interviewLabels), updatedAt: new Date() })
+        .where(eq(interviewQueueTable.id, queueRow.id));
+    } else {
+      // New teams get their own queue row; id auto-increments past the legacy id=1.
+      await tx
+        .insert(interviewQueueTable)
+        .values({ teamId: team, interviewerLabels: JSON.stringify(payload.interviewLabels) });
+    }
+    await tx.delete(dashboardChartsTable).where(teamFilter(dashboardChartsTable.teamId, team));
     for (const chart of payload.charts) {
       await tx.insert(dashboardChartsTable).values({
         id: randomUUID(),
+        teamId: team,
         source: chart.source,
         chart: chart.chart,
         xAxis: chart.xAxis ?? null,

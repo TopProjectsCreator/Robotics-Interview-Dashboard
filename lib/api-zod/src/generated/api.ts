@@ -49,7 +49,51 @@ export const LoginResponse = zod.object({
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
+})
+
+
+/**
+ * @summary Generate a random team access code suggestion
+ */
+export const GetRandomTeamCodeResponse = zod.object({
+  "code": zod.string()
+})
+
+
+/**
+ * Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
+ * @summary Create a brand-new team with its own access code
+ */
+export const createTeamBodyTeamNameMax = 80;
+
+export const createTeamBodyTeamCodeMin = 4;
+export const createTeamBodyTeamCodeMax = 128;
+
+export const createTeamBodyDisplayNameMax = 80;
+
+
+
+
+export const CreateTeamBody = zod.object({
+  "teamName": zod.string().min(1).max(createTeamBodyTeamNameMax),
+  "teamCode": zod.string().min(createTeamBodyTeamCodeMin).max(createTeamBodyTeamCodeMax),
+  "displayName": zod.string().min(1).max(createTeamBodyDisplayNameMax),
+  "password": zod.string().min(1),
+  "confirmLowExposure": zod.boolean().optional().describe('Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown')
+})
+
+export const CreateTeamResponse = zod.object({
+  "message": zod.string(),
+  "teamId": zod.string(),
+  "teamName": zod.string(),
+  "authenticated": zod.boolean(),
+  "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
+  "role": zod.string().optional(),
+  "token": zod.string().optional()
 })
 
 
@@ -64,7 +108,9 @@ export const VerifyEventPasscodeBody = zod.object({
 })
 
 export const VerifyEventPasscodeResponse = zod.object({
-  "message": zod.string()
+  "message": zod.string(),
+  "teamId": zod.string().optional().describe('Team unlocked by this access code'),
+  "teamName": zod.string().optional().describe('Display name of the unlocked team')
 })
 
 
@@ -76,6 +122,8 @@ export const GetSessionResponse = zod.object({
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -83,6 +131,10 @@ export const GetSessionResponse = zod.object({
 /**
  * @summary List interviewer accounts and password setup state
  */
+export const ListInterviewersQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.')
+})
+
 export const ListInterviewersResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -235,6 +287,8 @@ export const LoginWithPasskeyResponse = zod.object({
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -471,6 +525,10 @@ export const GetMyBroadcastsResponse = zod.object({
 /**
  * @summary List unexpired big-screen commands (public; the display needs no login)
  */
+export const GetBroadcastCommandsQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code to scope the public display to one team. Omitted = default team.')
+})
+
 export const GetBroadcastCommandsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -2159,6 +2217,10 @@ export const CallbackQueueResponse = zod.object({
 /**
  * @summary Get sanitized big-screen state
  */
+export const GetDisplayStateQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code to scope the public display to one team. Omitted = signed-in user\'s team or default team.')
+})
+
 export const GetDisplayStateResponse = zod.object({
   "mode": zod.string(),
   "headline": zod.string(),
@@ -3294,35 +3356,35 @@ export const UploadCadModelFileResponse = zod.object({
 
 
 /**
- * @summary Which roles can open each workspace
+ * @summary Which users can open each workspace
  */
 export const GetWorkspaceVisibilityResponse = zod.object({
-  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+  "interview": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
 })
 
 
 /**
- * Coordinator-only. Unknown workspaces and roles are discarded.
- * @summary Change which roles can open each workspace
+ * Coordinator-only. Unknown workspaces are discarded.
+ * @summary Change which users can open each workspace
  */
 export const UpdateWorkspaceVisibilityBody = zod.object({
-  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
-  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
-  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional(),
-  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])).optional()
+  "interview": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
 })
 
 export const UpdateWorkspaceVisibilityResponse = zod.object({
-  "interview": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "chat": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "parts": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "cad": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer'])),
-  "code": zod.array(zod.enum(['coordinator', 'treasurer', 'interviewer']))
+  "interview": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
 })
 
 

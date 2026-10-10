@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq } from "drizzle-orm";
-import { applicantsTable, db, interviewWhiteboardsTable } from "@workspace/db";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { applicantsTable, db, DEFAULT_TEAM_ID, interviewWhiteboardsTable } from "@workspace/db";
 import { UpdateBoardBody } from "@workspace/api-zod";
 import { ObjectStorageService } from "./objectStorage";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations";
@@ -21,6 +21,7 @@ import {
 } from "./documentCollaboration";
 import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "./whiteboardCollaboration";
 import { pushRealtimeHint } from "./realtime";
+import { teamFilter } from "./teams";
 import {
   applyWhiteboardOperations,
   buildTextListWhiteboardOperations,
@@ -353,13 +354,16 @@ function toolFailure(error: string): ToolOutcome {
 async function listArtifacts(
   args: Record<string, unknown>,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const requestedKind = args.kind;
   if (requestedKind !== undefined && !["whiteboard", "board", "document", "spreadsheet"].includes(String(requestedKind))) {
     return toolFailure("Choose a supported artifact kind.");
   }
   const limit = safeNumber(args.limit, 25, 1, 50);
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const rows = await db.select().from(interviewWhiteboardsTable)
+    .where(teamFilter(interviewWhiteboardsTable.teamId, team))
     .orderBy(desc(interviewWhiteboardsTable.updatedAt))
     .limit(200);
   const items = rows
@@ -531,11 +535,13 @@ function whiteboardReadView(row: ArtifactRow, args: Record<string, unknown>): To
 async function readArtifact(
   args: Record<string, unknown>,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const id = clippedText(args.artifactId, 120).trim();
   if (!id) return toolFailure("An artifact id is required.");
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const [row] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, id))
+    .where(and(eq(interviewWhiteboardsTable.id, id), teamFilter(interviewWhiteboardsTable.teamId, team)))
     .limit(1);
   if (!row || !canAccess(row)) return toolFailure("Artifact not found or not accessible.");
 
@@ -544,7 +550,7 @@ async function readArtifact(
   if (kind === "spreadsheet") return spreadsheetReadView(row, args);
   if (kind === "whiteboard") return whiteboardReadView(row, args);
   if (kind === "document") {
-    const read = await readDocumentForAssistant(row.id, String(args.displayName ?? ""));
+    const read = await readDocumentForAssistant(row.id, String(args.displayName ?? ""), team);
     if (!read.ok) return toolFailure(read.error);
     const content = read.content.slice(0, 20_000);
     return {
@@ -601,16 +607,18 @@ async function editBoard(
   args: Record<string, unknown>,
   displayName: string,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const boardId = clippedText(args.boardId, 120).trim();
   const operation = UpdateBoardBody.safeParse(args.operation);
   if (!boardId || !operation.success) {
     return toolFailure(operation.success ? "A board id is required." : "The board operation is invalid.");
   }
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
 
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select().from(interviewWhiteboardsTable)
-      .where(eq(interviewWhiteboardsTable.id, boardId))
+      .where(and(eq(interviewWhiteboardsTable.id, boardId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
     if (!row || !canAccess(row) || kindForRow(row) !== "board") {
@@ -630,7 +638,7 @@ async function editBoard(
         ...(applied.title ? { title: applied.title.slice(0, 120) } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(interviewWhiteboardsTable.id, row.id))
+      .where(and(eq(interviewWhiteboardsTable.id, row.id), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .returning();
     return { ok: true as const, title: updated.title, operation: operation.data.operation };
   });
@@ -645,15 +653,17 @@ async function editBoard(
 async function editSpreadsheet(
   args: Record<string, unknown>,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const spreadsheetId = clippedText(args.spreadsheetId, 120).trim();
   const parsedEdits = parseSpreadsheetEdits(args.edits);
   if (!spreadsheetId || !parsedEdits.edits) {
     return toolFailure(parsedEdits.error ?? "A spreadsheet id is required.");
   }
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select().from(interviewWhiteboardsTable)
-      .where(eq(interviewWhiteboardsTable.id, spreadsheetId))
+      .where(and(eq(interviewWhiteboardsTable.id, spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
     if (!row || !canAccess(row) || !isSpreadsheetRecordData(row.data)) {
@@ -673,7 +683,7 @@ async function editSpreadsheet(
         data: serialized,
         updatedAt: new Date(),
       })
-      .where(eq(interviewWhiteboardsTable.id, row.id))
+      .where(and(eq(interviewWhiteboardsTable.id, row.id), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .returning();
     const dimensions = spreadsheetGridSize(applied.data);
     return {
@@ -696,6 +706,7 @@ async function editWhiteboard(
   args: Record<string, unknown>,
   displayName: string,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const whiteboardId = clippedText(args.whiteboardId, 120).trim();
   const title = args.title === undefined
@@ -707,6 +718,7 @@ async function editWhiteboard(
   }
   if (args.title !== undefined && !title) return toolFailure("Whiteboard titles cannot be empty.");
   if (title && title.length > 120) return toolFailure("Whiteboard titles must be 120 characters or fewer.");
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
 
   const resolvedOperations: WhiteboardOperation[] = [];
   for (const operation of parsedOperations.operations) {
@@ -739,7 +751,7 @@ async function editWhiteboard(
 
   const result = await db.transaction(async (tx) => {
     const [row] = await tx.select().from(interviewWhiteboardsTable)
-      .where(eq(interviewWhiteboardsTable.id, whiteboardId))
+      .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
     if (!row || !canAccess(row) || kindForRow(row) !== "whiteboard") {
@@ -764,7 +776,7 @@ async function editWhiteboard(
       ...scene,
       elements: applied.elements,
       files: applied.files ?? files,
-    }));
+    }), team);
     if (Buffer.byteLength(serialized, "utf8") > MAX_ASSISTANT_WHITEBOARD_BYTES) {
       return { ok: false as const, error: "This whiteboard is too large to save." };
     }
@@ -774,12 +786,12 @@ async function editWhiteboard(
         ...(title ? { title } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(interviewWhiteboardsTable.id, row.id))
+      .where(and(eq(interviewWhiteboardsTable.id, row.id), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .returning();
     return { ok: true as const, row: updated, changed: applied.changed ?? 0 };
   });
   if (!result.ok) return toolFailure(result.error);
-  broadcastWhiteboardScene(result.row.id, result.row.data, displayName);
+  broadcastWhiteboardScene(result.row.id, result.row.data, displayName, team);
   pushRealtimeHint("interview_whiteboards");
   return {
     content: JSON.stringify({
@@ -795,6 +807,7 @@ async function editWhiteboard(
 async function editDocument(
   args: Record<string, unknown>,
   displayName: string,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const documentId = clippedText(args.documentId, 120).trim();
   const mode = args.mode;
@@ -812,6 +825,7 @@ async function editDocument(
     mode,
     args.content,
     args.title as string | undefined,
+    teamId,
   );
   if (!result.ok) return toolFailure(result.error);
   pushRealtimeHint("interview_whiteboards");
@@ -830,6 +844,7 @@ async function editDocument(
 async function createWhiteboard(
   args: Record<string, unknown>,
   displayName: string,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
   const title = clippedText(args.title, 120).trim();
   const includeAllApplicantNames = args.includeAllApplicantNames === true;
@@ -837,11 +852,13 @@ async function createWhiteboard(
   if (includeAllApplicantNames && args.entries !== undefined) {
     return toolFailure("Choose either all applicant names or a supplied entries list, not both.");
   }
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
 
   let entries: string[];
   if (includeAllApplicantNames) {
     const applicants = await db.select({ name: applicantsTable.name })
       .from(applicantsTable)
+      .where(teamFilter(applicantsTable.teamId, team))
       .orderBy(asc(applicantsTable.name))
       .limit(MAX_ROSTER_ENTRIES + 1);
     if (applicants.length > MAX_ROSTER_ENTRIES) {
@@ -870,6 +887,7 @@ async function createWhiteboard(
   }
   const [row] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
+    teamId: team,
     title,
     data,
     createdBy: displayName,
@@ -901,9 +919,12 @@ async function insertSharedArtifact(
   title: string,
   data: string,
   displayName: string,
+  teamId?: string | null,
 ): Promise<ArtifactRow> {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const [row] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
+    teamId: team,
     title,
     data,
     createdBy: displayName,
@@ -914,7 +935,7 @@ async function insertSharedArtifact(
   return row;
 }
 
-async function createBoard(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+async function createBoard(args: Record<string, unknown>, displayName: string, teamId?: string | null): Promise<ToolOutcome> {
   const parsedTitle = creationTitle(args, "task board");
   if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A task board title is required.");
   const data = initialBoardData();
@@ -922,6 +943,7 @@ async function createBoard(args: Record<string, unknown>, displayName: string): 
     parsedTitle.title,
     JSON.stringify(data),
     displayName,
+    teamId,
   );
   return {
     content: JSON.stringify({
@@ -935,13 +957,14 @@ async function createBoard(args: Record<string, unknown>, displayName: string): 
   };
 }
 
-async function createDocument(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+async function createDocument(args: Record<string, unknown>, displayName: string, teamId?: string | null): Promise<ToolOutcome> {
   const parsedTitle = creationTitle(args, "document");
   if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A document title is required.");
   const row = await insertSharedArtifact(
     parsedTitle.title,
     JSON.stringify({ kind: "document", elements: [], yState: "" }),
     displayName,
+    teamId,
   );
   return {
     content: JSON.stringify({ ok: true, kind: "document", documentId: row.id, title: row.title }),
@@ -949,7 +972,7 @@ async function createDocument(args: Record<string, unknown>, displayName: string
   };
 }
 
-async function createSpreadsheet(args: Record<string, unknown>, displayName: string): Promise<ToolOutcome> {
+async function createSpreadsheet(args: Record<string, unknown>, displayName: string, teamId?: string | null): Promise<ToolOutcome> {
   const parsedTitle = creationTitle(args, "spreadsheet");
   if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A spreadsheet title is required.");
   const data = initialSpreadsheetData();
@@ -957,6 +980,7 @@ async function createSpreadsheet(args: Record<string, unknown>, displayName: str
     parsedTitle.title,
     JSON.stringify(data),
     displayName,
+    teamId,
   );
   return {
     content: JSON.stringify({
@@ -975,18 +999,19 @@ export async function runAssistantArtifactTool(
   args: Record<string, unknown>,
   displayName: string,
   canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
 ): Promise<ToolOutcome> {
-  if (name === "list_collaboration_artifacts") return listArtifacts(args, canAccess);
+  if (name === "list_collaboration_artifacts") return listArtifacts(args, canAccess, teamId);
   if (name === "read_collaboration_artifact") {
-    return readArtifact({ ...args, displayName }, canAccess);
+    return readArtifact({ ...args, displayName }, canAccess, teamId);
   }
-  if (name === "create_board") return createBoard(args, displayName);
-  if (name === "create_document") return createDocument(args, displayName);
-  if (name === "create_spreadsheet") return createSpreadsheet(args, displayName);
-  if (name === "create_whiteboard") return createWhiteboard(args, displayName);
-  if (name === "edit_whiteboard") return editWhiteboard(args, displayName, canAccess);
-  if (name === "edit_board") return editBoard(args, displayName, canAccess);
-  if (name === "edit_document") return editDocument(args, displayName);
-  if (name === "edit_spreadsheet") return editSpreadsheet(args, canAccess);
+  if (name === "create_board") return createBoard(args, displayName, teamId);
+  if (name === "create_document") return createDocument(args, displayName, teamId);
+  if (name === "create_spreadsheet") return createSpreadsheet(args, displayName, teamId);
+  if (name === "create_whiteboard") return createWhiteboard(args, displayName, teamId);
+  if (name === "edit_whiteboard") return editWhiteboard(args, displayName, canAccess, teamId);
+  if (name === "edit_board") return editBoard(args, displayName, canAccess, teamId);
+  if (name === "edit_document") return editDocument(args, displayName, teamId);
+  if (name === "edit_spreadsheet") return editSpreadsheet(args, canAccess, teamId);
   return toolFailure("Unknown artifact tool.");
 }

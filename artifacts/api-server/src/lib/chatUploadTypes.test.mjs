@@ -53,6 +53,9 @@ async function loadStorage(t) {
       db: {},
       pool: {},
       chunkedUploadsTable: { uploadId: "upload_id" },
+      teamsTable: {},
+      DEFAULT_TEAM_ID: "default",
+      normalizeTeamName: (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase(),
     },
   });
   mock.module("../lib/objectStorage", {
@@ -69,6 +72,8 @@ async function loadStorage(t) {
       requireCoordinator: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
+      requestTeamId: async () => "default",
+      requestTeamIdSync: () => "default",
     },
   });
   mock.module("../lib/interviewerAccounts", {

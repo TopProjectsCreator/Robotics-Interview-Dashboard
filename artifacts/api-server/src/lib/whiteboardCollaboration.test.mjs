@@ -8,6 +8,7 @@ import * as Y from "yjs";
 import { interviewerAccountsTable } from "../../../../lib/db/src/schema/interviewerAccounts.ts";
 import { revokedSessionsTable } from "../../../../lib/db/src/schema/sessions.ts";
 import { interviewWhiteboardsTable } from "../../../../lib/db/src/schema/whiteboards.ts";
+import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -65,19 +66,31 @@ const defaultUpdateHandler = async (table, id, values) => {
   throw new Error("Unexpected database update in whiteboard collaboration test");
 };
 
-function whereValue(whereClause) {
-  return whereClause?.queryChunks?.find((chunk) => chunk.constructor.name === "Param")?.value;
+// Collect every bound Param value, recursing into nested chunks: team
+// scoping wraps id lookups in and(...), so the id is no longer always the
+// first top-level chunk.
+function paramValues(whereClause) {
+  const out = [];
+  const visit = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (node.constructor?.name === "Param") {
+      out.push(node.value);
+      return;
+    }
+    if (Array.isArray(node.queryChunks)) node.queryChunks.forEach(visit);
+  };
+  visit(whereClause);
+  return out;
 }
 
 function rowsFor(table, whereClause) {
+  const params = paramValues(whereClause);
   if (table === revokedSessionsTable) return [];
   if (table === interviewerAccountsTable) {
-    const id = whereValue(whereClause);
-    return accounts.filter((account) => account.id === id);
+    return accounts.filter((account) => params.includes(account.id));
   }
   if (table === interviewWhiteboardsTable) {
-    const id = whereValue(whereClause);
-    return whiteboards.filter((whiteboard) => whiteboard.id === id);
+    return whiteboards.filter((whiteboard) => params.includes(whiteboard.id));
   }
   throw new Error("Unexpected database table in whiteboard collaboration test");
 }
@@ -111,7 +124,7 @@ const db = {
     let values;
     let whereClause;
     const execute = () => Promise.resolve().then(() => {
-      const id = whereValue(whereClause);
+      const id = paramValues(whereClause)[0];
       return (updateHandlers.get(id) ?? defaultUpdateHandler)(table, id, values);
     });
     return {
@@ -144,6 +157,9 @@ function mockDatabase() {
       interviewerAccountsTable,
       revokedSessionsTable,
       interviewWhiteboardsTable,
+      teamsTable,
+      DEFAULT_TEAM_ID,
+      normalizeTeamName,
     },
   });
 }
@@ -302,6 +318,9 @@ test("removes a disconnected collaborator cursor from the room presence update",
       interviewerAccountsTable,
       interviewWhiteboardsTable,
       revokedSessionsTable,
+      teamsTable,
+      DEFAULT_TEAM_ID,
+      normalizeTeamName,
     },
   });
   const [{ createInterviewerSession }, { setupWhiteboardCollaboration }] = await Promise.all([

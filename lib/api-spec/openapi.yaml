@@ -80,6 +80,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/teams/random-code:
+    get:
+      operationId: getRandomTeamCode
+      tags: [auth]
+      summary: Generate a random team access code suggestion
+      responses:
+        "200":
+          description: Random code suggestion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RandomTeamCode"
+  /auth/teams:
+    post:
+      operationId: createTeam
+      tags: [auth]
+      summary: Create a brand-new team with its own access code
+      description: Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamCreateInput"
+      responses:
+        "201":
+          description: Team created and signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamCreateResponse"
+        "400":
+          description: Invalid team name, code, or account details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Team name or access code already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many teams created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/verify-event-passcode:
     post:
       operationId: verifyEventPasscode
@@ -97,7 +146,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MessageResponse"
+                $ref: "#/components/schemas/TeamVerifyResponse"
         "400":
           description: Event passcode is required
           content:
@@ -133,6 +182,13 @@ paths:
       operationId: listInterviewers
       tags: [auth]
       summary: List interviewer accounts and password setup state
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
       responses:
         "200":
           description: Interviewer accounts
@@ -603,6 +659,13 @@ paths:
       operationId: getBroadcastCommands
       tags: [broadcasts]
       summary: List unexpired big-screen commands (public; the display needs no login)
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code to scope the public display to one team. Omitted = default team.
       responses:
         "200":
           description: Pending display commands, newest first
@@ -1443,6 +1506,13 @@ paths:
       operationId: getDisplayState
       tags: [display]
       summary: Get sanitized big-screen state
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code to scope the public display to one team. Omitted = signed-in user's team or default team.
       responses:
         "200":
           description: Big-screen display state
@@ -2267,7 +2337,7 @@ paths:
     get:
       operationId: getWorkspaceVisibility
       tags: [workspaces]
-      summary: Which roles can open each workspace
+      summary: Which users can open each workspace
       responses:
         "200":
           description: Workspace visibility map
@@ -2278,8 +2348,8 @@ paths:
     put:
       operationId: updateWorkspaceVisibility
       tags: [workspaces]
-      summary: Change which roles can open each workspace
-      description: Coordinator-only. Unknown workspaces and roles are discarded.
+      summary: Change which users can open each workspace
+      description: Coordinator-only. Unknown workspaces are discarded.
       requestBody:
         required: true
         content:
@@ -3582,9 +3652,75 @@ components:
         role:
           type: string
           description: "coordinator, treasurer, or interviewer"
+        teamId:
+          type: string
+          description: Team this session belongs to
+        teamName:
+          type: string
+          description: Display name of the team this session belongs to
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
+    TeamVerifyResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        teamId:
+          type: string
+          description: Team unlocked by this access code
+        teamName:
+          type: string
+          description: Display name of the unlocked team
+    TeamCreateInput:
+      type: object
+      required: [teamName, teamCode, displayName, password]
+      properties:
+        teamName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        teamCode:
+          type: string
+          minLength: 4
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        password:
+          type: string
+          minLength: 1
+        confirmLowExposure:
+          type: boolean
+          description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    TeamCreateResponse:
+      type: object
+      required: [message, teamId, teamName, authenticated]
+      properties:
+        message:
+          type: string
+        teamId:
+          type: string
+        teamName:
+          type: string
+        authenticated:
+          type: boolean
+        label:
+          type: string
+        interviewerId:
+          type: string
+        role:
+          type: string
+        token:
+          type: string
+    RandomTeamCode:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
     InterviewerAccount:
       type: object
       required: [id, displayName, hasPassword, role]
@@ -5610,8 +5746,9 @@ components:
       enum: [coordinator, treasurer, interviewer]
     WorkspaceRoleList:
       type: array
+      description: Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.
       items:
-        $ref: "#/components/schemas/WorkspaceRole"
+        type: string
     WorkspaceVisibility:
       type: object
       required: [interview, chat, parts, cad, code]

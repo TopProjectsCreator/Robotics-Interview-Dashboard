@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const interviewWhiteboardsTable = pgTable("interview_whiteboards", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   title: text("title").notNull(),
   data: text("data").notNull(),
   createdBy: text("created_by").notNull(),

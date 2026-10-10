@@ -102,6 +102,8 @@ import type {
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
+  GetBroadcastCommandsParams,
+  GetDisplayStateParams,
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
   GetPresenceStatsParams,
@@ -125,6 +127,7 @@ import type {
   ListApplicantsParams,
   ListCadModelsParams,
   ListInterviewWhiteboardsParams,
+  ListInterviewersParams,
   ListPartsCatalogParams,
   LoginInput,
   MessageResponse,
@@ -163,6 +166,7 @@ import type {
   QueueLabels,
   QueueSettingsInput,
   QueueState,
+  RandomTeamCode,
   ReorderQueueInput,
   SearchPartsCatalogParams,
   SeatingAssignInput,
@@ -178,6 +182,9 @@ import type {
   SpreadsheetCreateInput,
   SpreadsheetUpdateInput,
   SystemUsage,
+  TeamCreateInput,
+  TeamCreateResponse,
+  TeamVerifyResponse,
   UpdateCodeFile200,
   UpdateCodeProject200,
   UploadCadModelFileParams,
@@ -441,6 +448,155 @@ export const useLogin = <TError = ErrorType<ErrorResponse>,
       return useMutation(getLoginMutationOptions(options));
     }
 
+export const getGetRandomTeamCodeUrl = () => {
+
+
+
+
+  return `/api/auth/teams/random-code`
+}
+
+/**
+ * @summary Generate a random team access code suggestion
+ */
+export const getRandomTeamCode = async ( options?: Parameters<typeof customFetch>[1]): Promise<RandomTeamCode> => {
+
+  return customFetch<RandomTeamCode>(getGetRandomTeamCodeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRandomTeamCodeQueryKey = () => {
+    return [
+    `/api/auth/teams/random-code`
+    ] as const;
+    }
+
+
+export const getGetRandomTeamCodeQueryOptions = <TData = Awaited<ReturnType<typeof getRandomTeamCode>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRandomTeamCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRandomTeamCodeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRandomTeamCode>>> = ({ signal }) => getRandomTeamCode({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRandomTeamCode>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRandomTeamCodeQueryResult = NonNullable<Awaited<ReturnType<typeof getRandomTeamCode>>>
+export type GetRandomTeamCodeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Generate a random team access code suggestion
+ */
+
+export function useGetRandomTeamCode<TData = Awaited<ReturnType<typeof getRandomTeamCode>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRandomTeamCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRandomTeamCodeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamUrl = () => {
+
+
+
+
+  return `/api/auth/teams`
+}
+
+/**
+ * Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
+ * @summary Create a brand-new team with its own access code
+ */
+export const createTeam = async (teamCreateInput: TeamCreateInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamCreateResponse> => {
+
+  return customFetch<TeamCreateResponse>(getCreateTeamUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamCreateInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTeamMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeam>>, TError,{data: BodyType<TeamCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeam>>, TError,{data: BodyType<TeamCreateInput>}, TContext> => {
+
+const mutationKey = ['createTeam'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeam>>, {data: BodyType<TeamCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeam(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamMutationResult = NonNullable<Awaited<ReturnType<typeof createTeam>>>
+    export type CreateTeamMutationBody = BodyType<TeamCreateInput>
+    export type CreateTeamMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a brand-new team with its own access code
+ */
+export const useCreateTeam = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeam>>, TError,{data: BodyType<TeamCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeam>>,
+        TError,
+        {data: BodyType<TeamCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamMutationOptions(options));
+    }
+
 export const getVerifyEventPasscodeUrl = () => {
 
 
@@ -452,9 +608,9 @@ export const getVerifyEventPasscodeUrl = () => {
 /**
  * @summary Verify the team event passcode before showing account choices
  */
-export const verifyEventPasscode = async (eventPasswordInput: EventPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+export const verifyEventPasscode = async (eventPasswordInput: EventPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamVerifyResponse> => {
 
-  return customFetch<MessageResponse>(getVerifyEventPasscodeUrl(),
+  return customFetch<TeamVerifyResponse>(getVerifyEventPasscodeUrl(),
   {
     ...options,
     method: 'POST',
@@ -589,20 +745,27 @@ export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TE
 
 
 
-export const getListInterviewersUrl = () => {
+export const getListInterviewersUrl = (params?: ListInterviewersParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/auth/interviewers`
+  return stringifiedParams.length > 0 ? `/api/auth/interviewers?${stringifiedParams}` : `/api/auth/interviewers`
 }
 
 /**
  * @summary List interviewer accounts and password setup state
  */
-export const listInterviewers = async ( options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccountList> => {
+export const listInterviewers = async (params?: ListInterviewersParams, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccountList> => {
 
-  return customFetch<InterviewerAccountList>(getListInterviewersUrl(),
+  return customFetch<InterviewerAccountList>(getListInterviewersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -615,23 +778,23 @@ export const listInterviewers = async ( options?: Parameters<typeof customFetch>
 
 
 
-export const getListInterviewersQueryKey = () => {
+export const getListInterviewersQueryKey = (params?: ListInterviewersParams,) => {
     return [
-    `/api/auth/interviewers`
+    `/api/auth/interviewers`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListInterviewersQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListInterviewersQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>(params?: ListInterviewersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListInterviewersQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListInterviewersQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInterviewers>>> = ({ signal }) => listInterviewers({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInterviewers>>> = ({ signal }) => listInterviewers(params, { signal, ...requestOptions });
 
 
 
@@ -649,11 +812,11 @@ export type ListInterviewersQueryError = ErrorType<unknown>
  */
 
 export function useListInterviewers<TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListInterviewersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListInterviewersQueryOptions(options)
+  const queryOptions = getListInterviewersQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -2200,20 +2363,27 @@ export function useGetMyBroadcasts<TData = Awaited<ReturnType<typeof getMyBroadc
 
 
 
-export const getGetBroadcastCommandsUrl = () => {
+export const getGetBroadcastCommandsUrl = (params?: GetBroadcastCommandsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/broadcasts/commands`
+  return stringifiedParams.length > 0 ? `/api/broadcasts/commands?${stringifiedParams}` : `/api/broadcasts/commands`
 }
 
 /**
  * @summary List unexpired big-screen commands (public; the display needs no login)
  */
-export const getBroadcastCommands = async ( options?: Parameters<typeof customFetch>[1]): Promise<BroadcastList> => {
+export const getBroadcastCommands = async (params?: GetBroadcastCommandsParams, options?: Parameters<typeof customFetch>[1]): Promise<BroadcastList> => {
 
-  return customFetch<BroadcastList>(getGetBroadcastCommandsUrl(),
+  return customFetch<BroadcastList>(getGetBroadcastCommandsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2226,23 +2396,23 @@ export const getBroadcastCommands = async ( options?: Parameters<typeof customFe
 
 
 
-export const getGetBroadcastCommandsQueryKey = () => {
+export const getGetBroadcastCommandsQueryKey = (params?: GetBroadcastCommandsParams,) => {
     return [
-    `/api/broadcasts/commands`
+    `/api/broadcasts/commands`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetBroadcastCommandsQueryOptions = <TData = Awaited<ReturnType<typeof getBroadcastCommands>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetBroadcastCommandsQueryOptions = <TData = Awaited<ReturnType<typeof getBroadcastCommands>>, TError = ErrorType<unknown>>(params?: GetBroadcastCommandsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetBroadcastCommandsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetBroadcastCommandsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBroadcastCommands>>> = ({ signal }) => getBroadcastCommands({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBroadcastCommands>>> = ({ signal }) => getBroadcastCommands(params, { signal, ...requestOptions });
 
 
 
@@ -2260,11 +2430,11 @@ export type GetBroadcastCommandsQueryError = ErrorType<unknown>
  */
 
 export function useGetBroadcastCommands<TData = Awaited<ReturnType<typeof getBroadcastCommands>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetBroadcastCommandsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBroadcastCommands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetBroadcastCommandsQueryOptions(options)
+  const queryOptions = getGetBroadcastCommandsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -5449,20 +5619,27 @@ export const useCallbackQueue = <TError = ErrorType<unknown>,
       return useMutation(getCallbackQueueMutationOptions(options));
     }
 
-export const getGetDisplayStateUrl = () => {
+export const getGetDisplayStateUrl = (params?: GetDisplayStateParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/display/state`
+  return stringifiedParams.length > 0 ? `/api/display/state?${stringifiedParams}` : `/api/display/state`
 }
 
 /**
  * @summary Get sanitized big-screen state
  */
-export const getDisplayState = async ( options?: Parameters<typeof customFetch>[1]): Promise<DisplayState> => {
+export const getDisplayState = async (params?: GetDisplayStateParams, options?: Parameters<typeof customFetch>[1]): Promise<DisplayState> => {
 
-  return customFetch<DisplayState>(getGetDisplayStateUrl(),
+  return customFetch<DisplayState>(getGetDisplayStateUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5475,23 +5652,23 @@ export const getDisplayState = async ( options?: Parameters<typeof customFetch>[
 
 
 
-export const getGetDisplayStateQueryKey = () => {
+export const getGetDisplayStateQueryKey = (params?: GetDisplayStateParams,) => {
     return [
-    `/api/display/state`
+    `/api/display/state`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetDisplayStateQueryOptions = <TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetDisplayStateQueryOptions = <TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<unknown>>(params?: GetDisplayStateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetDisplayStateQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetDisplayStateQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDisplayState>>> = ({ signal }) => getDisplayState({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDisplayState>>> = ({ signal }) => getDisplayState(params, { signal, ...requestOptions });
 
 
 
@@ -5509,11 +5686,11 @@ export type GetDisplayStateQueryError = ErrorType<unknown>
  */
 
 export function useGetDisplayState<TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetDisplayStateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetDisplayStateQueryOptions(options)
+  const queryOptions = getGetDisplayStateQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -8433,7 +8610,7 @@ export const getGetWorkspaceVisibilityUrl = () => {
 }
 
 /**
- * @summary Which roles can open each workspace
+ * @summary Which users can open each workspace
  */
 export const getWorkspaceVisibility = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceVisibility> => {
 
@@ -8480,7 +8657,7 @@ export type GetWorkspaceVisibilityQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Which roles can open each workspace
+ * @summary Which users can open each workspace
  */
 
 export function useGetWorkspaceVisibility<TData = Awaited<ReturnType<typeof getWorkspaceVisibility>>, TError = ErrorType<unknown>>(
@@ -8510,8 +8687,8 @@ export const getUpdateWorkspaceVisibilityUrl = () => {
 }
 
 /**
- * Coordinator-only. Unknown workspaces and roles are discarded.
- * @summary Change which roles can open each workspace
+ * Coordinator-only. Unknown workspaces are discarded.
+ * @summary Change which users can open each workspace
  */
 export const updateWorkspaceVisibility = async (workspaceVisibilityInput: WorkspaceVisibilityInput, options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceVisibility> => {
 
@@ -8560,7 +8737,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateWorkspaceVisibilityMutationError = ErrorType<unknown>
 
     /**
- * @summary Change which roles can open each workspace
+ * @summary Change which users can open each workspace
  */
 export const useUpdateWorkspaceVisibility = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWorkspaceVisibility>>, TError,{data: BodyType<WorkspaceVisibilityInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

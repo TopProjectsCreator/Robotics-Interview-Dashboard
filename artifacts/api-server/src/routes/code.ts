@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request } from "express";
 import { pool } from "@workspace/db";
-import { requireWorkspaceAccess } from "../middlewares/adminAuth";
+import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { teamSqlCondition } from "../lib/teams";
 import { deployProjectToHub, normalizeHubBaseUrl } from "../lib/hubDeploy";
 import { applyCodeFileContent } from "../lib/codeCollaboration";
 import { pushRealtimeHint } from "../lib/realtime";
@@ -62,15 +63,32 @@ function mapFile(row: Record<string, unknown>) {
   };
 }
 
+/**
+ * True when `projectId` names a project in `teamId`'s workspace (legacy NULL
+ * projects belong to the default team). Every project-child endpoint checks
+ * this first and 404s otherwise, so one team can never read or write through
+ * another team's project id.
+ */
+async function teamProject(projectId: string | string[], teamId: string): Promise<boolean> {
+  const id = Array.isArray(projectId) ? (projectId[0] ?? "") : projectId;
+  const result = await pool.query(
+    `select "id" from "code_projects" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+    [id, teamId],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 // Projects ---------------------------------------------------------------
 
 router.get("/code/projects", codeAccess, async (req, res): Promise<void> => {
   try {
+    const teamId = await requestTeamId(req);
     const projects = await pool.query(
       `select p."id", p."name", p."sdk_version" as "sdkVersion", p."git_config" as "gitConfig",
               p."created_at" as "createdAt", p."updated_at" as "updatedAt",
               (select count(*) from "code_files" f where f."project_id" = p."id") as "fileCount"
-       from "code_projects" p order by lower(p."name")`,
+       from "code_projects" p where ${teamSqlCondition('p."team_id"', "$1")} order by lower(p."name")`,
+      [teamId],
     );
     res.json({ projects: projects.rows.map(mapProject) });
   } catch (error) {
@@ -91,12 +109,13 @@ router.post("/code/projects", codeAccess, async (req, res): Promise<void> => {
     : "v12.0";
   const by = await displayName(req);
   try {
+    const teamId = await requestTeamId(req);
     const inserted = await pool.query(
-      `insert into "code_projects" ("id", "name", "sdk_version", "created_by")
-       values ($1, $2, $3, $4)
+      `insert into "code_projects" ("id", "team_id", "name", "sdk_version", "created_by")
+       values ($1, $2, $3, $4, $5)
        returning "id", "name", "sdk_version" as "sdkVersion", "git_config" as "gitConfig",
                  0 as "fileCount", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [randomUUID(), name, sdkVersion, by],
+      [randomUUID(), teamId, name, sdkVersion, by],
     );
     res.status(201).json({ project: mapProject(inserted.rows[0]) });
   } catch (error) {
@@ -140,9 +159,12 @@ router.patch("/code/projects/:projectId", codeAccess, async (req, res): Promise<
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
+    values.push(teamId);
+    const teamPlaceholder = `$${values.length}`;
     const updated = await pool.query(
       `update "code_projects" set ${patch.join(", ")}, "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', teamPlaceholder)}
        returning "id", "name", "sdk_version" as "sdkVersion", "git_config" as "gitConfig",
                  (select count(*) from "code_files" f where f."project_id" = "code_projects"."id") as "fileCount",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
@@ -161,9 +183,11 @@ router.patch("/code/projects/:projectId", codeAccess, async (req, res): Promise<
 
 router.delete("/code/projects/:projectId", codeAccess, async (req, res): Promise<void> => {
   try {
-    const deleted = await pool.query(`delete from "code_projects" where "id" = $1`, [
-      req.params.projectId,
-    ]);
+    const teamId = await requestTeamId(req);
+    const deleted = await pool.query(
+      `delete from "code_projects" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [req.params.projectId, teamId],
+    );
     if (deleted.rowCount === 0) {
       res.status(404).json({ error: "Project not found." });
       return;
@@ -179,12 +203,17 @@ router.delete("/code/projects/:projectId", codeAccess, async (req, res): Promise
 
 router.get("/code/projects/:projectId/files", codeAccess, async (req, res): Promise<void> => {
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(req.params.projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     const files = await pool.query(
       `select "id", "project_id" as "projectId", "path", "content",
               octet_length("content") as "sizeBytes",
               "updated_by" as "updatedBy", "created_at" as "createdAt", "updated_at" as "updatedAt"
-       from "code_files" where "project_id" = $1 order by "path"`,
-      [req.params.projectId],
+       from "code_files" where "project_id" = $1 and ${teamSqlCondition('"team_id"', "$2")} order by "path"`,
+      [req.params.projectId, teamId],
     );
     res.json({ files: files.rows.map(mapFile) });
   } catch (error) {
@@ -204,17 +233,25 @@ router.post("/code/files", codeAccess, async (req, res): Promise<void> => {
   }
   const by = await displayName(req);
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     const inserted = await pool.query(
-      `insert into "code_files" ("id", "project_id", "path", "content", "updated_by")
-       values ($1, $2, $3, $4, $5)
+      `insert into "code_files" ("id", "team_id", "project_id", "path", "content", "updated_by")
+       values ($1, $2, $3, $4, $5, $6)
        on conflict ("project_id", "path") do update
          set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()
        returning "id", "project_id" as "projectId", "path", "content",
                  octet_length("content") as "sizeBytes",
                  "updated_by" as "updatedBy", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [randomUUID(), projectId, path, content, by],
+      [randomUUID(), teamId, projectId, path, content, by],
     );
-    await pool.query(`update "code_projects" set "updated_at" = now() where "id" = $1`, [projectId]);
+    await pool.query(
+      `update "code_projects" set "updated_at" = now() where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [projectId, teamId],
+    );
     const saved = mapFile(inserted.rows[0]);
     // Fold the write into the live Yjs room (if open) so peers with this
     // file open see it immediately, then hint every IDE to refresh lists.
@@ -256,9 +293,12 @@ router.put("/code/files/:fileId", codeAccess, async (req, res): Promise<void> =>
   values.push(by);
   sets.push(`"updated_by" = $${values.length}`);
   try {
+    const teamId = await requestTeamId(req);
+    values.push(teamId);
+    const teamPlaceholder = `$${values.length}`;
     const updated = await pool.query(
       `update "code_files" set ${sets.join(", ")}, "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', teamPlaceholder)}
        returning "id", "project_id" as "projectId", "path", "content",
                  octet_length("content") as "sizeBytes",
                  "updated_by" as "updatedBy", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
@@ -287,9 +327,11 @@ router.put("/code/files/:fileId", codeAccess, async (req, res): Promise<void> =>
 
 router.delete("/code/files/:fileId", codeAccess, async (req, res): Promise<void> => {
   try {
-    const deleted = await pool.query(`delete from "code_files" where "id" = $1`, [
-      req.params.fileId,
-    ]);
+    const teamId = await requestTeamId(req);
+    const deleted = await pool.query(
+      `delete from "code_files" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [req.params.fileId, teamId],
+    );
     if (deleted.rowCount === 0) {
       res.status(404).json({ error: "File not found." });
       return;
@@ -306,10 +348,15 @@ router.delete("/code/files/:fileId", codeAccess, async (req, res): Promise<void>
 
 router.get("/code/projects/:projectId/revisions", codeAccess, async (req, res): Promise<void> => {
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(req.params.projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     const revisions = await pool.query(
       `select "id", "project_id" as "projectId", "message", "author", "created_at" as "createdAt"
-       from "code_revisions" where "project_id" = $1 order by "created_at" desc limit 100`,
-      [req.params.projectId],
+       from "code_revisions" where "project_id" = $1 and ${teamSqlCondition('"team_id"', "$2")} order by "created_at" desc limit 100`,
+      [req.params.projectId, teamId],
     );
     res.json({
       revisions: revisions.rows.map((row) => ({
@@ -331,16 +378,21 @@ router.post("/code/projects/:projectId/revisions", codeAccess, async (req, res):
   const message = cleanName(body.message, 200) ?? "Checkpoint";
   const by = await displayName(req);
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(req.params.projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     const files = await pool.query(
-      `select "path", "content" from "code_files" where "project_id" = $1 order by "path"`,
-      [req.params.projectId],
+      `select "path", "content" from "code_files" where "project_id" = $1 and ${teamSqlCondition('"team_id"', "$2")} order by "path"`,
+      [req.params.projectId, teamId],
     );
     const snapshot = files.rows.map((row) => ({ path: String(row.path), content: String(row.content ?? "") }));
     const inserted = await pool.query(
-      `insert into "code_revisions" ("id", "project_id", "message", "author", "snapshot")
-       values ($1, $2, $3, $4, $5::jsonb)
+      `insert into "code_revisions" ("id", "team_id", "project_id", "message", "author", "snapshot")
+       values ($1, $2, $3, $4, $5, $6::jsonb)
        returning "id", "project_id" as "projectId", "message", "author", "created_at" as "createdAt"`,
-      [randomUUID(), req.params.projectId, message, by, JSON.stringify(snapshot)],
+      [randomUUID(), teamId, req.params.projectId, message, by, JSON.stringify(snapshot)],
     );
     // Keep history bounded: newest 100 survive per project.
     await pool.query(
@@ -377,6 +429,7 @@ router.post("/code/projects/:projectId/deploy", codeAccess, async (req, res): Pr
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     let files: { path: string; content: string }[];
     if (Array.isArray(body.files)) {
       files = body.files
@@ -386,9 +439,13 @@ router.post("/code/projects/:projectId/deploy", codeAccess, async (req, res): Pr
           typeof (entry as { content?: unknown }).content === "string")
         .map((entry) => ({ path: entry.path.slice(0, 255), content: entry.content.slice(0, 500_000) }));
     } else {
+      if (!(await teamProject(req.params.projectId, teamId))) {
+        res.status(404).json({ error: "Project not found." });
+        return;
+      }
       const rows = await pool.query(
-        `select "path", "content" from "code_files" where "project_id" = $1 order by "path"`,
-        [req.params.projectId],
+        `select "path", "content" from "code_files" where "project_id" = $1 and ${teamSqlCondition('"team_id"', "$2")} order by "path"`,
+        [req.params.projectId, teamId],
       );
       files = rows.rows.map((row) => ({ path: String(row.path), content: String(row.content ?? "") }));
     }
@@ -410,11 +467,16 @@ router.post("/code/projects/:projectId/deploy", codeAccess, async (req, res): Pr
 
 router.get("/code/projects/:projectId/presence", codeAccess, async (req, res): Promise<void> => {
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(req.params.projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     const rows = await pool.query(
       `select "display_name" as "displayName", "file_id" as "fileId", "color", "updated_at" as "updatedAt"
-       from "code_presence" where "project_id" = $1 and "updated_at" > now() - interval '2 minutes'
+       from "code_presence" where "project_id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "updated_at" > now() - interval '2 minutes'
        order by "updated_at" desc`,
-      [req.params.projectId],
+      [req.params.projectId, teamId],
     );
     res.json({
       presence: rows.rows.map((row) => ({
@@ -438,11 +500,16 @@ router.put("/code/projects/:projectId/presence", codeAccess, async (req, res): P
     ? body.color
     : "#f8c84a";
   try {
+    const teamId = await requestTeamId(req);
+    if (!(await teamProject(req.params.projectId, teamId))) {
+      res.status(404).json({ error: "Project not found." });
+      return;
+    }
     await pool.query(
-      `insert into "code_presence" ("id", "project_id", "file_id", "display_name", "color", "updated_at")
-       values ($1, $2, $3, $4, $5, now())
+      `insert into "code_presence" ("id", "team_id", "project_id", "file_id", "display_name", "color", "updated_at")
+       values ($1, $2, $3, $4, $5, $6, now())
        on conflict ("id") do update set "file_id" = excluded."file_id", "color" = excluded."color", "updated_at" = now()`,
-      [`${req.params.projectId}:${by.toLowerCase()}`, req.params.projectId, fileId, by, color],
+      [`${req.params.projectId}:${by.toLowerCase()}`, teamId, req.params.projectId, fileId, by, color],
     );
     res.status(204).end();
   } catch (error) {

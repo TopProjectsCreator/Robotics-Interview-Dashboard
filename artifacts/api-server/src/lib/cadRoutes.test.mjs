@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
+import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -123,6 +124,9 @@ function createHarness(t, {
         delete: () => ({ where: () => Promise.resolve() }),
       },
       chunkedUploadsTable: { uploadId: "upload_id" },
+      teamsTable,
+      DEFAULT_TEAM_ID,
+      normalizeTeamName,
     },
   });
   mock.module("@workspace/api-zod", {
@@ -164,6 +168,7 @@ function createHarness(t, {
   mock.module("./chunkedUploads", {
     namedExports: {
       getChunkUpload: async () => chunkManifest,
+      getChunkUploadForTeam: async () => chunkManifest,
       deleteChunkParts: async (uploadId, totalParts) => {
         deletedChunkParts.push({ uploadId, totalParts });
       },
@@ -176,6 +181,8 @@ function createHarness(t, {
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
       authenticatedInterviewerId: () => "account-1",
+      requestTeamId: async () => "default",
+      requestTeamIdSync: () => "default",
     },
   });
   mock.module("./interviewerAccounts", {

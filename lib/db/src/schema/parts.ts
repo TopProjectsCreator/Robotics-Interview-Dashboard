@@ -14,6 +14,8 @@ export const partsCatalogItemsTable = pgTable(
   "parts_catalog_items",
   {
     id: text("id").primaryKey(),
+    // NULL = legacy row belonging to the default team; never lost.
+    teamId: text("team_id"),
     vendorKey: text("vendor_key").notNull(),
     externalKey: text("external_key").notNull(),
     name: text("name").notNull(),
@@ -29,6 +31,7 @@ export const partsCatalogItemsTable = pgTable(
   },
   (table) => ({
     vendorExternalKey: uniqueIndex("parts_catalog_vendor_external_key_unique").on(
+      table.teamId,
       table.vendorKey,
       table.externalKey,
     ),
@@ -82,6 +85,8 @@ export const partsRobotsTable = pgTable(
   "parts_robots",
   {
     id: text("id").primaryKey(),
+    // NULL = legacy row belonging to the default team; never lost.
+    teamId: text("team_id"),
     name: text("name").notNull(),
     previewObjectPath: text("preview_object_path"),
     previewFileName: text("preview_file_name"),
@@ -91,6 +96,7 @@ export const partsRobotsTable = pgTable(
   },
   (table) => ({
     uniqueName: uniqueIndex("parts_robots_normalized_name_unique").on(
+      table.teamId,
       sql`lower(${table.name})`,
     ),
     validPreview: check(

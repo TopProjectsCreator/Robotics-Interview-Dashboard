@@ -22,13 +22,15 @@ export const cadBotsTable = pgTable(
   "cad_bots",
   {
     id: text("id").primaryKey(),
+    // NULL = legacy row belonging to the default team; never lost.
+    teamId: text("team_id"),
     name: text("name").notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    uniqueName: uniqueIndex("cad_bots_normalized_name_unique").on(sql`lower(${table.name})`),
+    uniqueName: uniqueIndex("cad_bots_normalized_name_unique").on(table.teamId, sql`lower(${table.name})`),
     nameLength: check(
       "cad_bots_name_length_valid",
       sql`length(${table.name}) between 1 and 120`,
@@ -40,6 +42,7 @@ export const cadFoldersTable = pgTable(
   "cad_folders",
   {
     id: text("id").primaryKey(),
+    teamId: text("team_id"),
     botId: text("bot_id")
       .notNull()
       .references(() => cadBotsTable.id, { onDelete: "cascade" }),
@@ -72,6 +75,7 @@ export const cadModelsTable = pgTable(
   "cad_models",
   {
     id: text("id").primaryKey(),
+    teamId: text("team_id"),
     // Display name, which users are free to rename without touching the file.
     name: text("name").notNull(),
     // Original upload name, used for the download and to pick a renderer.
@@ -110,6 +114,7 @@ export const cadModelsTable = pgTable(
  */
 export const workspaceSettingsTable = pgTable("workspace_settings", {
   id: integer("id").primaryKey().default(1),
+  teamId: text("team_id"),
   // { interview: ["coordinator"], chat: [...], parts: [...], cad: [...] }
   visibility: jsonb("visibility")
     .notNull()

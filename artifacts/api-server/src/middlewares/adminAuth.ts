@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
 import { db, interviewerAccountsTable, revokedSessionsTable } from "@workspace/db";
-import { roleCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
+import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 
 const SESSION_COOKIE = "robotics_admin_session";
@@ -80,6 +80,33 @@ export function interviewerIdFromSession(value: unknown): string | undefined {
 
 export function authenticatedInterviewerId(req: Request): string | undefined {
   return interviewerIdFromSession(requestAdminSession(req));
+}
+
+/**
+ * Team id for the signed-in account. Falls back to the default team when the
+ * account is missing (pre-migration) or has a legacy NULL team_id, so the
+ * current team's data stays reachable and is never lost.
+ */
+export async function requestTeamId(req: Request): Promise<string> {
+  const { DEFAULT_TEAM_ID } = await import("@workspace/db");
+  const interviewerId = authenticatedInterviewerId(req);
+  if (!interviewerId) return DEFAULT_TEAM_ID;
+  try {
+    const { db, interviewerAccountsTable } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    const [account] = await db.select({ teamId: interviewerAccountsTable.teamId })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1);
+    return account?.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
+  } catch {
+    return DEFAULT_TEAM_ID;
+  }
+}
+
+export function requestTeamIdSync(req: Request): string {
+  const enriched = req as Request & { teamId?: string };
+  return enriched.teamId?.trim() ? enriched.teamId : "default";
 }
 
 function bearerSession(req: Request): string | undefined {
@@ -222,13 +249,13 @@ export function requireCoordinator(
 }
 
 /**
- * Gates a route on the admin-configured workspace visibility settings. Used by
- * the CAD workspace so that opening it up to more roles is a settings change
- * rather than a redeploy. Defaults keep CAD coordinator-only.
+ * Gates a route on the per-user workspace access settings. Used by
+ * workspaces such as CAD/Code so that opening one up to another person is a
+ * settings change rather than a redeploy. Coordinators always pass.
  */
 export function requireWorkspaceAccess(
   workspace: WorkspaceKey,
-  message = "This workspace is not available for your role",
+  message = "This workspace is not available for your account",
 ) {
   return function requireWorkspace(
     req: Request,
@@ -243,14 +270,14 @@ export function requireWorkspaceAccess(
       }
       void (async () => {
         const [visibility, [account]] = await Promise.all([
-          readWorkspaceVisibility(),
+          readWorkspaceVisibility(await requestTeamId(req)),
           db
             .select({ role: interviewerAccountsTable.role })
             .from(interviewerAccountsTable)
             .where(eq(interviewerAccountsTable.id, interviewerId))
             .limit(1),
         ]);
-        if (!roleCanSeeWorkspace(visibility, account?.role, workspace)) {
+        if (!userCanSeeWorkspace(visibility, interviewerId, account?.role, workspace)) {
           res.status(403).json({ error: message });
           return;
         }
@@ -264,14 +291,14 @@ export function requireWorkspaceAccess(
 }
 
 /**
- * Grants access when the caller's role can open `workspace`, and always to
+ * Grants access when the caller's account can open `workspace`, and always to
  * coordinators. Used for capabilities that predate the configurable workspaces
  * and are shared by several of them, so locking one workspace must never take
  * a coordinator's existing features away with it.
  */
 export function requireWorkspaceAccessOrCoordinator(
   workspace: WorkspaceKey,
-  message = "This workspace is not available for your role",
+  message = "This workspace is not available for your account",
 ) {
   return function requireWorkspaceOrCoordinator(
     req: Request,
@@ -291,10 +318,10 @@ export function requireWorkspaceAccessOrCoordinator(
             .from(interviewerAccountsTable)
             .where(eq(interviewerAccountsTable.id, interviewerId))
             .limit(1),
-          readWorkspaceVisibility(),
+          readWorkspaceVisibility(await requestTeamId(req)),
         ]);
         const role = account?.role;
-        if (role === "coordinator" || roleCanSeeWorkspace(visibility, role, workspace)) {
+        if (userCanSeeWorkspace(visibility, interviewerId, role, workspace)) {
           next();
           return;
         }

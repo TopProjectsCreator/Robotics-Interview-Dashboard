@@ -8,10 +8,11 @@ import {
   PostBroadcastBody,
   PostBroadcastResponse,
 } from "@workspace/api-zod";
-import { requestAdminSession } from "../middlewares/adminAuth";
+import { requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getClientIp } from "../lib/presence";
 import { pushRealtimeHint } from "../lib/realtime";
+import { teamFilter } from "../lib/teams";
 
 const router: IRouter = Router();
 
@@ -49,10 +50,12 @@ router.post("/broadcasts", async (req, res): Promise<void> => {
     ? Math.min(MAX_TTL_MINUTES, Math.max(5, Math.floor(parsed.data.ttlMinutes)))
     : DEFAULT_TTL_MINUTES;
   try {
+    const teamId = await requestTeamId(req);
     const [created] = await db
       .insert(broadcastsTable)
       .values({
         id: randomUUID(),
+        teamId,
         message,
         kind,
         targetIp,
@@ -77,6 +80,7 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
   try {
     const now = new Date();
     const ip = getClientIp(req);
+    const teamId = await requestTeamId(req);
     const rows = await db
       .select({
         id: broadcastsTable.id,
@@ -96,6 +100,7 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
       )
       .where(
         and(
+          teamFilter(broadcastsTable.teamId, teamId),
           gt(broadcastsTable.expiresAt, now),
           or(eq(broadcastsTable.targetIp, ""), eq(broadcastsTable.targetIp, ip)),
           isNull(broadcastAcksTable.sessionHash),
@@ -115,6 +120,19 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
 router.get("/broadcasts/commands", async (req, res): Promise<void> => {
   try {
     const now = new Date();
+    // ?eventPassword scopes the public display to that team; otherwise the
+    // signed-in user's team, otherwise default (current team safe).
+    let teamId = await requestTeamId(req);
+    const commandsCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
+    if (commandsCode.trim()) {
+      try {
+        const { findTeamByCode } = await import("../lib/teams");
+        const team = await findTeamByCode(commandsCode);
+        if (team) teamId = team.id;
+      } catch {
+        // fall back
+      }
+    }
     const rows = await db
       .select({
         id: broadcastsTable.id,
@@ -127,6 +145,7 @@ router.get("/broadcasts/commands", async (req, res): Promise<void> => {
       .from(broadcastsTable)
       .where(
         and(
+          teamFilter(broadcastsTable.teamId, teamId),
           gt(broadcastsTable.expiresAt, now),
           or(
             eq(broadcastsTable.kind, "audio-test"),
@@ -157,6 +176,18 @@ router.post("/broadcasts/:broadcastId/ack", async (req, res): Promise<void> => {
     return;
   }
   try {
+    // Acks are per-session, but only ack broadcasts from the requester's own
+    // team so one team cannot consume another team's popups.
+    const teamId = await requestTeamId(req);
+    const [broadcast] = await db
+      .select({ id: broadcastsTable.id })
+      .from(broadcastsTable)
+      .where(and(eq(broadcastsTable.id, broadcastId), teamFilter(broadcastsTable.teamId, teamId)))
+      .limit(1);
+    if (!broadcast) {
+      res.status(404).json({ error: "Broadcast not found" });
+      return;
+    }
     await db
       .insert(broadcastAcksTable)
       .values({ broadcastId, sessionHash: hash })

@@ -1,12 +1,11 @@
 import { Router, type IRouter } from "express";
 import {
   GetSystemUsageResponse,
-  GetWorkspaceVisibilityResponse,
-  UpdateWorkspaceVisibilityBody,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { requestTeamId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
 import {
+  normalizeWorkspaceVisibility,
   readWorkspaceVisibility,
   writeWorkspaceVisibility,
 } from "../lib/workspaceAccess";
@@ -55,13 +54,16 @@ router.post("/diagnostics", requireAdmin, (req, res): void => {
 // Supabase usage measured straight from the database, compared against the
 // plan quotas configured in env (Free-tier defaults). Storage and auth
 // reads return null when the role cannot see those schemas.
-router.get("/system/usage", requireAdmin, async (_req, res): Promise<void> => {
+router.get("/system/usage", requireAdmin, async (req, res): Promise<void> => {
   const bucket = process.env.SUPABASE_STORAGE_BUCKET ?? "app-uploads";
+  // Infra-level gauges (database/storage/auth) are global; the applicant
+  // count is scoped to the requester's team so teams only see their roster.
+  const teamId = await requestTeamId(req);
   const [databaseBytes, storageBytes, authUsers, applicantCount] = await Promise.all([
     queryInt("select pg_database_size(current_database())"),
     queryInt("select coalesce(sum((metadata->>'size')::bigint), 0) from storage.objects where bucket_id = $1", [bucket]),
     queryInt("select count(*) from auth.users"),
-    queryInt("select count(*) from applicants"),
+    queryInt("select count(*) from applicants where (team_id = $1 or ($1 = 'default' and team_id is null))", [teamId]),
   ]);
   res.json(
     GetSystemUsageResponse.parse({
@@ -76,11 +78,12 @@ router.get("/system/usage", requireAdmin, async (_req, res): Promise<void> => {
   );
 });
 
-// Which roles can open each workspace. Readable by any signed-in account so the
-// shell can hide links the viewer cannot use; only coordinators can change it.
+// Which users can open each workspace (per interviewer account ID, with legacy
+// role names still accepted). Readable by any signed-in account so the shell
+// can hide links the viewer cannot use; only coordinators can change it.
 router.get("/workspaces/visibility", requireAdmin, async (req, res): Promise<void> => {
   try {
-    res.json(GetWorkspaceVisibilityResponse.parse(await readWorkspaceVisibility()));
+    res.json(normalizeWorkspaceVisibility(await readWorkspaceVisibility(await requestTeamId(req))));
   } catch (error) {
     req.log.error({ err: error }, "Workspace visibility read failed");
     res.status(500).json({ error: "Unable to read workspace settings." });
@@ -88,15 +91,15 @@ router.get("/workspaces/visibility", requireAdmin, async (req, res): Promise<voi
 });
 
 router.put("/workspaces/visibility", requireCoordinator, async (req, res): Promise<void> => {
-  const parsed = UpdateWorkspaceVisibilityBody.safeParse(req.body);
-  if (!parsed.success) {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
     res.status(400).json({ error: "The workspace settings are invalid." });
     return;
   }
   try {
-    // Unknown workspaces and roles are discarded server side rather than
-    // trusted, so a stale client cannot grant access it should not.
-    res.json(GetWorkspaceVisibilityResponse.parse(await writeWorkspaceVisibility(parsed.data)));
+    // Unknown workspaces are discarded server side rather than trusted, so a
+    // stale client cannot grant access it should not. Entries are account IDs
+    // (plus legacy role names, which keep working until re-saved).
+    res.json(normalizeWorkspaceVisibility(await writeWorkspaceVisibility(req.body, await requestTeamId(req))));
   } catch (error) {
     req.log.error({ err: error }, "Workspace visibility update failed");
     res.status(500).json({ error: "Unable to update workspace settings." });

@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
-import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, type Applicant } from "@workspace/db";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, DEFAULT_TEAM_ID, type Applicant } from "@workspace/db";
 import { matchesApplicantSearch, normalizeApplicantGender, normalizeApplicantGrade, parseApplicantSearchQuery } from "./applicantSearch";
+
+function tid(teamId?: string | null): string {
+  return teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
+}
+
+function applicantTeamFilter(team: string) {
+  return team === DEFAULT_TEAM_ID
+    ? or(eq(applicantsTable.teamId, DEFAULT_TEAM_ID), isNull(applicantsTable.teamId))
+    : eq(applicantsTable.teamId, team);
+}
 
 export const demoApplicants = [
   ["ef12e626-53cb-4da2-b4b9-298353c07a98", "TestUser", "6th", 0, "No", "Previous FLL experience but admitted to contributing nothing", "No", "No"],
@@ -16,13 +26,18 @@ export const demoApplicants = [
 
 let demoChecked = false;
 
-export async function ensureDemoData(): Promise<void> {
+export async function ensureDemoData(teamId?: string | null): Promise<void> {
+  const team = tid(teamId);
+  // New teams always start empty — demo rows belong only to the legacy default
+  // team and are never copied elsewhere.
+  if (team !== DEFAULT_TEAM_ID) return;
   if (demoChecked || process.env.DISABLE_DEMO_SEED === "true") return;
-  const existing = await db.select({ id: applicantsTable.id }).from(applicantsTable).limit(1);
+  const existing = await db.select({ id: applicantsTable.id }).from(applicantsTable).where(applicantTeamFilter(team)).limit(1);
   if (existing.length === 0) {
     await db.insert(applicantsTable).values(
       demoApplicants.map(([id, name, grade, aiScore, aiRecommendation, roboticsExperience, commit10Hours, parentVolunteer], index) => ({
         id,
+        teamId: DEFAULT_TEAM_ID,
         name,
         grade,
         aiScore,
@@ -58,9 +73,10 @@ export async function getApplicants(filters?: {
   category?: string;
   invalidOnly?: boolean;
   sort?: string;
-}): Promise<Applicant[]> {
-  await ensureDemoData();
-  const all = await db.select().from(applicantsTable).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
+}, teamId?: string | null): Promise<Applicant[]> {
+  const team = tid(teamId);
+  await ensureDemoData(team);
+  const all = await db.select().from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
   const searchQuery = parseApplicantSearchQuery(filters?.search?.trim() ?? "");
   const filtered = all.filter((applicant) => {
     if (!matchesApplicantSearch(applicant, searchQuery)) return false;
@@ -224,15 +240,17 @@ export async function transferInterviewers(
   fromRaw: string,
   toRaw: string,
   dryRun = false,
+  teamId?: string | null,
 ): Promise<TransferPreview | TransferFailure> {
+  const team = tid(teamId);
   const from = fromRaw.trim();
   const to = toRaw.trim();
   if (!from) {
     return { ok: false, error: "A source interviewer is required." };
   }
-  const labels = await getInterviewSettings();
+  const labels = await getInterviewSettings(team);
   const byLabelLower = new Map(labels.map((label) => [label.toLowerCase(), label]));
-  const applicants = await getApplicants({ sort: "queue" });
+  const applicants = await getApplicants({ sort: "queue" }, team);
   const storedValues = new Map<string, string>();
   for (const applicant of applicants) {
     const value = (applicant.interviewer || "").trim();
@@ -338,8 +356,14 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsState = {
   announce: true,
 };
 
-export async function getDisplaySettings(): Promise<DisplaySettingsState> {
-  const [row] = await db.select().from(displaySettingsTable).limit(1);
+export async function getDisplaySettings(teamId?: string | null): Promise<DisplaySettingsState> {
+  const team = tid(teamId);
+  const rows = await db.select().from(displaySettingsTable).where(
+    team === DEFAULT_TEAM_ID
+      ? or(eq(displaySettingsTable.teamId, DEFAULT_TEAM_ID), isNull(displaySettingsTable.teamId))
+      : eq(displaySettingsTable.teamId, team),
+  ).limit(1);
+  const [row] = rows;
   if (!row) return { ...DEFAULT_DISPLAY_SETTINGS };
   return {
     customHeadline: row.customHeadline?.trim() ? row.customHeadline : null,
@@ -402,9 +426,10 @@ export interface DisplayView {
 }
 
 /** Everything the big screen shows and says, before pill visibility is applied. */
-export async function getDisplayView(): Promise<DisplayView> {
-  const queue = await getQueueState();
-  const settings = await getDisplaySettings();
+export async function getDisplayView(teamId?: string | null): Promise<DisplayView> {
+  const team = tid(teamId);
+  const queue = await getQueueState(team);
+  const settings = await getDisplaySettings(team);
   const mapped = queue.currentApplicants.map((applicant, index) => ({
     id: applicant.id,
     name: displayApplicantName(applicant.name),
@@ -437,8 +462,14 @@ export interface SeatingSettingsState {
   cols: number;
 }
 
-export async function getSeatingSettings(): Promise<SeatingSettingsState> {
-  const [row] = await db.select().from(seatingSettingsTable).limit(1);
+export async function getSeatingSettings(teamId?: string | null): Promise<SeatingSettingsState> {
+  const team = tid(teamId);
+  const rows = await db.select().from(seatingSettingsTable).where(
+    team === DEFAULT_TEAM_ID
+      ? or(eq(seatingSettingsTable.teamId, DEFAULT_TEAM_ID), isNull(seatingSettingsTable.teamId))
+      : eq(seatingSettingsTable.teamId, team),
+  ).limit(1);
+  const [row] = rows;
   return {
     rows: Math.min(10, Math.max(1, row?.rows ?? 4)),
     cols: Math.min(10, Math.max(1, row?.cols ?? 6)),
@@ -458,21 +489,24 @@ export function seatingSettingsResponse(row: { rows: number; cols: number; updat
  * occupant swaps into the moved applicant's old seat (or becomes unseated).
  * Returns the updated applicant row, or null when the id is unknown.
  */
-export async function assignSeat(applicantId: string, row: number, col: number) {
+export async function assignSeat(applicantId: string, row: number, col: number, teamId?: string | null) {
+  const team = tid(teamId);
+  const teamCond = applicantTeamFilter(team);
   if (row < 0 || col < 0) {
     const [cleared] = await db
       .update(applicantsTable)
       .set({ seatRow: null, seatCol: null, updatedAt: new Date() })
-      .where(eq(applicantsTable.id, applicantId))
+      .where(and(eq(applicantsTable.id, applicantId), teamCond))
       .returning();
     return cleared ?? null;
   }
-  const [me] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, applicantId));
+  const rows = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, applicantId), teamCond));
+  const [me] = rows;
   if (!me) return null;
   const [occupant] = await db
     .select({ id: applicantsTable.id })
     .from(applicantsTable)
-    .where(and(eq(applicantsTable.seatRow, row), eq(applicantsTable.seatCol, col)));
+    .where(and(eq(applicantsTable.seatRow, row), eq(applicantsTable.seatCol, col), teamCond));
   if (occupant && occupant.id !== applicantId) {
     await db
       .update(applicantsTable)
@@ -482,16 +516,26 @@ export async function assignSeat(applicantId: string, row: number, col: number) 
   const [updated] = await db
     .update(applicantsTable)
     .set({ seatRow: row, seatCol: col, updatedAt: new Date() })
-    .where(eq(applicantsTable.id, applicantId))
+    .where(and(eq(applicantsTable.id, applicantId), teamCond))
     .returning();
   return updated ?? null;
 }
 
-export async function getInterviewSettings(): Promise<string[]> {
-  let [settings] = await db.select().from(interviewQueueTable);
+export async function getInterviewSettings(teamId?: string | null): Promise<string[]> {
+  const team = tid(teamId);
+  const teamCond = team === DEFAULT_TEAM_ID
+    ? or(eq(interviewQueueTable.teamId, DEFAULT_TEAM_ID), isNull(interviewQueueTable.teamId))
+    : eq(interviewQueueTable.teamId, team);
+  let rows = await db.select().from(interviewQueueTable).where(teamCond).limit(1);
+  let [settings] = rows;
   if (!settings) {
-    await db.insert(interviewQueueTable).values({ id: 1 }).onConflictDoNothing();
-    [settings] = await db.select().from(interviewQueueTable);
+    try {
+      const [created] = await db.insert(interviewQueueTable).values({ teamId: team }).returning();
+      settings = created;
+    } catch {
+      rows = await db.select().from(interviewQueueTable).where(teamCond).limit(1);
+      [settings] = rows;
+    }
   }
   try {
     const labels = JSON.parse(settings?.interviewerLabels ?? "[]");
@@ -504,11 +548,12 @@ export async function getInterviewSettings(): Promise<string[]> {
   return ["Interviewer 1", "Interviewer 2"];
 }
 
-export async function getQueueState() {
-  const applicants = await getApplicants({ sort: "queue" });
+export async function getQueueState(teamId?: string | null) {
+  const team = tid(teamId);
+  const applicants = await getApplicants({ sort: "queue" }, team);
   const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
   const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
-  const interviewerLabels = await getInterviewSettings();
+  const interviewerLabels = await getInterviewSettings(team);
   // One active interview slot per interviewer label, plus an equal-sized bench.
   const slotCount = Math.max(1, interviewerLabels.length);
   const nextApplicants = remaining.slice(slotCount, slotCount * 2);

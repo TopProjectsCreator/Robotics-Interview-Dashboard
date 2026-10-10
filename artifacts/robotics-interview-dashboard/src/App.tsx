@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -67,6 +67,8 @@ import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
+import CodeLanding from "@/pages/code-landing";
+import CadLanding from "@/pages/cad-landing";
 import PartsPage from "@/pages/PartsPage";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
@@ -94,10 +96,10 @@ import {
 } from "./workspaceNavigation";
 import {
   useWorkspaceVisibility,
+  userCanSeeWorkspace,
+  visibleWorkspacesForUser,
   WORKSPACE_KEYS,
   WORKSPACE_LABELS,
-  WORKSPACE_ROLE_LABELS,
-  WORKSPACE_ROLE_ORDER,
 } from "./useWorkspaceVisibility";
 
 const sessionQueryKey = getGetSessionQueryKey();
@@ -333,22 +335,59 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
-  // Re-sync the draft whenever the server value changes, so a save from another
-  // admin's tab is not silently reverted by a stale edit here.
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const interviewerAccounts = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  const teamAccounts = useMemo(
+    () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [interviewerAccounts.data],
+  );
+  const accountRoleById = useMemo(
+    () => new Map(teamAccounts.map((account) => [account.id, account.role])),
+    [teamAccounts],
+  );
+  // Expand the server value (account IDs plus legacy role names) into an
+  // explicit per-person draft, so the toggles below always show actual people.
+  // Coordinators are always on via the access check; they render locked on.
+  const expandToUserDraft = useCallback((server: typeof visibilityDraft) => {
+    const draft = {} as typeof server;
+    for (const key of WORKSPACE_KEYS) {
+      const list = (server[key] ?? []) as string[];
+      const ids = new Set<string>();
+      for (const account of teamAccounts) {
+        if (account.role === "coordinator") {
+          ids.add(account.id);
+          continue;
+        }
+        if (list.includes(account.id) || (account.role && list.includes(account.role))) {
+          ids.add(account.id);
+        }
+      }
+      // Keep server entries for accounts not in the list response (e.g. just
+      // created) so a save never silently drops them.
+      for (const entry of list) {
+        if (entry === "coordinator" || entry === "treasurer" || entry === "interviewer") continue;
+        ids.add(entry);
+      }
+      draft[key] = [...ids].sort();
+    }
+    return draft;
+  }, [teamAccounts]);
+  // Re-sync the draft whenever the server value or the team list changes, so
+  // a save from another admin's tab is not silently reverted by a stale edit.
   useEffect(() => {
-    setVisibilityDraft(workspaceVisibility.visibility);
-  }, [workspaceVisibility.visibility]);
+    setVisibilityDraft(expandToUserDraft(workspaceVisibility.visibility));
+  }, [workspaceVisibility.visibility, expandToUserDraft]);
   const workspaceVisibilityBusy = workspaceVisibility.isSaving;
-  const toggleVisibility = (key: WorkspaceKey, role: (typeof WORKSPACE_ROLE_ORDER)[number]) => {
-    // Admins are never locked out of a workspace they administer.
-    if (role === "coordinator") return;
+  const toggleVisibility = (key: WorkspaceKey, accountId: string) => {
+    // Admins always keep every workspace, so their dots stay locked on.
+    if (accountRoleById.get(accountId) === "coordinator") return;
     setVisibilityDraft((current) => {
-      const existing = current[key];
+      const existing = (current[key] ?? []) as string[];
       return {
         ...current,
-        [key]: existing.includes(role)
-          ? existing.filter((entry) => entry !== role)
-          : WORKSPACE_ROLE_ORDER.filter((entry) => entry === role || existing.includes(entry)),
+        [key]: existing.includes(accountId)
+          ? existing.filter((entry) => entry !== accountId)
+          : [...existing, accountId].sort(),
       };
     });
   };
@@ -361,8 +400,6 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setWorkspaceVisibilityNotice("Could not save workspace access. Try again.");
     }
   };
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
   const updateInterviewerPassword = useUpdateInterviewerPassword();
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
@@ -609,15 +646,16 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
       </div>
       <div className={divider}><p className={sectionLabel}>Workspace access</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose who can open each workspace. Applies to everybody on the team, saved on the server. Admins can always open everything.</p>
-        <div className="mt-3 overflow-hidden rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
-          <table className="w-full text-left text-xs">
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
+          <table className="w-full min-w-[420px] text-left text-xs">
             <thead className="bg-[#f8fbfa] text-[#63747c] dark:bg-[#10202a] dark:text-[#a9bcc6]">
               <tr>
                 <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
-                {WORKSPACE_ROLE_ORDER.map(role => (
-                  <th key={role} scope="col" className="px-2 py-2 text-center font-semibold">
-                    {WORKSPACE_ROLE_LABELS[role]}
+                {teamAccounts.map(account => (
+                  <th key={account.id} scope="col" className="px-2 py-2 text-center font-semibold">
+                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${account.role})`}>{account.displayName}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
                   </th>
                 ))}
               </tr>
@@ -628,26 +666,33 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                   <th scope="row" className="px-3 py-2 font-semibold text-[#183a4b] dark:text-[#e6eef2]">
                     {WORKSPACE_LABELS[key]}
                   </th>
-                  {WORKSPACE_ROLE_ORDER.map(role => (
-                    <td key={role} className="px-2 py-2 text-center">
+                  {teamAccounts.map(account => {
+                    const isAdmin = accountRoleById.get(account.id) === "coordinator";
+                    const hasAccess = isAdmin || ((visibilityDraft[key] ?? []) as string[]).includes(account.id);
+                    return (
+                    <td key={account.id} className="px-2 py-2 text-center">
                       <button
                         type="button"
                         role="switch"
-                        aria-checked={visibilityDraft[key].includes(role)}
-                        aria-label={`${WORKSPACE_ROLE_LABELS[role]} can open ${WORKSPACE_LABELS[key]}`}
-                        disabled={role === "coordinator" || workspaceVisibilityBusy}
-                        data-testid={`toggle-visibility-${key}-${role}`}
-                        onClick={() => toggleVisibility(key, role)}
-                        className={`mx-auto block h-6 w-11 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${visibilityDraft[key].includes(role) ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}
+                        aria-checked={hasAccess}
+                        aria-label={`${account.displayName} can open ${WORKSPACE_LABELS[key]}`}
+                        disabled={isAdmin || workspaceVisibilityBusy}
+                        data-testid={`toggle-visibility-${key}-${account.id}`}
+                        onClick={() => toggleVisibility(key, account.id)}
+                        className={`relative mx-auto block h-6 w-11 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${hasAccess ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}
                       >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${visibilityDraft[key].includes(role) ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hasAccess ? "translate-x-[22px]" : "translate-x-0.5"}`} />
                       </button>
                     </td>
-                  ))}
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
+          {teamAccounts.length === 0 && (
+            <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">{interviewerAccounts.isLoading ? "Loading team…" : "No team accounts yet."}</p>
+          )}
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button
@@ -1854,7 +1899,7 @@ function LegacyLogin() {
   const qc = useQueryClient();
   const passwordRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewers = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
+  const interviewers = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
@@ -1912,15 +1957,102 @@ function LegacyLogin() {
     <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" /><div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
     <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">
       <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20"><Logo dark /><div><p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines / Team 23442</p><h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">Build the<br /><span className="text-[#f8c84a]">next team.</span></h1><p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">A quiet control room for sharp eyes, honest signals, and the people ready to build.</p></div><div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]"><span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Admin access</span></div></section>
-      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Team access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{creating ? "Add team member." : "Welcome back."}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{creating ? "Use the event passcode to add a named team member." : "Choose your name and enter your password."}</p>{creating ? <form onSubmit={submitCreate} className="mt-8 space-y-4"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Your name</span><input autoFocus autoComplete="name" value={newName} onChange={e => setNewName(e.target.value)} data-testid="input-new-interviewer-name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={eventPassword} onChange={e => setEventPassword(e.target.value)} data-testid="input-event-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} data-testid="input-new-interviewer-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><button disabled={busy || !newName || !eventPassword || !newPassword} data-testid="button-create-interviewer" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{create.isPending ? "Creating..." : <>Create and enter <ArrowRight size={17} /></>}</button><button type="button" onClick={() => setCreating(false)} className="w-full py-2 text-sm font-semibold text-[#527079]">Back to sign in</button></form> : <form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer</span><select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPassword(""); setEventPassword(""); }} data-testid="select-interviewer" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-base outline-none focus:border-[#16869a]"><option value="" disabled>{interviewers.isLoading ? "Loading team..." : "Select your name"}</option>{interviewers.data?.items.map(item => <option key={item.id} value={item.id}>{item.displayName}{item.hasPassword ? "" : " · setup needed"}</option>)}</select></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">{selected?.hasPassword ? "Personal password" : "Event passcode"}</span><input ref={passwordRef} id="interviewer-password" name="password" autoComplete="current-password" type="password" value={selected?.hasPassword ? password : eventPassword} onChange={e => selected?.hasPassword ? setPassword(e.target.value) : setEventPassword(e.target.value)} data-testid="input-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{!selected?.hasPassword && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Choose personal password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} data-testid="input-setup-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a]" /></label>}{errorMessage && <p className="text-sm text-[#b34a42]" data-testid="login-error">{errorMessage}</p>}<button disabled={busy || !selected || (selected.hasPassword ? !password : (!eventPassword || !password))} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room..." : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Set password and enter <ArrowRight size={17} /></>}</button></form>}<button type="button" onClick={() => { setCreating(v => !v); setEventPassword(""); }} className="mt-6 w-full text-sm font-semibold text-[#16869a]" data-testid="button-new-interviewer">{creating ? "" : "+ New team member"}</button><div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Each team member has an individual password. Account creation requires the event passcode.</div></div></section>
+      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Team access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{creating ? "Add team member." : "Welcome back."}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{creating ? "Use the event passcode to add a named team member." : "Choose your name and enter your password."}</p>{creating ? <form onSubmit={submitCreate} className="mt-8 space-y-4"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Your name</span><input autoFocus autoComplete="name" value={newName} onChange={e => setNewName(e.target.value)} data-testid="input-new-interviewer-name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={eventPassword} onChange={e => setEventPassword(e.target.value)} data-testid="input-event-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} data-testid="input-new-interviewer-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><button disabled={busy || !newName || !eventPassword || !newPassword} data-testid="button-create-interviewer" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{create.isPending ? "Creating..." : <>Create and enter <ArrowRight size={17} /></>}</button><button type="button" onClick={() => setCreating(false)} className="w-full py-2 text-sm font-semibold text-[#527079]">Back to sign in</button></form> : <form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Team member</span><select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPassword(""); setEventPassword(""); }} data-testid="select-interviewer" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-base outline-none focus:border-[#16869a]"><option value="" disabled>{interviewers.isLoading ? "Loading team..." : "Select your name"}</option>{interviewers.data?.items.map(item => <option key={item.id} value={item.id}>{item.displayName}{item.hasPassword ? "" : " · setup needed"}</option>)}</select></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">{selected?.hasPassword ? "Personal password" : "Event passcode"}</span><input ref={passwordRef} id="interviewer-password" name="password" autoComplete="current-password" type="password" value={selected?.hasPassword ? password : eventPassword} onChange={e => selected?.hasPassword ? setPassword(e.target.value) : setEventPassword(e.target.value)} data-testid="input-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{!selected?.hasPassword && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Choose personal password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} data-testid="input-setup-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a]" /></label>}{errorMessage && <p className="text-sm text-[#b34a42]" data-testid="login-error">{errorMessage}</p>}<button disabled={busy || !selected || (selected.hasPassword ? !password : (!eventPassword || !password))} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room..." : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Set password and enter <ArrowRight size={17} /></>}</button></form>}<button type="button" onClick={() => { setCreating(v => !v); setEventPassword(""); }} className="mt-6 w-full text-sm font-semibold text-[#16869a]" data-testid="button-new-interviewer">{creating ? "" : "+ New team member"}</button><div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Each team member has an individual password. Account creation requires the event passcode.</div></div></section>
     </div>
   </main>;
+}
+
+function randomTeamCodeSuggestion(): string {
+  const words = ["CLAW", "BOLT", "GEAR", "SPARK", "ORBIT", "VOLT", "FLUX", "NOVA", "AXIOM", "KILO", "PULSE", "TITAN"];
+  const pick = () => words[Math.floor(Math.random() * words.length)];
+  const digits = Math.floor(1000 + Math.random() * 9000);
+  return `${pick()}-${digits}-${pick()}`;
+}
+
+function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (response: { token?: string; label?: string; interviewerId?: string; teamId?: string; teamName?: string }) => void }) {
+  const [wizardStep, setWizardStep] = useState<"team" | "code" | "admin">("team");
+  const [teamName, setTeamName] = useState("");
+  const [teamCode, setTeamCode] = useState(() => randomTeamCodeSuggestion());
+  const [adminName, setAdminName] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [wizardError, setWizardError] = useState("");
+  const createTeam = useCreateTeam();
+  const busy = createTeam.isPending;
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setWizardError("");
+    if (wizardStep === "team") {
+      if (!teamName.trim()) {
+        setWizardError("Give your team a name.");
+        return;
+      }
+      setWizardStep("code");
+      return;
+    }
+    if (wizardStep === "code") {
+      if (!teamCode.trim() || teamCode.trim().length < 4) {
+        setWizardError("Choose a team access code with at least 4 characters.");
+        return;
+      }
+      setTeamCode(teamCode.trim());
+      setWizardStep("admin");
+      return;
+    }
+    if (!adminName.trim()) {
+      setWizardError("Add your name so your team can recognize you.");
+      return;
+    }
+    if (!adminPassword) {
+      setWizardError("Choose a personal password for your coordinator account.");
+      return;
+    }
+    createTeam.mutate(
+      { data: { teamName: teamName.trim(), teamCode: teamCode.trim(), displayName: adminName.trim(), password: adminPassword } },
+      {
+        onSuccess: (response) => onCreated(response),
+        onError: (error) => {
+          const body = (error as { data?: { error?: unknown } }).data;
+          setWizardError(typeof body?.error === "string" ? body.error : "Could not create that team. Try another name or code.");
+        },
+      },
+    );
+  };
+  const back = () => {
+    setWizardError("");
+    if (wizardStep === "admin") setWizardStep("code");
+    else if (wizardStep === "code") setWizardStep("team");
+  };
+  const stepLabel = wizardStep === "team" ? "Step 1 of 3" : wizardStep === "code" ? "Step 2 of 3" : "Step 3 of 3";
+  const heading = wizardStep === "team" ? "Name your team." : wizardStep === "code" ? "Set a team access code." : "Create your coordinator account.";
+  const description = wizardStep === "team"
+    ? "Each team is completely separate with its own access code, members, and data."
+    : wizardStep === "code"
+      ? "Share this code with your teammates so they can join. Type your own or roll a random one."
+      : "You will be the first admin. Sign in with this name and password from now on.";
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4" onClick={onClose} data-testid="new-team-wizard">
+    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create a new team" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">New team · {stepLabel}</p><h2 className="mt-1 text-xl font-semibold tracking-[-.02em]">{heading}</h2><p className="mt-1 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">{description}</p></div>
+        <button onClick={onClose} aria-label="Close new team" data-testid="button-close-new-team" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button>
+      </div>
+      <form onSubmit={submit} className="mt-5 space-y-4">
+        {wizardStep === "team" && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team name</span><input autoFocus value={teamName} onChange={e => setTeamName(e.target.value)} data-testid="input-new-team-name" placeholder="e.g. Wolverines" maxLength={80} className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label>}
+        {wizardStep === "code" && <div><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span><input autoFocus value={teamCode} onChange={e => setTeamCode(e.target.value)} data-testid="input-new-team-code" placeholder="e.g. CLAW-4821-KILO" maxLength={128} className="mono h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><button type="button" onClick={() => setTeamCode(randomTeamCodeSuggestion())} data-testid="button-random-team-code" className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-[#16869a] hover:underline"><RefreshCw size={13} /> Roll a random code</button><p className="mt-2 text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Each team code opens exactly one team. Keep it private to your team.</p></div>}
+        {wizardStep === "admin" && <><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Your name</span><input autoFocus value={adminName} onChange={e => setAdminName(e.target.value)} data-testid="input-new-team-admin-name" placeholder="e.g. Jordan Lee" maxLength={80} autoComplete="name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Your personal password</span><input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} data-testid="input-new-team-admin-password" autoComplete="new-password" placeholder="••••••••" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><div className="rounded-xl border border-[#d5e0e0] bg-[#f8fbfa] px-4 py-3 text-xs leading-5 text-[#63747c] dark:border-[#2a3f4c] dark:bg-[#10202a] dark:text-[#a9bcc6]">Team <strong className="text-[#183a4b] dark:text-[#e6eef2]">{teamName.trim() || "your team"}</strong> · code <strong className="mono text-[#183a4b] dark:text-[#e6eef2]">{teamCode.trim()}</strong> — write the code down before continuing.</div></>}
+        {wizardError && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="new-team-error">{wizardError}</p>}
+        <button disabled={busy || (wizardStep === "team" && !teamName.trim()) || (wizardStep === "code" && (!teamCode.trim() || teamCode.trim().length < 4)) || (wizardStep === "admin" && (!adminName.trim() || !adminPassword))} data-testid="button-new-team-continue" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Creating team…" : wizardStep === "admin" ? <>Create team and sign in <ArrowRight size={17} /></> : <>Continue <ArrowRight size={17} /></>}</button>
+        {wizardStep !== "team" && <button type="button" onClick={back} className="flex w-full items-center justify-center gap-1 py-1 text-sm font-semibold text-[#527079] dark:text-[#a4bbc3]"><RotateCcw size={14} /> Back</button>}
+      </form>
+    </div>
+  </div>;
 }
 
 function Login() {
   type LoginStep = "event" | "interviewer" | "add" | "password";
   const [step, setStep] = useState<LoginStep>("event");
   const [eventPassword, setEventPassword] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [newTeamOpen, setNewTeamOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [personalPassword, setPersonalPassword] = useState("");
   const [newName, setNewName] = useState("");
@@ -1931,23 +2063,24 @@ function Login() {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewers = useListInterviewers({
+  const interviewerParams = step !== "event" && eventPassword.trim() ? { eventPassword: eventPassword.trim() } : undefined;
+  const interviewers = useListInterviewers(interviewerParams, {
     query: {
-      queryKey: getListInterviewersQueryKey(),
+      queryKey: getListInterviewersQueryKey(interviewerParams),
       enabled: step !== "event",
       retry: false,
       networkMode: "always",
-      queryFn: async ({ signal }) => {
+      queryFn: async ({ signal }: { signal?: AbortSignal }) => {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 5000);
-        const abortFromQuery = () => controller.abort(signal.reason);
-        if (signal.aborted) abortFromQuery();
-        else signal.addEventListener("abort", abortFromQuery, { once: true });
+        const abortFromQuery = () => controller.abort((signal as AbortSignal)?.reason);
+        if (signal?.aborted) abortFromQuery();
+        else signal?.addEventListener("abort", abortFromQuery, { once: true });
         try {
-          return await listInterviewers({ signal: controller.signal });
+          return await listInterviewers(interviewerParams, { signal: controller.signal });
         } finally {
           window.clearTimeout(timeout);
-          signal.removeEventListener("abort", abortFromQuery);
+          signal?.removeEventListener("abort", abortFromQuery);
         }
       },
     },
@@ -1997,6 +2130,17 @@ function Login() {
     setLocation(returnTo);
   };
 
+  const finishTeamCreation = (response: { token?: string; label?: string; interviewerId?: string; teamId?: string; teamName?: string }) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    markCurrentSessionQueryAuthenticated();
+    markAuthSessionActive();
+    if (token) storeAuthToken(token);
+    setNewTeamOpen(false);
+    qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    setLocation(returnTo);
+  };
+
   const continueFromEvent = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
@@ -2008,8 +2152,9 @@ function Login() {
     verifyEventPasscode.mutate(
       { data: { eventPassword: normalizedEventPassword } },
       {
-        onSuccess: () => {
+        onSuccess: (response) => {
           setEventPassword(normalizedEventPassword);
+          setTeamName(response.teamName ?? "");
           setStep("interviewer");
         },
         onError: verificationError => setError(eventPasscodeErrorMessage(verificationError)),
@@ -2157,7 +2302,11 @@ function Login() {
   const back = () => {
     setError("");
     if (step === "event") return;
-    if (step === "interviewer") setStep("event");
+    if (step === "interviewer") {
+      setStep("event");
+      setTeamName("");
+      return;
+    }
     else if (step === "add") setStep("interviewer");
     else if (selectedId) setStep("interviewer");
     else setStep("add");
@@ -2231,14 +2380,19 @@ function Login() {
             )}
 
             {step === "event" && (
-              <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span>
-                  <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
-                </label>
-                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
-                <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
-              </form>
+              <>
+                <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span>
+                    <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
+                  </label>
+                  {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+                  <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
+                </form>
+                <div className="mt-4 flex items-center gap-3 text-xs text-[#7c8c91] dark:text-[#91a8b1]"><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /><span>or</span><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /></div>
+                <button type="button" onClick={() => setNewTeamOpen(true)} data-testid="button-new-team" className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#47747c] dark:text-[#80d2ca] dark:hover:bg-[#203b47]"><Plus size={17} /> New team</button>
+                <p className="mt-2 text-center text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Start a separate team with its own access code. Your current team's data stays untouched.</p>
+              </>
             )}
 
             {step === "interviewer" && (
@@ -2314,6 +2468,9 @@ function Login() {
               </form>
             )}
 
+            {step !== "event" && teamName && (
+              <p data-testid="login-team-badge" className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#dff4f2] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.08em] text-[#12737d] dark:bg-[#1c3c43] dark:text-[#9bdbe2]">Team: {teamName}</p>
+            )}
             {step !== "event" && <button type="button" onClick={back} className="mt-5 flex w-full items-center justify-center gap-1 py-2 text-sm font-semibold text-[#527079] dark:text-[#a4bbc3]"><RotateCcw size={14} /> Back</button>}
             <div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289] dark:border-[#314955] dark:text-[#a4bbc3]">
               <ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />
@@ -2322,6 +2479,7 @@ function Login() {
           </div>
         </section>
       </div>
+      {newTeamOpen && <NewTeamWizard onClose={() => setNewTeamOpen(false)} onCreated={finishTeamCreation} />}
     </main>
   );
 }
@@ -2411,39 +2569,65 @@ function Shell({ children }: { children: ReactNode }) {
   const isCoordinator = session.data?.role === "coordinator";
   const isTreasurer = session.data?.role === "treasurer";
   const shellPath = location.split(/[?#]/, 1)[0];
-  const isPartsAssistant = shellPath === "/parts/assistant" || shellPath.startsWith("/parts/assistant/");
   // Only fetch visibility for a signed-in account: no private request may be
   // issued before sign-in.
   const isSignedIn = session.data?.authenticated === true;
-  const workspaceVisibility = useWorkspaceVisibility(isSignedIn, session.data?.role);
-  // An account always has a role in the database; treating a missing one as the
-  // most restricted role fails safe if that ever stops being true.
-  const effectiveRole = session.data?.role ?? "interviewer";
+  const sessionUserId = session.data?.interviewerId;
+  // Accounts always have a role; default a missing one to the most restricted
+  // role so legacy role-based settings keep working (as before the per-user switch).
+  const sessionRole = session.data?.role ?? "interviewer";
+  const workspaceVisibility = useWorkspaceVisibility(isSignedIn, sessionRole, sessionUserId);
   const visibility = workspaceVisibility.visibility;
   const visibleWorkspaces = useMemo(() => {
     const set = new Set<WorkspaceKey>();
-    for (const key of WORKSPACE_KEYS) {
-      // Coordinators administer every workspace, so settings never lock one out.
-      if (isCoordinator || visibility[key].some((entry) => entry === effectiveRole)) {
-        set.add(key);
-      }
+    // Per-user access: coordinators always see everything (enforced inside
+    // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
+    for (const key of visibleWorkspacesForUser(visibility, sessionUserId, sessionRole)) {
+      set.add(key);
     }
     return set;
-  }, [visibility, effectiveRole, isCoordinator]);
+  }, [visibility, sessionUserId, sessionRole]);
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
+  const isDashboardPath = shellPath === "/dashboard";
+  const isInterviewPath =
+    shellPath === "/interview" ||
+    shellPath.startsWith("/interview/") ||
+    shellPath === "/applicants" ||
+    shellPath.startsWith("/applicants/") ||
+    shellPath === "/applicants/" ||
+    shellPath === "/queue" ||
+    shellPath.startsWith("/queue/") ||
+    shellPath === "/attendance" ||
+    shellPath.startsWith("/attendance/") ||
+    shellPath === "/big-screen" ||
+    shellPath.startsWith("/big-screen/");
+  const isChatPath =
+    shellPath === "/chat" ||
+    shellPath.startsWith("/chat/") ||
+    shellPath === "/assistant" ||
+    shellPath.startsWith("/assistant/") ||
+    shellPath.startsWith("/spreadsheets/");
+  const isPartsPath = shellPath === "/parts" || shellPath.startsWith("/parts/");
+  const isCadPath = shellPath === "/cad" || shellPath.startsWith("/cad/");
+  const isCodePath = shellPath === "/code" || shellPath.startsWith("/code/");
+  const isTreasurerRosterPath =
+    shellPath === "/applicants" || shellPath.startsWith("/applicants/");
   const restrictedAllowed =
-    // Admins and treasurers keep their existing reach; visibility only narrows
-    // the plain interviewer role.
-    isCoordinator || isTreasurer ||
-    (areaCanSee("chat") && (shellPath === "/chat" || shellPath.startsWith("/chat/") || shellPath === "/assistant" || shellPath.startsWith("/assistant/") || shellPath.startsWith("/spreadsheets/"))) ||
-    (areaCanSee("interview") && shellPath === "/applicants") ||
-    (areaCanSee("parts") && (shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant))) ||
-    (areaCanSee("cad") && (shellPath === "/cad" || shellPath.startsWith("/cad/"))) ||
-    (areaCanSee("code") && (shellPath === "/code" || shellPath.startsWith("/code/")));
+    // /dashboard is the per-user home: every signed-in account can open it and
+    // sees only their own workspaces there.
+    isDashboardPath ||
+    isCoordinator ||
+    // Treasurers keep the read-only applicant roster even without Interview access.
+    (isTreasurer && isTreasurerRosterPath) ||
+    (areaCanSee("chat") && isChatPath) ||
+    (areaCanSee("interview") && isInterviewPath) ||
+    (areaCanSee("parts") && isPartsPath) ||
+    (areaCanSee("cad") && isCadPath) ||
+    (areaCanSee("code") && isCodePath);
   const restrictedBlocked = isSignedIn && !restrictedAllowed;
   // Send someone who cannot open this workspace to the first one they can, so
-  // hiding a workspace also stops it being reachable by URL. The workspace
-  // chooser is coordinator-only, as it has always been.
+  // hiding a workspace also stops it being reachable by URL. /dashboard stays
+  // reachable for everyone, so it is the final fallback.
   const homeWorkspace = (["chat", "parts", "cad", "code", "interview"] as const).find((key) =>
     areaCanSee(key),
   );
@@ -2705,24 +2889,37 @@ function CustomCharts() {
 
 function WorkspaceOverview() {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, session.data?.role);
-  const role = session.data?.role ?? "interviewer";
-  const isCoordinator = session.data?.role === "coordinator";
+  const sessionUserId = session.data?.interviewerId;
+  const sessionRole = session.data?.role ?? "interviewer";
+  const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, sessionRole, sessionUserId);
+  const isCoordinator = sessionRole === "coordinator";
   const canSee = (key: WorkspaceKey) =>
-    isCoordinator || visibility[key].some((entry) => entry === role);
+    userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
+  // Per-user workspace list in canonical order: numbering and the count below
+  // are relative to what this person can open, so the same workspace can be
+  // Workspace 01 for one person and Workspace 03 for another.
+  const visibleList = WORKSPACE_KEYS.filter((key) => canSee(key));
+  const workspaceNumber = (key: WorkspaceKey) =>
+    String(visibleList.indexOf(key) + 1).padStart(2, "0");
+  const spaceCount = String(visibleList.length).padStart(2, "0");
   return (
     <div className="fade-up min-h-[calc(100dvh-160px)] rounded-3xl bg-[#f1f5f4] px-4 py-5 text-[#182232] dark:bg-[#101b23] dark:text-[#e8eff2] sm:px-7 sm:py-7">
       <div className="mx-auto max-w-[1120px]">
         <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">Team 23442 · Admin workspace</p>
+            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">Team 23442 · {isCoordinator ? "Admin workspace" : "Team workspace"}</p>
             <h1 className="text-3xl font-semibold tracking-[-.05em] sm:text-[2.6rem]">Choose a workspace</h1>
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            05 spaces
+            {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
           </span>
         </header>
+        {visibleList.length === 0 && (
+          <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
+            No workspaces are assigned to your account yet. Ask an admin to add you in Settings → Workspace access.
+          </p>
+        )}
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="group" aria-label="Choose a workspace">
         {canSee("interview") && (
@@ -2738,7 +2935,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#d6e3e7]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#f8c84a]" />
-              Workspace 01
+              Workspace {workspaceNumber("interview")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#b5c8d0]">INTERVIEW</span>
           </span>
@@ -2786,7 +2983,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-[#16869a]/15 bg-white/55 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#46646b] dark:border-white/15 dark:bg-white/[.06] dark:text-[#c3d7da]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#16869a] dark:bg-[#7ed0c4]" />
-              Workspace 02
+              Workspace {workspaceNumber("chat")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#55747a] dark:text-[#bed4d8]">TEAM CHAT</span>
           </span>
@@ -2832,7 +3029,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-[#8f7029]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#665426] dark:border-white/15 dark:bg-white/[.06] dark:text-[#e3d6ad]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#b47c16] dark:bg-[#f8d879]" />
-              Workspace 03
+              Workspace {workspaceNumber("parts")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#75683e] dark:text-[#e2d4a5]">PARTS & INVENTORY</span>
           </span>
@@ -2870,7 +3067,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-[#263e60]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#3d5878] dark:border-white/15 dark:bg-white/[.06] dark:text-[#cfdaea]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#263e60] dark:bg-[#8fb3e0]" />
-              Workspace 04
+              Workspace {workspaceNumber("cad")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#5a7396] dark:text-[#b6c8e2]">CAD &amp; MODELS</span>
           </span>
@@ -2908,7 +3105,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#cfd8de]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#f8c84a]" />
-              Workspace 05
+              Workspace {workspaceNumber("code")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#9fb0bc]">ROBOT CODE</span>
           </span>
@@ -3338,7 +3535,7 @@ const printFieldOptions: { key: PrintField; label: string }[] = [
   { key: "category", label: "Category" },
   { key: "status", label: "Interview status" },
   { key: "email", label: "Email" },
-  { key: "notes", label: "Coordinator notes" },
+  { key: "notes", label: "Admin notes" },
 ];
 
 function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose: () => void }) {
@@ -3399,7 +3596,7 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
   };
   const destroy = async () => { if (remove.isPending || !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
   if (readOnly) return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Coordinator notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
-  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Admin decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
 
@@ -3446,7 +3643,7 @@ type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; ma
 function DisplayTextCard() {
   const qc = useQueryClient();
   const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: 5000 } });
-  const live = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 5000 } });
+  const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 5000 } });
   const update = useUpdateDisplaySettings();
   // Draft-first: edits live here only. Nothing reaches the big screen until
   // "Push to big screen" — the preview below shows exactly what push will do.
@@ -5568,13 +5765,18 @@ function DisplayGallery() {
 }
 
 function Display() {
-  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
+  const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  // Public big screen: ?code= (or ?eventPassword=) scopes an anonymous display
+  // to that team's queue. Omitted = signed-in user's team or default team, so
+  // the current team's big screen keeps working unchanged.
+  const displayTeamCode = previewParams.get("code") ?? previewParams.get("eventPassword") ?? undefined;
+  const displayParams = displayTeamCode ? { eventPassword: displayTeamCode } : undefined;
+  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
   const fullscreen = useFullscreen();
   // ?preview=1 turns this page into the big-screen tab's preview: query
   // params override the live text through the exact same render path (so the
   // preview is pixel-identical), and every audio/command behavior is disabled
   // so the preview never speaks, warms voices, or reboots.
-  const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const isPreview = previewParams.get("preview") === "1";
   // The big screen has no audio buttons (they live on the interviewers'
   // Queue screen). It warms the selected on-device voice silently and speaks
@@ -5584,7 +5786,7 @@ function Display() {
     if (isPreview) return;
     void warmEngine(getSelectedEngine()).catch(() => { /* announcements fall back on demand */ });
   }, [isPreview]);
-  const commands = useGetBroadcastCommands({ query: { queryKey: getGetBroadcastCommandsQueryKey(), refetchInterval: 3000, enabled: !isPreview } });
+  const commands = useGetBroadcastCommands(displayParams, { query: { queryKey: getGetBroadcastCommandsQueryKey(displayParams), refetchInterval: 3000, enabled: !isPreview } });
   useEffect(() => {
     if (isPreview) return;
     const items = commands.data?.items ?? [];
@@ -5666,7 +5868,7 @@ function Display() {
           audio.onerror = () => speakOnce();
           // Cache-buster: without it, repeat finishes reuse the same URL and
           // the browser never refetches, so nothing speaks a second time.
-          audio.src = `${import.meta.env.BASE_URL}api/display/announcement?t=${Date.now()}`;
+          audio.src = `${import.meta.env.BASE_URL}api/display/announcement?t=${Date.now()}${displayTeamCode ? `&eventPassword=${encodeURIComponent(displayTeamCode)}` : ""}`;
           audio.play().catch(() => speakOnce());
         }
       }
@@ -6119,7 +6321,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </div>
       </aside>
       <section className="relative order-1 min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
-        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the coordinator team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
+        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the admin team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
         
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
@@ -6411,6 +6613,8 @@ function Router() {
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />
         <Route path="/parts-landing" component={PartsLanding} />
+        <Route path="/code-landing" component={CodeLanding} />
+        <Route path="/cad-landing" component={CadLanding} />
         <Route path="/auth" component={Login} />
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>

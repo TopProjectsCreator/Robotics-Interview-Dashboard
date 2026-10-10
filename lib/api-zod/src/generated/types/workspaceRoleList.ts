@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { WorkspaceRole } from './workspaceRole';
 
-export type WorkspaceRoleList = WorkspaceRole[];
+/**
+ * Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.
+ */
+export type WorkspaceRoleList = string[];

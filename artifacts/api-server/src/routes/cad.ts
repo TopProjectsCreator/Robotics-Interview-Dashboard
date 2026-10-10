@@ -27,9 +27,10 @@ import {
 } from "@workspace/api-zod";
 import { chunkedUploadsTable, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireWorkspaceAccess } from "../middlewares/adminAuth";
+import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth";
 import { cleanCadLabel, cadModelKind, CAD_KIND_CONTENT_TYPES } from "../lib/cadModels";
-import { deleteChunkParts, getChunkUpload } from "../lib/chunkedUploads";
+import { deleteChunkParts, getChunkUpload, getChunkUploadForTeam } from "../lib/chunkedUploads";
+import { teamSqlCondition } from "../lib/teams";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
@@ -55,11 +56,13 @@ type Log = { warn: (fields: object, message?: string) => void };
  * their parts and manifest have to be cleaned up too, otherwise deleting a
  * multi-hundred-megabyte assembly would quietly leak every part.
  */
-async function deleteModelFile(objectPath: string, log: Log): Promise<void> {
+async function deleteModelFile(objectPath: string, log: Log, teamId?: string): Promise<void> {
   const chunkMatch = CHUNK_OBJECT_PATH.exec(objectPath);
   if (chunkMatch) {
     const uploadId = chunkMatch[1];
-    const manifest = await getChunkUpload(uploadId);
+    const manifest = teamId === undefined
+      ? await getChunkUpload(uploadId)
+      : await getChunkUploadForTeam(uploadId, teamId);
     if (!manifest) {
       log.warn({ objectPath, uploadId }, "CAD model manifest is missing; parts left in storage");
       return;
@@ -83,10 +86,11 @@ async function deleteModelFile(objectPath: string, log: Log): Promise<void> {
 async function deleteModelFiles(
   objectPaths: string[],
   log: Log,
+  teamId?: string,
 ): Promise<void> {
   for (const objectPath of objectPaths) {
     try {
-      await deleteModelFile(objectPath, log);
+      await deleteModelFile(objectPath, log, teamId);
     } catch (error) {
       log.warn({ err: error, objectPath }, "CAD model file cleanup failed");
     }
@@ -154,16 +158,20 @@ async function currentDisplayName(req: Request): Promise<string | null> {
 /**
  * Collects every descendant folder id of `folderId`, breadth first, so a delete
  * or a move can refuse to treat a nested folder as a stranger. Uses a bounded
- * loop so a corrupted parent cycle cannot hang the request.
+ * loop so a corrupted parent cycle cannot hang the request. Traversal stays
+ * inside `teamId` so folders from other teams are never collected.
  */
-async function descendantFolderIds(folderId: string): Promise<Set<string>> {
+async function descendantFolderIds(folderId: string, teamId?: string): Promise<Set<string>> {
   const found = new Set<string>([folderId]);
   let frontier = [folderId];
   for (let depth = 0; depth < 64 && frontier.length > 0; depth += 1) {
-    const result = await pool.query<{ id: string }>(
-      `select "id" from "cad_folders" where "parent_id" = any($1::text[])`,
-      [frontier],
-    );
+    const values: unknown[] = [frontier];
+    let sql = `select "id" from "cad_folders" where "parent_id" = any($1::text[])`;
+    if (teamId !== undefined) {
+      values.push(teamId);
+      sql += ` and ${teamSqlCondition('"team_id"', `$${values.length}`)}`;
+    }
+    const result = await pool.query<{ id: string }>(sql, values);
     frontier = result.rows
       .map(({ id }) => id)
       .filter((id) => !found.has(id));
@@ -175,17 +183,33 @@ async function descendantFolderIds(folderId: string): Promise<Set<string>> {
 /**
  * Resolves the folder a model should land in and confirms the pair is coherent:
  * a folder always implies its own bot, so a mismatched botId is rejected rather
- * than silently overwriting the model's bot.
+ * than silently overwriting the model's bot. Both the folder and the bot must
+ * belong to `teamId`; cross-team placements are rejected as missing.
  */
 async function resolvePlacement(
   botId: string | null,
   folderId: string | null,
+  teamId?: string,
 ): Promise<{ ok: true; botId: string | null; folderId: string | null } | { ok: false; error: string }> {
-  if (!folderId) return { ok: true, botId, folderId: null };
-  const folder = await pool.query<{ botId: string }>(
-    `select "bot_id" as "botId" from "cad_folders" where "id" = $1`,
-    [folderId],
-  );
+  if (!folderId) {
+    if (!botId) return { ok: true, botId, folderId: null };
+    const values: unknown[] = [botId];
+    let sql = `select "id" from "cad_bots" where "id" = $1`;
+    if (teamId !== undefined) {
+      values.push(teamId);
+      sql += ` and ${teamSqlCondition('"team_id"', `$${values.length}`)}`;
+    }
+    const bot = await pool.query(sql, values);
+    if (bot.rowCount === 0) return { ok: false, error: "That bot no longer exists." };
+    return { ok: true, botId, folderId: null };
+  }
+  const values: unknown[] = [folderId];
+  let sql = `select "bot_id" as "botId" from "cad_folders" where "id" = $1`;
+  if (teamId !== undefined) {
+    values.push(teamId);
+    sql += ` and ${teamSqlCondition('"team_id"', `$${values.length}`)}`;
+  }
+  const folder = await pool.query<{ botId: string }>(sql, values);
   const row = folder.rows[0];
   if (!row) return { ok: false, error: "That folder no longer exists." };
   if (botId && botId !== row.botId) {
@@ -196,16 +220,20 @@ async function resolvePlacement(
 
 router.get("/cad/library", cadAccess, async (req, res): Promise<void> => {
   try {
-    const bots = await pool.query(      `select "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"
-       from "cad_bots" order by lower("name")`,
+    const teamId = await requestTeamId(req);
+    const bots = await pool.query(`select "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"
+       from "cad_bots" where ${teamSqlCondition('"team_id"', "$1")} order by lower("name")`,
+      [teamId],
     );
     const folders = await pool.query(
       `select "id", "bot_id" as "botId", "parent_id" as "parentId", "name",
               "created_at" as "createdAt", "updated_at" as "updatedAt"
-       from "cad_folders" order by lower("name")`,
+       from "cad_folders" where ${teamSqlCondition('"team_id"', "$1")} order by lower("name")`,
+      [teamId],
     );
     const models = await pool.query(
-      `select ${MODEL_COLUMNS} from "cad_models" order by lower("name")`,
+      `select ${MODEL_COLUMNS} from "cad_models" where ${teamSqlCondition('"team_id"', "$1")} order by lower("name")`,
+      [teamId],
     );
     res.json(
       ListCadLibraryResponse.parse({
@@ -234,11 +262,12 @@ router.post("/cad/bots", cadAccess, async (req, res): Promise<void> => {
   const notes = cleanCadLabel(body.data.notes ?? null, 2000);
   const id = randomUUID();
   try {
+    const teamId = await requestTeamId(req);
     const inserted = await pool.query(
-      `insert into "cad_bots" ("id", "name", "notes")
-       values ($1, $2, $3)
+      `insert into "cad_bots" ("id", "team_id", "name", "notes")
+       values ($1, $2, $3, $4)
        returning "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [id, name, notes],
+      [id, teamId, name, notes],
     );
     res.status(201).json(CreateCadBotResponse.parse(mapBot(inserted.rows[0])));
   } catch (error) {
@@ -271,15 +300,16 @@ router.patch("/cad/bots/:botId", cadAccess, async (req, res): Promise<void> => {
   const notes =
     patch.notes === undefined ? undefined : patch.notes === null ? null : cleanCadLabel(patch.notes, 2000);
   try {
+    const teamId = await requestTeamId(req);
     const updated = await pool.query(
       // $4 distinguishes "not supplied" from "cleared", so notes can be emptied.
       `update "cad_bots"
        set "name" = coalesce($2, "name"),
            "notes" = case when $4 then $3 else "notes" end,
            "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$5")}
        returning "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.botId, name ?? null, notes ?? null, patch.notes !== undefined],
+      [params.data.botId, name ?? null, notes ?? null, patch.notes !== undefined, teamId],
     );
     if (updated.rowCount === 0) {
       res.status(404).json({ error: "Bot not found." });
@@ -303,6 +333,16 @@ router.delete("/cad/bots", cadAccess, async (req, res): Promise<void> => {
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
+    // Verify the bot belongs to the requester's team before touching its models.
+    const owned = await pool.query(
+      `select "id" from "cad_bots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [params.data.botId, teamId],
+    );
+    if (owned.rowCount === 0) {
+      res.status(404).json({ error: "Bot not found." });
+      return;
+    }
     // Models are detached rather than cascaded so their files can be cleaned up
     // deliberately; the folder rows cascade from the bot itself.
     const models = await pool.query<{ objectPath: string }>(
@@ -310,14 +350,15 @@ router.delete("/cad/bots", cadAccess, async (req, res): Promise<void> => {
        where "bot_id" = $1 returning "object_path" as "objectPath"`,
       [params.data.botId],
     );
-    const deleted = await pool.query(`delete from "cad_bots" where "id" = $1`, [
-      params.data.botId,
-    ]);
+    const deleted = await pool.query(
+      `delete from "cad_bots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [params.data.botId, teamId],
+    );
     if (deleted.rowCount === 0) {
       res.status(404).json({ error: "Bot not found." });
       return;
     }
-    await deleteModelFiles(models.rows.map(({ objectPath }) => objectPath), req.log);
+    await deleteModelFiles(models.rows.map(({ objectPath }) => objectPath), req.log, teamId);
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "CAD bot deletion failed");
@@ -338,10 +379,11 @@ router.post("/cad/folders", cadAccess, async (req, res): Promise<void> => {
   }
   const parentId = body.data.parentId ?? null;
   try {
+    const teamId = await requestTeamId(req);
     if (parentId) {
       const parent = await pool.query<{ botId: string }>(
-        `select "bot_id" as "botId" from "cad_folders" where "id" = $1`,
-        [parentId],
+        `select "bot_id" as "botId" from "cad_folders" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [parentId, teamId],
       );
       const row = parent.rows[0];
       if (!row) {
@@ -353,20 +395,21 @@ router.post("/cad/folders", cadAccess, async (req, res): Promise<void> => {
         return;
       }
     } else {
-      const bot = await pool.query(`select 1 from "cad_bots" where "id" = $1`, [
-        body.data.botId,
-      ]);
+      const bot = await pool.query(
+        `select 1 from "cad_bots" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [body.data.botId, teamId],
+      );
       if (bot.rowCount === 0) {
         res.status(404).json({ error: "Bot not found." });
         return;
       }
     }
     const inserted = await pool.query(
-      `insert into "cad_folders" ("id", "bot_id", "parent_id", "name")
-       values ($1, $2, $3, $4)
+      `insert into "cad_folders" ("id", "team_id", "bot_id", "parent_id", "name")
+       values ($1, $2, $3, $4, $5)
        returning "id", "bot_id" as "botId", "parent_id" as "parentId", "name",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [randomUUID(), body.data.botId, parentId, name],
+      [randomUUID(), teamId, body.data.botId, parentId, name],
     );
     res.status(201).json(CreateCadFolderResponse.parse(mapFolder(inserted.rows[0])));
   } catch (error) {
@@ -397,9 +440,10 @@ router.patch("/cad/folders/:folderId", cadAccess, async (req, res): Promise<void
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const current = await pool.query<{ botId: string }>(
-      `select "bot_id" as "botId" from "cad_folders" where "id" = $1`,
-      [params.data.folderId],
+      `select "bot_id" as "botId" from "cad_folders" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [params.data.folderId, teamId],
     );
     const folder = current.rows[0];
     if (!folder) {
@@ -415,8 +459,8 @@ router.patch("/cad/folders/:folderId", cadAccess, async (req, res): Promise<void
           return;
         }
         const parent = await pool.query<{ botId: string }>(
-          `select "bot_id" as "botId" from "cad_folders" where "id" = $1`,
-          [parentId],
+          `select "bot_id" as "botId" from "cad_folders" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+          [parentId, teamId],
         );
         const parentRow = parent.rows[0];
         if (!parentRow) {
@@ -428,7 +472,7 @@ router.patch("/cad/folders/:folderId", cadAccess, async (req, res): Promise<void
           return;
         }
         // Moving a folder under its own descendant would detach the subtree.
-        const descendants = await descendantFolderIds(params.data.folderId);
+        const descendants = await descendantFolderIds(params.data.folderId, teamId);
         if (descendants.has(parentId)) {
           res.status(400).json({ error: "A folder cannot be moved inside one of its own subfolders." });
           return;
@@ -440,10 +484,10 @@ router.patch("/cad/folders/:folderId", cadAccess, async (req, res): Promise<void
        set "name" = coalesce($2, "name"),
            "parent_id" = case when $3::text is null and $4 then null else coalesce($3::text, "parent_id") end,
            "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$5")}
        returning "id", "bot_id" as "botId", "parent_id" as "parentId", "name",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.folderId, name ?? null, parentId ?? null, patch.parentId !== undefined],
+      [params.data.folderId, name ?? null, parentId ?? null, patch.parentId !== undefined, teamId],
     );
     res.json(UpdateCadFolderResponse.parse(mapFolder(updated.rows[0])));
   } catch (error) {
@@ -463,17 +507,26 @@ router.delete("/cad/folders/:folderId", cadAccess, async (req, res): Promise<voi
     return;
   }
   try {
-    const descendants = await descendantFolderIds(params.data.folderId);
+    const teamId = await requestTeamId(req);
+    const root = await pool.query(
+      `select "id" from "cad_folders" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [params.data.folderId, teamId],
+    );
+    if (root.rowCount === 0) {
+      res.status(404).json({ error: "Folder not found." });
+      return;
+    }
+    const descendants = await descendantFolderIds(params.data.folderId, teamId);
     const ids = [...descendants];
     // Models are unfiled, never destroyed, so deleting a folder cannot lose work.
     await pool.query(
       `update "cad_models" set "folder_id" = null, "updated_at" = now()
-       where "folder_id" = any($1::text[])`,
-      [ids],
+       where "folder_id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}`,
+      [ids, teamId],
     );
     const deleted = await pool.query(
-      `delete from "cad_folders" where "id" = any($1::text[])`,
-      [ids],
+      `delete from "cad_folders" where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}`,
+      [ids, teamId],
     );
     if (deleted.rowCount === 0) {
       res.status(404).json({ error: "Folder not found." });
@@ -494,6 +547,9 @@ router.get("/cad/models", cadAccess, async (req, res): Promise<void> => {
   }
   const filters: string[] = [];
   const values: unknown[] = [];
+  const teamId = await requestTeamId(req);
+  values.push(teamId);
+  filters.push(teamSqlCondition('"team_id"', `$${values.length}`));
   if (params.data.folderId) {
     values.push(params.data.folderId);
     filters.push(`"folder_id" = $${values.length}`);
@@ -533,7 +589,7 @@ router.post("/cad/models", cadAccess, async (req, res): Promise<void> => {
     res.status(400).json({ error: "Choose a GLB, STL, 3MF, STEP, IGES, BREP, X_T, or X_B file." });
     return;
   }
-  const placement = await resolvePlacement(input.botId ?? null, input.folderId ?? null);
+  const placement = await resolvePlacement(input.botId ?? null, input.folderId ?? null, await requestTeamId(req));
   if (!placement.ok) {
     res.status(400).json({ error: placement.error });
     return;
@@ -542,14 +598,16 @@ router.post("/cad/models", cadAccess, async (req, res): Promise<void> => {
   const notes = cleanCadLabel(input.notes ?? null, 2000);
   const uploadedBy = await currentDisplayName(req);
   try {
+    const teamId = await requestTeamId(req);
     const inserted = await pool.query(
       `insert into "cad_models"
-         ("id", "name", "file_name", "content_type", "object_path", "size_bytes",
+         ("id", "team_id", "name", "file_name", "content_type", "object_path", "size_bytes",
           "bot_id", "folder_id", "notes", "uploaded_by")
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        returning ${MODEL_COLUMNS}`,
       [
         randomUUID(),
+        teamId,
         // Default the display name to the original file name.
         name ?? input.fileName,
         input.fileName,
@@ -600,11 +658,12 @@ router.patch("/cad/models/:modelId", cadAccess, async (req, res): Promise<void> 
 
   const client = await pool.connect();
   try {
+    const teamId = await requestTeamId(req);
     await client.query("BEGIN");
     const current = await client.query<{ botId: string | null; folderId: string | null }>(
       `select "bot_id" as "botId", "folder_id" as "folderId"
-       from "cad_models" where "id" = $1 for update`,
-      [params.data.modelId],
+       from "cad_models" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} for update`,
+      [params.data.modelId, teamId],
     );
     const existing = current.rows[0];
     if (!existing) {
@@ -614,7 +673,7 @@ router.patch("/cad/models/:modelId", cadAccess, async (req, res): Promise<void> 
     }
     const nextBotId = patch.botId !== undefined ? patch.botId : existing.botId;
     const nextFolderId = patch.folderId !== undefined ? patch.folderId : existing.folderId;
-    const placement = await resolvePlacement(nextBotId, nextFolderId);
+    const placement = await resolvePlacement(nextBotId, nextFolderId, teamId);
     if (!placement.ok) {
       await client.query("ROLLBACK");
       res.status(400).json({ error: placement.error });
@@ -627,7 +686,7 @@ router.patch("/cad/models/:modelId", cadAccess, async (req, res): Promise<void> 
            "bot_id" = $3, "folder_id" = $4,
            "notes" = case when $6 then $5 else "notes" end,
            "updated_at" = now()
-       where "id" = $1
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$7")}
        returning ${MODEL_COLUMNS}`,
       [
         params.data.modelId,
@@ -636,6 +695,7 @@ router.patch("/cad/models/:modelId", cadAccess, async (req, res): Promise<void> 
         placement.folderId,
         notes ?? null,
         patch.notes !== undefined,
+        teamId,
       ],
     );
     await client.query("COMMIT");
@@ -656,16 +716,17 @@ router.delete("/cad/models/:modelId", cadAccess, async (req, res): Promise<void>
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const deleted = await pool.query<{ objectPath: string }>(
-      `delete from "cad_models" where "id" = $1 returning "object_path" as "objectPath"`,
-      [params.data.modelId],
+      `delete from "cad_models" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} returning "object_path" as "objectPath"`,
+      [params.data.modelId, teamId],
     );
     const row = deleted.rows[0];
     if (!row) {
       res.status(404).json({ error: "Model not found." });
       return;
     }
-    await deleteModelFiles([row.objectPath], req.log);
+    await deleteModelFiles([row.objectPath], req.log, teamId);
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "CAD model deletion failed");

@@ -12,6 +12,10 @@ export interface AuthSession {
   interviewerId?: string;
   /** coordinator, treasurer, or interviewer */
   role?: string;
+  /** Team this session belongs to */
+  teamId?: string;
+  /** Display name of the team this session belongs to */
+  teamName?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }

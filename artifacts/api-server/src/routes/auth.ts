@@ -1,7 +1,8 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { count, eq, inArray } from "drizzle-orm";
-import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable } from "@workspace/db";
+import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
+import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode } from "../lib/teams";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -152,6 +153,31 @@ function eventPasswordMatches(value: string): boolean {
   return Boolean(expected && passwordsMatch(value.trim(), expected.trim()));
 }
 
+/**
+ * Resolve the team for an event passcode. Tries DB teams first (each team has
+ * its own code), then falls back to the legacy ADMIN_PASSWORD for the default
+ * team so the current team's data stays reachable through the migration.
+ */
+async function resolveEventTeam(eventPassword: string): Promise<{ id: string; name: string } | null> {
+  const team = await findTeamByCode(eventPassword);
+  if (team) return team;
+  if (eventPasswordMatches(eventPassword)) {
+    return ensureDefaultTeam();
+  }
+  return null;
+}
+
+function accountTeamId(account: { teamId?: string | null } | null | undefined): string {
+  return teamIdForAccount(account);
+}
+
+async function requesterTeamId(req: Request): Promise<string> {
+  const requesterId = (req as Request & { interviewerId?: string }).interviewerId;
+  if (!requesterId) return DEFAULT_TEAM_ID;
+  const requester = await accountById(requesterId);
+  return accountTeamId(requester);
+}
+
 function hashPassword(password: string): string {
   const salt = randomBytes(16);
   return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
@@ -179,8 +205,24 @@ function publicAccount(account: { id: string; displayName: string; passwordHash:
   };
 }
 
-router.get("/auth/interviewers", async (_req, res): Promise<void> => {
-  const accounts = await syncInterviewerAccounts(await getInterviewSettings());
+router.get("/auth/interviewers", async (req, res): Promise<void> => {
+  // Team-scoped: when the login screen already verified a team code it passes
+  // it as ?eventPassword so only that team's accounts are listed. Without it
+  // we fall back to the default team so pre-migration clients keep working and
+  // the current team's accounts stay visible. Teams never see each other.
+  const eventPassword = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
+  let teamId = DEFAULT_TEAM_ID;
+  if (eventPassword.trim()) {
+    const team = await resolveEventTeam(eventPassword);
+    if (!team) {
+      res.status(401).json({ error: "The team access code is incorrect." });
+      return;
+    }
+    teamId = team.id;
+  } else {
+    await ensureDefaultTeam();
+  }
+  const accounts = await syncInterviewerAccounts(await getInterviewSettings(teamId), teamId);
   // One query for all credential counts so the login screen can offer a
   // passkey instead of a password where one exists.
   const passkeyCounts = accounts.length
@@ -202,14 +244,15 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Name and password are required." });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
   const displayName = parsed.data.displayName.trim().replace(/\s+/g, " ");
   const normalizedName = normalizeInterviewerName(displayName);
   const existing = await db.select({ id: interviewerAccountsTable.id })
-    .from(interviewerAccountsTable).where(eq(interviewerAccountsTable.normalizedName, normalizedName)).limit(1);
+    .from(interviewerAccountsTable).where(and(eq(interviewerAccountsTable.normalizedName, normalizedName), teamFilter(interviewerAccountsTable.teamId, team.id))).limit(1);
   if (existing.length) {
     res.status(409).json({ error: "That interviewer already exists." });
     return;
@@ -217,6 +260,7 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
   if (await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)) return;
   const [account] = await db.insert(interviewerAccountsTable).values({
     id: randomBytes(16).toString("hex"),
+    teamId: team.id,
     displayName,
     normalizedName,
     passwordHash: hashPassword(parsed.data.password),
@@ -226,7 +270,22 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(500).json({ error: "Could not create interviewer." });
     return;
   }
-  await updateQueueLabels([...(await getInterviewSettings()), account.displayName]);
+  // New people start with the same workspaces the interviewer role had: chat
+  // and parts. Admins can adjust per person afterwards in Settings.
+  try {
+    const { readWorkspaceVisibility, writeWorkspaceVisibility } = await import("../lib/workspaceAccess");
+    const current = await readWorkspaceVisibility(team.id);
+    const next = { ...current } as Record<string, string[]>;
+    for (const key of ["chat", "parts"] as const) {
+      const list = Array.isArray(next[key]) ? [...next[key]] : [];
+      if (!list.includes(account.id)) list.push(account.id);
+      next[key] = list;
+    }
+    await writeWorkspaceVisibility(next, team.id);
+  } catch {
+    // Account creation already succeeded; access can be fixed in Settings.
+  }
+  await updateQueueLabels([...(await getInterviewSettings(team.id)), account.displayName], team.id);
   res.status(201).json(CreateInterviewerResponse.parse(publicAccount(account)));
 });
 
@@ -236,12 +295,13 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Interviewer and password are required." });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
   const account = await accountById(parsed.data.interviewerId);
-  if (!account) {
+  if (!account || accountTeamId(account) !== team.id) {
     res.status(404).json({ error: "Interviewer not found." });
     return;
   }
@@ -271,13 +331,20 @@ router.patch("/auth/interviewers/:interviewerId/password", requireCoordinator, a
     res.status(400).json({ error: "Event passcode and a password are required. Use null to reset the password." });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
   const account = await accountById(params.data.interviewerId);
-  if (!account) {
+  if (!account || accountTeamId(account) !== team.id) {
     res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  // Coordinators can only manage their own team.
+  const ownTeam = await requesterTeamId(req);
+  if (ownTeam !== team.id || ownTeam !== accountTeamId(account)) {
+    res.status(403).json({ error: "Not available for your team" });
     return;
   }
   if (
@@ -301,11 +368,18 @@ router.post("/auth/interviewers/passwords/reset-all", requireCoordinator, async 
     res.status(400).json({ error: "The event passcode is required." });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
-  await db.update(interviewerAccountsTable).set({ passwordHash: null, updatedAt: new Date() });
+  const ownTeam = await requesterTeamId(req);
+  if (ownTeam !== team.id) {
+    res.status(403).json({ error: "Not available for your team" });
+    return;
+  }
+  // Scoped to this team only — other teams are never touched.
+  await db.update(interviewerAccountsTable).set({ passwordHash: null, updatedAt: new Date() }).where(teamFilter(interviewerAccountsTable.teamId, team.id));
   res.json(ResetAllInterviewerPasswordsResponse.parse({ message: "All interviewer passwords were reset. Each interviewer must set up a new password." }));
 });
 
@@ -320,16 +394,21 @@ router.delete("/auth/interviewers/:interviewerId", requireCoordinator, async (re
     res.status(404).json({ error: "Interviewer not found." });
     return;
   }
+  const ownTeam = await requesterTeamId(req);
+  if (accountTeamId(account) !== ownTeam) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
   await db.delete(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId));
-  const labels = await getInterviewSettings();
-  await updateQueueLabels(labels.filter((label) => normalizeInterviewerName(label) !== account.normalizedName));
+  const labels = await getInterviewSettings(ownTeam);
+  await updateQueueLabels(labels.filter((label) => normalizeInterviewerName(label) !== account.normalizedName), ownTeam);
   res.status(204).end();
 });
 
 router.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async (req, res): Promise<void> => {
   const interviewerId = typeof req.params.interviewerId === "string" ? req.params.interviewerId : "";
   const role = (req.body as Record<string, unknown> | undefined)?.role;
-  if (!interviewerId || (role !== "coordinator" && role !== "interviewer")) {
+  if (!interviewerId || (role !== "coordinator" && role !== "interviewer" && role !== "treasurer")) {
     res.status(400).json({ error: "Interviewer id and a valid role are required" });
     return;
   }
@@ -340,6 +419,11 @@ router.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async
   }
   const account = await accountById(interviewerId);
   if (!account) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const ownTeam = await requesterTeamId(req);
+  if (accountTeamId(account) !== ownTeam) {
     res.status(404).json({ error: "Interviewer not found." });
     return;
   }
@@ -364,8 +448,9 @@ const PEER_SEPARATOR = "\u001f";
  * direct-message thread keys (which embed both participant names, so leaving
  * them stale would orphan existing DM history).
  */
-async function renameInterviewerReferences(previousName: string, nextName: string): Promise<void> {
-  const [queue] = await db.select().from(interviewQueueTable).limit(1);
+async function renameInterviewerReferences(previousName: string, nextName: string, teamId: string): Promise<void> {
+  const teamCondQueue = teamFilter(interviewQueueTable.teamId, teamId);
+  const [queue] = await db.select().from(interviewQueueTable).where(teamCondQueue).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? "[]") as unknown;
     if (Array.isArray(labels)) {
@@ -374,25 +459,28 @@ async function renameInterviewerReferences(previousName: string, nextName: strin
           ? nextName
           : label,
       );
-      await db
-        .update(interviewQueueTable)
-        .set({ interviewerLabels: JSON.stringify(renamed), updatedAt: new Date() })
-        .where(eq(interviewQueueTable.id, queue?.id ?? 1));
+      if (queue) {
+        await db
+          .update(interviewQueueTable)
+          .set({ interviewerLabels: JSON.stringify(renamed), updatedAt: new Date() })
+          .where(eq(interviewQueueTable.id, queue.id));
+      }
     }
   } catch {
     // Leave labels untouched if the stored value is unreadable.
   }
 
+  const teamCondChat = teamFilter(interviewChatMessagesTable.teamId, teamId);
   await db
     .update(interviewChatMessagesTable)
     .set({ author: nextName })
-    .where(eq(interviewChatMessagesTable.author, previousName));
+    .where(and(eq(interviewChatMessagesTable.author, previousName), teamCondChat));
 
   // Thread keys are "<label><SEP><label>" with the pair sorted; replace only
   // the segment that matches this interviewer.
   const rows = await db
     .select({ id: interviewChatMessagesTable.id, peer: interviewChatMessagesTable.conversationPeer })
-    .from(interviewChatMessagesTable);
+    .from(interviewChatMessagesTable).where(teamCondChat);
   for (const row of rows) {
     if (!row.peer) continue;
     const parts = row.peer.split(PEER_SEPARATOR);
@@ -428,6 +516,11 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
     res.status(404).json({ error: "Interviewer not found." });
     return;
   }
+  const ownTeam = await requesterTeamId(req);
+  if (accountTeamId(account) !== ownTeam) {
+    res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
   const normalizedName = normalizeInterviewerName(displayName);
   const previousName = account.displayName;
   if (normalizedName === account.normalizedName) {
@@ -437,7 +530,7 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
   const clash = await db
     .select({ id: interviewerAccountsTable.id })
     .from(interviewerAccountsTable)
-    .where(eq(interviewerAccountsTable.normalizedName, normalizedName))
+    .where(and(eq(interviewerAccountsTable.normalizedName, normalizedName), teamFilter(interviewerAccountsTable.teamId, ownTeam)))
     .limit(1);
   if (clash.length) {
     res.status(409).json({ error: "Someone already uses that name." });
@@ -453,7 +546,7 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
       res.status(500).json({ error: "Could not rename this person." });
       return;
     }
-    await renameInterviewerReferences(previousName, displayName);
+    await renameInterviewerReferences(previousName, displayName, ownTeam);
     res.json(UpdateInterviewerNameResponse.parse(publicAccount(updated)));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -623,7 +716,12 @@ router.delete("/auth/passkey/:credentialId", requireAdmin, async (req, res): Pro
 
 router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
   const parsed = GetPasskeyLoginOptionsBody.safeParse(req.body);
-  if (!parsed.success || !eventPasswordMatches(parsed.data.eventPassword)) {
+  if (!parsed.success) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
@@ -633,6 +731,10 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
     return;
   }
   const account = await accountById(parsed.data.interviewerId);
+  if (account && accountTeamId(account) !== team.id) {
+    res.status(401).json({ error: "Incorrect event passcode or person." });
+    return;
+  }
   const credentials = account
     ? await db.select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports })
         .from(webauthnCredentialsTable)
@@ -667,7 +769,12 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
 
 router.post("/auth/passkey/login", async (req, res): Promise<void> => {
   const parsed = LoginWithPasskeyBody.safeParse(req.body);
-  if (!parsed.success || !eventPasswordMatches(parsed.data.eventPassword)) {
+  if (!parsed.success) {
+    res.status(401).json({ error: "The event passcode is incorrect." });
+    return;
+  }
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
@@ -683,7 +790,7 @@ router.post("/auth/passkey/login", async (req, res): Promise<void> => {
     return;
   }
   const account = await accountById(parsed.data.interviewerId);
-  if (!account) {
+  if (!account || accountTeamId(account) !== team.id) {
     clearPasskeyChallenge(res);
     res.status(401).json({ error: "Incorrect event passcode or person." });
     return;
@@ -739,7 +846,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Event passcode, interviewer, and password are required" });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
@@ -749,7 +857,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
   const account = await accountById(parsed.data.interviewerId);
-  if (!account || !passwordHashMatches(parsed.data.password, account.passwordHash)) {
+  if (!account || accountTeamId(account) !== team.id || !passwordHashMatches(parsed.data.password, account.passwordHash)) {
     recordLoginFailure(ip);
     res.status(401).json({ error: "Incorrect interviewer or password" });
     return;
@@ -757,10 +865,11 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   loginFailures.delete(ip);
   const session = createInterviewerSession(account.id);
   setAdminCookie(res, session);
-  res.json(LoginResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, token: session }));
+  const base = LoginResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, token: session });
+  res.json({ ...base, role: account.role, teamId: team.id, teamName: team.name });
 });
 
-router.post("/auth/verify-event-passcode", (req, res): void => {
+router.post("/auth/verify-event-passcode", async (req, res): Promise<void> => {
   const parsed = VerifyEventPasscodeBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "The team access code is required." });
@@ -771,13 +880,169 @@ router.post("/auth/verify-event-passcode", (req, res): void => {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
     return;
   }
-  if (!eventPasswordMatches(parsed.data.eventPassword)) {
+  const team = await resolveEventTeam(parsed.data.eventPassword);
+  if (!team) {
     recordEventPasscodeFailure(ip);
     res.status(401).json({ error: "The team access code is incorrect." });
     return;
   }
   eventPasscodeFailures.delete(ip);
-  res.json(VerifyEventPasscodeResponse.parse({ message: "Team access code verified." }));
+  // Extra teamId/teamName fields are ignored by older clients but let the new
+  // login flow show which team was unlocked and scope the account list.
+  res.json({ message: "Team access code verified.", teamId: team.id, teamName: team.name });
+});
+
+const teamCreateFailures = new Map<string, { count: number; resetAt: number }>();
+
+function teamCreateAllowed(ip: string): boolean {
+  const now = Date.now();
+  const entry = teamCreateFailures.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    teamCreateFailures.delete(ip);
+    return true;
+  }
+  return entry.count < 5;
+}
+
+function recordTeamCreateFailure(ip: string): void {
+  const now = Date.now();
+  const entry = teamCreateFailures.get(ip);
+  if (!entry || entry.resetAt <= now) teamCreateFailures.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else entry.count += 1;
+}
+
+/**
+ * Create a brand-new team with its own access code, plus its first
+ * coordinator account, and sign that account in. The new team starts empty
+ * and is completely separate from every other team. The legacy default team's
+ * rows (team_id NULL or 'default') are never touched.
+ */
+router.post("/auth/teams", async (req, res): Promise<void> => {
+  const ip = req.ip ?? "unknown";
+  if (!teamCreateAllowed(ip)) {
+    res.status(429).json({ error: "Too many teams created. Wait a minute and try again." });
+    return;
+  }
+  const body = req.body as Record<string, unknown> | undefined;
+  const teamName = typeof body?.teamName === "string" ? body.teamName.trim().replace(/\s+/g, " ") : "";
+  const teamCode = typeof body?.teamCode === "string" ? body.teamCode.trim() : "";
+  const displayName = typeof body?.displayName === "string" ? body.displayName.trim().replace(/\s+/g, " ") : "";
+  const password = typeof body?.password === "string" ? body.password : "";
+  const confirmLowExposure = body?.confirmLowExposure === true;
+  if (!teamName || teamName.length > 80) {
+    res.status(400).json({ error: "Give your team a name (1–80 characters)." });
+    return;
+  }
+  if (!teamCode || teamCode.length < 4 || teamCode.length > 128) {
+    res.status(400).json({ error: "Choose a team access code with at least 4 characters." });
+    return;
+  }
+  if (!displayName || displayName.length > 80) {
+    res.status(400).json({ error: "Add your name so your team can recognize you (1–80 characters)." });
+    return;
+  }
+  if (!password) {
+    res.status(400).json({ error: "Choose a personal password for your coordinator account." });
+    return;
+  }
+  const normalizedTeam = normalizeTeamName(teamName);
+  try {
+    const existingTeams = await db.select().from(teamsTable);
+    if (existingTeams.some((t) => t.normalizedName === normalizedTeam)) {
+      res.status(409).json({ error: "A team with that name already exists. Pick another name." });
+      return;
+    }
+    // Team codes must be unique across teams so each code opens exactly one team.
+    for (const t of existingTeams) {
+      const { verifyTeamCodeHash } = await import("../lib/teams");
+      if (verifyTeamCodeHash(teamCode, t.codeHash)) {
+        res.status(409).json({ error: "That team access code is already in use. Pick another one." });
+        return;
+      }
+    }
+    if (eventPasswordMatches(teamCode)) {
+      res.status(409).json({ error: "That team access code is already in use. Pick another one." });
+      return;
+    }
+  } catch {
+    // Teams table missing (pre-migration): allow creation; push will create it.
+  }
+  if (await rejectUnsafePassword(req, res, password, confirmLowExposure)) return;
+  const teamId = randomBytes(16).toString("hex");
+  try {
+    await ensureDefaultTeam();
+    const [team] = await db.insert(teamsTable).values({
+      id: teamId,
+      name: teamName,
+      normalizedName: normalizedTeam,
+      codeHash: hashTeamCode(teamCode),
+    }).returning();
+    if (!team) {
+      res.status(500).json({ error: "Could not create that team. Try again." });
+      return;
+    }
+    const normalizedName = normalizeInterviewerName(displayName);
+    const [account] = await db.insert(interviewerAccountsTable).values({
+      id: randomBytes(16).toString("hex"),
+      teamId: team.id,
+      displayName,
+      normalizedName,
+      passwordHash: hashPassword(password),
+      role: "coordinator",
+    }).returning();
+    if (!account) {
+      await db.delete(teamsTable).where(eq(teamsTable.id, team.id));
+      res.status(500).json({ error: "Could not create that team. Try again." });
+      return;
+    }
+    // Fresh team gets fresh singleton rows so it never inherits another team's queue/settings.
+    try {
+      const { interviewQueueTable: qTable, displaySettingsTable: dTable, seatingSettingsTable: sTable, chatSettingsTable: cTable, workspaceSettingsTable: wTable } = await import("@workspace/db");
+      const { DEFAULT_WORKSPACE_VISIBILITY } = await import("../lib/workspaceVisibility");
+      await db.insert(qTable).values({ teamId: team.id, interviewerLabels: JSON.stringify([displayName]) }).onConflictDoNothing();
+      await db.insert(dTable).values({ teamId: team.id }).onConflictDoNothing();
+      await db.insert(sTable).values({ teamId: team.id }).onConflictDoNothing();
+      await db.insert(cTable).values({ id: `chat-${team.id}`, teamId: team.id, slowmodeSeconds: 0 }).onConflictDoNothing();
+      await db.insert(wTable).values({ teamId: team.id, visibility: DEFAULT_WORKSPACE_VISIBILITY }).onConflictDoNothing();
+      const { readWorkspaceVisibility, writeWorkspaceVisibility } = await import("../lib/workspaceAccess");
+      const current = await readWorkspaceVisibility(team.id);
+      const next = { ...current } as Record<string, string[]>;
+      for (const key of Object.keys(next)) {
+        const list = Array.isArray(next[key]) ? [...next[key]] : [];
+        if (!list.includes(account.id)) list.push(account.id);
+        next[key] = list;
+      }
+      await writeWorkspaceVisibility(next, team.id);
+      await updateQueueLabels([displayName], team.id);
+    } catch {
+      // Team + account already exist; per-team settings can be repaired on next sign-in.
+    }
+    teamCreateFailures.delete(ip);
+    const session = createInterviewerSession(account.id);
+    setAdminCookie(res, session);
+    res.status(201).json({
+      message: "Team created.",
+      teamId: team.id,
+      teamName: team.name,
+      authenticated: true,
+      label: account.displayName,
+      interviewerId: account.id,
+      role: account.role,
+      token: session,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      res.status(409).json({ error: "A team with that name already exists. Pick another name." });
+      return;
+    }
+    req.log.error({ err: error }, "Team creation failed");
+    recordTeamCreateFailure(ip);
+    res.status(500).json({ error: "Could not create that team. Try again." });
+  }
+});
+
+router.get("/auth/teams/random-code", (_req, res): void => {
+  res.json({ code: randomTeamCode() });
 });
 
 router.get("/auth/session", async (req, res): Promise<void> => {
@@ -793,7 +1058,16 @@ router.get("/auth/session", async (req, res): Promise<void> => {
     res.json(GetSessionResponse.parse({ authenticated: false }));
     return;
   }
-  res.json(GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role }));
+  const teamId = accountTeamId(account);
+  let teamName: string | undefined;
+  try {
+    const { getTeamById } = await import("../lib/teams");
+    teamName = (await getTeamById(teamId))?.name;
+  } catch {
+    teamName = undefined;
+  }
+  const base = GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role });
+  res.json({ ...base, teamId, ...(teamName ? { teamName } : {}) });
 });
 
 router.post("/auth/logout", (req, res): void => {

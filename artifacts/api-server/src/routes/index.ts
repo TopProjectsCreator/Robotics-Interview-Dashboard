@@ -10,8 +10,11 @@ import systemRouter from "./system";
 import partsRouter from "./parts";
 import cadRouter from "./cad";
 import codeRouter from "./code";
+import sitemapRouter, { setApiRouter } from "./sitemap";
 
 const router: IRouter = Router();
+
+router.use(sitemapRouter);
 
 router.use(healthRouter);
 router.use(authRouter);
@@ -24,5 +27,7 @@ router.use(systemRouter);
 router.use(partsRouter);
 router.use(cadRouter);
 router.use(codeRouter);
+
+setApiRouter(router);
 
 export default router;

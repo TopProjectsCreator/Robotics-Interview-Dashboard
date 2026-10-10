@@ -490,8 +490,57 @@ export interface AuthSession {
   interviewerId?: string;
   /** coordinator, treasurer, or interviewer */
   role?: string;
+  /** Team this session belongs to */
+  teamId?: string;
+  /** Display name of the team this session belongs to */
+  teamName?: string;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
+}
+
+export interface TeamVerifyResponse {
+  message: string;
+  /** Team unlocked by this access code */
+  teamId?: string;
+  /** Display name of the unlocked team */
+  teamName?: string;
+}
+
+export interface TeamCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  teamName: string;
+  /**
+     * @minLength 4
+     * @maxLength 128
+     */
+  teamCode: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
+  /** @minLength 1 */
+  password: string;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
+}
+
+export interface TeamCreateResponse {
+  message: string;
+  teamId: string;
+  teamName: string;
+  authenticated: boolean;
+  label?: string;
+  interviewerId?: string;
+  role?: string;
+  token?: string;
+}
+
+export interface RandomTeamCode {
+  code: string;
 }
 
 export interface InterviewerAccount {
@@ -2038,7 +2087,10 @@ export const WorkspaceRole = {
   interviewer: 'interviewer',
 } as const;
 
-export type WorkspaceRoleList = WorkspaceRole[];
+/**
+ * Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.
+ */
+export type WorkspaceRoleList = string[];
 
 export interface WorkspaceVisibility {
   interview: WorkspaceRoleList;
@@ -2226,8 +2278,22 @@ export type BeforeParameter = string;
  */
 export type ChatLimitParameter = number;
 
+export type ListInterviewersParams = {
+/**
+ * Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
+ */
+eventPassword?: string;
+};
+
 export type GetPresenceStatsParams = {
 ip: string;
+};
+
+export type GetBroadcastCommandsParams = {
+/**
+ * Team access code to scope the public display to one team. Omitted = default team.
+ */
+eventPassword?: string;
 };
 
 export type ListApplicantsParams = {
@@ -2301,6 +2367,13 @@ export const GetInterviewWhiteboardByIdScope = {
   shared: 'shared',
   direct: 'direct',
 } as const;
+
+export type GetDisplayStateParams = {
+/**
+ * Team access code to scope the public display to one team. Omitted = signed-in user's team or default team.
+ */
+eventPassword?: string;
+};
 
 export type GetAssistantConversationMessagesParams = {
 /**

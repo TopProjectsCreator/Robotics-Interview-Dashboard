@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const assistantConversationsTable = pgTable("assistant_conversations", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   title: text("title").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -11,6 +12,7 @@ export const assistantConversationsTable = pgTable("assistant_conversations", {
 
 export const assistantMessagesTable = pgTable("assistant_messages", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   conversationId: text("conversation_id"),
   question: text("question").notNull(),
   answer: text("answer").notNull(),

@@ -22,6 +22,8 @@ export const codeProjectsTable = pgTable(
   "code_projects",
   {
     id: text("id").primaryKey(),
+    // NULL = legacy row belonging to the default team; never lost.
+    teamId: text("team_id"),
     name: text("name").notNull(),
     sdkVersion: text("sdk_version").notNull().default("v12.0"),
     // { remoteUrl, branch, ... } — git endpoint config for the git pane.
@@ -31,7 +33,7 @@ export const codeProjectsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    uniqueName: uniqueIndex("code_projects_normalized_name_unique").on(sql`lower(${table.name})`),
+    uniqueName: uniqueIndex("code_projects_normalized_name_unique").on(table.teamId, sql`lower(${table.name})`),
     nameLength: check(
       "code_projects_name_length_valid",
       sql`length(${table.name}) between 1 and 120`,
@@ -43,6 +45,7 @@ export const codeFilesTable = pgTable(
   "code_files",
   {
     id: text("id").primaryKey(),
+    teamId: text("team_id"),
     projectId: text("project_id")
       .notNull()
       .references(() => codeProjectsTable.id, { onDelete: "cascade" }),
@@ -71,6 +74,7 @@ export const codeRevisionsTable = pgTable(
   "code_revisions",
   {
     id: text("id").primaryKey(),
+    teamId: text("team_id"),
     projectId: text("project_id")
       .notNull()
       .references(() => codeProjectsTable.id, { onDelete: "cascade" }),
@@ -89,6 +93,7 @@ export const codePresenceTable = pgTable(
   "code_presence",
   {
     id: text("id").primaryKey(),
+    teamId: text("team_id"),
     projectId: text("project_id")
       .notNull()
       .references(() => codeProjectsTable.id, { onDelete: "cascade" }),

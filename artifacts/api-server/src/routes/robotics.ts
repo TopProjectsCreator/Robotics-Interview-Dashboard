@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -121,8 +121,9 @@ import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResu
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { authenticatedInterviewerId, requestAdminSession, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { teamFilter } from "../lib/teams";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
 import { getIpStats } from "../lib/presence";
@@ -171,23 +172,25 @@ function assistantConversationResponse(conversation: typeof assistantConversatio
   };
 }
 
-async function getOrCreateAssistantConversation(conversationId?: string) {
+async function getOrCreateAssistantConversation(conversationId?: string, teamId?: string | null) {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   if (conversationId) {
-    const [conversation] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversationId));
+    const [conversation] = await db.select().from(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, conversationId), teamFilter(assistantConversationsTable.teamId, team)));
     return conversation;
   }
-  const [latest] = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt)).limit(1);
+  const [latest] = await db.select().from(assistantConversationsTable).where(teamFilter(assistantConversationsTable.teamId, team)).orderBy(desc(assistantConversationsTable.updatedAt)).limit(1);
   if (latest) return latest;
 
-  const legacyMessages = await db.select().from(assistantMessagesTable).where(isNull(assistantMessagesTable.conversationId));
+  const legacyMessages = await db.select().from(assistantMessagesTable).where(and(isNull(assistantMessagesTable.conversationId), teamFilter(assistantMessagesTable.teamId, team)));
   const [conversation] = await db.insert(assistantConversationsTable).values({
     id: randomUUID(),
+    teamId: team,
     title: legacyMessages.length ? "Imported conversation" : "New conversation",
   }).returning();
   if (legacyMessages.length && conversation) {
     await db.update(assistantMessagesTable)
       .set({ conversationId: conversation.id })
-      .where(isNull(assistantMessagesTable.conversationId));
+      .where(and(isNull(assistantMessagesTable.conversationId), teamFilter(assistantMessagesTable.teamId, team)));
   }
   return conversation;
 }
@@ -1004,6 +1007,7 @@ async function runAssistantTools(
   currentSessionHash = "",
   requesterDisplayName = "",
   availableFreeModelIds: Set<string> = new Set(),
+  teamId: string | null = null,
 ): Promise<{
   toolMessages: { role: "tool"; content: string; tool_call_id: string }[];
   outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[];
@@ -1017,6 +1021,7 @@ async function runAssistantTools(
   const imageMarkdowns: string[] = [];
   const images: GeneratedImage[] = [];
   const activities: AssistantActivity[] = [];
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   // No per-answer caps: the agent keeps calling tools until the model stops
   // asking (the loops in /assistant/ask and /assistant/ask/stream run until
   // there are no pending calls). Rename stays once-per-answer so the title
@@ -1154,7 +1159,7 @@ async function runAssistantTools(
       const invalidOnly = typeof args.invalidOnly === "boolean" ? args.invalidOnly : undefined;
       const sort = typeof args.sort === "string" ? (args.sort as "queue" | "rank" | "score" | "name") : undefined;
       const limit = typeof args.limit === "number" ? Math.min(25, Math.max(1, Math.floor(args.limit))) : 25;
-      const applicants = await getApplicants({ search, grade, category, interviewStatus, recommendation, invalidOnly, sort });
+      const applicants = await getApplicants({ search, grade, category, interviewStatus, recommendation, invalidOnly, sort }, team);
       const slice = applicants.slice(0, limit);
       const summary = slice.map((a) => ({
         id: a.id,
@@ -1183,7 +1188,7 @@ async function runAssistantTools(
     } else if (name === "get_applicant") {
       const id = String((args as Record<string, unknown>).id ?? "").trim();
       if (!id) continue;
-      const [applicant] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, id));
+      const [applicant] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, team)));
       if (!applicant) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({ role: "tool", content: `No applicant found with id ${id}.`, tool_call_id: call.id });
@@ -1202,10 +1207,11 @@ async function runAssistantTools(
       const nameVal = String(raw.name ?? "").trim();
       if (!nameVal) continue;
       const id = randomUUID();
-      const existing = await getApplicants({ sort: "queue" });
+      const existing = await getApplicants({ sort: "queue" }, team);
       const nextPos = existing.reduce((m, a) => Math.max(m, a.queuePosition), -1) + 1;
       const toInsert = {
         id,
+        teamId: team,
         name: nameVal,
         grade: typeof raw.grade === "string" && raw.grade.trim() ? String(raw.grade).trim() : "Unknown",
         age: typeof raw.age === "number" && Number.isInteger(raw.age) && raw.age >= 0 ? raw.age : null,
@@ -1240,7 +1246,7 @@ async function runAssistantTools(
       const raw = args as Record<string, unknown>;
       const id = String(raw.id ?? "").trim();
       if (!id) continue;
-      const [existingApplicant] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, id));
+      const [existingApplicant] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, team)));
       if (!existingApplicant) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({ role: "tool", content: `No applicant found with id ${id}.`, tool_call_id: call.id });
@@ -1293,17 +1299,17 @@ async function runAssistantTools(
         activities.push({ tool: "update_applicant", detail: `no-op ${id.slice(0, 8)}` });
         continue;
       }
-      const [updated] = await db.update(applicantsTable).set(patch as never).where(eq(applicantsTable.id, id)).returning();
+      const [updated] = await db.update(applicantsTable).set(patch as never).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, team))).returning();
       const changedFields = Object.keys(patch).filter((k) => k !== "updatedAt");
       if (wantsSeat && seatRow !== undefined && seatCol !== undefined) {
-        const grid = await getSeatingSettings();
+        const grid = await getSeatingSettings(team);
         if (seatRow >= 0 && seatCol >= 0 && (seatRow >= grid.rows || seatCol >= grid.cols)) {
           outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
           toolMessages.push({ role: "tool", content: `Seat row ${seatRow}, col ${seatCol} is outside the ${grid.rows}x${grid.cols} chart.`, tool_call_id: call.id });
           activities.push({ tool: "update_applicant", detail: `seat out of bounds ${id.slice(0, 8)}` });
           continue;
         }
-        await assignSeat(id, seatRow, seatCol);
+        await assignSeat(id, seatRow, seatCol, team);
         changedFields.push("seatRow", "seatCol");
       }
       activities.push({ tool: "update_applicant", detail: `${updated.name.slice(0, 30)}: ${changedFields.join(", ")}` });
@@ -1312,7 +1318,7 @@ async function runAssistantTools(
     } else if (name === "delete_applicant") {
       const id = String((args as Record<string, unknown>).id ?? "").trim();
       if (!id) continue;
-      const [deleted] = await db.delete(applicantsTable).where(eq(applicantsTable.id, id)).returning({ id: applicantsTable.id, name: applicantsTable.name });
+      const [deleted] = await db.delete(applicantsTable).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, team))).returning({ id: applicantsTable.id, name: applicantsTable.name });
       if (!deleted) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({ role: "tool", content: `No applicant found with id ${id}.`, tool_call_id: call.id });
@@ -1327,7 +1333,7 @@ async function runAssistantTools(
       if (!Array.isArray(rawIds) || rawIds.length === 0) continue;
       const ids = rawIds.map((v) => String(v)).filter(Boolean);
       if (!ids.length) continue;
-      const known = new Set((await getApplicants({ sort: "queue" })).map((a) => a.id));
+      const known = new Set((await getApplicants({ sort: "queue" }, team)).map((a) => a.id));
       const ordered = ids.filter((id) => known.has(id));
       if (!ordered.length) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
@@ -1336,7 +1342,7 @@ async function runAssistantTools(
         continue;
       }
       for (const [index, applicantId] of ordered.entries()) {
-        await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(eq(applicantsTable.id, applicantId));
+        await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(and(eq(applicantsTable.id, applicantId), teamFilter(applicantsTable.teamId, team)));
       }
       activities.push({ tool: "reorder_queue", detail: `${ordered.length} applicants reordered` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
@@ -1346,7 +1352,7 @@ async function runAssistantTools(
       const applicantId = String(raw.applicantId ?? "").trim();
       const position = typeof raw.position === "number" && Number.isFinite(raw.position) ? Math.max(0, Math.floor(raw.position as number)) : NaN;
       if (!applicantId || !Number.isFinite(position)) continue;
-      const queued = (await getApplicants({ sort: "queue" })).filter((a) => a.interviewStatus !== "completed");
+      const queued = (await getApplicants({ sort: "queue" }, team)).filter((a) => a.interviewStatus !== "completed");
       if (!queued.some((a) => a.id === applicantId)) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({ role: "tool", content: `No queued applicant found with id ${applicantId}.`, tool_call_id: call.id });
@@ -1357,14 +1363,14 @@ async function runAssistantTools(
       const clamped = Math.min(position, rest.length);
       const ordered = [...rest.slice(0, clamped), applicantId, ...rest.slice(clamped)];
       for (const [index, id] of ordered.entries()) {
-        await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(eq(applicantsTable.id, id));
+        await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, team)));
       }
-      const [moved] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, applicantId));
+      const [moved] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, applicantId), teamFilter(applicantsTable.teamId, team)));
       activities.push({ tool: "move_applicant_in_queue", detail: `${(moved?.name ?? applicantId).slice(0, 30)} -> position ${clamped}` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: `Moved ${moved?.name ?? applicantId} to queue position ${clamped} (0 = front).`, tool_call_id: call.id });
     } else if (name === "list_interviewers") {
-      const labels = await getInterviewSettings();
+      const labels = await getInterviewSettings(team);
       activities.push({ tool: "list_interviewers", detail: labels.join(", ").slice(0, 120) || "none" });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: `Valid interviewer labels:\n${JSON.stringify(labels)}`, tool_call_id: call.id });
@@ -1373,7 +1379,7 @@ async function runAssistantTools(
       const to = String((args as Record<string, unknown>).to ?? "").trim();
       const dryRun = (args as Record<string, unknown>).dryRun === true;
       if (!from || !to) continue;
-      const result = await transferInterviewers(from, to, dryRun);
+      const result = await transferInterviewers(from, to, dryRun, team);
       const toolName = "transfer_interviewer";
       outgoingCalls.push({ id: call.id, type: "function", function: { name: toolName, arguments: call.function.arguments } });
       if (!result.ok) {
@@ -1396,7 +1402,7 @@ async function runAssistantTools(
       const raw = args as Record<string, unknown>;
       const list = Array.isArray(raw.assignments) ? raw.assignments : [];
       const dryRun = raw.dryRun === true;
-      const labels = await getInterviewSettings();
+      const labels = await getInterviewSettings(team);
       const byLower = new Map(labels.map((l) => [l.toLowerCase(), l]));
       const cleaned: { id: string; interviewer: string }[] = [];
       const problems: string[] = [];
@@ -1425,7 +1431,7 @@ async function runAssistantTools(
         activities.push({ tool: "assign_interviewers", detail: "rejected: no valid assignments" });
         continue;
       }
-      const known = new Set((await getApplicants({ sort: "queue" })).map((a) => a.id));
+      const known = new Set((await getApplicants({ sort: "queue" }, team)).map((a) => a.id));
       const unknown = cleaned.filter((c) => !known.has(c.id));
       // Dedupe by id (last wins) so repeats can't inflate counts or writes.
       const seenIds = new Set<string>();
@@ -1478,7 +1484,7 @@ async function runAssistantTools(
       }
       await db.transaction(async (tx) => {
         for (const c of valid) {
-          await tx.update(applicantsTable).set({ interviewer: c.interviewer, updatedAt: new Date() }).where(eq(applicantsTable.id, c.id));
+          await tx.update(applicantsTable).set({ interviewer: c.interviewer, updatedAt: new Date() }).where(and(eq(applicantsTable.id, c.id), teamFilter(applicantsTable.teamId, team)));
         }
       });
       activities.push({ tool: "assign_interviewers", detail: `${valid.length} assigned (${[...counts.entries()].map(([k, v]) => `${k}: ${v}`).join(", ")})` });
@@ -1511,9 +1517,9 @@ async function runAssistantTools(
       const fileName = String((args as Record<string, unknown>).fileName ?? "").trim();
       if (!objectPath || !fileName) continue;
       try {
-        const { parsedCsv, imported, diff } = await readImport(objectPath, fileName);
+        const { parsedCsv, imported, diff } = await readImport(objectPath, fileName, team);
         previewedPaths.add(objectPath);
-        const existingIds = new Set((await getApplicants({ sort: "queue" })).map((a) => a.id));
+        const existingIds = new Set((await getApplicants({ sort: "queue" }, team)).map((a) => a.id));
         const addedRows = imported.filter((a) => !existingIds.has(a.id));
         const addedList = addedRows.slice(0, 50).map((a) => `- ${a.name} (id ${a.id.slice(0, 8)}…, grade ${a.grade})`).join("\n");
         activities.push({ tool: "preview_import", detail: `${fileName}: +${diff.added} new, ~${diff.updated} would update` });
@@ -1540,7 +1546,7 @@ async function runAssistantTools(
       }
       const mode = (args as Record<string, unknown>).mode === "all" ? "all" : "added-only";
       try {
-        const result = await commitImportFile(objectPath, fileName, 0, mode !== "all", "assistant");
+        const result = await commitImportFile(objectPath, fileName, 0, mode !== "all", "assistant", team);
         activities.push({ tool: "commit_import", detail: mode === "all" ? `committed ${result.imported} rows` : `added ${result.imported} new, skipped ${result.skippedExisting} existing` });
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({
@@ -1556,7 +1562,7 @@ async function runAssistantTools(
         activities.push({ tool: "commit_import", detail: "failed" });
       }
     } else if (name === "list_snapshots") {
-      const items = await listSnapshots();
+      const items = await listSnapshots(team);
       activities.push({ tool: "list_snapshots", detail: `${items.length} version(s)` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({
@@ -1568,7 +1574,7 @@ async function runAssistantTools(
       });
     } else if (name === "create_snapshot") {
       const label = String((args as Record<string, unknown>).label ?? "").trim().slice(0, 120) || "Snapshot from assistant";
-      const created = await captureSnapshot(label, "assistant");
+      const created = await captureSnapshot(label, "assistant", team);
       activities.push({ tool: "create_snapshot", detail: `${created.label} (${created.applicantCount} applicants)` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({
@@ -1582,7 +1588,7 @@ async function runAssistantTools(
       const dryRun = (args as Record<string, unknown>).dryRun !== false;
       try {
         if (dryRun) {
-          const { summary, diff } = await diffSnapshot(sid);
+          const { summary, diff } = await diffSnapshot(sid, team);
           activities.push({ tool: "restore_snapshot", detail: `preview: ${summary.label}` });
           outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
           toolMessages.push({
@@ -1591,7 +1597,7 @@ async function runAssistantTools(
             tool_call_id: call.id,
           });
         } else {
-          const result = await restoreSnapshot(sid, "assistant");
+          const result = await restoreSnapshot(sid, "assistant", team);
           activities.push({ tool: "restore_snapshot", detail: `restored ${result.applicantCount} applicants` });
           outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
           toolMessages.push({
@@ -1610,6 +1616,7 @@ async function runAssistantTools(
       const convos = await db
         .select()
         .from(assistantConversationsTable)
+        .where(teamFilter(assistantConversationsTable.teamId, team))
         .orderBy(desc(assistantConversationsTable.updatedAt))
         .limit(limit + 1);
       const others = convos.filter((c) => c.id !== currentConversationId).slice(0, limit);
@@ -1617,7 +1624,8 @@ async function runAssistantTools(
       if (others.length > 0) {
         const rows = await db
           .select({ conversationId: assistantMessagesTable.conversationId })
-          .from(assistantMessagesTable);
+          .from(assistantMessagesTable)
+          .where(teamFilter(assistantMessagesTable.teamId, team));
         for (const row of rows) {
           if (row.conversationId) counts.set(row.conversationId, (counts.get(row.conversationId) ?? 0) + 1);
         }
@@ -1641,7 +1649,7 @@ async function runAssistantTools(
         continue;
       }
       const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, Math.floor(args.limit))) : 6;
-      const [target] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, targetId));
+      const [target] = await db.select().from(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, targetId), teamFilter(assistantConversationsTable.teamId, team)));
       if (!target) {
         outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
         toolMessages.push({ role: "tool", content: `No conversation found with id ${targetId}. Use list_conversations to find the right one.`, tool_call_id: call.id });
@@ -1651,7 +1659,7 @@ async function runAssistantTools(
       const msgs = await db
         .select()
         .from(assistantMessagesTable)
-        .where(eq(assistantMessagesTable.conversationId, targetId))
+        .where(and(eq(assistantMessagesTable.conversationId, targetId), teamFilter(assistantMessagesTable.teamId, team)))
         .orderBy(asc(assistantMessagesTable.createdAt));
       const slice = msgs.slice(-limit);
       activities.push({ tool: "read_conversation", detail: `"${target.title.slice(0, 40)}" (${slice.length}/${msgs.length} shown)` });
@@ -1674,6 +1682,7 @@ async function runAssistantTools(
         args,
         requesterDisplayName,
         (row) => whiteboardConversationForAccount(row, requesterDisplayName) !== null,
+        team,
       );
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: result.content, tool_call_id: call.id });
@@ -1762,9 +1771,11 @@ async function runAssistantTools(
   return { toolMessages, outgoingCalls, imageMarkdown: imageMarkdowns.join("\n\n"), images, activities, model: changedModel };
 }
 
-async function saveAssistantAnswer(conversationId: string, question: string, applicantIds: string[], answer: string, activities: AssistantActivity[] = []): Promise<void> {
+async function saveAssistantAnswer(conversationId: string, question: string, applicantIds: string[], answer: string, activities: AssistantActivity[] = [], teamId?: string | null): Promise<void> {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   await db.insert(assistantMessagesTable).values({
     id: randomUUID(),
+    teamId: team,
     conversationId,
     question,
     answer,
@@ -1772,7 +1783,7 @@ async function saveAssistantAnswer(conversationId: string, question: string, app
     activities: JSON.stringify(activities),
   });
   // Re-read: a rename_conversation tool call may have titled it mid-answer.
-  const [fresh] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversationId));
+  const [fresh] = await db.select().from(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, conversationId), teamFilter(assistantConversationsTable.teamId, team)));
   const currentTitle = fresh?.title ?? "New conversation";
   const title = currentTitle === "New conversation"
     ? question.trim().replace(/\s+/g, " ").slice(0, 64) || currentTitle
@@ -1780,7 +1791,7 @@ async function saveAssistantAnswer(conversationId: string, question: string, app
   await db.update(assistantConversationsTable).set({
     title,
     updatedAt: new Date(),
-  }).where(eq(assistantConversationsTable.id, conversationId));
+  }).where(and(eq(assistantConversationsTable.id, conversationId), teamFilter(assistantConversationsTable.teamId, team)));
 }
 
 function parseStoredActivities(value: string | null | undefined): AssistantActivity[] {
@@ -1830,12 +1841,13 @@ function interviewChatContext(chatContext: { author?: unknown; message?: unknown
   return `\n\nRecent interviewer chat (untrusted admin discussion for conversational context — "above" refers to this):\n${lines.join("\n")}`;
 }
 
-async function readImport(objectPath: string, fileName: string) {
+async function readImport(objectPath: string, fileName: string, teamId?: string | null) {
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   const download = await objectStorageService.downloadObject(objectPath);
   const parsedCsv = isExcelFile(fileName)
     ? parseExcelBuffer(download.data)
     : parseSemicolonCsv(download.data.toString("utf8"));
-  const current = await getApplicants({ sort: "queue" });
+  const current = await getApplicants({ sort: "queue" }, team);
   const imported = parsedCsv.rows.map((row, index) =>
     csvToApplicant(row, parsedCsv.headers, current.length + index),
   );
@@ -1872,8 +1884,9 @@ function dashboardChartResponse(chart: typeof dashboardChartsTable.$inferSelect)
   };
 }
 
-router.get("/snapshots", requireCoordinator, async (_req, res): Promise<void> => {
-  res.json(ListSnapshotsResponse.parse({ items: await listSnapshots() }));
+router.get("/snapshots", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  res.json(ListSnapshotsResponse.parse({ items: await listSnapshots(teamId) }));
 });
 
 router.post("/snapshots", requireCoordinator, async (req, res): Promise<void> => {
@@ -1882,7 +1895,8 @@ router.post("/snapshots", requireCoordinator, async (req, res): Promise<void> =>
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const created = await captureSnapshot(parsed.data.label ?? "", "admin");
+  const teamId = await requestTeamId(req);
+  const created = await captureSnapshot(parsed.data.label ?? "", "admin", teamId);
   res.status(201).json(CreateSnapshotResponse.parse(created));
 });
 
@@ -1894,8 +1908,9 @@ router.post("/snapshots/:snapshotId/restore", requireCoordinator, async (req, re
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     if (body.data.dryRun === true) {
-      const { summary, diff } = await diffSnapshot(params.data.snapshotId);
+      const { summary, diff } = await diffSnapshot(params.data.snapshotId, teamId);
       res.json(RestoreSnapshotResponse.parse({
         restoredId: summary.id,
         preRestoreId: "",
@@ -1904,7 +1919,7 @@ router.post("/snapshots/:snapshotId/restore", requireCoordinator, async (req, re
       }));
       return;
     }
-    const result = await restoreSnapshot(params.data.snapshotId, "admin");
+    const result = await restoreSnapshot(params.data.snapshotId, "admin", teamId);
     res.json(RestoreSnapshotResponse.parse({ ...result, preview: undefined }));
   } catch (error) {
     if (error instanceof Error && error.message === "Snapshot not found") {
@@ -1919,8 +1934,9 @@ router.post("/snapshots/:snapshotId/restore", requireCoordinator, async (req, re
 router.get("/dashboard/charts", requireAdmin, async (req, res): Promise<void> => {
   const ownerId = authenticatedInterviewerId(req);
   if (!ownerId) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const charts = await db.select().from(dashboardChartsTable)
-    .where(eq(dashboardChartsTable.ownerId, ownerId))
+    .where(and(eq(dashboardChartsTable.ownerId, ownerId), teamFilter(dashboardChartsTable.teamId, teamId)))
     .orderBy(asc(dashboardChartsTable.position), asc(dashboardChartsTable.createdAt));
   res.json(ListDashboardChartsResponse.parse({ items: charts.map(dashboardChartResponse) }));
 });
@@ -1933,6 +1949,7 @@ router.post("/dashboard/charts", requireCoordinator, async (req, res): Promise<v
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const teamId = await requestTeamId(req);
   const xAxis = parsed.data.xAxis ?? (parsed.data.source && (DASHBOARD_CHART_X_AXES as readonly string[]).includes(parsed.data.source) ? parsed.data.source : undefined);
   const yAxis = parsed.data.yAxis ?? "count";
   if (!xAxis || !(DASHBOARD_CHART_X_AXES as readonly string[]).includes(xAxis) || !(DASHBOARD_CHART_Y_AXES as readonly string[]).includes(yAxis) || !(DASHBOARD_CHART_TYPES as readonly string[]).includes(parsed.data.chart)) {
@@ -1940,10 +1957,11 @@ router.post("/dashboard/charts", requireCoordinator, async (req, res): Promise<v
     return;
   }
   const siblings = await db.select({ position: dashboardChartsTable.position }).from(dashboardChartsTable)
-    .where(eq(dashboardChartsTable.ownerId, ownerId));
+    .where(and(eq(dashboardChartsTable.ownerId, ownerId), teamFilter(dashboardChartsTable.teamId, teamId)));
   const position = siblings.reduce((max, row) => Math.max(max, row.position), -1) + 1;
   const [created] = await db.insert(dashboardChartsTable).values({
     id: randomUUID(),
+    teamId,
     ownerId,
     source: xAxis,
     chart: parsed.data.chart,
@@ -1989,9 +2007,11 @@ router.patch("/dashboard/charts/:chartId", requireCoordinator, async (req, res):
     patch.chart = body.data.chart;
   }
   if (body.data.position !== undefined) patch.position = body.data.position;
+  const teamId = await requestTeamId(req);
   const [updated] = await db.update(dashboardChartsTable).set(patch).where(and(
     eq(dashboardChartsTable.id, params.data.chartId),
     eq(dashboardChartsTable.ownerId, ownerId),
+    teamFilter(dashboardChartsTable.teamId, teamId),
   )).returning();
   if (!updated) {
     res.status(404).json({ error: "Chart not found." });
@@ -2012,6 +2032,7 @@ router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res)
   const [deleted] = await db.delete(dashboardChartsTable).where(and(
     eq(dashboardChartsTable.id, params.data.chartId),
     eq(dashboardChartsTable.ownerId, ownerId),
+    teamFilter(dashboardChartsTable.teamId, await requestTeamId(req)),
   )).returning({ id: dashboardChartsTable.id });
   if (!deleted) {
     res.status(404).json({ error: "Chart not found." });
@@ -2021,8 +2042,9 @@ router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res)
   res.status(204).end();
 });
 
-router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> => {
-  const applicants = await getApplicants();
+router.get("/dashboard/summary", requireAdmin, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const applicants = await getApplicants(undefined, teamId);
   const valid = applicants.filter((applicant) => applicant.aiScore >= 0);
   const group = (values: string[]) =>
     Object.entries(values.reduce<Record<string, number>>((counts, value) => {
@@ -2037,7 +2059,7 @@ router.get("/dashboard/summary", requireAdmin, async (_req, res): Promise<void> 
       value: valid.filter((applicant) => applicant.aiScore >= lower && applicant.aiScore <= upper).length,
     };
   });
-  const queue = await getQueueState();
+  const queue = await getQueueState(teamId);
   res.json(
     GetDashboardSummaryResponse.parse({
       total: applicants.length,
@@ -2066,7 +2088,8 @@ router.get("/applicants", requireStaff, async (req, res): Promise<void> => {
   // raw value so "false" actually filters nothing out.
   const rawInvalidOnly = req.query.invalidOnly;
   const invalidOnly = typeof rawInvalidOnly === "string" && rawInvalidOnly === "true";
-  const applicants = await getApplicants({ ...parsed.data, invalidOnly });
+  const teamId = await requestTeamId(req);
+  const applicants = await getApplicants({ ...parsed.data, invalidOnly }, teamId);
   res.json(ListApplicantsResponse.parse({
     items: applicants.map(applicantResponse),
     total: applicants.length,
@@ -2138,8 +2161,9 @@ router.get("/applicants/:id", requireStaff, async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  await ensureDemoData();
-  const [applicant] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, params.data.id));
+  const teamId = await requestTeamId(req);
+  await ensureDemoData(teamId);
+  const [applicant] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, params.data.id), teamFilter(applicantsTable.teamId, teamId)));
   if (!applicant) {
     res.status(404).json({ error: "Applicant not found" });
     return;
@@ -2156,6 +2180,7 @@ router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<vo
   }
   // Seats go through assignSeat (swap on conflict, bounds-checked) so two
   // applicants can never share a seat.
+  const teamId = await requestTeamId(req);
   const { seatRow, seatCol, ...rest } = body.data as Record<string, unknown>;
   if (rest.gender !== undefined) {
     rest.gender = rest.gender === null ? null : normalizeApplicantGender(String(rest.gender));
@@ -2166,7 +2191,7 @@ router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<vo
     // floats and out-of-range input instead of failing at the database.
     ...((rest as Record<string, unknown>).aiScore === undefined ? {} : { aiScore: normalizeAiScore((rest as Record<string, unknown>).aiScore) }),
     updatedAt: new Date(),
-  }).where(eq(applicantsTable.id, params.data.id)).returning();
+  }).where(and(eq(applicantsTable.id, params.data.id), teamFilter(applicantsTable.teamId, teamId))).returning();
   if (!updated) {
     res.status(404).json({ error: "Applicant not found" });
     return;
@@ -2180,13 +2205,13 @@ router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<vo
       return;
     }
     if (row >= 0 && col >= 0) {
-      const grid = await getSeatingSettings();
+      const grid = await getSeatingSettings(teamId);
       if (row >= grid.rows || col >= grid.cols) {
         res.status(400).json({ error: `Seat is outside the ${grid.rows}x${grid.cols} chart` });
         return;
       }
     }
-    const seated = await assignSeat(params.data.id, row, col);
+    const seated = await assignSeat(params.data.id, row, col, teamId);
     if (seated) result = seated;
   }
   pushRealtimeHint("applicants");
@@ -2200,7 +2225,7 @@ router.delete("/applicants/:id", requireCoordinator, async (req, res): Promise<v
     res.status(400).json({ error: "Invalid applicant id" });
     return;
   }
-  const [deleted] = await db.delete(applicantsTable).where(eq(applicantsTable.id, params.data.id)).returning({ id: applicantsTable.id });
+  const [deleted] = await db.delete(applicantsTable).where(and(eq(applicantsTable.id, params.data.id), teamFilter(applicantsTable.teamId, await requestTeamId(req)))).returning({ id: applicantsTable.id });
   if (!deleted) {
     res.status(404).json({ error: "Applicant not found" });
     return;
@@ -2231,7 +2256,8 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
     res.status(400).json({ error: "Invalid applicant id" });
     return;
   }
-  const [applicant] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, params.data.id));
+  const teamId = await requestTeamId(req);
+  const [applicant] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, params.data.id), teamFilter(applicantsTable.teamId, teamId)));
   if (!applicant) {
     res.status(404).json({ error: "Applicant not found" });
     return;
@@ -2246,7 +2272,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
   const peers = await db.select({
     aiScore: applicantsTable.aiScore,
     aiRecommendation: applicantsTable.aiRecommendation,
-  }).from(applicantsTable);
+  }).from(applicantsTable).where(teamFilter(applicantsTable.teamId, teamId));
   const validPeers = peers.filter((peer) => peer.aiScore >= 0);
   const peerAverage = validPeers.length
     ? Math.round((validPeers.reduce((sum, peer) => sum + peer.aiScore, 0) / validPeers.length) * 10) / 10
@@ -2314,7 +2340,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
       aiConcerns: text(evaluation.aiConcerns, 500),
       category,
       updatedAt: new Date(),
-    }).where(eq(applicantsTable.id, applicant.id)).returning();
+    }).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, teamId))).returning();
     if (!updated) {
       res.status(404).json({ error: "Applicant not found" });
       return;
@@ -2335,7 +2361,7 @@ router.post("/imports/preview", requireCoordinator, async (req, res): Promise<vo
     return;
   }
   try {
-    const { parsedCsv, diff } = await readImport(parsed.data.objectPath, parsed.data.fileName);
+    const { parsedCsv, diff } = await readImport(parsed.data.objectPath, parsed.data.fileName, await requestTeamId(req));
     res.json(PreviewImportResponse.parse({
       delimiter: parsedCsv.delimiter,
       headers: parsedCsv.headers,
@@ -2350,7 +2376,7 @@ router.post("/imports/preview", requireCoordinator, async (req, res): Promise<vo
 });
 
 router.get("/imports/history", requireCoordinator, async (req, res): Promise<void> => {
-  const history = await db.select().from(importsTable).orderBy(desc(importsTable.createdAt));
+  const history = await db.select().from(importsTable).where(teamFilter(importsTable.teamId, await requestTeamId(req))).orderBy(desc(importsTable.createdAt));
   const emptyDiff = { added: 0, updated: 0, unchanged: 0, missingFromUpload: 0 };
   const asCount = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
   const items = [];
@@ -2394,13 +2420,15 @@ async function commitImportFile(
   rowCount: number,
   onlyNew: boolean,
   createdBy = "admin",
+  teamId?: string | null,
 ): Promise<ImportCommitResult> {
-  const { parsedCsv, imported: applicants, importedFields, diff } = await readImport(objectPath, fileName);
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
+  const { parsedCsv, imported: applicants, importedFields, diff } = await readImport(objectPath, fileName, team);
   // Rows the parser dropped (malformed) surface as "Row N ..." warnings.
   const malformed = parsedCsv.warnings.filter((warning) => warning.startsWith("Row ")).length;
   // Continue past the highest taken slot so imports never collide with
   // positions left behind by deleted applicants.
-  const existing = await getApplicants({ sort: "queue" });
+  const existing = await getApplicants({ sort: "queue" }, team);
   let nextPosition = existing.reduce((max, item) => Math.max(max, item.queuePosition), -1) + 1;
   for (const applicant of applicants) {
     applicant.queuePosition = nextPosition;
@@ -2410,7 +2438,7 @@ async function commitImportFile(
   const existingIds = new Set(existing.map((item) => item.id));
   // Safety net: every import first saves the present state, so a bad file
   // can always be undone from version history.
-  await captureSnapshot(`Before import ${fileName}`, createdBy);
+  await captureSnapshot(`Before import ${fileName}`, createdBy, team);
   const toWrite = onlyNew ? applicants.filter((a) => !existingIds.has(a.id)) : applicants;
   const skippedExisting = applicants.length - toWrite.length;
   const appliedDiff = onlyNew
@@ -2420,7 +2448,7 @@ async function commitImportFile(
     for (const applicant of toWrite) {
       if (!existingIds.has(applicant.id)) {
         // Brand-new row: take everything from the file, notes included.
-        await tx.insert(applicantsTable).values(applicant).onConflictDoNothing();
+        await tx.insert(applicantsTable).values({ ...applicant, teamId: team }).onConflictDoNothing();
         continue;
       }
       // Re-import: refresh file-owned fields but never wipe notes (or
@@ -2443,10 +2471,11 @@ async function commitImportFile(
       };
       if (importedFields.age) rosterFields.age = applicant.age;
       if (importedFields.gender) rosterFields.gender = applicant.gender;
-      await tx.update(applicantsTable).set(rosterFields).where(eq(applicantsTable.id, applicant.id));
+      await tx.update(applicantsTable).set(rosterFields).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, team)));
     }
     await tx.insert(importsTable).values({
       id: importId,
+      teamId: team,
       objectPath,
       fileName,
       rowCount: rowCount || applicants.length,
@@ -2480,6 +2509,8 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
       parsed.data.fileName,
       parsed.data.rowCount,
       parsed.data.onlyNew === true,
+      "admin",
+      await requestTeamId(req),
     );
     pushRealtimeHint("applicants");
     pushRealtimeHint("interview_queue");
@@ -2490,14 +2521,14 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/queue", requireCoordinator, async (_req, res): Promise<void> => {
-  res.json(GetQueueResponse.parse(await getQueueState()));
+router.get("/queue", requireCoordinator, async (req, res): Promise<void> => {
+  res.json(GetQueueResponse.parse(await getQueueState(await requestTeamId(req))));
 });
 
 // Interviewer labels only. The chat panel needs the roster of teammates to
 // offer direct messages, and helpers cannot read the full queue state.
-router.get("/queue/labels", requireAdmin, async (_req, res): Promise<void> => {
-  res.json(GetQueueLabelsResponse.parse({ interviewerLabels: await getInterviewSettings() }));
+router.get("/queue/labels", requireAdmin, async (req, res): Promise<void> => {
+  res.json(GetQueueLabelsResponse.parse({ interviewerLabels: await getInterviewSettings(await requestTeamId(req)) }));
 });
 
 router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void> => {
@@ -2506,22 +2537,23 @@ router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const current = (await getQueueState()).currentApplicants;
+  const current = (await getQueueState(await requestTeamId(req))).currentApplicants;
   const applicant = current.find((candidate) => candidate.id === parsed.data.applicantId);
   if (!applicant) {
     res.status(409).json({ error: "Only a currently interviewing applicant can advance." });
     return;
   }
   const note = parsed.data.note?.trim() ?? "";
+  const teamId = await requestTeamId(req);
   await db.update(applicantsTable).set({
     interviewStatus: "completed",
     callbackRequested: false,
     notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
     updatedAt: new Date(),
-  }).where(eq(applicantsTable.id, applicant.id));
+  }).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, teamId)));
   pushRealtimeHint("applicants");
   pushRealtimeHint("interview_queue");
-  res.json(GetQueueResponse.parse(await getQueueState()));
+  res.json(GetQueueResponse.parse(await getQueueState(teamId)));
 });
 
 router.post("/queue/callback", requireCoordinator, async (req, res): Promise<void> => {
@@ -2530,12 +2562,13 @@ router.post("/queue/callback", requireCoordinator, async (req, res): Promise<voi
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [applicant] = await db.select().from(applicantsTable).where(eq(applicantsTable.id, parsed.data.applicantId));
+  const teamId = await requestTeamId(req);
+  const [applicant] = await db.select().from(applicantsTable).where(and(eq(applicantsTable.id, parsed.data.applicantId), teamFilter(applicantsTable.teamId, teamId)));
   if (!applicant) {
     res.status(404).json({ error: "Applicant not found" });
     return;
   }
-  const all = await getApplicants({ sort: "queue" });
+  const all = await getApplicants({ sort: "queue" }, teamId);
   const front = all.reduce((lowest, candidate) => Math.min(lowest, candidate.queuePosition), 0) - 1;
   const note = parsed.data.note?.trim() ?? "";
   await db.update(applicantsTable).set({
@@ -2544,14 +2577,15 @@ router.post("/queue/callback", requireCoordinator, async (req, res): Promise<voi
     callbackRequested: true,
     notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
     updatedAt: new Date(),
-  }).where(eq(applicantsTable.id, applicant.id));
+  }).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, teamId)));
   pushRealtimeHint("applicants");
   pushRealtimeHint("interview_queue");
-  res.json(GetQueueResponse.parse(await getQueueState()));
+  res.json(GetQueueResponse.parse(await getQueueState(teamId)));
 });
 
-router.post("/queue/reset", requireCoordinator, async (_req, res): Promise<void> => {
-  const applicants = await getApplicants({ sort: "queue" });
+router.post("/queue/reset", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const applicants = await getApplicants({ sort: "queue" }, teamId);
   const now = new Date();
   for (const [index, applicant] of applicants.entries()) {
     await db.update(applicantsTable).set({
@@ -2559,11 +2593,11 @@ router.post("/queue/reset", requireCoordinator, async (_req, res): Promise<void>
       queuePosition: index,
       callbackRequested: false,
       updatedAt: now,
-    }).where(eq(applicantsTable.id, applicant.id));
+    }).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, teamId)));
   }
   pushRealtimeHint("applicants");
   pushRealtimeHint("interview_queue");
-  res.json(GetQueueResponse.parse(await getQueueState()));
+  res.json(GetQueueResponse.parse(await getQueueState(teamId)));
 });
 
 router.post("/queue/settings", requireCoordinator, async (req, res): Promise<void> => {
@@ -2577,12 +2611,20 @@ router.post("/queue/settings", requireCoordinator, async (req, res): Promise<voi
     res.status(400).json({ error: "At least one interviewer label is required." });
     return;
   }
-  await db.insert(interviewQueueTable).values({ id: 1, interviewerLabels: JSON.stringify(labels) }).onConflictDoUpdate({
-    target: interviewQueueTable.id,
-    set: { interviewerLabels: JSON.stringify(labels), updatedAt: new Date() },
-  });
+  const teamId = await requestTeamId(req);
+  const [existingQueue] = await db.select({ id: interviewQueueTable.id }).from(interviewQueueTable)
+    .where(teamFilter(interviewQueueTable.teamId, teamId)).limit(1);
+  if (existingQueue) {
+    await db.update(interviewQueueTable).set({
+      interviewerLabels: JSON.stringify(labels),
+      updatedAt: new Date(),
+    }).where(eq(interviewQueueTable.id, existingQueue.id));
+  } else {
+    // New teams get their own queue row; id auto-increments past the legacy id=1.
+    await db.insert(interviewQueueTable).values({ teamId, interviewerLabels: JSON.stringify(labels) });
+  }
   pushRealtimeHint("interview_queue");
-  res.json(GetQueueResponse.parse(await getQueueState()));
+  res.json(GetQueueResponse.parse(await getQueueState(teamId)));
 });
 
 type ReactionGroup = { emoji: string; count: number; authors: string[] };
@@ -2609,6 +2651,7 @@ async function resolveChatConversation(
   scopeValue: unknown,
   peerValue: unknown,
   author: string,
+  teamId?: string | null,
 ): Promise<ChatConversation | { error: string }> {
   const scope = scopeValue === undefined || scopeValue === "" ? "shared" : scopeValue;
   if (scope !== "shared" && scope !== "direct") {
@@ -2620,7 +2663,7 @@ async function resolveChatConversation(
     }
     return { scope: "shared", peer: null, key: null };
   }
-  const labels = await getInterviewSettings();
+  const labels = await getInterviewSettings(teamId);
   const peer = canonicalInterviewerLabel(labels, peerValue);
   if (!peer) return { error: "That direct-message recipient is not a configured interviewer label." };
   if (author.toLowerCase() === peer.toLowerCase()) {
@@ -2648,12 +2691,18 @@ function parsePollOptions(raw: string): string[] {
   }
 }
 
-async function pollsForMessages(messageIds: string[], viewer: string): Promise<Map<string, ChatPollPayload>> {
+async function pollsForMessages(messageIds: string[], viewer: string, teamId?: string | null): Promise<Map<string, ChatPollPayload>> {
   const result = new Map<string, ChatPollPayload>();
   if (!messageIds.length) return result;
-  const polls = await db.select().from(chatPollsTable).where(inArray(chatPollsTable.messageId, messageIds));
+  const team = teamId?.trim() ? teamId : undefined;
+  const polls = await db.select().from(chatPollsTable).where(team
+    ? and(inArray(chatPollsTable.messageId, messageIds), teamFilter(chatPollsTable.teamId, team))
+    : inArray(chatPollsTable.messageId, messageIds));
   if (!polls.length) return result;
-  const votes = await db.select().from(chatPollVotesTable).where(inArray(chatPollVotesTable.messageId, polls.map((poll) => poll.messageId)));
+  const pollIds = polls.map((poll) => poll.messageId);
+  const votes = await db.select().from(chatPollVotesTable).where(team
+    ? and(inArray(chatPollVotesTable.messageId, pollIds), teamFilter(chatPollVotesTable.teamId, team))
+    : inArray(chatPollVotesTable.messageId, pollIds));
   const byMessage = new Map<string, { optionIndex: number; voter: string }[]>();
   for (const vote of votes) {
     const list = byMessage.get(vote.messageId) ?? [];
@@ -2711,10 +2760,13 @@ function chatResponse(
   };
 }
 
-async function reactionsForMessages(messageIds: string[]): Promise<Map<string, ReactionGroup[]>> {
+async function reactionsForMessages(messageIds: string[], teamId?: string | null): Promise<Map<string, ReactionGroup[]>> {
   const grouped = new Map<string, ReactionGroup[]>();
   if (!messageIds.length) return grouped;
-  const rows = await db.select().from(chatMessageReactionsTable).where(inArray(chatMessageReactionsTable.messageId, messageIds));
+  const team = teamId?.trim() ? teamId : undefined;
+  const rows = await db.select().from(chatMessageReactionsTable).where(team
+    ? and(inArray(chatMessageReactionsTable.messageId, messageIds), teamFilter(chatMessageReactionsTable.teamId, team))
+    : inArray(chatMessageReactionsTable.messageId, messageIds));
   const byMessage = new Map<string, Map<string, Set<string>>>();
   for (const row of rows) {
     let byEmoji = byMessage.get(row.messageId);
@@ -2832,9 +2884,11 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsedQuery = ListInterviewWhiteboardsQueryParams.safeParse(req.query);
   if (!parsedQuery.success) { res.status(400).json({ error: "Invalid whiteboard conversation." }); return; }
-  const conversation = await resolveChatConversation(parsedQuery.data.scope, parsedQuery.data.peer, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(parsedQuery.data.scope, parsedQuery.data.peer, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const filters = [
+    teamFilter(interviewWhiteboardsTable.teamId, teamId),
     eq(interviewWhiteboardsTable.conversationScope, conversation.scope),
     conversation.key === null
       ? isNull(interviewWhiteboardsTable.conversationPeer)
@@ -2868,10 +2922,12 @@ router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> 
     res.status(413).json({ error: "That whiteboard is too large to save." });
     return;
   }
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const [whiteboard] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
+    teamId,
     title: title.slice(0, 120),
     data,
     createdBy: account.displayName,
@@ -2889,10 +2945,12 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
   const params = GetInterviewWhiteboardByIdParams.safeParse(req.params);
   const query = GetInterviewWhiteboardByIdQueryParams.safeParse(req.query);
   if (!params.success || !query.success) { res.status(400).json({ error: "Invalid whiteboard request." }); return; }
-  const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const [whiteboard] = await db.select().from(interviewWhiteboardsTable).where(and(
     eq(interviewWhiteboardsTable.id, params.data.whiteboardId),
+    teamFilter(interviewWhiteboardsTable.teamId, teamId),
     eq(interviewWhiteboardsTable.conversationScope, conversation.scope),
     conversation.key === null
       ? isNull(interviewWhiteboardsTable.conversationPeer)
@@ -2916,17 +2974,18 @@ router.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res):
     res.status(413).json({ error: "That whiteboard is too large to save." });
     return;
   }
+  const teamId = await requestTeamId(req);
   const [existing] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, params.data.whiteboardId))
+    .where(and(eq(interviewWhiteboardsTable.id, params.data.whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
   const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
   if (!existing || !conversation || isSpreadsheetRecordData(existing.data)) { res.status(404).json({ error: "Whiteboard not found." }); return; }
-  const mergedData = mergeWhiteboardDataForSave(existing.id, data);
+  const mergedData = mergeWhiteboardDataForSave(existing.id, data, teamId);
   const [whiteboard] = await db.update(interviewWhiteboardsTable)
     .set({ title: title.slice(0, 120), data: mergedData, updatedAt: new Date() })
-    .where(eq(interviewWhiteboardsTable.id, existing.id))
+    .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .returning();
-  broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName);
+  broadcastWhiteboardScene(whiteboard.id, whiteboard.data, account.displayName, teamId);
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateInterviewWhiteboardResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });
@@ -2965,11 +3024,13 @@ router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
 
   const title = parsed.data.title.trim();
   if (!title) { res.status(400).json({ error: "Board name cannot be empty." }); return; }
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
 
   const [board] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
+    teamId,
     title: title.slice(0, 120),
     data: JSON.stringify(initialBoardData()),
     createdBy: account.displayName,
@@ -2988,8 +3049,9 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
   const params = GetBoardParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid board request." }); return; }
 
+  const teamId = await requestTeamId(req);
   const [board] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, params.data.boardId))
+    .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
   const conversation = board ? whiteboardConversationForAccount(board, account.displayName) : null;
   if (!board || !conversation || !parseBoardData(board.data)) {
@@ -3010,9 +3072,10 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
     return;
   }
 
+  const teamId = await requestTeamId(req);
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(interviewWhiteboardsTable)
-      .where(eq(interviewWhiteboardsTable.id, params.data.boardId))
+      .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .limit(1)
       .for("update");
     const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
@@ -3033,7 +3096,7 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
         ...(applied.title ? { title: applied.title.slice(0, 120) } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(interviewWhiteboardsTable.id, existing.id))
+      .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .returning();
     return { ok: true as const, board: updated, conversation };
   });
@@ -3055,7 +3118,8 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
 
   const title = parsed.data.title.trim();
   if (!title) { res.status(400).json({ error: "Spreadsheet title cannot be empty." }); return; }
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const data = JSON.stringify(initialSpreadsheetData());
   if (Buffer.byteLength(data, "utf8") > MAX_SPREADSHEET_DATA_BYTES) {
@@ -3065,6 +3129,7 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
 
   const [spreadsheet] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
+    teamId,
     title: title.slice(0, 120),
     data,
     createdBy: account.displayName,
@@ -3082,8 +3147,9 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   const params = GetSpreadsheetParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid spreadsheet request." }); return; }
 
+  const teamId = await requestTeamId(req);
   const [spreadsheet] = await db.select().from(interviewWhiteboardsTable)
-    .where(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId))
+    .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
   const conversation = spreadsheet ? whiteboardConversationForAccount(spreadsheet, account.displayName) : null;
   if (!spreadsheet || !conversation || !parseSpreadsheetData(spreadsheet.data)) {
@@ -3115,9 +3181,10 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
     return;
   }
 
+  const teamId = await requestTeamId(req);
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(interviewWhiteboardsTable)
-      .where(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId))
+      .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .limit(1)
       .for("update");
     const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
@@ -3144,7 +3211,7 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
         data: serializedData,
         updatedAt: new Date(),
       })
-      .where(eq(interviewWhiteboardsTable.id, existing.id))
+      .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .returning();
     return { ok: true as const, spreadsheet: updated, conversation };
   });
@@ -3192,7 +3259,8 @@ router.get("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void>
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
-  const items = await db.select().from(chatCustomEmojisTable);
+  const teamId = await requestTeamId(req);
+  const items = await db.select().from(chatCustomEmojisTable).where(teamFilter(chatCustomEmojisTable.teamId, teamId));
   res.json(ListChatCustomEmojisResponse.parse({
     items: items.map(chatCustomEmojiResponse),
   }));
@@ -3231,9 +3299,10 @@ router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promis
     return;
   }
 
+  const teamId = await requestTeamId(req);
   const [existing] = await db.select({ id: chatCustomEmojisTable.id })
     .from(chatCustomEmojisTable)
-    .where(eq(chatCustomEmojisTable.name, name))
+    .where(and(eq(chatCustomEmojisTable.name, name), teamFilter(chatCustomEmojisTable.teamId, teamId)))
     .limit(1);
   if (existing) {
     res.status(409).json({ error: "That team emoji name is already in use." });
@@ -3244,6 +3313,7 @@ router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promis
   try {
     const [created] = await db.insert(chatCustomEmojisTable).values({
       id: randomUUID(),
+      teamId,
       name,
       imagePath,
       contentType,
@@ -3271,6 +3341,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     // One row per direct thread, newest message wins. Threads are keyed by a
     // sorted "labelA<US>labelB" pair, so match on the current label appearing
     // anywhere in the key.
+    const teamId = await requestTeamId(req);
     const { rows } = await pool.query(
       `select distinct on (conversation_peer)
               conversation_peer as "peerKey",
@@ -3280,8 +3351,9 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
          from interview_chat_messages
         where conversation_scope = 'direct'
           and position($1 in conversation_peer) > 0
+          and (team_id = $2 or ($2 = 'default' and team_id is null))
         order by conversation_peer, created_at desc`,
-      [account.displayName],
+      [account.displayName, teamId],
     );
     const items = (rows as { peerKey: string; author: string; message: string; created_at: Date }[])
       .map((row) => {
@@ -3302,8 +3374,10 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
       `select author, message, created_at
          from interview_chat_messages
         where conversation_scope = 'shared' and conversation_peer is null
+          and (team_id = $1 or ($1 = 'default' and team_id is null))
         order by created_at desc
         limit 1`,
+      [teamId],
     );
     const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date } | undefined;
     const shared = sharedRowValue
@@ -3325,13 +3399,15 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
-  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName);
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName, teamId);
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
     return;
   }
   const { limit, before } = pageWindow(req.query);
   const conversationFilters = [
+    teamFilter(interviewChatMessagesTable.teamId, teamId),
     eq(interviewChatMessagesTable.conversationScope, conversation.scope),
     conversation.key === null
       ? isNull(interviewChatMessagesTable.conversationPeer)
@@ -3340,8 +3416,8 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const messages = await db.select().from(interviewChatMessagesTable)
     .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
     .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
-  const reactions = await reactionsForMessages(messages.map((message) => message.id));
-  const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName);
+  const reactions = await reactionsForMessages(messages.map((message) => message.id), teamId);
+  const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName, teamId);
   res.json(GetInterviewChatResponse.parse({
     items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [], polls.get(message.id) ?? null)),
     scope: conversation.scope,
@@ -3355,9 +3431,10 @@ const CHAT_MESSAGE_MAX_CHARS = 2000;
 const SLOWMODE_MAX_SECONDS = 600;
 
 /** Slow mode window for the team chat, in seconds (0 = off). */
-async function chatSlowmodeSeconds(): Promise<number> {
+async function chatSlowmodeSeconds(teamId?: string | null): Promise<number> {
   try {
-    const [row] = await db.select().from(chatSettingsTable).limit(1);
+    const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
+    const [row] = await db.select().from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, team)).limit(1);
     const seconds = row?.slowmodeSeconds ?? 0;
     return Number.isFinite(seconds) ? Math.max(0, Math.min(SLOWMODE_MAX_SECONDS, Math.floor(seconds))) : 0;
   } catch {
@@ -3365,8 +3442,8 @@ async function chatSlowmodeSeconds(): Promise<number> {
   }
 }
 
-router.get("/chat/settings", requireAdmin, async (_req, res): Promise<void> => {
-  res.json({ slowmodeSeconds: await chatSlowmodeSeconds() });
+router.get("/chat/settings", requireAdmin, async (req, res): Promise<void> => {
+  res.json({ slowmodeSeconds: await chatSlowmodeSeconds(await requestTeamId(req)) });
 });
 
 router.post("/chat/settings", requireCoordinator, async (req, res): Promise<void> => {
@@ -3376,12 +3453,18 @@ router.post("/chat/settings", requireCoordinator, async (req, res): Promise<void
     return;
   }
   const value = Math.floor(seconds);
-  await pool.query(
-    `insert into "chat_settings" ("id", "slowmode_seconds", "updated_at")
-     values ('1', $1, now())
-     on conflict ("id") do update set "slowmode_seconds" = $1, "updated_at" = now()`,
-    [value],
-  );
+  const teamId = await requestTeamId(req);
+  const [existing] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
+  if (existing) {
+    await db.update(chatSettingsTable).set({ slowmodeSeconds: value, updatedAt: new Date() }).where(eq(chatSettingsTable.id, existing.id));
+  } else {
+    await db.insert(chatSettingsTable).values({ id: randomUUID(), teamId, slowmodeSeconds: value }).onConflictDoNothing();
+    // Race: another request may have created the row first; ensure the value is applied.
+    const [raced] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
+    if (raced) {
+      await db.update(chatSettingsTable).set({ slowmodeSeconds: value, updatedAt: new Date() }).where(eq(chatSettingsTable.id, raced.id));
+    }
+  }
   pushRealtimeHint("chat_settings");
   res.json({ slowmodeSeconds: value });
 });
@@ -3395,10 +3478,12 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "A chat message is required." });
     return;
   }
+  const teamId = await requestTeamId(req);
   const conversation = await resolveChatConversation(
     parsed.data.scope,
     parsed.data.recipient,
     account.displayName,
+    teamId,
   );
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
@@ -3407,13 +3492,15 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 
   // Discord-style slow mode, enforced server-side on the team channel only.
   if (conversation.scope === "shared") {
-    const slowmodeSeconds = await chatSlowmodeSeconds();
+    const slowmodeSeconds = await chatSlowmodeSeconds(teamId);
     if (slowmodeSeconds > 0) {
       const [lastMessage] = await db
         .select({ createdAt: interviewChatMessagesTable.createdAt })
         .from(interviewChatMessagesTable)
         .where(and(
+          teamFilter(interviewChatMessagesTable.teamId, teamId),
           eq(interviewChatMessagesTable.author, account.displayName),
+          eq(interviewChatMessagesTable.conversationScope, "shared"),
           isNull(interviewChatMessagesTable.conversationPeer),
         ))
         .orderBy(desc(interviewChatMessagesTable.createdAt))
@@ -3439,7 +3526,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       conversationPeer: interviewChatMessagesTable.conversationPeer,
     })
       .from(interviewChatMessagesTable)
-      .where(eq(interviewChatMessagesTable.id, parentMessageId))
+      .where(and(eq(interviewChatMessagesTable.id, parentMessageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
       .limit(1);
     if (!parent || parent.conversationScope !== conversation.scope || parent.conversationPeer !== conversation.key) {
       res.status(400).json({ error: "The message being replied to was not found." });
@@ -3470,6 +3557,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }
   const values = {
     id: parsed.data.idempotencyKey ?? randomUUID(),
+    teamId,
     author: isAssistantMessage ? "AI assistant" : account.displayName,
     message: parsed.data.message.trim().slice(0, CHAT_MESSAGE_MAX_CHARS),
     conversationScope: conversation.scope,
@@ -3490,7 +3578,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       return;
     }
     const [existing] = await db.select().from(interviewChatMessagesTable)
-      .where(eq(interviewChatMessagesTable.id, parsed.data.idempotencyKey))
+      .where(and(eq(interviewChatMessagesTable.id, parsed.data.idempotencyKey), teamFilter(interviewChatMessagesTable.teamId, teamId)))
       .limit(1);
     if (
       !existing ||
@@ -3511,7 +3599,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   }
   const [message] = await db.insert(interviewChatMessagesTable).values(values).returning();
   pushRealtimeHint("interview_chat_messages", "INSERT");
-  const createdPolls = await pollsForMessages([message.id], account.displayName);
+  const createdPolls = await pollsForMessages([message.id], account.displayName, teamId);
   res.status(201).json(SendInterviewChatResponse.parse({
     ...chatResponse(message, conversation, undefined, createdPolls.get(message.id) ?? null),
   }));
@@ -3530,6 +3618,7 @@ router.post("/queue/chat/:messageId/poll", requireAdmin, async (req, res): Promi
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   const parsed = CreateChatPollBody.safeParse(req.body);
   if (!messageId || !parsed.success) {
@@ -3543,23 +3632,24 @@ router.post("/queue/chat/:messageId/poll", requireAdmin, async (req, res): Promi
     return;
   }
   const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id })
-    .from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+    .from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
     return;
   }
-  const [existing] = await db.select({ messageId: chatPollsTable.messageId }).from(chatPollsTable).where(eq(chatPollsTable.messageId, messageId)).limit(1);
+  const [existing] = await db.select({ messageId: chatPollsTable.messageId }).from(chatPollsTable).where(and(eq(chatPollsTable.messageId, messageId), teamFilter(chatPollsTable.teamId, teamId))).limit(1);
   if (existing) {
     res.status(409).json({ error: "That message already has a poll." });
     return;
   }
   await db.insert(chatPollsTable).values({
     messageId,
+    teamId,
     question,
     options: JSON.stringify(options),
     createdBy: account.displayName,
   });
-  const polls = await pollsForMessages([messageId], account.displayName);
+  const polls = await pollsForMessages([messageId], account.displayName, teamId);
   pushRealtimeHint("interview_chat_messages");
   res.status(201).json(CreateChatPollResponse.parse(polls.get(messageId)));
 });
@@ -3568,13 +3658,22 @@ router.post("/queue/chat/:messageId/poll/vote", requireAdmin, async (req, res): 
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   const parsed = VoteChatPollBody.safeParse(req.body);
   if (!messageId || !parsed.success) {
     res.status(400).json({ error: "Choose one of the options." });
     return;
   }
-  const [poll] = await db.select().from(chatPollsTable).where(eq(chatPollsTable.messageId, messageId)).limit(1);
+  const [parentMessage] = await db.select({ id: interviewChatMessagesTable.id })
+    .from(interviewChatMessagesTable)
+    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+    .limit(1);
+  if (!parentMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  const [poll] = await db.select().from(chatPollsTable).where(and(eq(chatPollsTable.messageId, messageId), teamFilter(chatPollsTable.teamId, teamId))).limit(1);
   if (!poll) {
     res.status(404).json({ error: "Poll not found." });
     return;
@@ -3588,14 +3687,16 @@ router.post("/queue/chat/:messageId/poll/vote", requireAdmin, async (req, res): 
   await db.delete(chatPollVotesTable).where(and(
     eq(chatPollVotesTable.messageId, messageId),
     eq(chatPollVotesTable.voter, voter),
+    teamFilter(chatPollVotesTable.teamId, teamId),
   ));
   await db.insert(chatPollVotesTable).values({
     id: randomUUID(),
+    teamId,
     messageId,
     optionIndex: parsed.data.optionIndex,
     voter,
   });
-  const polls = await pollsForMessages([messageId], voter);
+  const polls = await pollsForMessages([messageId], voter, teamId);
   pushRealtimeHint("interview_chat_messages");
   res.json(VoteChatPollResponse.parse(polls.get(messageId)));
 });
@@ -3604,6 +3705,7 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const parsed = ToggleChatReactionBody.safeParse(req.body);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   const submittedEmoji = parsed.success ? parsed.data.emoji.trim() : "";
@@ -3613,7 +3715,7 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
     const name = shortcodeMatch[1].toLowerCase();
     const [teamEmoji] = await db.select({ id: chatCustomEmojisTable.id })
       .from(chatCustomEmojisTable)
-      .where(eq(chatCustomEmojisTable.name, name))
+      .where(and(eq(chatCustomEmojisTable.name, name), teamFilter(chatCustomEmojisTable.teamId, teamId)))
       .limit(1);
     if (teamEmoji) emoji = `:${name}:`;
   } else if (isSingleUnicodeEmoji(submittedEmoji)) {
@@ -3624,7 +3726,7 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
     res.status(400).json({ error: "Provide one emoji or a valid team emoji shortcode." });
     return;
   }
-  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
     return;
@@ -3633,13 +3735,14 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
     eq(chatMessageReactionsTable.messageId, messageId),
     eq(chatMessageReactionsTable.emoji, emoji),
     eq(chatMessageReactionsTable.author, author),
+    teamFilter(chatMessageReactionsTable.teamId, teamId),
   )).limit(1);
   if (existing) {
-    await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.id, existing.id));
+    await db.delete(chatMessageReactionsTable).where(and(eq(chatMessageReactionsTable.id, existing.id), teamFilter(chatMessageReactionsTable.teamId, teamId)));
   } else {
-    await db.insert(chatMessageReactionsTable).values({ id: randomUUID(), messageId, emoji, author }).onConflictDoNothing();
+    await db.insert(chatMessageReactionsTable).values({ id: randomUUID(), teamId, messageId, emoji, author }).onConflictDoNothing();
   }
-  const reactions = await reactionsForMessages([messageId]);
+  const reactions = await reactionsForMessages([messageId], teamId);
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatReactionResponse.parse({ reactions: reactions.get(messageId) ?? [] }));
 });
@@ -3650,10 +3753,11 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
     res.status(400).json({ error: "Message id required" });
     return;
   }
+  const teamId = await requestTeamId(req);
   const [existingMessage] = await db.select({
     id: interviewChatMessagesTable.id,
     pinnedAt: interviewChatMessagesTable.pinnedAt,
-  }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
     return;
@@ -3661,7 +3765,7 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
   const pinnedAt = existingMessage.pinnedAt ? null : new Date();
   await db.update(interviewChatMessagesTable)
     .set({ pinnedAt })
-    .where(eq(interviewChatMessagesTable.id, messageId));
+    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)));
   pushRealtimeHint("interview_chat_messages");
   res.json(ToggleChatMessagePinResponse.parse({
     messageId,
@@ -3673,6 +3777,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   const parsed = UpdateChatMessageBody.safeParse(req.body);
   const message = parsed.success ? parsed.data.message.trim() : "";
@@ -3681,7 +3786,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     return;
   }
   const [existing] = await db.select().from(interviewChatMessagesTable)
-    .where(eq(interviewChatMessagesTable.id, messageId))
+    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
     .limit(1);
   if (!existing) {
     res.status(404).json({ error: "Message not found." });
@@ -3703,7 +3808,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   }
   const [updated] = await db.update(interviewChatMessagesTable)
     .set({ message: message.slice(0, CHAT_MESSAGE_MAX_CHARS) })
-    .where(eq(interviewChatMessagesTable.id, messageId))
+    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
     .returning();
   const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
   const conversation: ChatConversation = updated.conversationScope === "direct"
@@ -3714,7 +3819,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
       }
     : { scope: "shared", peer: null, key: null };
   pushRealtimeHint("interview_chat_messages");
-  const editedPolls = await pollsForMessages([updated.id], account.displayName);
+  const editedPolls = await pollsForMessages([updated.id], account.displayName, teamId);
   res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation, undefined, editedPolls.get(updated.id) ?? null)));
 });
 
@@ -3722,6 +3827,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
   if (!messageId) {
     res.status(400).json({ error: "Message id required" });
@@ -3732,7 +3838,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     author: interviewChatMessagesTable.author,
     conversationScope: interviewChatMessagesTable.conversationScope,
     conversationPeer: interviewChatMessagesTable.conversationPeer,
-  }).from(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId)).limit(1);
+  }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
     return;
@@ -3750,8 +3856,10 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
       }
     }
   }
-  await db.delete(chatMessageReactionsTable).where(eq(chatMessageReactionsTable.messageId, messageId));
-  await db.delete(interviewChatMessagesTable).where(eq(interviewChatMessagesTable.id, messageId));
+  await db.delete(chatMessageReactionsTable).where(and(eq(chatMessageReactionsTable.messageId, messageId), teamFilter(chatMessageReactionsTable.teamId, teamId)));
+  await db.delete(chatPollVotesTable).where(and(eq(chatPollVotesTable.messageId, messageId), teamFilter(chatPollVotesTable.teamId, teamId)));
+  await db.delete(chatPollsTable).where(and(eq(chatPollsTable.messageId, messageId), teamFilter(chatPollsTable.teamId, teamId)));
+  await db.delete(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)));
   pushRealtimeHint("interview_chat_messages");
   res.status(204).end();
 });
@@ -3774,23 +3882,37 @@ router.post("/queue/reorder", requireCoordinator, async (req, res): Promise<void
     res.status(400).json({ error: "At least one applicant id is required." });
     return;
   }
-  const known = new Set((await getApplicants({ sort: "queue" })).map((applicant) => applicant.id));
+  const teamId = await requestTeamId(req);
+  const known = new Set((await getApplicants({ sort: "queue" }, teamId)).map((applicant) => applicant.id));
   const ordered = requested.filter((id) => known.has(id));
   if (!ordered.length) {
     res.status(400).json({ error: "No known applicant ids." });
     return;
   }
   for (const [index, id] of ordered.entries()) {
-    await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(eq(applicantsTable.id, id));
+    await db.update(applicantsTable).set({ queuePosition: index, updatedAt: new Date() }).where(and(eq(applicantsTable.id, id), teamFilter(applicantsTable.teamId, teamId)));
   }
   pushRealtimeHint("applicants");
   pushRealtimeHint("interview_queue");
-  res.json(ReorderQueueResponse.parse(await getQueueState()));
+  res.json(ReorderQueueResponse.parse(await getQueueState(teamId)));
 });
 
-router.get("/display/state", async (_req, res): Promise<void> => {
-  const view = await getDisplayView();
-  const settings = await getDisplaySettings();
+router.get("/display/state", async (req, res): Promise<void> => {
+  // Public big screen: ?eventPassword scopes to that team, otherwise the
+  // signed-in user's team, otherwise the default team (current team safe).
+  let teamId = await requestTeamId(req);
+  const displayCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
+  if (displayCode.trim()) {
+    try {
+      const { findTeamByCode } = await import("../lib/teams");
+      const team = await findTeamByCode(displayCode);
+      if (team) teamId = team.id;
+    } catch {
+      // fall back to session/default team
+    }
+  }
+  const view = await getDisplayView(teamId);
+  const settings = await getDisplaySettings(teamId);
   res.json(GetDisplayStateResponse.parse({
     mode: view.mode,
     headline: view.headline,
@@ -3804,13 +3926,24 @@ router.get("/display/state", async (_req, res): Promise<void> => {
 
 let announcementCache: { key: string; audio: Buffer } | null = null;
 router.get("/display/announcement", async (req, res): Promise<void> => {
-  const view = await getDisplayView();
+  let teamId = await requestTeamId(req);
+  const announcementCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
+  if (announcementCode.trim()) {
+    try {
+      const { findTeamByCode } = await import("../lib/teams");
+      const team = await findTeamByCode(announcementCode);
+      if (team) teamId = team.id;
+    } catch {
+      // fall back
+    }
+  }
+  const view = await getDisplayView(teamId);
   // ?test=1 speaks a fixed phrase so admins can check the big-screen
   // speakers. Only this exact phrase is allowed — no custom text, so the
   // endpoint can't be abused as an open TTS proxy.
   const isTest = req.query.test === "1";
   const text = isTest ? "This is a test of text to speech." : view.announcement;
-  const key = `${view.updatedAt}:${text}`;
+  const key = `${teamId}:${view.updatedAt}:${text}`;
   try {
     if (!announcementCache || announcementCache.key !== key) {
       announcementCache = { key, audio: await textToSpeech(text, "nova", "wav") };
@@ -3822,8 +3955,8 @@ router.get("/display/announcement", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/display/settings", requireAdmin, async (_req, res): Promise<void> => {
-  const [row] = await db.select().from(displaySettingsTable).limit(1);
+router.get("/display/settings", requireAdmin, async (req, res): Promise<void> => {
+  const [row] = await db.select().from(displaySettingsTable).where(teamFilter(displaySettingsTable.teamId, await requestTeamId(req))).limit(1);
   if (!row) {
     res.json(GetDisplaySettingsResponse.parse({
       headline: null,
@@ -3862,13 +3995,15 @@ router.post("/display/settings", requireCoordinator, async (req, res): Promise<v
   if (subheadline !== undefined) patch.customSubheadline = subheadline;
   if (typeof parsed.data.showNames === "boolean") patch.showNames = parsed.data.showNames;
   if (typeof parsed.data.announce === "boolean") patch.announce = parsed.data.announce;
-  const [existing] = await db.select({ id: displaySettingsTable.id }).from(displaySettingsTable).limit(1);
+  const teamId = await requestTeamId(req);
+  const [existing] = await db.select({ id: displaySettingsTable.id }).from(displaySettingsTable).where(teamFilter(displaySettingsTable.teamId, teamId)).limit(1);
   let row;
   if (existing) {
     [row] = await db.update(displaySettingsTable).set(patch).where(eq(displaySettingsTable.id, existing.id)).returning();
   } else {
+    // New teams get their own settings row; id auto-increments past the legacy id=1.
     [row] = await db.insert(displaySettingsTable).values({
-      id: 1,
+      teamId,
       customHeadline: patch.customHeadline ?? null,
       customSubheadline: patch.customSubheadline ?? null,
       showNames: patch.showNames ?? true,
@@ -3879,9 +4014,10 @@ router.post("/display/settings", requireCoordinator, async (req, res): Promise<v
   res.json(UpdateDisplaySettingsResponse.parse(displaySettingsResponse(row)));
 });
 
-router.get("/seating/settings", requireAdmin, async (_req, res): Promise<void> => {
-  const [row] = await db.select().from(seatingSettingsTable).limit(1);
-  const grid = await getSeatingSettings();
+router.get("/seating/settings", requireAdmin, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [row] = await db.select().from(seatingSettingsTable).where(teamFilter(seatingSettingsTable.teamId, teamId)).limit(1);
+  const grid = await getSeatingSettings(teamId);
   res.json(GetSeatingSettingsResponse.parse({
     rows: grid.rows,
     cols: grid.cols,
@@ -3897,21 +4033,26 @@ router.post("/seating/settings", requireCoordinator, async (req, res): Promise<v
   }
   const clamp = (value: unknown, fallback: number) =>
     typeof value === "number" && Number.isFinite(value) ? Math.min(10, Math.max(1, Math.floor(value))) : fallback;
-  const current = await getSeatingSettings();
+  const teamId = await requestTeamId(req);
+  const current = await getSeatingSettings(teamId);
   const rows = clamp(parsed.data.rows, current.rows);
   const cols = clamp(parsed.data.cols, current.cols);
-  const [existing] = await db.select({ id: seatingSettingsTable.id }).from(seatingSettingsTable).limit(1);
+  const [existing] = await db.select({ id: seatingSettingsTable.id }).from(seatingSettingsTable).where(teamFilter(seatingSettingsTable.teamId, teamId)).limit(1);
   let row;
   if (existing) {
     [row] = await db.update(seatingSettingsTable).set({ rows, cols, updatedAt: new Date() }).where(eq(seatingSettingsTable.id, existing.id)).returning();
   } else {
-    [row] = await db.insert(seatingSettingsTable).values({ id: 1, rows, cols }).returning();
+    // New teams get their own settings row; id auto-increments past the legacy id=1.
+    [row] = await db.insert(seatingSettingsTable).values({ teamId, rows, cols }).returning();
   }
   // Shrinking the chart unseats anyone left outside the new bounds.
   await db.update(applicantsTable).set({ seatRow: null, seatCol: null, updatedAt: new Date() }).where(
-    or(
-      and(isNotNull(applicantsTable.seatRow), or(gt(applicantsTable.seatRow, rows - 1), lt(applicantsTable.seatRow, 0))),
-      and(isNotNull(applicantsTable.seatCol), or(gt(applicantsTable.seatCol, cols - 1), lt(applicantsTable.seatCol, 0))),
+    and(
+      teamFilter(applicantsTable.teamId, teamId),
+      or(
+        and(isNotNull(applicantsTable.seatRow), or(gt(applicantsTable.seatRow, rows - 1), lt(applicantsTable.seatRow, 0))),
+        and(isNotNull(applicantsTable.seatCol), or(gt(applicantsTable.seatCol, cols - 1), lt(applicantsTable.seatCol, 0))),
+      ),
     ),
   );
   pushRealtimeHint("seating_settings");
@@ -3930,14 +4071,15 @@ router.post("/seating/assign", requireCoordinator, async (req, res): Promise<voi
     res.status(400).json({ error: "Seat row/col must be integers (-1 unseats)" });
     return;
   }
+  const teamId = await requestTeamId(req);
   if (row >= 0 && col >= 0) {
-    const grid = await getSeatingSettings();
+    const grid = await getSeatingSettings(teamId);
     if (row >= grid.rows || col >= grid.cols) {
       res.status(400).json({ error: `Seat is outside the ${grid.rows}x${grid.cols} chart` });
       return;
     }
   }
-  const seated = await assignSeat(applicantId, row, col);
+  const seated = await assignSeat(applicantId, row, col, teamId);
   if (!seated) {
     res.status(404).json({ error: "Applicant not found" });
     return;
@@ -3959,12 +4101,13 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  const conversation = await getOrCreateAssistantConversation(parsed.data.conversationId);
+  const teamId = await requestTeamId(req);
+  const conversation = await getOrCreateAssistantConversation(parsed.data.conversationId, teamId);
   if (!conversation) {
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
-  const all = await getApplicants({ sort: "score" });
+  const all = await getApplicants({ sort: "score" }, teamId);
   const selected = parsed.data.applicantIds !== undefined
     ? all.filter((applicant) => parsed.data.applicantIds?.includes(applicant.id))
     : all.slice(0, 25);
@@ -3979,7 +4122,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
     notes: applicant.notes,
   }));
   const previousMessages = await db.select().from(assistantMessagesTable)
-    .where(eq(assistantMessagesTable.conversationId, conversation.id))
+    .where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)))
     .orderBy(asc(assistantMessagesTable.createdAt));
   try {
   const requestedModel = parsed.data.model?.trim();
@@ -4094,7 +4237,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
     const executed = await runAssistantTools(pendingCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
           const scopedTitle = conversation.title.startsWith("[Parts] ") ? `[Parts] ${title}` : title;
-          await db.update(assistantConversationsTable).set({ title: scopedTitle, updatedAt: new Date() }).where(eq(assistantConversationsTable.id, conversation.id));
+          await db.update(assistantConversationsTable).set({ title: scopedTitle, updatedAt: new Date() }).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
         },
       },
       previewedPaths,
@@ -4102,6 +4245,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
       new Set(freeModelIds),
+      teamId,
     );
     if (executed.model) model = executed.model;
     activities.push(...executed.activities);
@@ -4166,7 +4310,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
       const executed = await runAssistantTools(pseudoCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
           const scopedTitle = conversation.title.startsWith("[Parts] ") ? `[Parts] ${title}` : title;
-          await db.update(assistantConversationsTable).set({ title: scopedTitle, updatedAt: new Date() }).where(eq(assistantConversationsTable.id, conversation.id));
+          await db.update(assistantConversationsTable).set({ title: scopedTitle, updatedAt: new Date() }).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
         },
       },
       previewedPaths,
@@ -4174,6 +4318,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
       new Set(freeModelIds),
+      teamId,
       );
       if (executed.model) model = executed.model;
       activities.push(...executed.activities);
@@ -4230,7 +4375,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
     }
   }
   if (!answer.trim()) answer = "I could not produce an answer for that question.";
-  await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities);
+  await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities, teamId);
   res.json(AskAssistantResponse.parse({ answer, activities, model }));
   } catch (error) {
     req.log.error({ err: error }, "Assistant chat completion failed");
@@ -4253,12 +4398,13 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  const conversation = await getOrCreateAssistantConversation(parsed.data.conversationId);
+  const teamId = await requestTeamId(req);
+  const conversation = await getOrCreateAssistantConversation(parsed.data.conversationId, teamId);
   if (!conversation) {
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
-  const all = await getApplicants({ sort: "score" });
+  const all = await getApplicants({ sort: "score" }, teamId);
   const selected = parsed.data.applicantIds !== undefined
     ? all.filter((applicant) => parsed.data.applicantIds?.includes(applicant.id))
     : all.slice(0, 25);
@@ -4273,7 +4419,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
     notes: applicant.notes,
   }));
   const previousMessages = await db.select().from(assistantMessagesTable)
-    .where(eq(assistantMessagesTable.conversationId, conversation.id))
+    .where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)))
     .orderBy(asc(assistantMessagesTable.createdAt));
   const requestedModel = parsed.data.model?.trim();
   let model = requestedModel || TEXT_MODEL;
@@ -4422,7 +4568,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       send({ status: "working" });
       const executed = await runAssistantTools(streamCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
-          await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(eq(assistantConversationsTable.id, conversation.id));
+          await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
         },
       },
       previewedPaths,
@@ -4430,6 +4576,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
       new Set(freeModelIds),
+      teamId,
       );
       if (executed.model) {
         model = executed.model;
@@ -4487,7 +4634,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
         req.log.info({ tools: pseudoCalls.map((call) => call.function.name) }, "Assistant stream pseudo tools detected");
         const executed = await runAssistantTools(pseudoCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
-          await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(eq(assistantConversationsTable.id, conversation.id));
+          await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
         },
       },
       previewedPaths,
@@ -4495,6 +4642,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       presenceSessionHash(requestAdminSession(req)),
       account.displayName,
       new Set(freeModelIds),
+      teamId,
       );
         if (executed.model) {
           model = executed.model;
@@ -4542,7 +4690,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       }
     }
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
-    await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities);
+    await saveAssistantAnswer(conversation.id, parsed.data.question, parsed.data.applicantIds ?? [], answer, activities, teamId);
     for (const activity of activities) send({ activity });
     send({ done: true, answer, activities, model });
     res.end();
@@ -4614,10 +4762,11 @@ router.get("/assistant/config", requireCoordinator, async (_req, res): Promise<v
   res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
 });
 
-router.get("/assistant/conversations", requireCoordinator, async (_req, res): Promise<void> => {
-  await getOrCreateAssistantConversation();
-  const conversations = await db.select().from(assistantConversationsTable).orderBy(desc(assistantConversationsTable.updatedAt));
-  const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable);
+router.get("/assistant/conversations", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  await getOrCreateAssistantConversation(undefined, teamId);
+  const conversations = await db.select().from(assistantConversationsTable).where(teamFilter(assistantConversationsTable.teamId, teamId)).orderBy(desc(assistantConversationsTable.updatedAt));
+  const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable).where(teamFilter(assistantMessagesTable.teamId, teamId));
   const counts = new Map<string, number>();
   for (const message of messages) {
     if (message.conversationId) counts.set(message.conversationId, (counts.get(message.conversationId) ?? 0) + 1);
@@ -4636,6 +4785,7 @@ router.post("/assistant/conversations", requireCoordinator, async (req, res): Pr
   const title = parsed.data.title?.trim() || "New conversation";
   const [conversation] = await db.insert(assistantConversationsTable).values({
     id: randomUUID(),
+    teamId: await requestTeamId(req),
     title: title.slice(0, 80),
   }).returning();
   res.status(201).json(CreateAssistantConversationResponse.parse(assistantConversationResponse(conversation, 0)));
@@ -4653,15 +4803,16 @@ router.patch("/assistant/conversations/:conversationId", requireCoordinator, asy
     res.status(400).json({ error: "Conversation title cannot be empty" });
     return;
   }
+  const teamId = await requestTeamId(req);
   const [conversation] = await db.update(assistantConversationsTable).set({
     title: title.slice(0, 80),
     updatedAt: new Date(),
-  }).where(eq(assistantConversationsTable.id, params.data.conversationId)).returning();
+  }).where(and(eq(assistantConversationsTable.id, params.data.conversationId), teamFilter(assistantConversationsTable.teamId, teamId))).returning();
   if (!conversation) {
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
-  const messages = await db.select({ id: assistantMessagesTable.id }).from(assistantMessagesTable).where(eq(assistantMessagesTable.conversationId, conversation.id));
+  const messages = await db.select({ id: assistantMessagesTable.id }).from(assistantMessagesTable).where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)));
   res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, messages.length)));
 });
 
@@ -4671,13 +4822,14 @@ router.delete("/assistant/conversations/:conversationId", requireCoordinator, as
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [conversation] = await db.select().from(assistantConversationsTable).where(eq(assistantConversationsTable.id, params.data.conversationId));
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select().from(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, params.data.conversationId), teamFilter(assistantConversationsTable.teamId, teamId)));
   if (!conversation) {
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
-  await db.delete(assistantMessagesTable).where(eq(assistantMessagesTable.conversationId, conversation.id));
-  await db.delete(assistantConversationsTable).where(eq(assistantConversationsTable.id, conversation.id));
+  await db.delete(assistantMessagesTable).where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)));
+  await db.delete(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
   res.status(204).send();
 });
 
@@ -4687,9 +4839,10 @@ router.get("/assistant/conversations/:conversationId/messages", requireCoordinat
     res.status(400).json({ error: params.error.message });
     return;
   }
+  const teamId = await requestTeamId(req);
   const [conversation] = await db.select({ id: assistantConversationsTable.id })
     .from(assistantConversationsTable)
-    .where(eq(assistantConversationsTable.id, params.data.conversationId));
+    .where(and(eq(assistantConversationsTable.id, params.data.conversationId), teamFilter(assistantConversationsTable.teamId, teamId)));
   if (!conversation) {
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
@@ -4697,8 +4850,8 @@ router.get("/assistant/conversations/:conversationId/messages", requireCoordinat
   const { limit, before } = pageWindow(req.query);
   const messages = await db.select().from(assistantMessagesTable)
     .where(before
-      ? and(eq(assistantMessagesTable.conversationId, conversation.id), lt(assistantMessagesTable.createdAt, before))
-      : eq(assistantMessagesTable.conversationId, conversation.id))
+      ? and(eq(assistantMessagesTable.conversationId, conversation.id), lt(assistantMessagesTable.createdAt, before), teamFilter(assistantMessagesTable.teamId, teamId))
+      : and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)))
     .orderBy(desc(assistantMessagesTable.createdAt)).limit(limit);
   messages.reverse();
   res.json(GetAssistantConversationMessagesResponse.parse({
@@ -4712,8 +4865,8 @@ router.get("/assistant/conversations/:conversationId/messages", requireCoordinat
   }));
 });
 
-router.get("/assistant/history", requireCoordinator, async (_req, res): Promise<void> => {
-  const messages = await db.select().from(assistantMessagesTable).orderBy(asc(assistantMessagesTable.createdAt));
+router.get("/assistant/history", requireCoordinator, async (req, res): Promise<void> => {
+  const messages = await db.select().from(assistantMessagesTable).where(teamFilter(assistantMessagesTable.teamId, await requestTeamId(req))).orderBy(asc(assistantMessagesTable.createdAt));
   res.json(GetAssistantHistoryResponse.parse({
     items: messages.map((message) => ({
       id: message.id,
@@ -4725,9 +4878,10 @@ router.get("/assistant/history", requireCoordinator, async (_req, res): Promise<
   }));
 });
 
-router.delete("/assistant/history", requireCoordinator, async (_req, res): Promise<void> => {
-  await db.delete(assistantMessagesTable);
-  await db.delete(assistantConversationsTable);
+router.delete("/assistant/history", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  await db.delete(assistantMessagesTable).where(teamFilter(assistantMessagesTable.teamId, teamId));
+  await db.delete(assistantConversationsTable).where(teamFilter(assistantConversationsTable.teamId, teamId));
   res.status(204).send();
 });
 
