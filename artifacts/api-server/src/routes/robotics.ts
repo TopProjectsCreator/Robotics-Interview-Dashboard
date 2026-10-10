@@ -123,6 +123,7 @@ import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { authenticatedInterviewerId, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter } from "../lib/teams";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
@@ -1269,6 +1270,7 @@ async function runAssistantTools(
       else if (typeof raw.gender === "string") patch.gender = normalizeApplicantGender(String(raw.gender));
       setNullableString("email", "email");
       setNullableString("photoUrl", "photoUrl");
+      setNullableString("photoThumbUrl", "photoThumbUrl");
       if (typeof raw.transcript === "string" || raw.transcript === null) patch.transcript = raw.transcript as string | null;
       if (raw.aiScore !== undefined) patch.aiScore = normalizeAiScore(raw.aiScore);
       if (typeof raw.aiRecommendation === "string") patch.aiRecommendation = String(raw.aiRecommendation);
@@ -1847,7 +1849,8 @@ async function readImport(objectPath: string, fileName: string, teamId?: string 
   const parsedCsv = isExcelFile(fileName)
     ? parseExcelBuffer(download.data)
     : parseSemicolonCsv(download.data.toString("utf8"));
-  const current = await getApplicants({ sort: "queue" }, team);
+  // Import preview diffs the transcript column, so load it this once.
+  const current = await getApplicants({ sort: "queue" }, team, true);
   const imported = parsedCsv.rows.map((row, index) =>
     csvToApplicant(row, parsedCsv.headers, current.length + index),
   );
@@ -2044,6 +2047,7 @@ router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res)
 
 router.get("/dashboard/summary", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
+  await sendVersioned(req, res, () => queueVersion(teamId), async () => {
   const applicants = await getApplicants(undefined, teamId);
   const valid = applicants.filter((applicant) => applicant.aiScore >= 0);
   const group = (values: string[]) =>
@@ -2060,8 +2064,7 @@ router.get("/dashboard/summary", requireAdmin, async (req, res): Promise<void> =
     };
   });
   const queue = await getQueueState(teamId);
-  res.json(
-    GetDashboardSummaryResponse.parse({
+  return GetDashboardSummaryResponse.parse({
       total: applicants.length,
       reviewed: applicants.filter((applicant) => applicant.interviewStatus !== "queued").length,
       invalid: applicants.filter((applicant) => applicant.aiScore === -1).length,
@@ -2074,8 +2077,8 @@ router.get("/dashboard/summary", requireAdmin, async (req, res): Promise<void> =
         completed: queue.completedCount,
         remaining: queue.remainingCount,
       },
-    }),
-  );
+    });
+  });
 });
 
 router.get("/applicants", requireStaff, async (req, res): Promise<void> => {
@@ -2089,11 +2092,14 @@ router.get("/applicants", requireStaff, async (req, res): Promise<void> => {
   const rawInvalidOnly = req.query.invalidOnly;
   const invalidOnly = typeof rawInvalidOnly === "string" && rawInvalidOnly === "true";
   const teamId = await requestTeamId(req);
-  const applicants = await getApplicants({ ...parsed.data, invalidOnly }, teamId);
-  res.json(ListApplicantsResponse.parse({
-    items: applicants.map(applicantResponse),
-    total: applicants.length,
-  }));
+  // Idle polls 304 on a cheap count/max instead of re-transferring rows.
+  await sendVersioned(req, res, () => applicantVersion(teamId), async () => {
+    const applicants = await getApplicants({ ...parsed.data, invalidOnly }, teamId);
+    return ListApplicantsResponse.parse({
+      items: applicants.map(applicantResponse),
+      total: applicants.length,
+    });
+  });
 });
 
 router.post("/applicants/search/ai", requireCoordinator, async (req, res): Promise<void> => {
@@ -2522,7 +2528,9 @@ router.post("/imports", requireCoordinator, async (req, res): Promise<void> => {
 });
 
 router.get("/queue", requireCoordinator, async (req, res): Promise<void> => {
-  res.json(GetQueueResponse.parse(await getQueueState(await requestTeamId(req))));
+  const teamId = await requestTeamId(req);
+  await sendVersioned(req, res, () => queueVersion(teamId), async () =>
+    GetQueueResponse.parse(await getQueueState(teamId)));
 });
 
 // Interviewer labels only. The chat panel needs the roster of teammates to
@@ -2948,6 +2956,19 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
   const teamId = await requestTeamId(req);
   const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName, teamId);
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+  try {
+    const [versionRow] = await db.select({ u: interviewWhiteboardsTable.updatedAt }).from(interviewWhiteboardsTable).where(and(
+      eq(interviewWhiteboardsTable.id, params.data.whiteboardId),
+      teamFilter(interviewWhiteboardsTable.teamId, teamId),
+      eq(interviewWhiteboardsTable.conversationScope, conversation.scope),
+      conversation.key === null
+        ? isNull(interviewWhiteboardsTable.conversationPeer)
+        : eq(interviewWhiteboardsTable.conversationPeer, conversation.key),
+    )).limit(1);
+    if (await notModified(req, res, versionRow ? `w${versionRow.u.getTime()}` : null)) return;
+  } catch {
+    // Best-effort; fall through to the full load.
+  }
   const [whiteboard] = await db.select().from(interviewWhiteboardsTable).where(and(
     eq(interviewWhiteboardsTable.id, params.data.whiteboardId),
     teamFilter(interviewWhiteboardsTable.teamId, teamId),
@@ -3050,6 +3071,14 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
   if (!params.success) { res.status(400).json({ error: "Invalid board request." }); return; }
 
   const teamId = await requestTeamId(req);
+  try {
+    const [boardVersion] = await db.select({ u: interviewWhiteboardsTable.updatedAt }).from(interviewWhiteboardsTable)
+      .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+      .limit(1);
+    if (await notModified(req, res, boardVersion ? `b${boardVersion.u.getTime()}` : null)) return;
+  } catch {
+    // Best-effort; fall through to the full load.
+  }
   const [board] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
@@ -3148,6 +3177,14 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   if (!params.success) { res.status(400).json({ error: "Invalid spreadsheet request." }); return; }
 
   const teamId = await requestTeamId(req);
+  try {
+    const [sheetVersion] = await db.select({ u: interviewWhiteboardsTable.updatedAt }).from(interviewWhiteboardsTable)
+      .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+      .limit(1);
+    if (await notModified(req, res, sheetVersion ? `s${sheetVersion.u.getTime()}` : null)) return;
+  } catch {
+    // Best-effort; fall through to the full load.
+  }
   const [spreadsheet] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
@@ -3342,6 +3379,19 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     // sorted "labelA<US>labelB" pair, so match on the current label appearing
     // anywhere in the key.
     const teamId = await requestTeamId(req);
+    try {
+      const { rows: versionRows } = await pool.query(
+        `select count(*)::int as n, max(created_at) as m from interview_chat_messages
+          where conversation_scope = 'direct' and position($1 in conversation_peer) > 0
+            and (team_id = $2 or ($2 = 'default' and team_id is null))`,
+        [account.displayName, teamId],
+      );
+      const versionRow = versionRows[0] as { n: number; m: Date | null };
+      const tag = `dm${versionRow.n}|${versionRow.m ? new Date(versionRow.m).getTime() : 0}`;
+      if (await notModified(req, res, tag)) return;
+    } catch {
+      // Version check is best-effort; fall through to the full load.
+    }
     const { rows } = await pool.query(
       `select distinct on (conversation_peer)
               conversation_peer as "peerKey",
@@ -3406,23 +3456,55 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   const { limit, before } = pageWindow(req.query);
-  const conversationFilters = [
-    teamFilter(interviewChatMessagesTable.teamId, teamId),
-    eq(interviewChatMessagesTable.conversationScope, conversation.scope),
-    conversation.key === null
-      ? isNull(interviewChatMessagesTable.conversationPeer)
-      : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
-  ];
-  const messages = await db.select().from(interviewChatMessagesTable)
-    .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
-    .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
-  const reactions = await reactionsForMessages(messages.map((message) => message.id), teamId);
-  const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName, teamId);
-  res.json(GetInterviewChatResponse.parse({
-    items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [], polls.get(message.id) ?? null)),
-    scope: conversation.scope,
-    peer: conversation.peer,
-  }));
+  const peerCondition = conversation.key === null
+    ? "m.conversation_peer is null"
+    : "m.conversation_peer = $4";
+  const peerParams = conversation.key === null ? [] : [conversation.key];
+  // Idle polls 304 on counts/max timestamps (messages, reactions, polls,
+  // votes) instead of re-transferring the thread. History scrollback
+  // (`before`) always loads fully — it runs on demand, not on an interval.
+  const chatVersion = before ? null : (async () => {
+    const { rows } = await pool.query(
+      `select (select count(*)::int from interview_chat_messages m
+         where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
+           and m.conversation_scope = $2 and ${peerCondition}) as n,
+        (select max(m.created_at) from interview_chat_messages m
+         where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
+           and m.conversation_scope = $2 and ${peerCondition}) as m,
+        (select max(r.created_at) from chat_message_reactions r
+         where (r.team_id = $1 or ($1 = 'default' and r.team_id is null))) as r,
+        (select max(p.created_at) from chat_polls p
+         where (p.team_id = $1 or ($1 = 'default' and p.team_id is null))) as p,
+        (select max(v.created_at) from chat_poll_votes v where v.message_id in (
+           select m2.id from interview_chat_messages m2
+           where (m2.team_id = $1 or ($1 = 'default' and m2.team_id is null))
+             and m2.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "m2.")}
+           order by m2.created_at desc limit 100)) as v`,
+      [teamId, conversation.scope, ...peerParams],
+    );
+    const row = rows[0] as { n: number; m: Date | null; r: Date | null; p: Date | null; v: Date | null };
+    const t = (d: Date | null) => (d ? new Date(d).getTime() : 0);
+    return `c${row.n}|${t(row.m)}|${t(row.r)}|${t(row.p)}|${t(row.v)}`;
+  });
+  await sendVersioned(req, res, async () => chatVersion ? chatVersion() : null, async () => {
+    const conversationFilters = [
+      teamFilter(interviewChatMessagesTable.teamId, teamId),
+      eq(interviewChatMessagesTable.conversationScope, conversation.scope),
+      conversation.key === null
+        ? isNull(interviewChatMessagesTable.conversationPeer)
+        : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
+    ];
+    const messages = await db.select().from(interviewChatMessagesTable)
+      .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
+      .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
+    const reactions = await reactionsForMessages(messages.map((message) => message.id), teamId);
+    const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName, teamId);
+    return GetInterviewChatResponse.parse({
+      items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [], polls.get(message.id) ?? null)),
+      scope: conversation.scope,
+      peer: conversation.peer,
+    });
+  });
 });
 
 /** Chat message cap, in characters. Doubled from 1000. */
@@ -3911,6 +3993,13 @@ router.get("/display/state", async (req, res): Promise<void> => {
       // fall back to session/default team
     }
   }
+  let stateTag: string | null = null;
+  try {
+    stateTag = `${await applicantVersion(teamId)}|${await queueVersion(teamId)}|${await displaySettingsVersion(teamId)}`;
+  } catch {
+    stateTag = null;
+  }
+  if (await notModified(req, res, stateTag)) return;
   const view = await getDisplayView(teamId);
   const settings = await getDisplaySettings(teamId);
   res.json(GetDisplayStateResponse.parse({
@@ -3956,7 +4045,15 @@ router.get("/display/announcement", async (req, res): Promise<void> => {
 });
 
 router.get("/display/settings", requireAdmin, async (req, res): Promise<void> => {
-  const [row] = await db.select().from(displaySettingsTable).where(teamFilter(displaySettingsTable.teamId, await requestTeamId(req))).limit(1);
+  const settingsTeam = await requestTeamId(req);
+  let settingsTag: string | null = null;
+  try {
+    settingsTag = await displaySettingsVersion(settingsTeam);
+  } catch {
+    settingsTag = null;
+  }
+  if (await notModified(req, res, settingsTag)) return;
+  const [row] = await db.select().from(displaySettingsTable).where(teamFilter(displaySettingsTable.teamId, settingsTeam)).limit(1);
   if (!row) {
     res.json(GetDisplaySettingsResponse.parse({
       headline: null,

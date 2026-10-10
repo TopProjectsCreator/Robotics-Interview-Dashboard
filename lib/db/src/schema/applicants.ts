@@ -12,6 +12,7 @@ export const applicantsTable = pgTable("applicants", {
   gender: text("gender"),
   email: text("email"),
   photoUrl: text("photo_url"),
+  photoThumbUrl: text("photo_thumb_url"),
   transcript: text("transcript"),
   attachments: text("attachments"),
   aiScore: integer("ai_score").notNull().default(-1),

@@ -4228,6 +4228,9 @@ components:
           type: ["string", "null"]
         photoUrl:
           type: ["string", "null"]
+        photoThumbUrl:
+          type: ["string", "null"]
+          description: "Small thumbnail for list views; full photo stays under photoUrl"
         transcript:
           type: ["string", "null"]
         aiScore:
@@ -4326,6 +4329,9 @@ components:
           type: string
         photoUrl:
           type: ["string", "null"]
+        photoThumbUrl:
+          type: ["string", "null"]
+          description: "Small thumbnail for list views; full photo stays under photoUrl"
         transcript:
           type: ["string", "null"]
         attachments:

@@ -24,6 +24,11 @@ export interface Applicant {
   email?: string | null;
   /** @nullable */
   photoUrl?: string | null;
+  /**
+     * Small thumbnail for list views; full photo stays under photoUrl
+     * @nullable
+     */
+  photoThumbUrl?: string | null;
   /** @nullable */
   transcript?: string | null;
   aiScore: number;

@@ -19,6 +19,21 @@ let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 
 /**
+ * Last full body per GET URL. Hot polls are served 304 while idle (the
+ * server versions them with cheap aggregates); returning the stored body
+ * keeps React Query on its cached data with zero transfer and zero logic
+ * changes at call sites. Entries are keyed by full URL, so differently
+ * filtered polls never cross. Bounded so long sessions cannot grow it.
+ */
+const freshResponseCache = new Map<string, unknown>();
+const FRESH_CACHE_LIMIT = 300;
+
+function storeFreshResponse(url: string, data: unknown): void {
+  if (freshResponseCache.size >= FRESH_CACHE_LIMIT) freshResponseCache.clear();
+  freshResponseCache.set(url, data);
+}
+
+/**
  * Set a base URL that is prepended to every relative request URL
  * (i.e. paths that start with `/`).
  *
@@ -369,10 +384,35 @@ export async function customFetch<T = unknown>(
     credentials: init.credentials ?? "include",
   });
 
+  if (response.status === 304 && method === "GET") {
+    const cached = freshResponseCache.get(requestInfo.url);
+    if (cached !== undefined) return cached as T;
+    // No stored copy (cleared storage, raced first load): redo once without
+    // validators so the server sends the full body instead of another 304.
+    headers.delete("if-none-match");
+    headers.delete("if-modified-since");
+    const retry = await fetch(input, {
+      ...init,
+      method,
+      headers,
+      credentials: init.credentials ?? "include",
+      cache: "reload",
+    });
+    if (retry.ok) {
+      const data = (await parseSuccessBody(retry, responseType, requestInfo)) as T;
+      storeFreshResponse(requestInfo.url, data);
+      return data;
+    }
+    const errorData = await parseErrorBody(retry, method);
+    throw new ApiError(retry, errorData, requestInfo);
+  }
+
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }
 
-  return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  const data = (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  if (method === "GET") storeFreshResponse(requestInfo.url, data);
+  return data;
 }

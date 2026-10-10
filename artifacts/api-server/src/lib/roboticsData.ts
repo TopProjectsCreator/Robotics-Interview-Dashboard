@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull, or } from "drizzle-orm";
 import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, DEFAULT_TEAM_ID, type Applicant } from "@workspace/db";
-import { matchesApplicantSearch, normalizeApplicantGender, normalizeApplicantGrade, parseApplicantSearchQuery } from "./applicantSearch";
+import { matchesApplicantSearch, normalizeApplicantGender, normalizeApplicantGrade, parseApplicantSearchQuery, searchNeedsTranscript, type ApplicantLike } from "./applicantSearch";
 
 function tid(teamId?: string | null): string {
   return teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
@@ -73,11 +73,18 @@ export async function getApplicants(filters?: {
   category?: string;
   invalidOnly?: boolean;
   sort?: string;
-}, teamId?: string | null): Promise<Applicant[]> {
+}, teamId?: string | null, withTranscript?: boolean): Promise<ApplicantLike[]> {
   const team = tid(teamId);
   await ensureDemoData(team);
-  const all = await db.select().from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
   const searchQuery = parseApplicantSearchQuery(filters?.search?.trim() ?? "");
+  // Interview transcripts are the largest column by far. Include them only
+  // when something actually reads them (free-text/skill search, or an
+  // explicit caller like import preview); every other list skips the column,
+  // which cuts most of the bytes out of every polled list response.
+  const includeTranscript = withTranscript === true || searchNeedsTranscript(searchQuery);
+  const all = includeTranscript
+    ? await db.select().from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank))
+    : await db.select((() => { const { transcript: _omitted, ...rest } = getTableColumns(applicantsTable); return rest; })()).from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
   const filtered = all.filter((applicant) => {
     if (!matchesApplicantSearch(applicant, searchQuery)) return false;
     if (filters?.grade && filters.grade !== "all" && normalizeApplicantGrade(applicant.grade) !== normalizeApplicantGrade(filters.grade)) return false;
@@ -103,7 +110,7 @@ export async function getApplicants(filters?: {
   });
 }
 
-export function applicantResponse(applicant: Applicant) {
+export function applicantResponse(applicant: Omit<Applicant, "transcript"> & { transcript?: string | null }) {
   return {
     id: applicant.id,
     name: applicant.name,
@@ -112,7 +119,8 @@ export function applicantResponse(applicant: Applicant) {
     gender: applicant.gender ?? null,
     email: applicant.email,
     photoUrl: applicant.photoUrl,
-    transcript: applicant.transcript,
+    photoThumbUrl: applicant.photoThumbUrl ?? null,
+    transcript: applicant.transcript ?? null,
     aiScore: applicant.aiScore,
     aiRecommendation: applicant.aiRecommendation,
     aiSummary: applicant.aiSummary,
@@ -159,7 +167,7 @@ export function queueApplicantResponse(applicant: Applicant) {
   };
 }
 
-function balancedCurrentApplicants(applicants: Applicant[], labels: string[]): Applicant[] {
+function balancedCurrentApplicants(applicants: ApplicantLike[], labels: string[]): ApplicantLike[] {
   if (!labels.length) return applicants;
   const counts = new Map(labels.map((label) => [label, 0]));
   return applicants.map((applicant) => {
@@ -667,7 +675,7 @@ export function parseSemicolonCsv(input: string): { headers: string[]; rows: str
 
 export function importDiff(
   imported: ReturnType<typeof csvToApplicant>[],
-  existing: Applicant[],
+  existing: ApplicantLike[],
   importedFields: { age: boolean; gender: boolean } = { age: true, gender: true },
 ): { added: number; updated: number; unchanged: number; missingFromUpload: number } {
   const existingById = new Map(existing.map((applicant) => [applicant.id, applicant]));

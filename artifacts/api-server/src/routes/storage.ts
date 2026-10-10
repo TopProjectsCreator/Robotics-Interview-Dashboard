@@ -8,7 +8,7 @@ import {
   CompleteChunkUploadBody,
   CompleteChunkUploadResponse,
 } from '@workspace/api-zod';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
@@ -863,10 +863,25 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
 
     const { data, contentType } = await objectStorageService.downloadObject(objectPath);
 
+    // Every object path is a write-once UUID, so bytes for a path never
+    // change: clients may cache for a year without revalidating, and the
+    // ETag below is only a safety net. (Assembled chunk manifests are the
+    // exception — keep them on a short cache.)
+    const immutable = !wildcardPath.startsWith('chunk/');
+    const etag = `W/"${createHash('sha1').update(objectPath).digest('hex').slice(0, 24)}-${data.byteLength}"`;
+    res.setHeader('ETag', etag);
+    res.setHeader(
+      'Cache-Control',
+      immutable ? 'private, max-age=31536000, immutable' : 'private, max-age=3600',
+    );
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (typeof ifNoneMatch === 'string' && ifNoneMatch.split(',').some((tag) => tag.trim() === etag || tag.trim() === '*')) {
+      res.status(304).end();
+      return;
+    }
     res.status(200);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', String(data.byteLength));
-    res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(data);
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
