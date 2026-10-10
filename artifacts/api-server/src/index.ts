@@ -368,6 +368,17 @@ async function ensureSchema(): Promise<void> {
   }
   await removeTestAccounts();
 
+  // TEMP (verify egress work): promote probe to coordinator. Removed after
+  // verification along with the probe account.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
+        WHERE normalized_name = 'egressrunner'`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp egressrunner promote failed");
+  }
+
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
     const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
