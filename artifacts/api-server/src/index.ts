@@ -27,7 +27,7 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner', 'DiagRunner',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner',
     'test', 'test2', 'test3',
   ];
   // test-style names anywhere: check / probe / verify / temp / test / bot
