@@ -27,7 +27,7 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner', 'DiagRunner',
     'test', 'test2', 'test3',
   ];
   // test-style names anywhere: check / probe / verify / temp / test / bot
@@ -367,16 +367,6 @@ async function ensureSchema(): Promise<void> {
     logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
   await removeTestAccounts();
-
-  // TEMP (diagnose storage quota): promote probe to coordinator. Removed after.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts SET role = 'coordinator', updated_at = now()
-        WHERE normalized_name = 'diagrunner'`,
-    );
-  } catch (err) {
-    logger.error({ err }, "temp diagrunner promote failed");
-  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
