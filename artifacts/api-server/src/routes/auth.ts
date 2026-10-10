@@ -1066,7 +1066,7 @@ router.get("/auth/session", async (req, res): Promise<void> => {
   } catch {
     teamName = undefined;
   }
-  const base = GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role });
+  const base = GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role, isSiteOwner: account.isSiteOwner === true });
   res.json({ ...base, teamId, ...(teamName ? { teamName } : {}) });
 });
 

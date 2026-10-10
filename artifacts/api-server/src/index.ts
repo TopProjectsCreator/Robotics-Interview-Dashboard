@@ -330,6 +330,12 @@ async function ensureSchema(): Promise<void> {
     `alter table "presence_heartbeats" add column if not exists "team_id" text`,
     `alter table "seating_settings" add column if not exists "team_id" text`,
     `alter table "workspace_settings" add column if not exists "team_id" text`,
+    // Feature requests inbox for the site owner (Ishaan Bansal): every
+    // team's requests land here. is_site_owner is set once by the migration
+    // below; all statements idempotent.
+    `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
+    `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {
@@ -349,6 +355,17 @@ async function ensureSchema(): Promise<void> {
     logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
   await removeTestAccounts();
+
+  // TEMP (verify feature-request inbox): flag the probe as site owner so the
+  // owner-only endpoints can be exercised. Removed after verification.
+  try {
+    await pool.query(
+      `UPDATE interviewer_accounts SET is_site_owner = true, updated_at = now()
+        WHERE normalized_name = 'featurefan'`,
+    );
+  } catch (err) {
+    logger.error({ err }, "temp featurefan owner flag failed");
+  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {

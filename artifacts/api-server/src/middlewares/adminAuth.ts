@@ -219,6 +219,45 @@ export function requireStaff(
   });
 }
 
+/** True when the signed-in account is flagged as the site owner. */
+export async function isSiteOwner(interviewerId: string | undefined): Promise<boolean> {
+  if (!interviewerId) return false;
+  try {
+    const [account] = await db.select({ isSiteOwner: interviewerAccountsTable.isSiteOwner })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1);
+    return account?.isSiteOwner === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Site-owner gate (Ishaan Bansal): the cross-team feature-request inbox and
+ * site-wide stats. Every signed-in account can FILE a request; only the
+ * owner reads all teams' requests and resolves them.
+ */
+export function requireSiteOwner(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    isSiteOwner(interviewerId).then((owner) => {
+      if (!owner) {
+        res.status(403).json({ error: "Site owner only" });
+        return;
+      }
+      next();
+    }).catch((error) => {
+      req.log.error({ err: error }, "Site owner check failed");
+      res.status(503).json({ error: "Authentication unavailable" });
+    });
+  });
+}
+
 export function requireCoordinator(
   req: Request,
   res: Response,
