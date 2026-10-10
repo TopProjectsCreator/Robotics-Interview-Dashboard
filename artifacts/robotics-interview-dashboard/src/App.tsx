@@ -3718,8 +3718,8 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
         }
       }
       save(photoThumbUrl ? { photoUrl, photoThumbUrl } : { photoUrl });
-    } catch {
-      setPhotoError("Photo upload failed. Try again.");
+    } catch (photoFailure) {
+      setPhotoError(serverErrorMessage(photoFailure, "Photo upload failed. Try again."));
     }
   };
   const destroy = async () => { if (remove.isPending || !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";

@@ -79,6 +79,19 @@ function hasAuthenticatedSession(
  */
 const SIGNED_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
 
+/**
+ * Supabase quota outages surface as storage errors (currently: the team's
+ * egress quota is exceeded, so the storage service is restricted). Tell the
+ * browser plainly with a 503 instead of a generic 500 — the UI shows this
+ * message, and nothing is lost: uploads and downloads resume at reset.
+ */
+const STORAGE_PAUSED_MESSAGE =
+  'File storage is temporarily paused (team quota exceeded). Nothing is lost — try again after it resets.';
+function storageRestricted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /exceed_egress_quota|spend ?caps?|restricted|quota exceeded|upgrade.*plan/i.test(message);
+}
+
 router.post(
   '/storage/uploads/request-url',
   async (req: Request, res: Response) => {
@@ -112,6 +125,7 @@ router.post(
       );
     } catch (error) {
       req.log.error({ err: error }, 'Error generating upload URL');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Failed to generate upload URL' });
     }
   },
@@ -356,6 +370,7 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
     }));
   } catch (error) {
     req.log.error({ err: error }, 'Error minting chunk upload URL');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to prepare this upload part' });
   }
 });
@@ -402,6 +417,7 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `/objects/chunk/${uploadId}` }));
   } catch (error) {
     req.log.error({ err: error }, 'Error finalising chunked upload');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Upload could not be finalised' });
   }
 });
@@ -451,6 +467,7 @@ router.post(
       res.status(201).json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Upload failed on the server' });
     }
   },
@@ -489,6 +506,7 @@ router.post(
       res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
     } catch (error) {
       req.log.error({ err: error }, 'Robot preview upload failed');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Unable to store this robot preview.' });
     }
   },
@@ -552,6 +570,7 @@ router.post(
       }));
     } catch (error) {
       req.log.error({ err: error }, 'CAD model upload failed');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Unable to store this CAD file' });
     }
   },
@@ -890,6 +909,7 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       return;
     }
     req.log.error({ err: error }, 'Error serving object');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to serve object' });
   }
 });
@@ -941,6 +961,7 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     res.status(200).json({ ok: true });
   } catch (error) {
     req.log.error({ err: error }, 'Error deleting object');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to delete object' });
   }
 });
