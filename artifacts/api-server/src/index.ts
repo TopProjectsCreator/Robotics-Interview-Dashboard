@@ -351,6 +351,12 @@ async function ensureSchema(): Promise<void> {
       throw err;
     }
   }
+  try {
+    const owners = await pool.query(`select "display_name" from "interviewer_accounts" where "is_site_owner" = true`);
+    logger.info({ owners: owners.rows.map((row) => row.display_name) }, "Site owner flag ensured");
+  } catch (err) {
+    logger.warn({ err }, "Site owner check failed (non-fatal)");
+  }
   // Tables must be in the supabase_realtime publication or the Supabase
   // relay subscribes to them forever without receiving a single event.
   // Idempotent and a no-op on plain Postgres; never block boot on it.
