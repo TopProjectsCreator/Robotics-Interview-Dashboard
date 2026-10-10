@@ -27,7 +27,7 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson',
     'test', 'test2', 'test3',
   ];
   // test-style names anywhere: check / probe / verify / temp / test / bot
@@ -42,6 +42,11 @@ async function removeTestAccounts(): Promise<void> {
     await pool.query(
       `delete from interviewer_accounts
         where lower(normalized_name) = any($1::text[]) or lower(normalized_name) like any($2::text[])`,
+      params,
+    );
+    await pool.query(
+      `delete from feature_requests
+        where lower(author_name) = any($1::text[]) or lower(author_name) like any($2::text[])`,
       params,
     );
     await pool.query(
@@ -355,17 +360,6 @@ async function ensureSchema(): Promise<void> {
     logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
   await removeTestAccounts();
-
-  // TEMP (verify feature-request inbox): flag the probe as site owner so the
-  // owner-only endpoints can be exercised. Removed after verification.
-  try {
-    await pool.query(
-      `UPDATE interviewer_accounts SET is_site_owner = true, updated_at = now()
-        WHERE normalized_name = 'featurefan'`,
-    );
-  } catch (err) {
-    logger.error({ err }, "temp featurefan owner flag failed");
-  }
 
   const [queue] = await db.select().from(interviewQueueTable).limit(1);
   try {
