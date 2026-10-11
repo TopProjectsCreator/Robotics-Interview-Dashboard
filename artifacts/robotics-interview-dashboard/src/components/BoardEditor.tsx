@@ -34,6 +34,7 @@ import {
   type BoardOperationInput,
 } from "@workspace/api-client-react";
 
+import { useRealtimeHealthy } from "../realtimeHealth";
 type BoardEditorProps = { boardId: string; assignees: string[]; onClose: () => void };
 type ViewMode = "board" | "table" | "list" | "timeline";
 type Modal = "card" | "bulk" | "column" | "renameColumn" | "boardDetails" | null;
@@ -133,9 +134,9 @@ function LoadingBoard() {
   return <div className="flex min-h-[70dvh] items-center justify-center p-6"><div className="w-full max-w-3xl space-y-4" data-testid="status-board-loading"><div className="h-8 w-64 animate-pulse rounded-lg bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(key => <div key={key} className="h-64 animate-pulse rounded-2xl bg-muted" />)}</div></div></div>;
 }
 
-export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
+export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) { const streamHealthy = useRealtimeHealthy();
   const queryClient = useQueryClient();
-  const query = useGetBoard(boardId, { query: { queryKey: getGetBoardQueryKey(boardId), refetchInterval: 3_000 } });
+  const query = useGetBoard(boardId, { query: { queryKey: getGetBoardQueryKey(boardId), refetchInterval: streamHealthy ? false : (3_000 )} });
   const updateBoard = useUpdateBoard();
   const [view, setView] = useState<ViewMode>("board");
   const [search, setSearch] = useState("");

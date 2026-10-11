@@ -91,6 +91,7 @@ import {
 } from "@/lib/hubAdb";
 import { askValue, confirmAction } from "@/lib/dialogs";
 
+import { useRealtimeHealthy } from "../realtimeHealth";
 type SideTab = "explorer" | "git" | "ai" | "deploy";
 type BottomTab = "problems" | "terminal";
 
@@ -285,7 +286,7 @@ function JavaEditor({
   );
 }
 
-export function CodeWorkspacePage() {
+export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy();
   const queryClient = useQueryClient();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const displayName = session.data?.label?.trim() || "Teammate";
@@ -945,7 +946,7 @@ export function CodeWorkspacePage() {
 
   const revisions = useListCodeRevisions(projectId ?? "", {
     query: projectId
-      ? { queryKey: getListCodeRevisionsQueryKey(projectId), refetchInterval: 10000 }
+      ? { queryKey: getListCodeRevisionsQueryKey(projectId), refetchInterval: streamHealthy ? false : (10000 )}
       : { queryKey: ["code-revisions"], enabled: false },
   } as never) as unknown as { data?: { revisions: { id: string; message: string; author: string | null; createdAt: string }[] } };
 

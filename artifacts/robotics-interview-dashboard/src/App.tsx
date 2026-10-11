@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
@@ -63,8 +63,8 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
-import { CadWorkspacePage } from "@/pages/CadWorkspacePage";
-import { CodeWorkspacePage } from "@/pages/CodeWorkspacePage";
+const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
+const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -75,19 +75,19 @@ import CadLanding from "@/pages/cad-landing";
 import PartsPage from "@/pages/PartsPage";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
-import { WhiteboardEditor } from "./components/WhiteboardEditor";
-import { DocumentEditor } from "./components/DocumentEditor";
+const WhiteboardEditor = lazy(() => import("./components/WhiteboardEditor").then((m) => ({ default: m.WhiteboardEditor })));
+const DocumentEditor = lazy(() => import("./components/DocumentEditor").then((m) => ({ default: m.DocumentEditor })));
 import { BoardEditor } from "./components/BoardEditor";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
-import { ChatStlViewer } from "./components/ChatStlViewer";
-import { ChatParasolidViewer } from "./components/ChatParasolidViewer";
-import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
+const ChatStlViewer = lazy(() => import("./components/ChatStlViewer").then((m) => ({ default: m.ChatStlViewer })));
+const ChatParasolidViewer = lazy(() => import("./components/ChatParasolidViewer").then((m) => ({ default: m.ChatParasolidViewer })));
+const SpreadsheetEditor = lazy(() => import("./components/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditor })));
 import { ChatMentionToken } from "./components/ChatMentionToken";
-import { ChatGlbViewer } from "./components/ChatGlbViewer";
-import { CadThreeMfViewer } from "./components/CadThreeMfViewer";
-import { CadMeshViewer } from "./components/CadMeshViewer";
-import { ChatStepViewer } from "./components/ChatStepViewer";
+const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) => ({ default: m.ChatGlbViewer })));
+const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
+const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
+const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
@@ -105,6 +105,7 @@ import {
   WORKSPACE_LABELS,
 } from "./useWorkspaceVisibility";
 
+import { useRealtimeHealthy } from "./realtimeHealth";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -1225,12 +1226,12 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" onError={() => setMediaPlaybackFailed(true)} className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
-  if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
-  if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
-  if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
-  if (kind === "3mf" && objectUrl) return <CadThreeMfViewer name={name} src={objectUrl} />;
-  if ((kind === "obj" || kind === "ply") && objectUrl) return <CadMeshViewer name={name} src={objectUrl} />;
-  if (kind === "step" && objectUrl) return <ChatStepViewer name={name} src={objectUrl} />;
+  if (kind === "parasolid" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatParasolidViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "model" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatGlbViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "stl" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatStlViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "3mf" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><CadThreeMfViewer name={name} src={objectUrl} /></Suspense>;
+  if ((kind === "obj" || kind === "ply") && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><CadMeshViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "step" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatStepViewer name={name} src={objectUrl} /></Suspense>;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
@@ -1867,10 +1868,10 @@ function BroadcastCard() {
   );
 }
 
-function PresencePanel() {
+function PresencePanel() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const presence = useGetPresence({
-    query: { queryKey: getGetPresenceQueryKey(), refetchInterval: settings.autoRefresh ? settings.refreshMs : false },
+    query: { queryKey: getGetPresenceQueryKey(), refetchInterval: streamHealthy ? false : (settings.autoRefresh ? settings.refreshMs : false )},
   });
   const kick = useKickPresence();
   const queryClient = useQueryClient();
@@ -2604,7 +2605,7 @@ function Login() {
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
+function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2646,7 +2647,7 @@ function Shell({ children }: { children: ReactNode }) {
   const broadcasts = useGetMyBroadcasts({
     query: {
       queryKey: getGetMyBroadcastsQueryKey(),
-      refetchInterval: 15000,
+      refetchInterval: streamHealthy ? false : (15000),
       enabled: session.data?.authenticated === true,
     },
   });
@@ -3791,10 +3792,10 @@ function localHHMM(d = new Date()): string {
 
 type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; makeupDate?: string | null; attendanceExcused?: boolean | null };
 
-function DisplayTextCard() {
+function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: 5000 } });
-  const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 5000 } });
+  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
+  const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
   const update = useUpdateDisplaySettings();
   // Draft-first: edits live here only. Nothing reaches the big screen until
   // "Push to big screen" — the preview below shows exactly what push will do.
@@ -4296,7 +4297,7 @@ function parseSpreadsheetChatMessage(message: string): { id: string; title: stri
   return { id: match[1], title: match[2]?.trim() || "Shared spreadsheet" };
 }
 
-function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
+function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
   const [location, setLocation] = useLocation();
@@ -4307,7 +4308,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     query: {
       queryKey: getListChatCustomEmojisQueryKey(),
       staleTime: 15_000,
-      refetchInterval: 30_000,
+      refetchInterval: streamHealthy ? false : (30_000),
     },
   });
   const customEmojiItems = useMemo(() => customEmojisQuery.data?.items ?? [], [customEmojisQuery.data?.items]);
@@ -4343,7 +4344,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     } catch { /* private browsing etc. */ }
   }, []);
   const conversations = useGetChatConversations({
-    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: 5000 },
+    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )},
   });
   const unreadPeers = useMemo(() => {
     const active = conversationPeer?.trim().toLowerCase() ?? "";
@@ -4380,7 +4381,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     author: activeInterviewer,
     ...(conversationPeer ? { peer: conversationPeer } : {}),
   }), [activeInterviewer, conversationPeer, conversationScope]);
-  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
+  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
   const [chatHasMore, setChatHasMore] = useState(true);
@@ -4493,7 +4494,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const whiteboards = useListInterviewWhiteboards(chatParams, {
     query: {
       queryKey: getListInterviewWhiteboardsQueryKey(chatParams),
-      refetchInterval: refreshMs,
+      refetchInterval: streamHealthy ? false : (refreshMs),
     },
   });
   const createWhiteboard = useCreateInterviewWhiteboard();
@@ -4576,7 +4577,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       query: {
         queryKey: getListApplicantsQueryKey({ sort: "rank" }),
         enabled: mentionOpen,
-        refetchInterval: mentionOpen ? refreshMs : false,
+        refetchInterval: streamHealthy ? false : (mentionOpen ? refreshMs : false),
       },
     },
   );
@@ -5669,15 +5670,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
         : activeWhiteboard && isDocumentData(activeWhiteboard.data)
-          ? <DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} />
-           : <WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} />)}
+          ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
+           : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
   </section>;
 }
-function Queue() {
+function Queue() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: refreshMs } });
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
@@ -5691,7 +5692,7 @@ function Queue() {
   const [board, setBoard] = useState<Applicant[]>([]);
   const [drag, setDrag] = useState<string | null>(null);
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
   const boardDirty = useRef(false);
@@ -5883,8 +5884,8 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
   onSaveNote: (id: string, note: string, original: string) => void;
   onFinish: (id: string) => void;
   onUpdate: (data: ApplicantUpdate) => void;
-}) {
-  const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: 5000 } });
+}) { const streamHealthy = useRealtimeHealthy();
+  const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: streamHealthy ? false : (5000 )} });
   const [notes, setNotes] = useState(applicant.notes);
   const notesEditing = useRef(false);
   useEffect(() => { if (!notesEditing.current) setNotes(detail.data?.notes ?? applicant.notes); }, [detail.data?.notes, applicant.notes]);
@@ -5916,14 +5917,14 @@ function DisplayGallery() {
   </div>;
 }
 
-function Display() {
+function Display() { const streamHealthy = useRealtimeHealthy();
   const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
   // Public big screen: ?code= (or ?eventPassword=) scopes an anonymous display
   // to that team's queue. Omitted = signed-in user's team or default team, so
   // the current team's big screen keeps working unchanged.
   const displayTeamCode = previewParams.get("code") ?? previewParams.get("eventPassword") ?? undefined;
   const displayParams = displayTeamCode ? { eventPassword: displayTeamCode } : undefined;
-  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
+  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: streamHealthy ? false : (3000 )} }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
   const fullscreen = useFullscreen();
   // ?preview=1 turns this page into the big-screen tab's preview: query
   // params override the live text through the exact same render path (so the
@@ -5938,7 +5939,7 @@ function Display() {
     if (isPreview) return;
     void warmEngine(getSelectedEngine()).catch(() => { /* announcements fall back on demand */ });
   }, [isPreview]);
-  const commands = useGetBroadcastCommands(displayParams, { query: { queryKey: getGetBroadcastCommandsQueryKey(displayParams), refetchInterval: 3000, enabled: !isPreview } });
+  const commands = useGetBroadcastCommands(displayParams, { query: { queryKey: getGetBroadcastCommandsQueryKey(displayParams), refetchInterval: streamHealthy ? false : (3000), enabled: !isPreview } });
   useEffect(() => {
     if (isPreview) return;
     const items = commands.data?.items ?? [];
@@ -6154,7 +6155,7 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
   );
 }
 
-function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
+function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode));
@@ -6211,7 +6212,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   }, [assistantConfig.data?.textModel, modelOptions, selectedModel]);
-  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
+  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: streamHealthy ? false : (3000 )} });
   const scopedConversations = useMemo(
     () => (conversations.data?.items ?? []).filter((item) =>
       partsMode
@@ -6224,7 +6225,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     query: {
       queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId),
       enabled: Boolean(activeConversationId),
-      refetchInterval: 3000,
+      refetchInterval: streamHealthy ? false : (3000),
     },
   });
   const createConversation = useCreateAssistantConversation();
@@ -6517,9 +6518,9 @@ function seatDot(attendance: string | null | undefined): string {
   return "bg-[#b4c1c4]";
 }
 
-function SeatingChart({ applicants }: { applicants: Applicant[] }) {
+function SeatingChart({ applicants }: { applicants: Applicant[] }) { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: 5000 } });
+  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
   const updateSettings = useUpdateSeatingSettings();
   const assign = useAssignSeat();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -6600,12 +6601,12 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) {
   </section>;
 }
 
-function AttendancePage() {
+function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const updateApplicant = useUpdateApplicant();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
@@ -6774,13 +6775,13 @@ function Router() {
         <Route path="/applicants"><Shell><Applicants /></Shell></Route>
         <Route path="/queue"><Shell><Queue /></Shell></Route>
         <Route path="/chat"><Shell><ChatPage /></Shell></Route>
-        <Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route>
+        <Route path="/spreadsheets/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><SpreadsheetEditor spreadsheetId={id} /></Suspense></Shell>}</Route>
         <Route path="/attendance"><Shell><AttendancePage /></Shell></Route>
         <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>
         <Route path="/parts/assistant"><Shell><ConversationAssistant partsMode /></Shell></Route>
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
-        <Route path="/cad"><Shell><CadWorkspacePage /></Shell></Route>
-        <Route path="/code"><Shell><CodeWorkspacePage /></Shell></Route>
+        <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
+        <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

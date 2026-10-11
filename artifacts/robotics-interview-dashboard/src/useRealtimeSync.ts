@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
 import { getStoredAuthToken } from "./authSession";
+import { trackRealtimeStream } from "./realtimeHealth";
 
 // Subscribes to the server's realtime relay (local write hints + Supabase
 // Realtime -> SSE). Events carry only table names; rows are refetched through
@@ -33,8 +34,13 @@ export function useRealtimeSync(authenticated: boolean) {
     const source = new EventSource(`${import.meta.env.BASE_URL}api/events${query}`, {
       withCredentials: true,
     });
+    const stream = trackRealtimeStream();
+    source.onopen = () => {
+      if (!stopped) stream.up();
+    };
     source.onmessage = (event) => {
       if (stopped) return;
+      stream.up();
       let table = "";
       try {
         const hint = JSON.parse(event.data) as { table?: unknown };
@@ -82,9 +88,11 @@ export function useRealtimeSync(authenticated: boolean) {
     };
     source.onerror = () => {
       // EventSource reconnects on its own; polling covers any gap.
+      stream.down();
     };
     return () => {
       stopped = true;
+      stream.down();
       source.close();
     };
   }, [on, qc]);

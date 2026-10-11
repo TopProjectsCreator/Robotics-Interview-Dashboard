@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -50,6 +51,18 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(attachAdminSession);
+// Shrink JSON over the wire (Render meters every byte out): ~75% off lists
+// and boards for ~1ms of CPU. Skips streams, images, and tiny bodies.
+app.use(compression({
+  threshold: 1024,
+  filter: (req, res) => {
+    const type = res.getHeader("Content-Type");
+    if (typeof type === "string" && /^(image|audio|video|model)\//.test(type)) return false;
+    if (typeof type === "string" && /octet-stream|zip|gzip/.test(type)) return false;
+    if (req.path === "/api/events") return false;
+    return true;
+  },
+}));
 app.use("/api/queue/custom-emojis", express.json({ limit: "1mb" }));
 app.use("/api/spreadsheets", express.json({ limit: "10mb" }));
 app.use(express.json());
