@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
 } from "lucide-react";
@@ -258,6 +258,29 @@ function ChatActionTooltip({ label, children }: { label: string; children: React
     <TooltipTrigger asChild>{children}</TooltipTrigger>
     <TooltipContent side="top" className="border-0 bg-[#183a4b] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg">{label}</TooltipContent>
   </Tooltip>;
+}
+
+function CopyButton({ text, label = "Copy response", className = "", testId }: { text: string; label?: string; className?: string; testId?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        // Clipboard unavailable — the response stays on screen instead.
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  return <button type="button" onClick={() => void copy()} aria-label={copied ? "Copied" : label} title={copied ? "Copied" : label} data-testid={testId} className={className}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>;
 }
 
 function Skeleton({ className = "" }: { className?: string }) { return <div className={`animate-pulse rounded-lg bg-[#dfe7ea] ${className}`} />; }
@@ -5444,6 +5467,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
         </div>
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+          {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
@@ -6454,7 +6478,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
           {!activeMessages.isLoading && !history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
-          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div></div></div>)}
+          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-0 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
           {isStreaming && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}

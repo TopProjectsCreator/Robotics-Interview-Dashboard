@@ -178,6 +178,8 @@ describe("AI replies in interviewer chat", () => {
       return jsonResponse({ items: [] });
     });
     vi.stubGlobal("fetch", fetchMock);
+    const clipboardWrite = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: clipboardWrite }, configurable: true });
 
     const observerSessions = scope === "shared"
       ? [{ testId: "chat-observer-jordan", params: { limit: 50, scope: "shared" as const, author: "Jordan" } }]
@@ -284,6 +286,10 @@ describe("AI replies in interviewer chat", () => {
       scope,
       peer,
     });
+
+    const copyButton = await screen.findByLabelText("Copy response");
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith(answer));
   });
 
   it("retries an ambiguously failed AI reply without resending the prompt or duplicating the answer", async () => {
