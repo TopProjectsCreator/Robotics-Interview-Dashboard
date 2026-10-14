@@ -1129,6 +1129,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/scheduled:
+    get:
+      operationId: listScheduledChats
+      tags: [queue]
+      summary: List server-side scheduled chat messages for the team
+      responses:
+        "200":
+          description: Scheduled chat messages, pending first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledChatList"
+    post:
+      operationId: createScheduledChat
+      tags: [queue]
+      summary: Schedule a full chat message for later server-side delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledChatInput"
+      responses:
+        "201":
+          description: Scheduled chat message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledChatMessage"
+  /queue/chat/scheduled/{scheduledId}:
+    delete:
+      operationId: deleteScheduledChat
+      tags: [queue]
+      summary: Cancel a pending scheduled chat message
+      parameters:
+        - name: scheduledId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Scheduled message cancelled
   /queue/custom-emojis:
     get:
       operationId: listChatCustomEmojis
@@ -4709,6 +4752,98 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantActivity"
+    ScheduledChatPollInput:
+      type: object
+      required: [question, options]
+      properties:
+        question:
+          type: string
+        options:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: string
+    ScheduledChatInput:
+      type: object
+      required: [message, scheduledAt]
+      properties:
+        message:
+          type: string
+          description: Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.
+        scope:
+          type: string
+          enum: [shared, direct]
+          default: shared
+        recipient:
+          type: string
+          nullable: true
+          description: Configured interviewer label receiving a scheduled direct message.
+        parentMessageId:
+          type: string
+          nullable: true
+        poll:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/ScheduledChatPollInput"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: ISO timestamp at least ~30 seconds in the future and within one year.
+    ScheduledChatMessage:
+      type: object
+      required: [id, author, createdBy, message, scope, scheduledAt, status, attempts, createdAt]
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        createdBy:
+          type: string
+          description: Interviewer account id that scheduled the message.
+        message:
+          type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
+        recipient:
+          type: string
+          nullable: true
+        parentMessageId:
+          type: string
+          nullable: true
+        poll:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/ScheduledChatPollInput"
+        scheduledAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, sending, sent, failed]
+        attempts:
+          type: integer
+        lastError:
+          type: string
+          nullable: true
+        sentMessageId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ScheduledChatList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduledChatMessage"
     InterviewChatMessage:
       type: object
       required: [id, author, message, scope, peer, createdAt]
@@ -5564,6 +5699,11 @@ components:
           type: string
         applicantIds:
           type: array
+          items:
+            type: string
+        disabledTools:
+          type: array
+          description: "Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called."
           items:
             type: string
         attachments:

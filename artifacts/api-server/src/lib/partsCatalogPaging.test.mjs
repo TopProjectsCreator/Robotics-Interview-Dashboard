@@ -90,11 +90,19 @@ test("assistant catalog search pages beyond 100 matches without gaps or duplicat
     namedExports: {
       pool,
       db: {},
+      primaryDb: {},
+      primaryPool: pool,
       interviewerAccountsTable: {},
       revokedSessionsTable: {},
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   mock.method(

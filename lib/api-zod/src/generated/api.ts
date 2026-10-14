@@ -1347,6 +1347,96 @@ export const SendInterviewChatResponse = zod.object({
 
 
 /**
+ * @summary List server-side scheduled chat messages for the team
+ */
+export const listScheduledChatsResponseItemsItemPollOneOptionsMin = 2;
+export const listScheduledChatsResponseItemsItemPollOneOptionsMax = 8;
+
+
+
+export const ListScheduledChatsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
+  "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullish(),
+  "recipient": zod.string().nullish(),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(listScheduledChatsResponseItemsItemPollOneOptionsMin).max(listScheduledChatsResponseItemsItemPollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date(),
+  "status": zod.enum(['pending', 'sending', 'sent', 'failed']),
+  "attempts": zod.number().int(),
+  "lastError": zod.string().nullish(),
+  "sentMessageId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Schedule a full chat message for later server-side delivery
+ */
+export const createScheduledChatBodyScopeDefault = `shared`;
+export const createScheduledChatBodyPollOneOptionsMin = 2;
+export const createScheduledChatBodyPollOneOptionsMax = 8;
+
+
+
+export const CreateScheduledChatBody = zod.object({
+  "message": zod.string().describe('Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.'),
+  "scope": zod.enum(['shared', 'direct']).default(createScheduledChatBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label receiving a scheduled direct message.'),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(createScheduledChatBodyPollOneOptionsMin).max(createScheduledChatBodyPollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date().describe('ISO timestamp at least ~30 seconds in the future and within one year.')
+})
+
+export const createScheduledChatResponsePollOneOptionsMin = 2;
+export const createScheduledChatResponsePollOneOptionsMax = 8;
+
+
+
+export const CreateScheduledChatResponse = zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
+  "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullish(),
+  "recipient": zod.string().nullish(),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(createScheduledChatResponsePollOneOptionsMin).max(createScheduledChatResponsePollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date(),
+  "status": zod.enum(['pending', 'sending', 'sent', 'failed']),
+  "attempts": zod.number().int(),
+  "lastError": zod.string().nullish(),
+  "sentMessageId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Cancel a pending scheduled chat message
+ */
+export const DeleteScheduledChatParams = zod.object({
+  "scheduledId": zod.coerce.string()
+})
+
+export const DeleteScheduledChatResponse = zod.void()
+
+
+/**
  * @summary List team-shared custom chat emojis
  */
 export const listChatCustomEmojisResponseItemsItemNameMin = 2;
@@ -2436,6 +2526,7 @@ export const AskAssistantBody = zod.object({
   "model": zod.string().max(askAssistantBodyModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
   "conversationId": zod.string().optional(),
   "applicantIds": zod.array(zod.string()).optional(),
+  "disabledTools": zod.array(zod.string()).optional().describe('Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called.'),
   "attachments": zod.array(zod.object({
   "fileName": zod.string(),
   "objectPath": zod.string()

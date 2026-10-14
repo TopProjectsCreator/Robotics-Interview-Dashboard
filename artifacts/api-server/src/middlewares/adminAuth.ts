@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
-import { db, interviewerAccountsTable, revokedSessionsTable } from "@workspace/db";
+import { db, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 
@@ -45,16 +45,39 @@ export function createAdminSession(): string {
   return createInterviewerSession("legacy");
 }
 
-export function createInterviewerSession(interviewerId: string): string {
-  const payload = `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}`;
+export function createInterviewerSession(interviewerId: string, instance: DbInstance = "primary"): string {
+  // Secondary-instance accounts carry a trailing "s" segment (covered by the
+  // digest), so every later request routes to the right database with zero
+  // extra lookups. Primary tokens keep the exact legacy 4-segment shape.
+  const payload = instance === "secondary"
+    ? `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}.s`
+    : `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}`;
   return `${payload}.${sessionDigest(payload)}`;
 }
 
-export function isValidAdminSession(value: unknown): boolean {
-  if (typeof value !== "string") return false;
+function sessionParts(value: unknown): string[] | null {
+  if (typeof value !== "string") return null;
   const parts = value.split(".");
-  if (parts.length !== 4) return false;
-  const [timestamp, nonce, interviewerId, digest] = parts;
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  return parts;
+}
+
+export function isValidAdminSession(value: unknown): boolean {
+  const parts = sessionParts(value);
+  if (!parts) return false;
+  let timestamp: string;
+  let nonce: string;
+  let interviewerId: string;
+  let digest: string;
+  let payload: string;
+  if (parts.length === 5) {
+    if (parts[3] !== "s") return false;
+    [timestamp, nonce, interviewerId, , digest] = parts;
+    payload = `${timestamp}.${nonce}.${interviewerId}.s`;
+  } else {
+    [timestamp, nonce, interviewerId, digest] = parts;
+    payload = `${timestamp}.${nonce}.${interviewerId}`;
+  }
   const createdAt = Number(timestamp);
   if (!Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS) {
     return false;
@@ -63,7 +86,7 @@ export function isValidAdminSession(value: unknown): boolean {
     return false;
   }
   if (!nonce || !interviewerId || !digest) return false;
-  const expected = sessionDigest(`${timestamp}.${nonce}.${interviewerId}`);
+  const expected = sessionDigest(payload);
   const actualBuffer = Buffer.from(digest);
   const expectedBuffer = Buffer.from(expected);
   return (
@@ -72,10 +95,17 @@ export function isValidAdminSession(value: unknown): boolean {
   );
 }
 
+/** Database instance for a session token. Legacy 4-segment tokens: primary. */
+export function instanceFromSession(value: unknown): DbInstance {
+  const parts = sessionParts(value);
+  if (parts?.length === 5 && parts[3] === "s" && isValidAdminSession(value)) return "secondary";
+  return "primary";
+}
+
 export function interviewerIdFromSession(value: unknown): string | undefined {
   if (!isValidAdminSession(value)) return undefined;
   const parts = (value as string).split(".");
-  return parts.length === 4 ? parts[2] : undefined;
+  return parts.length === 4 || parts.length === 5 ? parts[2] : undefined;
 }
 
 export function authenticatedInterviewerId(req: Request): string | undefined {
@@ -141,7 +171,9 @@ export function attachAdminSession(
   };
   enriched.isAuthenticated = () => isValidAdminSession(session);
   enriched.interviewerId = interviewerIdFromSession(session);
-  next();
+  // Route the whole request to the session's database instance. Primary
+  // sessions (including all legacy tokens) behave exactly as before.
+  runWithInstance(instanceFromSession(session), () => next());
 }
 
 export function requireAdmin(

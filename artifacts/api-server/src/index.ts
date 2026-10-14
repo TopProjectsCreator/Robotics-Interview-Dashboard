@@ -5,9 +5,10 @@ import { ensureRealtimePublication, initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
-import { pool, db, interviewQueueTable } from "@workspace/db";
+import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { syncPublicPartsCatalogs } from "./routes/parts";
+import { startScheduledChatDispatcher } from "./routes/robotics";
 
 initRealtime();
 
@@ -84,7 +85,7 @@ async function ensureSchema(): Promise<void> {
     "chat_message_reactions",
     "chat_polls",
     "chat_poll_votes",
-    "chat_custom_emojis",
+    "scheduled_chat_messages",
     "cad_bots",
     "cad_folders",
     "cad_models",
@@ -152,6 +153,8 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_poll_votes_one_per_voter" on "chat_poll_votes" ("message_id", "voter")`,
     `create table if not exists "chat_custom_emojis" ("id" text primary key, "name" text not null unique, "image_path" text not null unique, "content_type" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
+    `create table if not exists "scheduled_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "recipient" text, "message" text not null, "parent_message_id" text, "poll_question" text, "poll_options" text, "scheduled_at" timestamptz not null, "status" text not null default 'pending', "attempts" integer not null default 0, "last_error" text, "sent_message_id" text, "created_at" timestamptz not null default now())`,
+    `create index if not exists "scheduled_chat_messages_due_idx" on "scheduled_chat_messages" ("status", "scheduled_at")`,
     `create table if not exists "interview_whiteboards" ("id" text primary key, "title" text not null, "data" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "role" text not null default 'coordinator', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
@@ -342,6 +345,25 @@ async function ensureSchema(): Promise<void> {
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
     `alter table "applicants" add column if not exists "photo_thumb_url" text`,
+    // Core tables below predate the boot-DDL array on the primary (created
+    // via drizzle-kit push), but a FRESH secondary boots from this array
+    // alone — so every table needs a CREATE here. All idempotent.
+    `create table if not exists "applicants" ("id" text primary key, "team_id" text, "name" text not null, "grade" text not null default 'Unknown', "age" integer, "gender" text, "email" text, "photo_url" text, "photo_thumb_url" text, "transcript" text, "attachments" text, "ai_score" integer not null default -1, "ai_recommendation" text not null default 'Review', "ai_summary" text not null default '', "ai_strengths" text not null default '', "ai_concerns" text not null default '', "robotics_experience" text not null default '', "commit_10_hours" text not null default 'Unclear', "parent_volunteer" text not null default 'Unclear', "interview_status" text not null default 'queued', "interviewer" text not null default '', "interview_decision" text not null default 'Undecided', "callback_requested" boolean not null default false, "flagged" boolean not null default false, "attendance" text not null default 'unmarked', "late_arrival_time" text, "makeup_date" text, "attendance_excused" boolean, "seat_row" integer, "seat_col" integer, "category" text not null default 'Unsorted', "rank" integer not null default 0, "notes" text not null default '', "queue_position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "interview_queue" ("id" integer primary key default 1, "team_id" text, "interviewer_labels" text not null default '["Interviewer 1","Interviewer 2"]', "updated_at" timestamptz not null default now())`,
+    `create table if not exists "interview_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "message" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "activities" text not null default '[]', "parent_message_id" text, "pinned_at" timestamptz, "created_at" timestamptz not null default now())`,
+    `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,
+    `create table if not exists "broadcast_acks" ("broadcast_id" text not null, "session_hash" text not null, "acked_at" timestamptz not null default now())`,
+    `create table if not exists "dashboard_charts" ("id" text primary key, "team_id" text, "owner_id" text, "source" text not null, "chart" text not null, "x_axis" text, "y_axis" text, "position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "data_snapshots" ("id" text primary key, "team_id" text, "label" text not null, "created_by" text not null default 'coordinator', "applicant_count" integer not null default 0, "payload" text not null, "created_at" timestamptz not null default now())`,
+    `create table if not exists "display_settings" ("id" integer primary key default 1, "team_id" text, "custom_headline" text, "custom_subheadline" text, "show_names" boolean not null default true, "announce" boolean not null default true, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "page_visits" ("id" text primary key, "team_id" text, "session_hash" text not null, "ip" text not null default '', "page" text not null default '', "entered_at" timestamptz not null default now(), "exited_at" timestamptz)`,
+    `create table if not exists "presence_heartbeats" ("session_hash" text primary key, "team_id" text, "ip" text not null default 'unknown', "user_agent" text not null default '', "city" text not null default '', "region" text not null default '', "country" text not null default '', "page" text not null default '', "notify_permission" text not null default '', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "revoked_sessions" ("token_hash" text primary key, "expires_at" timestamptz not null)`,
+    `create table if not exists "seating_settings" ("id" integer primary key default 1, "team_id" text, "rows" integer not null default 4, "cols" integer not null default 6, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "parts_supplier_sync_states" ("vendor_key" text primary key, "status" text not null, "checked_at" timestamptz not null, "item_count" integer not null, "source" text not null, "message" text not null, constraint "parts_supplier_sync_states_valid_result" check ("status" in ('synced', 'search_only', 'unavailable', 'incomplete') and "item_count" >= 0))`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {
@@ -350,6 +372,33 @@ async function ensureSchema(): Promise<void> {
     } catch (err) {
       logger.error({ err, sql }, "Schema migration failed");
       throw err;
+    }
+  }
+  // Second instance (new teams): same schema, so fresh teams boot with every
+  // table. Multi-pass because FK references (e.g. chat_polls -> the newly
+  // added interview_chat_messages) only resolve once their target exists.
+  // Never fatal — a secondary outage must not take primary teams down.
+  if (hasSecondary()) {
+    const secondary = secondaryPool();
+    if (secondary) {
+      let pending = [...statements];
+      for (let pass = 0; pass < 4 && pending.length > 0; pass += 1) {
+        const failed: string[] = [];
+        for (const sql of pending) {
+          try {
+            await secondary.query(sql);
+          } catch {
+            failed.push(sql);
+          }
+        }
+        if (failed.length === pending.length) break;
+        pending = failed;
+      }
+      if (pending.length > 0) {
+        logger.warn({ count: pending.length }, "Secondary schema statements still failing (non-fatal)");
+      } else {
+        logger.info("Secondary schema check passed");
+      }
     }
   }
   try {
@@ -363,6 +412,10 @@ async function ensureSchema(): Promise<void> {
   // Idempotent and a no-op on plain Postgres; never block boot on it.
   try {
     await ensureRealtimePublication();
+    if (hasSecondary()) {
+      const secondary = secondaryPool();
+      if (secondary) await ensureRealtimePublication(secondary);
+    }
   } catch (err) {
     logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
@@ -448,6 +501,9 @@ server.listen(port, () => {
         });
       }, 60 * 60 * 1000);
       catalogRefreshCheck.unref();
+      // Server-side scheduled chat delivery: posts due messages even when no
+      // browser is open.
+      startScheduledChatDispatcher();
     })
     .catch((err) => {
       logger.error({ err }, "Schema migration failed; exiting");

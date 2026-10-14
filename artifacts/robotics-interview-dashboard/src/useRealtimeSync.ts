@@ -9,6 +9,7 @@ import {
   getGetQueueQueryKey,
   getGetSeatingSettingsQueryKey,
   getListApplicantsQueryKey,
+  getListScheduledChatsQueryKey,
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
 import { getStoredAuthToken } from "./authSession";
@@ -72,6 +73,10 @@ export function useRealtimeSync(authenticated: boolean) {
       }
       if (table === "chat_settings") {
         void qc.invalidateQueries({ queryKey: getGetChatSettingsQueryKey() });
+        return;
+      }
+      if (table === "scheduled_chat_messages") {
+        void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
         return;
       }
 

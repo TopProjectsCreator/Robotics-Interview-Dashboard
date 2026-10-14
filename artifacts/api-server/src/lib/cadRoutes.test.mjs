@@ -124,9 +124,20 @@ function createHarness(t, {
         delete: () => ({ where: () => Promise.resolve() }),
       },
       chunkedUploadsTable: { uploadId: "upload_id" },
+      interviewerAccountsTable: {},
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
+      primaryDb: {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+      },
+      primaryPool: pool,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   mock.module("@workspace/api-zod", {

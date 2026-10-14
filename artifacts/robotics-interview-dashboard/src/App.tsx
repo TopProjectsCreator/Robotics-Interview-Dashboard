@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -31,6 +31,7 @@ import {
   useGetPresenceStats, getGetPresenceStatsQueryKey,
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
+  useCreateScheduledChat, useDeleteScheduledChat, useListScheduledChats, getListScheduledChatsQueryKey,
   useUpdateQueueSettings,
   useUpdateApplicant,
   useGetChatSettings, useUpdateChatSettings, getGetChatSettingsQueryKey,
@@ -47,6 +48,7 @@ import {
 import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
+import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
@@ -380,6 +382,24 @@ function FeatureRequestSection() {
   const setStatus = (item: FeatureRequest, status: "open" | "done") => {
     updateRequest.mutate({ requestId: item.id, data: { status } }, { onSuccess: refresh });
   };
+  const [teamBusy, setTeamBusy] = useState("");
+  const deleteTeam = async (teamId: string, teamName: string) => {
+    if (!(await confirmAction({ title: `Delete ${teamName} and everything in it?`, detail: "Accounts, applicants, chat, boards, files and settings for this team are removed permanently. This cannot be undone.", danger: true, confirmLabel: "Delete team" }))) return;
+    setTeamBusy(teamId);
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/auth/teams/${encodeURIComponent(teamId)}`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { error?: unknown } | null;
+        throw new Error(typeof body?.error === "string" ? body.error : "Could not delete that team.");
+      }
+      refresh();
+      notify({ title: "Team deleted", description: `${teamName} and its data are gone.` });
+    } catch (err) {
+      notify({ title: "Delete failed", description: err instanceof Error ? err.message : "Could not delete that team." });
+    } finally {
+      setTeamBusy("");
+    }
+  };
   const items = requests.data?.items ?? [];
   const openCount = items.filter((item) => item.status !== "done").length;
   return <div className="mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">Request a feature</p>
@@ -423,6 +443,17 @@ function FeatureRequestSection() {
         ))}
       </div>
       {!requests.isLoading && items.length > 0 && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{openCount} open across every team.</p>}
+      {(stats.data?.teamsById ?? []).length > 0 && <div className="mt-3" data-testid="site-teams">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Teams</p>
+        <div className="space-y-2">
+          {(stats.data?.teamsById ?? []).map((team) => (
+            <div key={team.teamId} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+              <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-[#182232] dark:text-[#e8eef2]">{team.teamName}</p><p className="text-[10px] text-[#9aa7aa]">{team.people} people · {team.requests} requests ({team.openRequests} open)</p></div>
+              {team.teamId !== "default" && <button type="button" disabled={teamBusy === team.teamId} onClick={() => void deleteTeam(team.teamId, team.teamName)} data-testid={`button-delete-team-${team.teamId}`} className="rounded-md border border-[#e0b8b4] px-2 py-1 text-[10px] font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:text-[#e89087]">{teamBusy === team.teamId ? "Deleting…" : "Delete"}</button>}
+            </div>
+          ))}
+        </div>
+      </div>}
     </div>}
     {!isOwner && !requests.isLoading && items.length > 0 && <div className="mt-3" data-testid="team-requests">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Your team's requests · {openCount} open</p>
@@ -1634,6 +1665,48 @@ const CHAT_PAGE_SIZE = 30;
 const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
 /** Chat message cap, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 2000;
+
+/** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
+const SCHEDULED_CHAT_MAX_FUTURE_MS = 365 * 24 * 60 * 60 * 1000;
+
+function toLocalInputDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalInputTime(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function parseLocalSchedule(dateValue: string, timeValue: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue.trim()) || !/^\d{2}:\d{2}$/.test(timeValue.trim())) return null;
+  const parsed = new Date(`${dateValue.trim()}T${timeValue.trim()}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatScheduledAt(iso: string | Date): string {
+  const date = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatScheduleCountdown(iso: string | Date, nowMs: number): string {
+  const target = iso instanceof Date ? iso.getTime() : Date.parse(iso);
+  if (Number.isNaN(target)) return "";
+  const diffMs = target - nowMs;
+  if (diffMs <= 0) return "sending…";
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "in under a minute";
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `in ${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `in ${days}d ${hours % 24}h`;
+}
 
 function mergeChatItems<T extends { id: string; createdAt: string }>(...lists: T[][]): T[] {
   const seen = new Set<string>();
@@ -4456,30 +4529,35 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [pollError, setPollError] = useState("");
-  const [pollBusy, setPollBusy] = useState(false);
   const createPollMutation = useCreateChatPoll();
-  useEffect(() => { setPollBusy(createPollMutation.isPending || sendChat.isPending); }, [createPollMutation.isPending, sendChat.isPending]);
+  const pollBusy = createPollMutation.isPending || sendChat.isPending;
   const votePollMutation = useVoteChatPoll();
   const resetPollDraft = () => {
     setPollQuestion("");
     setPollOptions(["", ""]);
     setPollError("");
   };
-  const submitPoll = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitPoll = async (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     const question = pollQuestion.trim();
     const options = pollOptions.map((option) => option.trim()).filter(Boolean);
     if (!question) { setPollError("Ask a question."); return; }
     if (options.length < 2) { setPollError("Add at least two options."); return; }
-    const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question } });
-    await createPollMutation.mutateAsync({ messageId: posted.id, data: { question, options } });
-    setPollOpen(false);
-    resetPollDraft();
-    qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+    setPollError("");
+    try {
+      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), scope: conversationScope, ...(conversationPeer ? { recipient: conversationPeer } : {}), ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
+      await createPollMutation.mutateAsync({ messageId: posted.id, data: { question: question.slice(0, 200), options: options.slice(0, 8) } });
+      setPollOpen(false);
+      resetPollDraft();
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+    } catch (error) {
+      setPollError(serverErrorMessage(error, "Couldn't post the poll. Try again."));
+    }
   };
   const voteOnPoll = (messageId: string, optionIndex: number) => {
     votePollMutation.mutate({ messageId, data: { optionIndex } }, {
-      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); },
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
   };
   const [editDraft, setEditDraft] = useState("");
@@ -4557,6 +4635,256 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const startSlowmodeCountdown = (seconds: number) => {
     if (seconds > 0) setSlowDeadline(Date.now() + seconds * 1000);
   };
+  const scheduledListQuery = useListScheduledChats({
+    query: {
+      queryKey: getListScheduledChatsQueryKey(),
+      refetchInterval: streamHealthy ? false : 5000,
+    },
+  });
+  const scheduledItems = useMemo(() => scheduledListQuery.data?.items ?? [], [scheduledListQuery.data]);
+  const createScheduledChat = useCreateScheduledChat();
+  const deleteScheduledChat = useDeleteScheduledChat();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleError, setScheduleError] = useState("");
+  const [scheduleNotice, setScheduleNotice] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const scheduledForConversation = useMemo(() => scheduledItems
+    .filter(item => (item.status === "pending" || item.status === "sending")
+      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
+    [scheduledItems, conversationScope, conversationPeer]);
+  // Dialog list also surfaces failed deliveries (with the error) so they can
+  // be dismissed or recreated instead of vanishing silently.
+  const scheduledDialogItems = useMemo(() => scheduledItems
+    .filter(item => (item.status === "pending" || item.status === "sending" || item.status === "failed")
+      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
+    [scheduledItems, conversationScope, conversationPeer]);
+  const openScheduleMenu = () => {
+    setScheduleError("");
+    setScheduleNotice("");
+    const suggested = new Date(Date.now() + 60 * 60 * 1000);
+    setScheduleDate(current => current || toLocalInputDate(suggested));
+    setScheduleTime(current => current || toLocalInputTime(suggested));
+    setScheduleOpen(true);
+    setEmojiOpen(false);
+    setFormattingOpen(false);
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    setVoiceMenuOpen(false);
+    setMentionOpen(false);
+    setPollOpen(false);
+  };
+  const applySchedulePreset = (when: Date) => {
+    setScheduleDate(toLocalInputDate(when));
+    setScheduleTime(toLocalInputTime(when));
+    setScheduleError("");
+  };
+  // Upload composer attachments right now and return markdown embeds, so a
+  // scheduled message carries exactly what an immediate send would post.
+  // Every successful upload is also appended to `collectedIds` for
+  // best-effort cleanup if a later step fails. Shared with submitChat.
+  const uploadComposerAttachments = async (
+    files: typeof chatFiles,
+    onStage: (stage: string) => void,
+    collectedIds: string[] = [],
+  ): Promise<{ embeds: string[]; uploadedIds: string[] }> => {
+    const embeds: string[] = [];
+    const uploadedIds: string[] = [];
+    const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
+    const prepareOrFail = async (file: File, displayName: string): Promise<PreparedChatFile> => {
+      try {
+        return await prepareChatFile(file);
+      } catch (error) {
+        throw new Error(
+          "USER:" +
+            (error instanceof Error && error.message === "unreadable"
+              ? `"${displayName}" can't be read in this browser.`
+              : error instanceof Error && error.message === "unreadable-heic"
+                ? `Couldn't convert "${displayName}" (iPhone photo).`
+                : error instanceof Error && error.message.startsWith("timeout:")
+                  ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
+                  : "Couldn't prepare attachments. Try again."),
+        );
+      }
+    };
+    for (const f of files) {
+      onStage(`prepare:${f.name}`);
+      setFileStatus(current => ({ ...current, [f.id]: "Preparing…" }));
+      const prepared = await prepareOrFail(f.file, f.name);
+      onStage(`upload:${f.name}`);
+      setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
+      let objectId = "";
+      let chunked = false;
+      let response: Response | null = null;
+      try {
+        const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
+        const controller = new AbortController();
+        const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
+        const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
+        try {
+          if (useSignedUpload) {
+            const requested = await chatAttachmentUpload.mutateAsync({
+              data: {
+                name: prepared.name,
+                size: prepared.blob.size,
+                contentType: prepared.type,
+              },
+            });
+            const sameOriginUpload = (() => {
+              try {
+                return new URL(requested.uploadURL, window.location.href).origin === window.location.origin;
+              } catch {
+                return false;
+              }
+            })();
+            response = await fetch(requested.uploadURL, {
+              method: "PUT",
+              headers: { "Content-Type": prepared.type },
+              body: prepared.blob,
+              ...(sameOriginUpload ? { credentials: "include" as const } : {}),
+              signal: controller.signal,
+            });
+            if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
+            objectId = requested.objectPath.replace(/^\/objects\//, "");
+            if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+          } else if (shouldUseChunkedUpload(prepared.blob.size)) {
+            // Big files go part-by-part straight to storage so the API
+            // never has to hold the whole thing in memory.
+            setFileStatus(current => ({ ...current, [f.id]: "Uploading in parts…" }));
+            const chunkedPath = await uploadChunked(prepared.blob, prepared.name, prepared.type, (done, total) => {
+              setFileStatus(current => ({
+                ...current,
+                [f.id]: `Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`,
+              }));
+            });
+            objectId = chunkedPath.replace(/^\/objects\//, "");
+            if (!objectId || !objectId.startsWith("chunk/")) fail("Upload failed (bad response). Try again.");
+            chunked = true;
+          } else {
+            response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
+              method: "POST",
+              headers: { "Content-Type": prepared.type },
+              body: prepared.blob,
+              credentials: "include",
+              signal: controller.signal,
+            });
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            fail(useSignedUpload
+              ? "CAD upload timed out after 10 minutes. Try again on a faster connection."
+              : "Upload timed out after 45 seconds. Try again on a faster connection.");
+          }
+          throw error;
+        } finally {
+          clearTimeout(abortTimer);
+        }
+        if (!useSignedUpload && !chunked && response && !response.ok) {
+          let detail = "";
+          try {
+            const parsed = await response.json() as { error?: unknown };
+            if (typeof parsed?.error === "string" && parsed.error) detail = `: ${parsed.error}`;
+          } catch { /* ignore parse errors */ }
+          fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
+        }
+        if (!useSignedUpload && !chunked) {
+          const parsed = await (response as Response).json() as { objectPath?: unknown };
+          objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
+          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("USER:")) throw error;
+        fail("Upload failed (network). Try again.");
+      }
+      uploadedIds.push(objectId);
+      collectedIds.push(objectId);
+      const safeName = prepared.name.replace(/[\[\]\r\n]/g, "_");
+      embeds.push(prepared.inlineImage
+        ? `![${safeName}](/api/storage/objects/${objectId})`
+        : `[${safeName}](/api/storage/objects/${objectId})`);
+    }
+    return { embeds, uploadedIds };
+  };
+  const cancelScheduledMessage = (id: string) => {
+    deleteScheduledChat.mutate({ scheduledId: id }, {
+      onSuccess: () => {
+        setScheduleNotice("Scheduled message cancelled.");
+        void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
+      },
+      onError: (error) => {
+        setScheduleError(serverErrorMessage(error, "Couldn't cancel the scheduled message. Try again."));
+      },
+    });
+  };
+  // Schedule the FULL composer — text, attachments (uploaded now and embedded),
+  // poll draft, and reply reference — for server-side delivery. Nothing needs
+  // to stay open: the server posts it even with every browser closed.
+  const confirmScheduleMessage = async () => {
+    const draft = message.trim();
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+    const pollTouched = pollOpen && (question.length > 0 || options.length > 0);
+    let pollSpec: { question: string; options: string[] } | null = null;
+    if (pollTouched) {
+      if (!question) { setScheduleError("Give the poll a question, or close the poll form."); return; }
+      if (options.length < 2) { setScheduleError("Add at least two poll options, or close the poll form."); return; }
+      pollSpec = { question: question.slice(0, 200), options: options.slice(0, 8) };
+    }
+    if (!draft && chatFiles.length === 0 && !pollSpec) { setScheduleError("Write a message, attach a file, or add a poll first."); return; }
+    if (draft.length > CHAT_MESSAGE_MAX_CHARS) { setScheduleError("Message is too long — shorten the text."); return; }
+    if (failedAiReply && /@ai\b/i.test(draft)) { setScheduleError("Retry the saved AI reply before scheduling another @ai prompt."); return; }
+    const target = parseLocalSchedule(scheduleDate, scheduleTime);
+    if (!target) { setScheduleError("Pick a date and time."); return; }
+    const nowMs = Date.now();
+    if (target.getTime() <= nowMs + 30_000) { setScheduleError("Pick a time at least a minute in the future."); return; }
+    if (target.getTime() - nowMs > SCHEDULED_CHAT_MAX_FUTURE_MS) { setScheduleError("Pick a time within the next year."); return; }
+    setScheduleError("");
+    setScheduling(true);
+    const uploadedIds: string[] = [];
+    try {
+      let body = draft;
+      if (chatFiles.length > 0) {
+        const result = await uploadComposerAttachments(chatFiles, () => {}, uploadedIds);
+        body = [draft, result.embeds.join("\n")].filter(Boolean).join("\n");
+      }
+      if (!body && pollSpec) body = pollSpec.question;
+      if (!body) { setScheduleError("Write a message first, then schedule it."); return; }
+      await createScheduledChat.mutateAsync({
+        data: {
+          message: body,
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
+          ...(pollSpec ? { poll: pollSpec } : {}),
+          scheduledAt: target.toISOString(),
+        },
+      });
+      for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
+      setChatFiles([]);
+      setFileStatus({});
+      clearChatDraft(chatDraftStorageKey);
+      setMessage("");
+      setMentionOpen(false);
+      setMentionQuery("");
+      setReplyingTo(null);
+      if (pollSpec) { setPollOpen(false); resetPollDraft(); }
+      setScheduleError("");
+      setScheduleNotice(`Scheduled for ${formatScheduledAt(target.toISOString())} — sends automatically, even with this browser closed.`);
+      setChatError("");
+      void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
+    } catch (error) {
+      for (const id of uploadedIds) {
+        try { await fetch(`${import.meta.env.BASE_URL}api/storage/objects/${id}`, { method: "DELETE", credentials: "include" }); } catch { /* best-effort cleanup */ }
+      }
+      const detail = error instanceof Error && error.message.startsWith("USER:") ? error.message.slice(5) : null;
+      setScheduleError(detail ?? serverErrorMessage(error, "Couldn't schedule — nothing was saved. Try again."));
+    } finally {
+      setScheduling(false);
+    }
+  };
   const [failedAiReply, setFailedAiReply] = useState<{
     answer: string;
     activities: { tool: string; detail: string }[];
@@ -4623,12 +4951,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setWhiteboardOpen(true);
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
+    setScheduleOpen(false);
   };
   const openBoard = (id: string) => {
     setActiveBoardId(id);
     setBoardOpen(true);
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
+    setScheduleOpen(false);
   };
   const openSpreadsheet = (id: string) => {
     setComposerMenuOpen(false);
@@ -4855,6 +5185,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setMentionOpen(false);
       setEmojiOpen(false);
       setComposerMenuOpen(false);
+      setScheduleOpen(false);
       return;
     }
     if (mentionOpen && filteredMentionPeople.length > 0) {
@@ -5229,121 +5560,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     let assistantReplyForRetry: typeof failedAiReply = null;
     const fileInfo = chatFiles.map(f => `${f.name}|${f.file.type || "notype"}|${Math.round(f.size / 1024)}kb`).join(";");
     const diagContext = () => `files:[${fileInfo}] ua:${navigator.userAgent.slice(0, 160)}`;
-    const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
-    const prepareOrFail = async (file: File, displayName: string): Promise<PreparedChatFile> => {
-      try {
-        return await prepareChatFile(file);
-      } catch (error) {
-        throw new Error(
-          "USER:" +
-            (error instanceof Error && error.message === "unreadable"
-              ? `"${displayName}" can't be read in this browser.`
-              : error instanceof Error && error.message === "unreadable-heic"
-                ? `Couldn't convert "${displayName}" (iPhone photo).`
-                : error instanceof Error && error.message.startsWith("timeout:")
-                  ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
-                  : "Couldn't prepare attachments. Try again."),
-        );
-      }
-    };
     setChatUploading(true);
     try {
-      const embeds: string[] = [];
-      for (const f of chatFiles) {
-        stage = `prepare:${f.name}`;
-        setFileStatus(current => ({ ...current, [f.id]: "Preparing…" }));
-        const prepared = await prepareOrFail(f.file, f.name);
-        stage = `upload:${f.name}`;
-        setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
-        let objectId = "";
-        let chunked = false;
-        let response: Response | null = null;
-        try {
-          const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
-          const controller = new AbortController();
-          const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
-          const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
-          try {
-            if (useSignedUpload) {
-              const requested = await chatAttachmentUpload.mutateAsync({
-                data: {
-                  name: prepared.name,
-                  size: prepared.blob.size,
-                  contentType: prepared.type,
-                },
-              });
-              const sameOriginUpload = (() => {
-                try {
-                  return new URL(requested.uploadURL, window.location.href).origin === window.location.origin;
-                } catch {
-                  return false;
-                }
-              })();
-              response = await fetch(requested.uploadURL, {
-                method: "PUT",
-                headers: { "Content-Type": prepared.type },
-                body: prepared.blob,
-                ...(sameOriginUpload ? { credentials: "include" as const } : {}),
-                signal: controller.signal,
-              });
-              if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
-              objectId = requested.objectPath.replace(/^\/objects\//, "");
-              if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
-            } else if (shouldUseChunkedUpload(prepared.blob.size)) {
-              // Big files go part-by-part straight to storage so the API
-              // never has to hold the whole thing in memory.
-              setFileStatus(current => ({ ...current, [f.id]: "Uploading in parts…" }));
-              const chunkedPath = await uploadChunked(prepared.blob, prepared.name, prepared.type, (done, total) => {
-                setFileStatus(current => ({
-                  ...current,
-                  [f.id]: `Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`,
-                }));
-              });
-              objectId = chunkedPath.replace(/^\/objects\//, "");
-              if (!objectId || !objectId.startsWith("chunk/")) fail("Upload failed (bad response). Try again.");
-              chunked = true;
-            } else {
-              response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
-                method: "POST",
-                headers: { "Content-Type": prepared.type },
-                body: prepared.blob,
-                credentials: "include",
-                signal: controller.signal,
-              });
-            }
-          } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") {
-              fail(useSignedUpload
-                ? "CAD upload timed out after 10 minutes. Try again on a faster connection."
-                : "Upload timed out after 45 seconds. Try again on a faster connection.");
-            }
-            throw error;
-          } finally {
-            clearTimeout(abortTimer);
-          }
-          if (!useSignedUpload && !chunked && response && !response.ok) {
-            let detail = "";
-            try {
-              const parsed = await response.json() as { error?: unknown };
-              if (typeof parsed?.error === "string" && parsed.error) detail = `: ${parsed.error}`;
-            } catch { /* ignore parse errors */ }
-            fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
-          }
-          if (!useSignedUpload && !chunked) {
-            const parsed = await (response as Response).json() as { objectPath?: unknown };
-            objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
-            if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
-          }
-        } catch (error) {
-          if (error instanceof Error && error.message.startsWith("USER:")) throw error;
-          fail("Upload failed (network). Try again.");
-        }
-        uploadedIds.push(objectId);
-        const safeName = prepared.name.replace(/[\[\]\r\n]/g, "_");
-        embeds.push(prepared.inlineImage
-          ? `![${safeName}](/api/storage/objects/${objectId})`
-          : `[${safeName}](/api/storage/objects/${objectId})`);
-      }
+      const { embeds, uploadedIds: uploaded } = await uploadComposerAttachments(chatFiles, (next) => { stage = next; });
+      uploadedIds.push(...uploaded);
       const submitted = [draft, embeds.join("\n")].filter(Boolean).join("\n");
       stage = "send";
       await withTimeout(sendChat.mutateAsync({
@@ -5451,6 +5671,12 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatUploading(false);
     }
   };
+  // Countdowns for the server-side scheduled list refresh off the shared clock.
+  useEffect(() => {
+    if (!scheduledForConversation.length) return;
+    const tick = setInterval(() => setClock(Date.now()), 30000);
+    return () => clearInterval(tick);
+  }, [scheduledForConversation.length]);
   const renderChatMessage = (item: InterviewChatMessage) => {
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
@@ -5604,10 +5830,50 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
            onSelect={value => { insertAtCursor(value); setEmojiOpen(false); }}
          />}
-           {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
+            {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
+            {scheduleOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-[340px] max-w-[calc(100vw-3rem)] rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="chat-schedule-menu" role="dialog" aria-label="Schedule message send">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-[#183a4b]">Schedule send</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
+                </div>
+                <button type="button" onClick={() => setScheduleOpen(false)} aria-label="Close schedule menu" data-testid="button-close-schedule-menu" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
+              </div>
+              {message.trim() || chatFiles.length > 0 ? <p className="mt-2 truncate rounded-lg bg-[#f4f8f7] px-2.5 py-2 text-xs text-[#52666e]" data-testid="schedule-draft-preview">“{(message.trim() || `${chatFiles.length} attachment${chatFiles.length === 1 ? "" : "s"}`).slice(0, 120)}{(message.trim() || "").length > 120 ? "…" : ""}”{pollOpen && (pollQuestion.trim() || pollOptions.some(option => option.trim())) ? " + poll" : ""}</p> : <p className="mt-2 rounded-lg bg-[#fff8e1] px-2.5 py-2 text-[11px] text-[#8a6508]">Write a message, attach a file, or draft a poll first — then pick a time.</p>}
+              {replyingTo && <p className="mt-1.5 text-[11px] text-[#527079]">Will send as a reply to {replyingTo.author}.</p>}
+              <div className="mt-2 flex gap-2">
+                <button type="button" onClick={() => applySchedulePreset(new Date(Date.now() + 60 * 60 * 1000))} data-testid="button-schedule-in-1h" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">In 1 hour</button>
+                <button type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + 1); next.setHours(9, 0, 0, 0); if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1); applySchedulePreset(next); }} data-testid="button-schedule-tomorrow-9am" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">Tomorrow 9am</button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="block text-[11px] font-semibold text-[#63747c]">Date<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} data-testid="input-schedule-date" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+                <label className="block text-[11px] font-semibold text-[#63747c]">Time<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} data-testid="input-schedule-time" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+              </div>
+              {scheduleError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="schedule-error">{scheduleError}</p>}
+              {scheduleNotice && <p className="mt-2 text-xs font-medium text-[#16869a]" role="status" data-testid="schedule-notice">{scheduleNotice}</p>}
+              <div className="mt-2 flex items-center gap-2">
+                <button type="button" onClick={() => void confirmScheduleMessage()} disabled={scheduling || createScheduledChat.isPending || (!message.trim() && chatFiles.length === 0 && !pollQuestion.trim() && !pollOptions.some(option => option.trim()))} data-testid="button-confirm-schedule" className="flex-1 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{scheduling || createScheduledChat.isPending ? "Scheduling…" : "Schedule send"}</button>
+                <button type="button" onClick={() => setScheduleOpen(false)} className="rounded-lg border border-[#d5e0e0] px-3 py-2 text-xs font-semibold text-[#52666e]">Done</button>
+              </div>
+              {scheduledDialogItems.length > 0 && <div className="mt-3 border-t border-[#edf1f1] pt-2">
+                <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#7c8c91]">Scheduled here · {scheduledDialogItems.length}</p>
+                <div className="mt-1.5 max-h-44 space-y-1.5 overflow-y-auto">
+                  {scheduledDialogItems.map(item => <div key={item.id} data-testid={`scheduled-message-${item.id}`} className="flex items-start gap-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2">
+                    <Clock size={14} className="mt-0.5 shrink-0 text-[#16869a]" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-[#183a4b]">{item.message.replace(/\s+/g, " ").trim().slice(0, 100) || "(empty)"}</p>
+                      {item.status === "failed"
+                        ? <p className="mt-0.5 text-[11px] text-[#ad4b43]">Failed — {item.lastError ?? "couldn't deliver"}</p>
+                        : <p className="mt-0.5 text-[11px] text-[#7c8c91]">{formatScheduledAt(item.scheduledAt)} · {formatScheduleCountdown(item.scheduledAt, clock)}{item.parentMessageId ? ` · reply` : ""}{item.poll ? ` · poll` : ""}{item.status === "sending" ? " · sending…" : ""}</p>}
+                    </div>
+                    <button type="button" onClick={() => cancelScheduledMessage(item.id)} disabled={deleteScheduledChat.isPending} aria-label={item.status === "failed" ? "Dismiss failed scheduled message" : "Cancel scheduled message"} data-testid={`button-cancel-scheduled-${item.id}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><X size={13} /></button>
+                  </div>)}
+                </div>
+              </div>}
+            </div>}
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
            <div className="flex items-end gap-1.5">
-              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
              <div className="min-w-0 flex-1">
                  <textarea
                    ref={chatMessageInputRef}
@@ -5625,17 +5891,23 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
              </div>
-             <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
-                <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
-                <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
-                <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
-                <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
-               <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
-             </div>
+              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
+                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
+                 <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+                 <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
+                 <button type="button" onClick={openScheduleMenu} title="Schedule send" aria-label="Schedule message send" aria-expanded={scheduleOpen} data-testid="button-chat-schedule" className={`chat-composer-control relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${scheduleOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Clock size={18} />{scheduledForConversation.length > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#16869a] px-1 text-[9px] font-bold text-white" data-testid="chat-schedule-count">{scheduledForConversation.length}</span>}</button>
+                 <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
+                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
+              </div>
               <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
+       {scheduledForConversation.length > 0 && <button type="button" onClick={openScheduleMenu} data-testid="chat-scheduled-bar" className="flex w-full items-center gap-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] px-3 py-2 text-left transition hover:border-[#16869a]">
+         <Clock size={14} className="shrink-0 text-[#16869a]" />
+          <span className="min-w-0 flex-1 truncate text-xs text-[#385762]"><strong>{scheduledForConversation.length} scheduled</strong> · next {formatScheduledAt(scheduledForConversation[0].scheduledAt)} ({formatScheduleCountdown(scheduledForConversation[0].scheduledAt, clock)})</span>
+         <span className="shrink-0 text-[11px] font-semibold text-[#16869a]">View</span>
+       </button>}
         <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
@@ -5648,7 +5920,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
-        {pollOpen && <form onSubmit={submitPoll} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
+        {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>
           <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
           <div className="space-y-1.5">
@@ -5662,10 +5934,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {pollOptions.length < 8 && <button type="button" onClick={() => setPollOptions(current => [...current, ""])} data-testid="button-poll-add-option" className="rounded-lg border border-dashed border-[#9bbec0] px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-white dark:border-[#3f6d75] dark:text-[#6fc3cf] dark:hover:bg-[#1b3038]">+ Add option</button>}
           {pollError && <p className="text-xs text-[#ad4b43] dark:text-[#ef948b]" data-testid="poll-error">{pollError}</p>}
           <div className="flex items-center gap-2 pt-1">
-            <button type="submit" disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#106d7a] disabled:opacity-50 dark:hover:bg-[#1c8b9d]">{pollBusy ? "Creating…" : "Post poll"}</button>
+            <button type="button" onClick={() => void submitPoll()} disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#106d7a] disabled:opacity-50 dark:hover:bg-[#1c8b9d]">{pollBusy ? "Creating…" : "Post poll"}</button>
             <button type="button" onClick={() => { setPollOpen(false); resetPollDraft(); }} data-testid="button-poll-cancel" className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e] dark:border-[#31495a] dark:bg-[#182935] dark:text-[#b3c6cf]">Cancel</button>
           </div>
-        </form>}
+        </div>}
      </form>
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
@@ -6169,6 +6441,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       return "";
     }
   });
+  const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
+  const rememberDisabledTools = (tools: string[]) => {
+    setDisabledTools(tools);
+    saveDisabledTools(tools);
+  };
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState("");
@@ -6318,7 +6595,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     streamAbort.current = controller;
     setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
+    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -6462,7 +6739,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

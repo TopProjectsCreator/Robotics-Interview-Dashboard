@@ -49,6 +49,11 @@ import {
   isRelevantCatalogSearchResult,
 } from "../lib/partsSearchTerms";
 import {
+  VENDOR_CATALOG_SEEDS,
+  vendorSeedSyncMessage,
+  vendorSeedSyncStatus,
+} from "../lib/vendorCatalogSeeds";
+import {
   defaultProductFeedUrl,
   publicVendors,
   VENDORS,
@@ -1430,6 +1435,33 @@ async function collectPublicVendorCatalog(vendor: VendorConfig) {
         /Product feed returned (401|403|404|405|406|410)\./.test(message) ||
         /did not return a Shopify product list|redirected outside the supplier website|invalid JSON/i.test(message) ||
         error instanceof SyntaxError;
+      if (noPublicFeed) {
+        const seed = vendor.key ? VENDOR_CATALOG_SEEDS.get(vendor.key) : undefined;
+        if (seed) {
+          // This supplier publishes no verified public full-catalog feed,
+          // so automated sync can never index it. Fall back to the
+          // hand-collected seed so the synced catalog search still covers
+          // its parts. `synced` is reported only for fully-enumerated seeds
+          // (see vendorCatalogSeeds.ts); anything scoped stays search_only.
+          const seedRecords: CatalogFeedRecord[] = seed.records.map((record) => ({
+            vendorKey: record.vendorKey,
+            externalKey: record.externalKey,
+            name: record.name,
+            sku: record.sku,
+            category: record.category,
+            description: record.description,
+            productUrl: record.productUrl,
+            imageUrl: record.imageUrl,
+          }));
+          return {
+            vendor,
+            status: vendorSeedSyncStatus(seed),
+            source: seed.source,
+            records: seedRecords,
+            message: vendorSeedSyncMessage(seed),
+          };
+        }
+      }
       return {
         vendor,
         status: noPublicFeed ? ("search_only" as const) : ("unavailable" as const),
@@ -1788,10 +1820,12 @@ export async function syncPublicPartsCatalogs() {
         message: "The public product feed could not be retrieved.",
       };
     }
-    const counts =
-      collection.status === "unavailable" || collection.status === "search_only"
-        ? { created: 0, updated: 0 }
-        : await saveCatalogFeedRecords(collection.records);
+    // Persist any collected records, including hand-collected seeds served
+    // under a search_only status (REV Robotics). Vendors without records
+    // still no-op because saveCatalogFeedRecords([]) returns zeros.
+    const counts = collection.records.length > 0
+      ? await saveCatalogFeedRecords(collection.records)
+      : { created: 0, updated: 0 };
     vendorResults[index] = {
       vendorKey: collection.vendor.key,
       vendorName: collection.vendor.name,

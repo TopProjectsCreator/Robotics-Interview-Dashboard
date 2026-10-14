@@ -153,13 +153,21 @@ function mockDatabase() {
   mock.module("@workspace/db", {
     namedExports: {
       db,
+      primaryDb: db,
       pool: {},
+      primaryPool: {},
       interviewerAccountsTable,
       revokedSessionsTable,
       interviewWhiteboardsTable,
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
 }
@@ -315,12 +323,21 @@ test("removes a disconnected collaborator cursor from the room presence update",
   mock.module("@workspace/db", {
     namedExports: {
       db,
+      primaryDb: db,
+      pool: {},
+      primaryPool: {},
       interviewerAccountsTable,
       interviewWhiteboardsTable,
       revokedSessionsTable,
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   const [{ createInterviewerSession }, { setupWhiteboardCollaboration }] = await Promise.all([

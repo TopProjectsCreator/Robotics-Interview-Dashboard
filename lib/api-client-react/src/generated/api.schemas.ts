@@ -1169,6 +1169,78 @@ export interface InterviewChatInput {
   activities?: AssistantActivity[];
 }
 
+export interface ScheduledChatPollInput {
+  question: string;
+  /**
+     * @minItems 2
+     * @maxItems 8
+     */
+  options: string[];
+}
+
+export type ScheduledChatInputScope = typeof ScheduledChatInputScope[keyof typeof ScheduledChatInputScope];
+
+
+export const ScheduledChatInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface ScheduledChatInput {
+  /** Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links. */
+  message: string;
+  scope?: ScheduledChatInputScope;
+  /** Configured interviewer label receiving a scheduled direct message. */
+  recipient?: string | null;
+  parentMessageId?: string | null;
+  /** @nullable */
+  poll?: ScheduledChatPollInput | null;
+  /** ISO timestamp at least ~30 seconds in the future and within one year. */
+  scheduledAt: string;
+}
+
+export type ScheduledChatMessageScope = typeof ScheduledChatMessageScope[keyof typeof ScheduledChatMessageScope];
+
+
+export const ScheduledChatMessageScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export type ScheduledChatMessageStatus = typeof ScheduledChatMessageStatus[keyof typeof ScheduledChatMessageStatus];
+
+
+export const ScheduledChatMessageStatus = {
+  pending: 'pending',
+  sending: 'sending',
+  sent: 'sent',
+  failed: 'failed',
+} as const;
+
+export interface ScheduledChatMessage {
+  id: string;
+  author: string;
+  /** Interviewer account id that scheduled the message. */
+  createdBy: string;
+  message: string;
+  scope: ScheduledChatMessageScope;
+  peer?: string | null;
+  recipient?: string | null;
+  parentMessageId?: string | null;
+  /** @nullable */
+  poll?: ScheduledChatPollInput | null;
+  scheduledAt: string;
+  status: ScheduledChatMessageStatus;
+  attempts: number;
+  lastError?: string | null;
+  sentMessageId?: string | null;
+  createdAt: string;
+}
+
+export interface ScheduledChatList {
+  items: ScheduledChatMessage[];
+}
+
 export type InterviewChatMessageScope = typeof InterviewChatMessageScope[keyof typeof InterviewChatMessageScope];
 
 
@@ -1929,6 +2001,8 @@ export interface AssistantInput {
   model?: string;
   conversationId?: string;
   applicantIds?: string[];
+  /** Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called. */
+  disabledTools?: string[];
   /** Files attached in chat (already uploaded to storage). */
   attachments?: AssistantInputAttachmentsItem[];
   /** Recent interviewer chat messages for conversational context. */

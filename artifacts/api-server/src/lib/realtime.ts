@@ -63,19 +63,38 @@ export function isRealtimeEnabled(): boolean {
 export function initRealtime(): void {
   if (started) return;
   started = true;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  startRelay(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    "dashboard-changes",
+    "primary",
+  );
+  // The second instance gets its own relay so new teams' live updates fan
+  // out too. Either relay may be absent; local write hints cover everything
+  // on a single instance regardless.
+  if (process.env.SECONDARY_SUPABASE_URL?.trim() && process.env.SECONDARY_SUPABASE_SECRET_KEY?.trim()) {
+    startRelay(
+      process.env.SECONDARY_SUPABASE_URL.trim(),
+      process.env.SECONDARY_SUPABASE_SECRET_KEY.trim(),
+      "dashboard-changes-secondary",
+      "secondary",
+    );
+  }
+}
+
+function startRelay(url: string | undefined, key: string | undefined, channelName: string, label: string): void {
   if (!url || !key) {
     logger.warn(
-      "Supabase realtime relay disabled: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing. Live pages fall back to local hints and polling.",
+      `Supabase realtime relay (${label}) disabled: URL or key missing. Live pages fall back to local hints and polling.`,
     );
     return;
   }
   try {
-    supabase = createClient(url, key, {
+    const relay = createClient(url, key, {
       realtime: { params: { eventsPerSecond: 20 } },
     });
-    const channel = supabase.channel("dashboard-changes");
+    if (!supabase) supabase = relay;
+    const channel = relay.channel(channelName);
     for (const table of REALTIME_WATCHED_TABLES) {
       channel.on(
         "postgres_changes",
@@ -85,14 +104,13 @@ export function initRealtime(): void {
     }
     channel.subscribe((status, error) => {
       if (error) {
-        logger.error({ err: error }, "Supabase realtime subscription error");
+        logger.error({ err: error }, `Supabase realtime subscription error (${label})`);
         return;
       }
-      logger.info({ status }, "Supabase realtime status");
+      logger.info({ status, relay: label }, "Supabase realtime status");
     });
   } catch (error) {
-    logger.error({ err: error }, "Failed to start Supabase realtime relay");
-    supabase = null;
+    logger.error({ err: error }, `Failed to start Supabase realtime relay (${label})`);
   }
 }
 
@@ -102,9 +120,9 @@ export function initRealtime(): void {
 // above subscribes but never receives anything. Add every watched table at
 // boot; idempotent, and a no-op on plain Postgres where the publication does
 // not exist (local hints + polling cover that case).
-export async function ensureRealtimePublication(): Promise<void> {
+export async function ensureRealtimePublication(target: { query: (sql: string) => Promise<unknown> } = pool): Promise<void> {
   const tableList = REALTIME_WATCHED_TABLES.map((name) => `'${name}'`).join(", ");
-  await pool.query(`
+  await target.query(`
     DO $pub$
     DECLARE
       table_name text;

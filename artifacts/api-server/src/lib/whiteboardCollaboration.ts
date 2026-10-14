@@ -2,14 +2,14 @@ import type { IncomingMessage, Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import { and, eq } from "drizzle-orm";
-import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import { db, runWithInstance, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
   isValidAdminSession,
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
-import { teamFilter } from "./teams";
+import { teamFilter, findAccountAnywhere } from "./teams";
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
 const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
@@ -214,19 +214,14 @@ function schedulePersist(room: CollaborationRoom): void {
   }, 180);
 }
 
-async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{ interviewerId: string; displayName: string; teamId: string } | null> {
+async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{ interviewerId: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const interviewerId = interviewerIdFromSession(session);
   if (!interviewerId) return null;
-  const [account] = await db.select({
-    id: interviewerAccountsTable.id,
-    displayName: interviewerAccountsTable.displayName,
-    passwordHash: interviewerAccountsTable.passwordHash,
-    teamId: interviewerAccountsTable.teamId,
-  }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
-  if (!account?.passwordHash) return null;
-  return { interviewerId: account.id, displayName: account.displayName, teamId: account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID };
+  const found = await findAccountAnywhere(interviewerId);
+  if (!found?.account.passwordHash) return null;
+  return { interviewerId: found.account.id, displayName: found.account.displayName, teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID, instance: found.instance };
 }
 
 async function openCollaboration(
@@ -366,7 +361,7 @@ export function setupWhiteboardCollaboration(server: Server): void {
     }
     const whiteboardId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => {
+      .then((identity) => runWithInstance(identity?.instance ?? "primary", () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
           socket.destroy();
@@ -392,7 +387,7 @@ export function setupWhiteboardCollaboration(server: Server): void {
             logger.error({ err: error, whiteboardId }, "Whiteboard collaboration authorization failed");
             socket.destroy();
           });
-      })
+      }))
       .catch((error) => {
         logger.error({ err: error }, "Whiteboard collaboration authentication failed");
         socket.destroy();

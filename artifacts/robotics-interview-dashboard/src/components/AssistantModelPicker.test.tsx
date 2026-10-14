@@ -43,4 +43,71 @@ describe("AssistantModelPicker", () => {
     expect(picker).toBeDisabled();
     expect(picker).toHaveTextContent("openrouter/free");
   });
+
+  it("shows a gear inline with the model dropdown that opens the tools menu", async () => {
+    render(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const picker = screen.getByRole("combobox", { name: "Assistant model" });
+    const gear = screen.getByRole("button", { name: "Assistant tools" });
+    // Gear sits in the same inline row as the dropdown.
+    expect(gear.closest(".assistant-model-picker-row")).toContainElement(picker);
+    expect(screen.getByTestId("assistant-tools-gear")).toBe(gear);
+
+    fireEvent.click(gear);
+    expect(await screen.findByText("Assistant tools")).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("44 of 44 enabled");
+    expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
+  });
+
+  it("reports disabled tools when a tool is toggled off", async () => {
+    const onDisabledToolsChange = vi.fn();
+    render(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        disabledTools={[]}
+        onDisabledToolsChange={onDisabledToolsChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant tools" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Web search tool" }));
+    expect(onDisabledToolsChange).toHaveBeenCalledWith(["web_search"]);
+  });
+
+  it("reflects controlled disabled tools with a count and read-only shortcut", async () => {
+    const onDisabledToolsChange = vi.fn();
+    render(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        disabledTools={["web_search"]}
+        onDisabledToolsChange={onDisabledToolsChange}
+      />,
+    );
+
+    const gear = screen.getByTestId("assistant-tools-gear");
+    expect(gear).toHaveAttribute("title", expect.stringContaining("43 of 44 tools enabled"));
+
+    fireEvent.click(gear);
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("43 of 44 enabled");
+    expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enable all" }));
+    expect(onDisabledToolsChange).toHaveBeenCalledWith([]);
+  });
 });

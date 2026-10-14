@@ -1,8 +1,8 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
-import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode } from "../lib/teams";
+import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -53,6 +53,7 @@ import {
   requestAdminSession,
   requireAdmin,
   requireCoordinator,
+  requireSiteOwner,
   revokeAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
@@ -158,11 +159,11 @@ function eventPasswordMatches(value: string): boolean {
  * its own code), then falls back to the legacy ADMIN_PASSWORD for the default
  * team so the current team's data stays reachable through the migration.
  */
-async function resolveEventTeam(eventPassword: string): Promise<{ id: string; name: string } | null> {
+async function resolveEventTeam(eventPassword: string): Promise<ResolvedTeam | null> {
   const team = await findTeamByCode(eventPassword);
   if (team) return team;
   if (eventPasswordMatches(eventPassword)) {
-    return ensureDefaultTeam();
+    return { ...(await ensureDefaultTeam()), instance: "primary" as const };
   }
   return null;
 }
@@ -219,6 +220,7 @@ router.get("/auth/interviewers", async (req, res): Promise<void> => {
       return;
     }
     teamId = team.id;
+    enterInstance(team.instance);
   } else {
     await ensureDefaultTeam();
   }
@@ -249,6 +251,7 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  enterInstance(team.instance);
   const displayName = parsed.data.displayName.trim().replace(/\s+/g, " ");
   const normalizedName = normalizeInterviewerName(displayName);
   const existing = await db.select({ id: interviewerAccountsTable.id })
@@ -300,6 +303,7 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
   if (!account || accountTeamId(account) !== team.id) {
     res.status(404).json({ error: "Interviewer not found." });
@@ -567,7 +571,7 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
 const RP_NAME = "Robotics Interview Dashboard";
 
 function passkeySessionResponse(res: Response, account: { id: string; displayName: string }) {
-  const session = createInterviewerSession(account.id);
+  const session = createInterviewerSession(account.id, currentInstance());
   setAdminCookie(res, session);
   return LoginWithPasskeyResponse.parse({
     authenticated: true,
@@ -730,6 +734,7 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
     return;
   }
+  enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
   if (account && accountTeamId(account) !== team.id) {
     res.status(401).json({ error: "Incorrect event passcode or person." });
@@ -789,6 +794,7 @@ router.post("/auth/passkey/login", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Passkey sign-in expired. Try again." });
     return;
   }
+  enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
   if (!account || accountTeamId(account) !== team.id) {
     clearPasskeyChallenge(res);
@@ -856,6 +862,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
     return;
   }
+  enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
   if (!account || accountTeamId(account) !== team.id || !passwordHashMatches(parsed.data.password, account.passwordHash)) {
     recordLoginFailure(ip);
@@ -863,7 +870,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
   loginFailures.delete(ip);
-  const session = createInterviewerSession(account.id);
+  const session = createInterviewerSession(account.id, team.instance);
   setAdminCookie(res, session);
   const base = LoginResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, token: session });
   res.json({ ...base, role: account.role, teamId: team.id, teamName: team.name });
@@ -947,7 +954,15 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   }
   const normalizedTeam = normalizeTeamName(teamName);
   try {
-    const existingTeams = await db.select().from(teamsTable);
+    const primaryTeams = await primaryDb.select().from(teamsTable);
+    let secondaryTeams: typeof primaryTeams = [];
+    try {
+      const secondary = secondaryDb();
+      if (secondary) secondaryTeams = await secondary.select().from(teamsTable);
+    } catch {
+      // Secondary unreachable: creation below will surface the real error.
+    }
+    const existingTeams = [...primaryTeams, ...secondaryTeams];
     if (existingTeams.some((t) => t.normalizedName === normalizedTeam)) {
       res.status(409).json({ error: "A team with that name already exists. Pick another name." });
       return;
@@ -969,6 +984,10 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   }
   if (await rejectUnsafePassword(req, res, password, confirmLowExposure)) return;
   const teamId = randomBytes(16).toString("hex");
+  // New teams live on the secondary instance; the primary keeps the current
+  // teams untouched. Everything below (team row, account, singleton settings,
+  // queue labels) resolves there through the shared db/pool handles.
+  enterInstance("secondary");
   try {
     await ensureDefaultTeam();
     const [team] = await db.insert(teamsTable).values({
@@ -1018,7 +1037,7 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
       // Team + account already exist; per-team settings can be repaired on next sign-in.
     }
     teamCreateFailures.delete(ip);
-    const session = createInterviewerSession(account.id);
+    const session = createInterviewerSession(account.id, "secondary");
     setAdminCookie(res, session);
     res.status(201).json({
       message: "Team created.",
@@ -1038,6 +1057,66 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     req.log.error({ err: error }, "Team creation failed");
     recordTeamCreateFailure(ip);
     res.status(500).json({ error: "Could not create that team. Try again." });
+  }
+});
+
+/**
+ * Delete a team and every row it owns (accounts, applicants, queue, chat,
+ * boards, files metadata, requests, settings). Site owner only, and never
+ * the default team. Passkeys cascade with their accounts; revoked sessions
+ * expire on their own. Orphaned storage objects (if any) are harmless.
+ */
+router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise<void> => {
+  const teamId = typeof req.params.teamId === "string" ? req.params.teamId.trim() : "";
+  if (!teamId) {
+    res.status(400).json({ error: "Team id is required." });
+    return;
+  }
+  if (teamId === DEFAULT_TEAM_ID) {
+    res.status(400).json({ error: "The default team cannot be deleted." });
+    return;
+  }
+  const { pool } = await import("@workspace/db");
+  const { getTeamById } = await import("../lib/teams");
+  try {
+    const team = await getTeamById(teamId);
+    if (!team || !("instance" in team)) {
+      res.status(404).json({ error: "Team not found." });
+      return;
+    }
+    enterInstance((team as { instance: "primary" | "secondary" }).instance);
+    const tables = [
+      "applicants", "application_imports", "assistant_conversations",
+      "assistant_messages", "broadcasts", "cad_bots", "cad_folders",
+      "cad_models", "chat_custom_emojis", "chat_message_reactions",
+      "chat_poll_votes", "chat_polls", "chat_settings", "chunked_uploads",
+      "code_files", "code_presence", "code_projects", "code_revisions",
+      "dashboard_charts", "data_snapshots", "display_settings",
+      "feature_requests", "interview_chat_messages", "interview_queue",
+      "interview_whiteboards", "page_visits", "parts_catalog_items",
+      "parts_inventory", "parts_robots", "parts_supplier_sync_states",
+      "presence_heartbeats", "seating_settings", "workspace_settings",
+    ];
+    const removed: Record<string, number> = {};
+    await pool.query("BEGIN");
+    try {
+      for (const table of tables) {
+        const result = await pool.query(`delete from "${table}" where team_id = $1`, [team.id]);
+        removed[table] = result.rowCount ?? 0;
+      }
+      const accounts = await pool.query(`delete from "interviewer_accounts" where team_id = $1 returning id`, [team.id]);
+      removed["interviewer_accounts"] = accounts.rowCount ?? 0;
+      await pool.query(`delete from "teams" where id = $1`, [team.id]);
+      await pool.query("COMMIT");
+    } catch (txError) {
+      await pool.query("ROLLBACK");
+      throw txError;
+    }
+    req.log.info({ team: team.name, removed }, "Team deleted by site owner");
+    res.json({ deletedTeamId: team.id, deletedTeamName: team.name, removed });
+  } catch (error) {
+    req.log.error({ err: error }, "Team deletion failed");
+    res.status(500).json({ error: "Could not delete that team." });
   }
 });
 

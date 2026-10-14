@@ -53,6 +53,7 @@ const databaseTableNames = [
   "postsTable",
   "presenceHeartbeatsTable",
   "seatingSettingsTable",
+  "scheduledChatMessagesTable",
 ];
 
 function apply(data, operation) {
@@ -308,13 +309,21 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
     namedExports: {
       ...mockedTables,
       db,
+      primaryDb: db,
       pool: {},
+      primaryPool: {},
       interviewerAccountsTable,
       revokedSessionsTable,
       interviewWhiteboardsTable,
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   t.after(() => mock.restoreAll());

@@ -3,6 +3,8 @@ import { Router, type IRouter } from "express";
 import { and, count, desc, eq } from "drizzle-orm";
 import {
   db,
+  primaryDb,
+  secondaryDb,
   featureRequestsTable,
   interviewerAccountsTable,
   teamsTable,
@@ -35,13 +37,33 @@ function requestResponse(row: typeof featureRequestsTable.$inferSelect, teamName
 
 async function teamNamesById(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  try {
-    const teams = await db.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable);
-    for (const team of teams) map.set(team.id, team.name);
-  } catch {
-    // Teams table missing pre-migration; fall through with an empty map.
-  }
+  const collect = async (handle: typeof primaryDb) => {
+    try {
+      const teams = await handle.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable);
+      for (const team of teams) map.set(team.id, team.name);
+    } catch {
+      // Teams table missing pre-migration; fall through with an empty map.
+    }
+  };
+  await collect(primaryDb);
+  const secondary = secondaryDb();
+  if (secondary) await collect(secondary);
   return map;
+}
+
+// Owner reads span both instances (primary teams + all new teams). Each
+// half is best-effort so one unreachable instance never blanks the inbox.
+async function ownerFeatureRequests() {
+  const primary = await primaryDb.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt));
+  const secondary = secondaryDb();
+  if (!secondary) return primary;
+  try {
+    const more = await secondary.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt));
+    return [...primary, ...more].sort((a, b) =>
+      (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+  } catch {
+    return primary;
+  }
 }
 
 // Every signed-in account can file a request for its team. All requests land
@@ -88,7 +110,7 @@ router.get("/feature-requests", requireAdmin, async (req, res): Promise<void> =>
   const teamId = await requestTeamId(req);
   try {
     const rows = owner
-      ? await db.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt))
+      ? await ownerFeatureRequests()
       : await db.select().from(featureRequestsTable)
         // teamFilter matches legacy NULL rows for the default team, so
         // nothing filed before the migration disappears.
@@ -117,10 +139,21 @@ router.patch("/feature-requests/:requestId", requireSiteOwner, async (req, res):
     return;
   }
   try {
-    const [updated] = await db.update(featureRequestsTable)
+    const resolveOn = async (handle: typeof primaryDb) => (await handle.update(featureRequestsTable)
       .set({ status: parsed.data.status, updatedAt: new Date() })
       .where(eq(featureRequestsTable.id, requestId))
-      .returning();
+      .returning())[0];
+    let updated = await resolveOn(primaryDb);
+    if (!updated) {
+      const secondary = secondaryDb();
+      if (secondary) {
+        try {
+          updated = await resolveOn(secondary);
+        } catch {
+          // fall through to the 404 below
+        }
+      }
+    }
     if (!updated) {
       res.status(404).json({ error: "Feature request not found." });
       return;
@@ -135,17 +168,32 @@ router.patch("/feature-requests/:requestId", requireSiteOwner, async (req, res):
 // Site-wide stats for the owner: how many teams, people, and requests.
 router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => {
   try {
-    const [teams, accounts, requests] = await Promise.all([
-      db.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable),
-      db.select({
+    const readStats = async (handle: typeof primaryDb) => Promise.all([
+      handle.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable),
+      handle.select({
         id: interviewerAccountsTable.id,
         teamId: interviewerAccountsTable.teamId,
       }).from(interviewerAccountsTable),
-      db.select({
+      handle.select({
         teamId: featureRequestsTable.teamId,
         status: featureRequestsTable.status,
       }).from(featureRequestsTable),
     ]);
+    const [primaryStats, secondaryStats] = await Promise.all([
+      readStats(primaryDb),
+      (async () => {
+        const secondary = secondaryDb();
+        if (!secondary) return [[], [], []] as unknown as Awaited<ReturnType<typeof readStats>>;
+        try {
+          return await readStats(secondary);
+        } catch {
+          return [[], [], []] as unknown as Awaited<ReturnType<typeof readStats>>;
+        }
+      })(),
+    ]);
+    const teams = [...primaryStats[0], ...secondaryStats[0]];
+    const accounts = [...primaryStats[1], ...secondaryStats[1]];
+    const requests = [...primaryStats[2], ...secondaryStats[2]];
     const teamNameOf = (id: string) =>
       teams.find((team) => team.id === id)?.name ?? (id === DEFAULT_TEAM_ID ? "Wolverines" : id);
     const teamIds = new Set<string>([DEFAULT_TEAM_ID]);

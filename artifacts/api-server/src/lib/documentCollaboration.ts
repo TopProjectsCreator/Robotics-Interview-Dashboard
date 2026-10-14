@@ -9,7 +9,7 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import { db, runWithInstance, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
 import {
   applyDocumentAssistantContent,
   documentDocFromEnvelope,
@@ -23,7 +23,7 @@ import {
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
 import { pushRealtimeHint } from "./realtime";
-import { teamFilter } from "./teams";
+import { teamFilter, findAccountAnywhere } from "./teams";
 
 const MAX_DOCUMENT_DATA_BYTES = 1_500_000;
 const DOCUMENT_PATH = /^\/api\/whiteboards\/([^/]+)\/document-collab$/;
@@ -89,19 +89,14 @@ function canAccessDocument(
 async function authenticateUpgrade(
   request: IncomingMessage,
   url: URL,
-): Promise<{ id: string; displayName: string; teamId: string } | null> {
+): Promise<{ id: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
   if (!id) return null;
-  const [account] = await db.select({
-    id: interviewerAccountsTable.id,
-    displayName: interviewerAccountsTable.displayName,
-    passwordHash: interviewerAccountsTable.passwordHash,
-    teamId: interviewerAccountsTable.teamId,
-  }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-  if (!account?.passwordHash) return null;
-  return { id: account.id, displayName: account.displayName, teamId: account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID };
+  const found = await findAccountAnywhere(id);
+  if (!found?.account.passwordHash) return null;
+  return { id: found.account.id, displayName: found.account.displayName, teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID, instance: found.instance };
 }
 
 function rawBytes(raw: RawData): Uint8Array {
@@ -486,7 +481,7 @@ export function setupDocumentCollaboration(server: Server): void {
     if (!match) return;
     const documentId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => {
+      .then((identity) => runWithInstance(identity?.instance ?? "primary", () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
           socket.destroy();
@@ -498,7 +493,7 @@ export function setupDocumentCollaboration(server: Server): void {
             clientSocket.close(1011, "Collaboration unavailable");
           });
         });
-      })
+      }))
       .catch((error) => {
         logger.error({ err: error, documentId }, "Document collaboration authentication failed");
         socket.destroy();

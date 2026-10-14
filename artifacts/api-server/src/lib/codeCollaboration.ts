@@ -8,7 +8,8 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, codeFilesTable, interviewerAccountsTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import { db, runWithInstance, codeFilesTable, interviewerAccountsTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import { findAccountAnywhere } from "./teams";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
@@ -57,21 +58,17 @@ function sessionOf(req: IncomingMessage, url: URL): string | undefined {
   return isValidAdminSession(cookie) ? cookie : undefined;
 }
 
-async function identity(session: string): Promise<{ id: string; displayName: string; teamId: string } | null> {
+async function identity(session: string): Promise<{ id: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
   if (await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
   if (!id) return null;
-  const [account] = await db.select({
-    id: interviewerAccountsTable.id,
-    displayName: interviewerAccountsTable.displayName,
-    passwordHash: interviewerAccountsTable.passwordHash,
-    teamId: interviewerAccountsTable.teamId,
-  }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-  if (!account?.passwordHash) return null;
+  const found = await findAccountAnywhere(id);
+  if (!found?.account.passwordHash) return null;
   return {
-    id: account.id,
-    displayName: account.displayName,
-    teamId: account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID,
+    id: found.account.id,
+    displayName: found.account.displayName,
+    teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID,
+    instance: found.instance,
   };
 }
 
@@ -259,7 +256,7 @@ export function setupCodeCollaboration(server: Server): void {
     wss.handleUpgrade(request, socket, head, (client) => {
       const match = CODE_PATH.exec(url.pathname);
       const fileId = decodeURIComponent(match?.[1] ?? "");
-      identity(session).then((who) => {
+      identity(session).then((who) => runWithInstance(who?.instance ?? "primary", () => {
         if (!who) {
           client.close(4401, "unauthorized");
           return;
@@ -268,7 +265,7 @@ export function setupCodeCollaboration(server: Server): void {
           logger.error({ err: error, fileId }, "Code collaboration connection failed");
           try { client.close(1011, "error"); } catch { /* closed */ }
         });
-      }).catch((error) => {
+      })).catch((error) => {
         logger.error({ err: error, fileId }, "Code collaboration auth failed");
         try { client.close(1011, "error"); } catch { /* closed */ }
       });
