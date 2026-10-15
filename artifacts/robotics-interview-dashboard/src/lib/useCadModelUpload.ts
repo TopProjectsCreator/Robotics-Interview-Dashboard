@@ -84,7 +84,7 @@ export function useCadModelUpload(options: {
                   completed,
                   total: files.length,
                 });
-              }),
+              }, "cad"),
             }
             : (
               await uploadCadModelFile(file, {

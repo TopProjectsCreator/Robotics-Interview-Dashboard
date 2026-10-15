@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Box,
   Boxes,
   ChevronRight,
@@ -22,6 +23,7 @@ import {
   deleteCadFolder,
   deleteCadModel,
   getListCadLibraryQueryKey,
+  getCadStorageStatus,
   updateCadBot,
   updateCadFolder,
   updateCadModel,
@@ -83,6 +85,12 @@ function formatBytes(bytes: number): string {
 export function CadWorkspacePage() {
   const queryClient = useQueryClient();
   const library = useListCadLibrary();
+  const cadStorageStatus = useQuery({
+    queryKey: ["/api/storage/cad-status"],
+    queryFn: getCadStorageStatus,
+    refetchInterval: 30_000,
+    retry: false,
+  });
   const [location, setLocation] = useState<Location>({ kind: "unfiled" });
   const [selectedModel, setSelectedModel] = useState<CadModel | null>(null);
   const [search, setSearch] = useState("");
@@ -116,8 +124,12 @@ export function CadWorkspacePage() {
         );
         setNotice(`Added ${model.name}.`);
         refresh();
+        void queryClient.invalidateQueries({ queryKey: ["/api/storage/cad-status"] });
       },
-      onSettled: refresh,
+      onSettled: () => {
+        refresh();
+        void queryClient.invalidateQueries({ queryKey: ["/api/storage/cad-status"] });
+      },
     });
 
   const activeBotId = useMemo(() => {
@@ -440,6 +452,22 @@ export function CadWorkspacePage() {
 
   return (
     <div className="space-y-5">
+      {cadStorageStatus.data?.usingBackupStorage && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="cad-storage-failover"
+          className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-foreground"
+        >
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold">CAD uploads are using backup storage</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              New CAD files are being written to secondary storage. This notice clears when primary storage is healthy again.
+            </p>
+          </div>
+        </div>
+      )}
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-primary">

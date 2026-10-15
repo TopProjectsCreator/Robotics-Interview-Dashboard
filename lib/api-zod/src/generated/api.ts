@@ -884,7 +884,8 @@ export const createChunkUploadUrlBodyPartIndexMin = 0;
 export const CreateChunkUploadUrlBody = zod.object({
   "uploadId": zod.string().describe('Client-generated uuid shared across every part'),
   "partIndex": zod.number().int().min(createChunkUploadUrlBodyPartIndexMin),
-  "storageInstance": zod.enum(['primary', 'secondary']).optional().describe('Storage location selected for this upload; omit to use the current team instance.')
+  "storageInstance": zod.enum(['primary', 'secondary']).optional().describe('Storage location selected for this upload; omit to use the current team instance.'),
+  "purpose": zod.enum(['cad']).optional().describe('Identifies CAD model uploads for storage status tracking.')
 })
 
 export const CreateChunkUploadUrlResponse = zod.object({
@@ -923,11 +924,22 @@ export const CompleteChunkUploadBody = zod.object({
   "sizeBytes": zod.number().int(),
   "totalParts": zod.number().int(),
   "partSizeBytes": zod.number().int(),
-  "storageInstance": zod.enum(['primary', 'secondary'])
+  "storageInstance": zod.enum(['primary', 'secondary']),
+  "purpose": zod.enum(['cad']).optional().describe('Identifies CAD model uploads for storage status tracking.')
 })
 
 export const CompleteChunkUploadResponse = zod.object({
   "objectPath": zod.string().describe('Use as the attachment path, e.g. \/objects\/chunk\/<uploadId>')
+})
+
+
+/**
+ * @summary Get CAD storage failover status
+ */
+export const GetCadStorageStatusResponse = zod.object({
+  "usingBackupStorage": zod.boolean().describe('Whether new CAD files are currently being sent to backup storage.'),
+  "lastFailoverAt": zod.coerce.date().nullable().describe('Time of the most recent primary-to-backup failover.'),
+  "lastRecoveryAt": zod.coerce.date().nullable().describe('Time primary storage was last confirmed healthy.')
 })
 
 

@@ -12,6 +12,56 @@ export class ObjectNotFoundError extends Error {
 
 export type StorageInstance = "primary" | "secondary";
 
+export type CadStorageStatus = {
+  usingBackupStorage: boolean;
+  lastFailoverAt: string | null;
+  lastRecoveryAt: string | null;
+};
+
+let cadStorageStatus: CadStorageStatus = {
+  usingBackupStorage: false,
+  lastFailoverAt: null,
+  lastRecoveryAt: null,
+};
+let cadStorageStatusRevision = 0;
+let lastPrimaryProbeAt = 0;
+let lastPrimaryProbeHealthy = false;
+let primaryProbeInFlight: Promise<boolean> | null = null;
+const PRIMARY_PROBE_INTERVAL_MS = 30_000;
+
+export function getCadStorageStatus(): CadStorageStatus {
+  return { ...cadStorageStatus };
+}
+
+export function recordCadStorageFailover(): boolean {
+  if (cadStorageStatus.usingBackupStorage) return false;
+  cadStorageStatus = {
+    usingBackupStorage: true,
+    lastFailoverAt: new Date().toISOString(),
+    lastRecoveryAt: null,
+  };
+  cadStorageStatusRevision += 1;
+  lastPrimaryProbeAt = 0;
+  return true;
+}
+
+export function recordCadStorageRecovery(expectedFailoverAt?: string | null): boolean {
+  if (
+    !cadStorageStatus.usingBackupStorage ||
+    (expectedFailoverAt !== undefined && cadStorageStatus.lastFailoverAt !== expectedFailoverAt)
+  ) {
+    return false;
+  }
+  cadStorageStatus = {
+    ...cadStorageStatus,
+    usingBackupStorage: false,
+    lastRecoveryAt: new Date().toISOString(),
+  };
+  cadStorageStatusRevision += 1;
+  lastPrimaryProbeAt = 0;
+  return true;
+}
+
 function supabaseUrl(instance: StorageInstance = currentInstance()): string {
   const url = instance === "secondary"
     ? (process.env.SECONDARY_SUPABASE_URL?.trim() || process.env.SUPABASE_URL)
@@ -173,6 +223,45 @@ async function withPrimaryStorageFallback<T>(
 
 export class ObjectStorageService {
   constructor() {}
+
+  async probePrimaryStorageWrite(): Promise<boolean> {
+    if (primaryProbeInFlight) return primaryProbeInFlight;
+    const now = Date.now();
+    if (now - lastPrimaryProbeAt < PRIMARY_PROBE_INTERVAL_MS) {
+      return lastPrimaryProbeHealthy;
+    }
+
+    const revision = cadStorageStatusRevision;
+    const probe = (async () => {
+      const bucket = storageBucket("primary");
+      const path = `health-checks/cad-${randomUUID()}`;
+      try {
+        await ensureBucket("primary");
+        const storage = supabaseFor("primary").storage.from(bucket);
+        const { error } = await storage.upload(path, Buffer.from("ok"), {
+          contentType: "text/plain",
+          upsert: false,
+        });
+        if (error) return false;
+        // A failed cleanup should not make a successful write probe look
+        // unhealthy, but this unique path keeps any orphan harmless.
+        await storage.remove([path]).catch(() => undefined);
+        if (revision !== cadStorageStatusRevision) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+    primaryProbeInFlight = probe;
+    try {
+      const healthy = await probe;
+      lastPrimaryProbeAt = Date.now();
+      lastPrimaryProbeHealthy = healthy;
+      return healthy;
+    } finally {
+      primaryProbeInFlight = null;
+    }
+  }
 
   async mintChunkUpload(storagePath: string, instance: StorageInstance = currentInstance()): Promise<string> {
     await ensureBucket(instance);

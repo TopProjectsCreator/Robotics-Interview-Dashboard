@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChunkUploadCompleteInputPurpose } from './chunkUploadCompleteInputPurpose';
 import type { ChunkUploadCompleteInputStorageInstance } from './chunkUploadCompleteInputStorageInstance';
 
 export interface ChunkUploadCompleteInput {
@@ -15,4 +16,6 @@ export interface ChunkUploadCompleteInput {
   totalParts: number;
   partSizeBytes: number;
   storageInstance: ChunkUploadCompleteInputStorageInstance;
+  /** Identifies CAD model uploads for storage status tracking. */
+  purpose?: ChunkUploadCompleteInputPurpose;
 }

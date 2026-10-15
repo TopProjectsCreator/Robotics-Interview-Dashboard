@@ -905,6 +905,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChunkUploadStored"
+  /storage/cad-status:
+    get:
+      operationId: getCadStorageStatus
+      tags: [storage]
+      summary: Get CAD storage failover status
+      responses:
+        "200":
+          description: Current CAD storage failover state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadStorageStatus"
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -3736,6 +3748,10 @@ components:
           type: string
           enum: [primary, secondary]
           description: Storage location selected for this upload; omit to use the current team instance.
+        purpose:
+          type: string
+          enum: [cad]
+          description: Identifies CAD model uploads for storage status tracking.
     ChunkUploadUrl:
       type: object
       required: [uploadId, partIndex, signedUrl, storageInstance]
@@ -3787,6 +3803,10 @@ components:
         storageInstance:
           type: string
           enum: [primary, secondary]
+        purpose:
+          type: string
+          enum: [cad]
+          description: Identifies CAD model uploads for storage status tracking.
     ChunkUploadStored:
       type: object
       required: [objectPath]
@@ -3794,6 +3814,21 @@ components:
         objectPath:
           type: string
           description: "Use as the attachment path, e.g. /objects/chunk/<uploadId>"
+    CadStorageStatus:
+      type: object
+      required: [usingBackupStorage, lastFailoverAt, lastRecoveryAt]
+      properties:
+        usingBackupStorage:
+          type: boolean
+          description: Whether new CAD files are currently being sent to backup storage.
+        lastFailoverAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Time of the most recent primary-to-backup failover.
+        lastRecoveryAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Time primary storage was last confirmed healthy.
     HealthStatus:
       type: object
       properties:

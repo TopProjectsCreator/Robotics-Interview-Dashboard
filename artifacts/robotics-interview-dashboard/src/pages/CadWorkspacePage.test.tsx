@@ -6,6 +6,7 @@ import { CadWorkspacePage } from "./CadWorkspacePage";
 
 const mocks = vi.hoisted(() => ({
   listLibrary: vi.fn(),
+  getCadStorageStatus: vi.fn(),
   createBot: vi.fn(),
   updateBot: vi.fn(),
   deleteBot: vi.fn(),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@workspace/api-client-react", () => ({
   getListCadLibraryQueryKey: () => ["/api/cad/library"],
+  getCadStorageStatus: mocks.getCadStorageStatus,
   useListCadLibrary: mocks.listLibrary,
   createCadBot: mocks.createBot,
   updateCadBot: mocks.updateBot,
@@ -93,12 +95,20 @@ function model(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderPage(library = {
-  bots: [bot],
-  folders: [intakeFolder, chassisFolder],
-  models: [model()],
-}) {
+function renderPage(
+  library = {
+    bots: [bot],
+    folders: [intakeFolder, chassisFolder],
+    models: [model()],
+  },
+  cadStatus = {
+    usingBackupStorage: false,
+    lastFailoverAt: null,
+    lastRecoveryAt: null,
+  },
+) {
   mocks.listLibrary.mockReturnValue({ data: library, isLoading: false });
+  mocks.getCadStorageStatus.mockResolvedValue(cadStatus);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -145,6 +155,21 @@ beforeEach(() => {
 });
 
 describe("CAD workspace tree", () => {
+  it("shows admins when CAD uploads are routed to backup storage", async () => {
+    renderPage(undefined, {
+      usingBackupStorage: true,
+      lastFailoverAt: "2026-10-15T10:00:00.000Z",
+      lastRecoveryAt: null,
+    });
+
+    expect(await screen.findByTestId("cad-storage-failover")).toHaveTextContent(
+      "CAD uploads are using backup storage",
+    );
+    expect(screen.getByTestId("cad-storage-failover")).toHaveTextContent(
+      "New CAD files are being written to secondary storage",
+    );
+  });
+
   it("lists bots and renders nested folders", async () => {
     renderPage();
     expect(await screen.findByTestId("cad-bot-bot-1")).toHaveTextContent("Scout");

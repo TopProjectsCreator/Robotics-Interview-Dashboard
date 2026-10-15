@@ -55,6 +55,7 @@ import type {
   CadModelList,
   CadModelUpdateInput,
   CadModelUpload,
+  CadStorageStatus,
   ChatConversationList,
   ChatCustomEmoji,
   ChatCustomEmojiInput,
@@ -3408,6 +3409,83 @@ export const useCompleteChunkUpload = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCompleteChunkUploadMutationOptions(options));
     }
+
+export const getGetCadStorageStatusUrl = () => {
+
+
+
+
+  return `/api/storage/cad-status`
+}
+
+/**
+ * @summary Get CAD storage failover status
+ */
+export const getCadStorageStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<CadStorageStatus> => {
+
+  return customFetch<CadStorageStatus>(getGetCadStorageStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCadStorageStatusQueryKey = () => {
+    return [
+    `/api/storage/cad-status`
+    ] as const;
+    }
+
+
+export const getGetCadStorageStatusQueryOptions = <TData = Awaited<ReturnType<typeof getCadStorageStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCadStorageStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCadStorageStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCadStorageStatus>>> = ({ signal }) => getCadStorageStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCadStorageStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCadStorageStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getCadStorageStatus>>>
+export type GetCadStorageStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get CAD storage failover status
+ */
+
+export function useGetCadStorageStatus<TData = Awaited<ReturnType<typeof getCadStorageStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCadStorageStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCadStorageStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRequestUploadUrlUrl = () => {
 

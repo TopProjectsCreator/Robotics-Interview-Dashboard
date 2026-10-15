@@ -36,3 +36,4 @@
 - [Natural-language scheduled chat times](natural-language-chat-scheduling.md) — interpret schedule phrases with the existing assistant model in the user's local timezone.
 - [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
+- [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.

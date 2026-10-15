@@ -426,6 +426,16 @@ export const ChunkUploadUrlInputStorageInstance = {
   secondary: 'secondary',
 } as const;
 
+/**
+ * Identifies CAD model uploads for storage status tracking.
+ */
+export type ChunkUploadUrlInputPurpose = typeof ChunkUploadUrlInputPurpose[keyof typeof ChunkUploadUrlInputPurpose];
+
+
+export const ChunkUploadUrlInputPurpose = {
+  cad: 'cad',
+} as const;
+
 export interface ChunkUploadUrlInput {
   /** Client-generated uuid shared across every part */
   uploadId: string;
@@ -433,6 +443,8 @@ export interface ChunkUploadUrlInput {
   partIndex: number;
   /** Storage location selected for this upload; omit to use the current team instance. */
   storageInstance?: ChunkUploadUrlInputStorageInstance;
+  /** Identifies CAD model uploads for storage status tracking. */
+  purpose?: ChunkUploadUrlInputPurpose;
 }
 
 export type ChunkUploadUrlStorageInstance = typeof ChunkUploadUrlStorageInstance[keyof typeof ChunkUploadUrlStorageInstance];
@@ -480,6 +492,16 @@ export const ChunkUploadCompleteInputStorageInstance = {
   secondary: 'secondary',
 } as const;
 
+/**
+ * Identifies CAD model uploads for storage status tracking.
+ */
+export type ChunkUploadCompleteInputPurpose = typeof ChunkUploadCompleteInputPurpose[keyof typeof ChunkUploadCompleteInputPurpose];
+
+
+export const ChunkUploadCompleteInputPurpose = {
+  cad: 'cad',
+} as const;
+
 export interface ChunkUploadCompleteInput {
   uploadId: string;
   fileName: string;
@@ -488,11 +510,28 @@ export interface ChunkUploadCompleteInput {
   totalParts: number;
   partSizeBytes: number;
   storageInstance: ChunkUploadCompleteInputStorageInstance;
+  /** Identifies CAD model uploads for storage status tracking. */
+  purpose?: ChunkUploadCompleteInputPurpose;
 }
 
 export interface ChunkUploadStored {
   /** Use as the attachment path, e.g. /objects/chunk/<uploadId> */
   objectPath: string;
+}
+
+export interface CadStorageStatus {
+  /** Whether new CAD files are currently being sent to backup storage. */
+  usingBackupStorage: boolean;
+  /**
+     * Time of the most recent primary-to-backup failover.
+     * @nullable
+     */
+  lastFailoverAt: string | null;
+  /**
+     * Time primary storage was last confirmed healthy.
+     * @nullable
+     */
+  lastRecoveryAt: string | null;
 }
 
 export interface HealthStatus {

@@ -36,6 +36,7 @@ export async function uploadChunked(
   fileName: string,
   contentType: string,
   onProgress?: ChunkedProgress,
+  purpose?: "cad",
 ): Promise<string> {
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_PART_BYTES));
   const uploadParts = async (
@@ -52,6 +53,7 @@ export async function uploadChunked(
           uploadId,
           partIndex,
           storageInstance,
+          purpose,
         });
         storageInstance = resolvedInstance;
         const put = await fetch(signedUrl, {
@@ -101,6 +103,7 @@ export async function uploadChunked(
     totalParts,
     partSizeBytes: CHUNK_PART_BYTES,
     storageInstance,
+    purpose,
   });
   return objectPath;
 }

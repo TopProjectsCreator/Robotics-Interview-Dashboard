@@ -9,6 +9,7 @@ import {
   CreateChunkUploadUrlResponse,
   CompleteChunkUploadBody,
   CompleteChunkUploadResponse,
+  GetCadStorageStatusResponse,
 } from '@workspace/api-zod';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -26,8 +27,11 @@ import { requireCompleteCadconvertFaceSummary } from '../lib/cadconvertPreview';
 import {
   MAX_STORAGE_UPLOAD_BYTES,
   hasSecondaryStorage,
+  getCadStorageStatus,
   ObjectNotFoundError,
   ObjectStorageService,
+  recordCadStorageFailover,
+  recordCadStorageRecovery,
 } from '../lib/objectStorage';
 import {
   authenticatedInterviewerId,
@@ -57,6 +61,21 @@ import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+router.get('/storage/cad-status', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const status = getCadStorageStatus();
+  if (
+    status.usingBackupStorage &&
+    await objectStorageService.probePrimaryStorageWrite() &&
+    recordCadStorageRecovery(status.lastFailoverAt)
+  ) {
+    req.log.info(
+      { event: 'cad_storage_recovered', storageInstance: 'primary' },
+      'Primary storage is healthy again for CAD uploads',
+    );
+  }
+  res.json(GetCadStorageStatusResponse.parse(getCadStorageStatus()));
+});
 
 function hasAuthenticatedSession(
   req: Request,
@@ -378,6 +397,17 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
         storageInstance,
       );
     }
+    if (
+      parsed.data.purpose === 'cad' &&
+      currentInstance() === 'primary' &&
+      storageInstance === 'secondary' &&
+      recordCadStorageFailover()
+    ) {
+      req.log.warn(
+        { event: 'cad_storage_failover', storageInstance: 'secondary' },
+        'CAD upload is using backup storage',
+      );
+    }
     res.json(CreateChunkUploadUrlResponse.parse({
       uploadId: parsed.data.uploadId,
       partIndex: parsed.data.partIndex,
@@ -421,7 +451,7 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     res.status(400).json({ error: 'Upload manifest is incomplete' });
     return;
   }
-  const { uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes, storageInstance } = parsed.data;
+  const { uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes, storageInstance, purpose } = parsed.data;
   if (!fileName?.trim() || !Number.isFinite(totalParts) || totalParts < 1) {
     res.status(400).json({ error: 'Upload manifest is incomplete' });
     return;
@@ -445,6 +475,22 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     }
     await db.insert(chunkedUploadsTable).values({ uploadId, teamId, ...manifest, createdBy: account.displayName })
       .onConflictDoUpdate({ target: chunkedUploadsTable.uploadId, set: manifest });
+    if (purpose === 'cad' && currentInstance() === 'primary') {
+      if (storageInstance === 'secondary' && recordCadStorageFailover()) {
+        req.log.warn(
+          { event: 'cad_storage_failover', storageInstance: 'secondary' },
+          'CAD upload is using backup storage',
+        );
+      } else if (
+        storageInstance === 'primary' &&
+        recordCadStorageRecovery()
+      ) {
+        req.log.info(
+          { event: 'cad_storage_recovered', storageInstance: 'primary' },
+          'Primary storage is healthy again for CAD uploads',
+        );
+      }
+    }
     const pathPrefix = storageInstance === 'secondary' && currentInstance() === 'primary'
       ? '/objects/chunk/secondary/'
       : '/objects/chunk/';
@@ -596,7 +642,21 @@ router.post(
       return;
     }
     try {
+      const uploadInstance = currentInstance();
       const objectPath = await objectStorageService.uploadChatImage(data, resolved.contentType);
+      if (uploadInstance === 'primary') {
+        if (objectPath.startsWith('/objects/secondary/') && recordCadStorageFailover()) {
+          req.log.warn(
+            { event: 'cad_storage_failover', storageInstance: 'secondary' },
+            'CAD upload is using backup storage',
+          );
+        } else if (!objectPath.startsWith('/objects/secondary/') && recordCadStorageRecovery()) {
+          req.log.info(
+            { event: 'cad_storage_recovered', storageInstance: 'primary' },
+            'Primary storage is healthy again for CAD uploads',
+          );
+        }
+      }
       res.status(201).json(UploadCadModelFileResponse.parse({
         objectPath,
         contentType: resolved.contentType,

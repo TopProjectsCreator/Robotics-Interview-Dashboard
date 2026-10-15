@@ -81,8 +81,44 @@ async function loadObjectStorage(t, { failPrimarySign = false, failPrimaryUpload
   });
 
   const module = await import(`./objectStorage.ts?test=${++importId}`);
-  return { service: new module.ObjectStorageService(), calls };
+  return { service: new module.ObjectStorageService(), calls, module };
 }
+
+test("CAD storage failover status clears after a primary write probe succeeds", async (t) => {
+  const { service, calls, module } = await loadObjectStorage(t);
+
+  assert.equal(module.getCadStorageStatus().usingBackupStorage, false);
+  assert.equal(module.recordCadStorageFailover(), true);
+  assert.equal(module.getCadStorageStatus().usingBackupStorage, true);
+  assert.equal(module.recordCadStorageFailover(), false);
+
+  assert.equal(await service.probePrimaryStorageWrite(), true);
+  assert.ok(calls.some((call) =>
+    call.operation === "upload" &&
+    call.url === STORAGE_ENV.SUPABASE_URL &&
+    call.bucket === "primary-bucket" &&
+    call.path.startsWith("health-checks/cad-"),
+  ));
+  assert.ok(calls.some((call) =>
+    call.operation === "remove" &&
+    call.url === STORAGE_ENV.SUPABASE_URL &&
+    call.paths[0].startsWith("health-checks/cad-"),
+  ));
+
+  const failoverAt = module.getCadStorageStatus().lastFailoverAt;
+  assert.equal(module.recordCadStorageRecovery(failoverAt), true);
+  const recovered = module.getCadStorageStatus();
+  assert.equal(recovered.usingBackupStorage, false);
+  assert.ok(recovered.lastRecoveryAt);
+});
+
+test("CAD storage status stays in backup mode when the primary write probe fails", async (t) => {
+  const { service, module } = await loadObjectStorage(t, { failPrimaryUpload: true });
+  module.recordCadStorageFailover();
+
+  assert.equal(await service.probePrimaryStorageWrite(), false);
+  assert.equal(module.getCadStorageStatus().usingBackupStorage, true);
+});
 
 test("signed CSV uploads fall back to secondary and return a secondary object path", async (t) => {
   const { service, calls } = await loadObjectStorage(t, { failPrimarySign: true });

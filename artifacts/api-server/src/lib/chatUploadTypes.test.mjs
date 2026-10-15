@@ -36,6 +36,7 @@ const SCHEMA_NAMES = [
   "AbortChunkUploadResponse",
   "CompleteChunkUploadBody",
   "CompleteChunkUploadResponse",
+  "GetCadStorageStatusResponse",
 ];
 
 let importId = 0;
@@ -65,6 +66,13 @@ async function loadStorage(t) {
     namedExports: {
       MAX_STORAGE_UPLOAD_BYTES: 50 * 1024 * 1024,
       hasSecondaryStorage: () => false,
+      getCadStorageStatus: () => ({
+        usingBackupStorage: false,
+        lastFailoverAt: null,
+        lastRecoveryAt: null,
+      }),
+      recordCadStorageFailover: () => false,
+      recordCadStorageRecovery: () => false,
       ObjectNotFoundError: class extends Error {},
       ObjectStorageService: class {},
     },

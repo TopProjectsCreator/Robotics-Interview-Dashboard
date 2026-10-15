@@ -30,16 +30,18 @@ describe("chunked upload storage failover", () => {
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const path = await uploadChunked(new Blob(["CAD bytes"]), "part.step", "application/step");
+    const path = await uploadChunked(new Blob(["CAD bytes"]), "part.step", "application/step", undefined, "cad");
 
     expect(path).toBe("/objects/chunk/secondary/upload-id");
     expect(createChunkUploadUrl).toHaveBeenNthCalledWith(1, expect.objectContaining({
       partIndex: 0,
       storageInstance: undefined,
+      purpose: "cad",
     }));
     expect(createChunkUploadUrl).toHaveBeenNthCalledWith(2, expect.objectContaining({
       partIndex: 0,
       storageInstance: "secondary",
+      purpose: "cad",
     }));
     const primaryUploadId = createChunkUploadUrl.mock.calls[0][0].uploadId;
     const secondaryUploadId = createChunkUploadUrl.mock.calls[1][0].uploadId;
@@ -52,6 +54,7 @@ describe("chunked upload storage failover", () => {
     expect(completeChunkUpload).toHaveBeenCalledWith(expect.objectContaining({
       uploadId: secondaryUploadId,
       storageInstance: "secondary",
+      purpose: "cad",
     }));
   });
 });
