@@ -40,6 +40,8 @@ import {
   CreateChatPollResponse,
   CreateScheduledChatBody,
   CreateScheduledChatResponse,
+  InterpretScheduledChatTimeBody,
+  InterpretScheduledChatTimeResponse,
   ListScheduledChatsResponse,
   VoteChatPollBody,
   VoteChatPollResponse,
@@ -4017,6 +4019,74 @@ function scheduledChatResponse(row: typeof scheduledChatMessagesTable.$inferSele
     createdAt: row.createdAt,
   };
 }
+
+router.post("/queue/chat/scheduled/interpret", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = InterpretScheduledChatTimeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter a time description and valid timezone." });
+    return;
+  }
+  const text = parsed.data.text.trim();
+  if (!text) {
+    res.status(400).json({ error: "Describe when the message should be sent." });
+    return;
+  }
+  let localNow: string;
+  try {
+    localNow = new Intl.DateTimeFormat("en-US", {
+      timeZone: parsed.data.timeZone,
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(new Date());
+  } catch {
+    res.status(400).json({ error: "Choose a valid timezone." });
+    return;
+  }
+  try {
+    const completion = await openai.chat.completions.create({
+      model: TEXT_MODEL,
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: `Convert the user's natural-language schedule time into a local calendar date and 24-hour time.
+The user's IANA timezone is ${parsed.data.timeZone}. The current local time is ${localNow}.
+Use the next future occurrence for time-only phrases. For relative dates such as "tomorrow", use the local calendar.
+Return only a JSON object with exactly these string fields: {"date":"YYYY-MM-DD","time":"HH:mm"}. Do not include a timezone or explanation.`,
+        },
+        { role: "user", content: text.slice(0, 300) },
+      ],
+    });
+    const output = completion.choices[0]?.message?.content?.trim() ?? "";
+    const json = output.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const value = JSON.parse(json) as { date?: unknown; time?: unknown };
+    const dateMatch = typeof value.date === "string" ? value.date.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+    const timeMatch = typeof value.time === "string" ? value.time.match(/^(\d{2}):(\d{2})$/) : null;
+    if (!dateMatch || !timeMatch) throw new Error("Invalid assistant date/time result");
+    const [year, month, day] = dateMatch.slice(1).map(Number);
+    const checkDate = new Date(Date.UTC(year, month - 1, day));
+    const hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2]);
+    if (
+      checkDate.getUTCFullYear() !== year ||
+      checkDate.getUTCMonth() !== month - 1 ||
+      checkDate.getUTCDate() !== day ||
+      hour > 23 ||
+      minute > 59
+    ) {
+      throw new Error("Invalid assistant date/time result");
+    }
+    res.json(InterpretScheduledChatTimeResponse.parse({ date: value.date, time: value.time }));
+  } catch (error) {
+    req.log.error({ err: error }, "Scheduled chat time interpretation failed");
+    res.status(503).json({ error: "The assistant couldn't interpret that time. Try a more specific phrase." });
+  }
+});
 
 router.post("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);

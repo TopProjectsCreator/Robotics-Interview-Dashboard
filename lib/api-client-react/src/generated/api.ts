@@ -102,6 +102,7 @@ import type {
   EventPasswordInput,
   FeatureRequest,
   FeatureRequestList,
+  FeatureRequestMessageUpdate,
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
@@ -174,6 +175,8 @@ import type {
   ScheduledChatInput,
   ScheduledChatList,
   ScheduledChatMessage,
+  ScheduledChatTime,
+  ScheduledChatTimeInput,
   SearchPartsCatalogParams,
   SeatingAssignInput,
   SeatingSettings,
@@ -3849,6 +3852,149 @@ export const useUpdateFeatureRequest = <TError = ErrorType<unknown>,
       return useMutation(getUpdateFeatureRequestMutationOptions(options));
     }
 
+export const getDeleteOwnFeatureRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/feature-requests/${requestId}`
+}
+
+/**
+ * @summary Delete your own feature request
+ */
+export const deleteOwnFeatureRequest = async (requestId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteOwnFeatureRequestUrl(requestId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOwnFeatureRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOwnFeatureRequest>>, TError,{requestId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOwnFeatureRequest>>, TError,{requestId: string}, TContext> => {
+
+const mutationKey = ['deleteOwnFeatureRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOwnFeatureRequest>>, {requestId: string}> = (props) => {
+          const {requestId} = props ?? {};
+
+          return  deleteOwnFeatureRequest(requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOwnFeatureRequestMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOwnFeatureRequest>>>
+
+    export type DeleteOwnFeatureRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete your own feature request
+ */
+export const useDeleteOwnFeatureRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOwnFeatureRequest>>, TError,{requestId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOwnFeatureRequest>>,
+        TError,
+        {requestId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteOwnFeatureRequestMutationOptions(options));
+    }
+
+export const getEditOwnFeatureRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/feature-requests/${requestId}/message`
+}
+
+/**
+ * @summary Edit the message in your own feature request
+ */
+export const editOwnFeatureRequest = async (requestId: string,
+    featureRequestMessageUpdate: FeatureRequestMessageUpdate, options?: Parameters<typeof customFetch>[1]): Promise<FeatureRequest> => {
+
+  return customFetch<FeatureRequest>(getEditOwnFeatureRequestUrl(requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(featureRequestMessageUpdate)
+  }
+);}
+
+
+
+
+
+export const getEditOwnFeatureRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editOwnFeatureRequest>>, TError,{requestId: string;data: BodyType<FeatureRequestMessageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof editOwnFeatureRequest>>, TError,{requestId: string;data: BodyType<FeatureRequestMessageUpdate>}, TContext> => {
+
+const mutationKey = ['editOwnFeatureRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof editOwnFeatureRequest>>, {requestId: string;data: BodyType<FeatureRequestMessageUpdate>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  editOwnFeatureRequest(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EditOwnFeatureRequestMutationResult = NonNullable<Awaited<ReturnType<typeof editOwnFeatureRequest>>>
+    export type EditOwnFeatureRequestMutationBody = BodyType<FeatureRequestMessageUpdate>
+    export type EditOwnFeatureRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Edit the message in your own feature request
+ */
+export const useEditOwnFeatureRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editOwnFeatureRequest>>, TError,{requestId: string;data: BodyType<FeatureRequestMessageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof editOwnFeatureRequest>>,
+        TError,
+        {requestId: string;data: BodyType<FeatureRequestMessageUpdate>},
+        TContext
+      > => {
+      return useMutation(getEditOwnFeatureRequestMutationOptions(options));
+    }
+
 export const getGetSiteStatsUrl = () => {
 
 
@@ -4369,6 +4515,77 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getInterpretScheduledChatTimeUrl = () => {
+
+
+
+
+  return `/api/queue/chat/scheduled/interpret`
+}
+
+/**
+ * @summary Interpret a natural-language scheduled chat time using the assistant model
+ */
+export const interpretScheduledChatTime = async (scheduledChatTimeInput: ScheduledChatTimeInput, options?: Parameters<typeof customFetch>[1]): Promise<ScheduledChatTime> => {
+
+  return customFetch<ScheduledChatTime>(getInterpretScheduledChatTimeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(scheduledChatTimeInput)
+  }
+);}
+
+
+
+
+
+export const getInterpretScheduledChatTimeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof interpretScheduledChatTime>>, TError,{data: BodyType<ScheduledChatTimeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof interpretScheduledChatTime>>, TError,{data: BodyType<ScheduledChatTimeInput>}, TContext> => {
+
+const mutationKey = ['interpretScheduledChatTime'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof interpretScheduledChatTime>>, {data: BodyType<ScheduledChatTimeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  interpretScheduledChatTime(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InterpretScheduledChatTimeMutationResult = NonNullable<Awaited<ReturnType<typeof interpretScheduledChatTime>>>
+    export type InterpretScheduledChatTimeMutationBody = BodyType<ScheduledChatTimeInput>
+    export type InterpretScheduledChatTimeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Interpret a natural-language scheduled chat time using the assistant model
+ */
+export const useInterpretScheduledChatTime = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof interpretScheduledChatTime>>, TError,{data: BodyType<ScheduledChatTimeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof interpretScheduledChatTime>>,
+        TError,
+        {data: BodyType<ScheduledChatTimeInput>},
+        TContext
+      > => {
+      return useMutation(getInterpretScheduledChatTimeMutationOptions(options));
     }
 
 export const getListScheduledChatsUrl = () => {

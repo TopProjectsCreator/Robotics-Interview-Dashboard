@@ -32,3 +32,5 @@
 - [3MF inline rendering](three-mf-inline-rendering.md) — 3MF is a ZIP of XML triangles needing no CAD kernel; its 12-value transform is row-major and silently mispacks.
 - [Workspace visibility settings](workspace-visibility-settings.md) — per-workspace role access is server-enforced from a settings row; filter navigation, never hardcode role gates again.
 - [OBJ and PLY inline rendering](obj-ply-inline-rendering.md) — three.js ships both loaders; check declared sizes first because PLYLoader trusts the header and loops on it.
+- [Settings app-adjustment requests](settings-app-adjustment-requests.md) — suggestions sent to Ishaan belong in Settings, not ordinary chat; authors need edit/delete controls.
+- [Natural-language scheduled chat times](natural-language-chat-scheduling.md) — interpret schedule phrases with the existing assistant model in the user's local timezone.

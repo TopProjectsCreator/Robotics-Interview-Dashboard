@@ -1050,6 +1050,8 @@ export interface FeatureRequest {
   message: string;
   status: FeatureRequestStatus;
   createdAt: string;
+  /** Whether the signed-in account authored this request */
+  isMine: boolean;
 }
 
 export interface FeatureRequestList {
@@ -1074,6 +1076,14 @@ export const UpdateFeatureRequestInputStatus = {
 
 export interface UpdateFeatureRequestInput {
   status: UpdateFeatureRequestInputStatus;
+}
+
+export interface FeatureRequestMessageUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  message: string;
 }
 
 export type SiteStatsTeamsByIdItem = {
@@ -1197,6 +1207,23 @@ export interface ScheduledChatInput {
   poll?: ScheduledChatPollInput | null;
   /** ISO timestamp at least ~30 seconds in the future and within one year. */
   scheduledAt: string;
+}
+
+export interface ScheduledChatTimeInput {
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  text: string;
+  /** IANA timezone used to interpret and return the local time. */
+  timeZone: string;
+}
+
+export interface ScheduledChatTime {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  time: string;
 }
 
 export type ScheduledChatMessageScope = typeof ScheduledChatMessageScope[keyof typeof ScheduledChatMessageScope];

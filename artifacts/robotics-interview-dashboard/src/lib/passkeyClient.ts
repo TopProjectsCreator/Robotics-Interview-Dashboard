@@ -21,7 +21,7 @@ type AuthenticationOptions = Parameters<typeof startAuthentication>[0]["optionsJ
  * Password sign-in keeps working — this is purely an alternative.
  */
 export async function registerPasskeyFlow(label?: string): Promise<string> {
-  const options = await getPasskeyRegisterOptions();
+  const options = unwrapPasskeyOptions(await getPasskeyRegisterOptions(), "registration");
   const attestation = await startRegistration({
     optionsJSON: options as unknown as CreationOptions,
   });
@@ -40,9 +40,42 @@ export async function loginWithPasskeyFlow(
   eventPassword: string,
   interviewerId: string,
 ): Promise<AuthSession> {
-  const options = await getPasskeyLoginOptions({ eventPassword, interviewerId });
+  const options = unwrapPasskeyOptions(
+    await getPasskeyLoginOptions({ eventPassword, interviewerId }),
+    "sign-in",
+  );
   const assertion = await startAuthentication({
     optionsJSON: options as unknown as AuthenticationOptions,
   });
   return loginWithPasskey({ eventPassword, interviewerId, response: assertion as unknown as PasskeyLoginInput["response"] });
+}
+
+function unwrapPasskeyOptions(
+  envelope: PasskeyPublicKeyOptions,
+  ceremony: "registration" | "sign-in",
+): Record<string, unknown> {
+  const options = envelope?.publicKey;
+  if (!options || typeof options !== "object" || Array.isArray(options) || typeof options.challenge !== "string") {
+    throw new Error(`Could not start passkey ${ceremony}: the server returned incomplete options. Try again.`);
+  }
+
+  if (ceremony === "registration") {
+    const user = options.user;
+    if (!user || typeof user !== "object" || Array.isArray(user) || typeof (user as Record<string, unknown>).id !== "string") {
+      throw new Error("Could not start passkey registration: the server returned incomplete options. Try again.");
+    }
+  } else {
+    const credentials = options.allowCredentials;
+    if (
+      !Array.isArray(credentials) ||
+      credentials.length === 0 ||
+      credentials.some((credential) =>
+        !credential || typeof credential !== "object" || typeof (credential as Record<string, unknown>).id !== "string",
+      )
+    ) {
+      throw new Error("Could not start passkey sign-in: the server returned incomplete options. Use password sign-in instead.");
+    }
+  }
+
+  return options;
 }

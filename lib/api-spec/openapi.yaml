@@ -999,6 +999,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeatureRequest"
+    delete:
+      operationId: deleteOwnFeatureRequest
+      tags: [site]
+      summary: Delete your own feature request
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Feature request deleted
+  /feature-requests/{requestId}/message:
+    patch:
+      operationId: editOwnFeatureRequest
+      tags: [site]
+      summary: Edit the message in your own feature request
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureRequestMessageUpdate"
+      responses:
+        "200":
+          description: Updated feature request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequest"
   /site/stats:
     get:
       operationId: getSiteStats
@@ -1129,6 +1166,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/scheduled/interpret:
+    post:
+      operationId: interpretScheduledChatTime
+      tags: [queue]
+      summary: Interpret a natural-language scheduled chat time using the assistant model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledChatTimeInput"
+      responses:
+        "200":
+          description: Interpreted local date and time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledChatTime"
   /queue/chat/scheduled:
     get:
       operationId: listScheduledChats
@@ -4560,7 +4615,7 @@ components:
             between messages. 0 turns it off.
     FeatureRequest:
       type: object
-      required: [id, authorName, message, status, createdAt]
+      required: [id, authorName, message, status, createdAt, isMine]
       properties:
         id:
           type: string
@@ -4580,6 +4635,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        isMine:
+          type: boolean
+          description: Whether the signed-in account authored this request
     FeatureRequestList:
       type: object
       required: [items]
@@ -4603,6 +4661,14 @@ components:
         status:
           type: string
           enum: [open, done]
+    FeatureRequestMessageUpdate:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
     SiteStats:
       type: object
       required: [teams, people, requests, openRequests, teamsById]
@@ -4790,6 +4856,27 @@ components:
           type: string
           format: date-time
           description: ISO timestamp at least ~30 seconds in the future and within one year.
+    ScheduledChatTimeInput:
+      type: object
+      required: [text, timeZone]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 300
+        timeZone:
+          type: string
+          description: IANA timezone used to interpret and return the local time.
+    ScheduledChatTime:
+      type: object
+      required: [date, time]
+      properties:
+        date:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        time:
+          type: string
+          pattern: "^\\d{2}:\\d{2}$"
     ScheduledChatMessage:
       type: object
       required: [id, author, createdBy, message, scope, scheduledAt, status, attempts, createdAt]

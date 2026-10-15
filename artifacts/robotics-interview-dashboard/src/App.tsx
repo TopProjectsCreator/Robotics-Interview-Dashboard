@@ -32,10 +32,12 @@ import {
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useCreateScheduledChat, useDeleteScheduledChat, useListScheduledChats, getListScheduledChatsQueryKey,
+  useInterpretScheduledChatTime,
   useUpdateQueueSettings,
   useUpdateApplicant,
   useGetChatSettings, useUpdateChatSettings, getGetChatSettingsQueryKey,
   useListFeatureRequests, getListFeatureRequestsQueryKey, useCreateFeatureRequest, useUpdateFeatureRequest,
+  useEditOwnFeatureRequest, useDeleteOwnFeatureRequest,
   useGetSiteStats, getGetSiteStatsQueryKey,
   useInterpretApplicantSearch,
   useGetSystemUsage,
@@ -347,7 +349,7 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   </div>;
 }
 const SORT_OPTIONS = [{ value: "rank", label: "Rank" }, { value: "queue", label: "Queue order" }, { value: "score", label: "AI score" }, { value: "name", label: "Name" }, { value: "grade", label: "Grade" }, { value: "skill", label: "Skill" }, { value: "gender", label: "Gender" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }];
-function FeatureRequestSection() {
+export function FeatureRequestSection() {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const isOwner = session.data?.isSiteOwner === true;
   const qc = useQueryClient();
@@ -355,9 +357,14 @@ function FeatureRequestSection() {
   const stats = useGetSiteStats({ query: { queryKey: getGetSiteStatsQueryKey(), enabled: isOwner } });
   const createRequest = useCreateFeatureRequest();
   const updateRequest = useUpdateFeatureRequest();
+  const editOwnRequest = useEditOwnFeatureRequest();
+  const deleteOwnRequest = useDeleteOwnFeatureRequest();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editError, setEditError] = useState("");
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: getListFeatureRequestsQueryKey() });
     void qc.invalidateQueries({ queryKey: getGetSiteStatsQueryKey() });
@@ -382,6 +389,60 @@ function FeatureRequestSection() {
   const setStatus = (item: FeatureRequest, status: "open" | "done") => {
     updateRequest.mutate({ requestId: item.id, data: { status } }, { onSuccess: refresh });
   };
+  const beginRequestEdit = (item: FeatureRequest) => {
+    setEditingRequestId(item.id);
+    setEditDraft(item.message);
+    setEditError("");
+  };
+  const saveRequestEdit = (item: FeatureRequest) => {
+    const message = editDraft.trim();
+    if (!message) {
+      setEditError("Write what you would like to see.");
+      return;
+    }
+    setEditError("");
+    editOwnRequest.mutate({ requestId: item.id, data: { message: message.slice(0, 2000) } }, {
+      onSuccess: () => {
+        setEditingRequestId(null);
+        setEditDraft("");
+        refresh();
+        notify({ title: "Suggestion updated", description: "Your app adjustment was updated." });
+      },
+      onError: (err) => setEditError(err instanceof Error ? err.message : "Could not update this suggestion."),
+    });
+  };
+  const deleteOwnRequestWithConfirm = async (item: FeatureRequest) => {
+    if (!(await confirmAction({
+      title: "Delete this app adjustment?",
+      detail: "This suggestion will be permanently removed from your team's list and Ishaan's inbox.",
+      danger: true,
+      confirmLabel: "Delete suggestion",
+    }))) return;
+    deleteOwnRequest.mutate({ requestId: item.id }, {
+      onSuccess: () => {
+        if (editingRequestId === item.id) setEditingRequestId(null);
+        refresh();
+        notify({ title: "Suggestion deleted", description: "Your app adjustment was removed." });
+      },
+      onError: (err) => notify({ title: "Delete failed", description: err instanceof Error ? err.message : "Could not delete this suggestion." }),
+    });
+  };
+  const requestMessageAndActions = (item: FeatureRequest) => editingRequestId === item.id
+    ? <div className="mt-2">
+        <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} rows={3} maxLength={2000} aria-label="Edit app adjustment" data-testid={`input-edit-feature-request-${item.id}`} className="w-full resize-y rounded-lg border border-[#cbd7da] bg-white px-3 py-2 text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" />
+        {editError && <p role="alert" className="mt-1 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{editError}</p>}
+        <div className="mt-2 flex justify-end gap-2">
+          <button type="button" onClick={() => { setEditingRequestId(null); setEditError(""); }} className="rounded-md border border-[#cbd7da] px-2.5 py-1.5 text-xs font-semibold text-[#527079] dark:border-[#395563] dark:text-[#c3d3db]">Cancel</button>
+          <button type="button" disabled={editOwnRequest.isPending || deleteOwnRequest.isPending} onClick={() => saveRequestEdit(item)} data-testid={`button-save-feature-request-${item.id}`} className="rounded-md bg-[#16869a] px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{editOwnRequest.isPending ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    : <>
+        <p className="mt-1.5 text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+        {item.isMine && <div className="mt-2 flex justify-end gap-2">
+          <button type="button" disabled={editOwnRequest.isPending || deleteOwnRequest.isPending} onClick={() => beginRequestEdit(item)} data-testid={`button-edit-feature-request-${item.id}`} className="rounded-md border border-[#cbd7da] px-2.5 py-1 text-[10px] font-semibold text-[#527079] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#395563] dark:text-[#c3d3db]">Edit</button>
+          <button type="button" disabled={editOwnRequest.isPending || deleteOwnRequest.isPending} onClick={() => void deleteOwnRequestWithConfirm(item)} data-testid={`button-delete-feature-request-${item.id}`} className="rounded-md border border-[#e0b8b4] px-2.5 py-1 text-[10px] font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:text-[#e89087]">Delete</button>
+        </div>}
+      </>;
   const [teamBusy, setTeamBusy] = useState("");
   const deleteTeam = async (teamId: string, teamName: string) => {
     if (!(await confirmAction({ title: `Delete ${teamName} and everything in it?`, detail: "Accounts, applicants, chat, boards, files and settings for this team are removed permanently. This cannot be undone.", danger: true, confirmLabel: "Delete team" }))) return;
@@ -402,13 +463,13 @@ function FeatureRequestSection() {
   };
   const items = requests.data?.items ?? [];
   const openCount = items.filter((item) => item.status !== "done").length;
-  return <div className="mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">Request a feature</p>
+  return <div className="mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">App adjustments</p>
     <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Ideas go straight to Ishaan Bansal, who built this site.{isOwner ? " You are the site owner, so every team's requests land in your inbox below." : ""}</p>
     <div className="mt-3">
-      <button type="button" onClick={() => { setDraft(""); setError(""); setDialogOpen(true); }} data-testid="button-request-feature" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={14} /> Request a feature</button>
+      <button type="button" onClick={() => { setDraft(""); setError(""); setDialogOpen(true); }} data-testid="button-request-feature" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={14} /> Suggest an app adjustment</button>
     </div>
-    {dialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#112433]/55 p-4" data-testid="dialog-feature-request"><div role="dialog" aria-modal="true" aria-label="Request a feature" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
-      <p className="text-base font-semibold text-[#182232] dark:text-[#e8eef2]">Request a feature</p>
+    {dialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#112433]/55 p-4" data-testid="dialog-feature-request"><div role="dialog" aria-modal="true" aria-label="Suggest an app adjustment" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
+      <p className="text-base font-semibold text-[#182232] dark:text-[#e8eef2]">Suggest an app adjustment</p>
       <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Describe the idea — Ishaan reads every request.</p>
       <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4} maxLength={2000} autoFocus placeholder="e.g. A dark big-screen theme for night events…" aria-label="Feature request" data-testid="input-feature-request" className="mt-3 h-28 w-full resize-y rounded-xl border border-[#cbd7da] bg-white px-4 py-3 text-sm text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
       {error && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="feature-request-error">{error}</p>}
@@ -438,7 +499,7 @@ function FeatureRequestSection() {
               <span className="text-[10px] text-[#9aa7aa]">{new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</span>
               <button type="button" disabled={updateRequest.isPending} onClick={() => setStatus(item, item.status === "done" ? "open" : "done")} data-testid={`button-resolve-request-${item.id}`} className="ml-auto rounded-md border border-[#cbd7da] px-2 py-1 text-[10px] font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">{item.status === "done" ? "Reopen" : "Done"}</button>
             </div>
-            <p className="mt-1.5 text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+            {requestMessageAndActions(item)}
           </div>
         ))}
       </div>
@@ -455,12 +516,13 @@ function FeatureRequestSection() {
         </div>
       </div>}
     </div>}
-    {!isOwner && !requests.isLoading && items.length > 0 && <div className="mt-3" data-testid="team-requests">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Your team's requests · {openCount} open</p>
+    {!isOwner && !requests.isLoading && <div className="mt-3" data-testid="team-requests">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Your team's app adjustments · {openCount} open</p>
+      {items.length === 0 && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">No app adjustment suggestions yet.</p>}
       <div className="space-y-2">
         {items.map((item) => (
           <div key={item.id} className="rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 dark:border-[#2a3f4c] dark:bg-[#10202a]">
-            <p className="text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+            {requestMessageAndActions(item)}
             <p className="mt-1 text-[10px] text-[#9aa7aa]">{item.authorName} · {new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</p>
           </div>
         ))}
@@ -636,7 +698,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Passkey registration failed.";
-      setPasskeyError(`${message} — make sure this device has a screen lock (PIN, fingerprint, or face).`);
+      setPasskeyError(message);
     } finally {
       setPasskeyBusy(false);
     }
@@ -4644,9 +4706,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const scheduledItems = useMemo(() => scheduledListQuery.data?.items ?? [], [scheduledListQuery.data]);
   const createScheduledChat = useCreateScheduledChat();
   const deleteScheduledChat = useDeleteScheduledChat();
+  const interpretScheduledChatTime = useInterpretScheduledChatTime();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleText, setScheduleText] = useState("");
   const [scheduleError, setScheduleError] = useState("");
   const [scheduleNotice, setScheduleNotice] = useState("");
   const [scheduling, setScheduling] = useState(false);
@@ -4665,6 +4729,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const openScheduleMenu = () => {
     setScheduleError("");
     setScheduleNotice("");
+    setScheduleText("");
     const suggested = new Date(Date.now() + 60 * 60 * 1000);
     setScheduleDate(current => current || toLocalInputDate(suggested));
     setScheduleTime(current => current || toLocalInputTime(suggested));
@@ -4677,10 +4742,28 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setMentionOpen(false);
     setPollOpen(false);
   };
-  const applySchedulePreset = (when: Date) => {
-    setScheduleDate(toLocalInputDate(when));
-    setScheduleTime(toLocalInputTime(when));
+  const interpretScheduleTime = async () => {
+    const text = scheduleText.trim();
+    if (!text) {
+      setScheduleError("Describe when the message should be sent.");
+      return;
+    }
     setScheduleError("");
+    setScheduleNotice("");
+    try {
+      const result = await interpretScheduledChatTime.mutateAsync({
+        data: {
+          text,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        },
+      });
+      setScheduleDate(result.date);
+      setScheduleTime(result.time);
+      const localDate = new Date(`${result.date}T${result.time}:00`);
+      setScheduleNotice(`Interpreted as ${localDate.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}. Check the date and time below.`);
+    } catch (error) {
+      setScheduleError(serverErrorMessage(error, "The AI couldn't interpret that time. Try a more specific phrase."));
+    }
   };
   // Upload composer attachments right now and return markdown embeds, so a
   // scheduled message carries exactly what an immediate send would post.
@@ -5841,9 +5924,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               </div>
               {message.trim() || chatFiles.length > 0 ? <p className="mt-2 truncate rounded-lg bg-[#f4f8f7] px-2.5 py-2 text-xs text-[#52666e]" data-testid="schedule-draft-preview">“{(message.trim() || `${chatFiles.length} attachment${chatFiles.length === 1 ? "" : "s"}`).slice(0, 120)}{(message.trim() || "").length > 120 ? "…" : ""}”{pollOpen && (pollQuestion.trim() || pollOptions.some(option => option.trim())) ? " + poll" : ""}</p> : <p className="mt-2 rounded-lg bg-[#fff8e1] px-2.5 py-2 text-[11px] text-[#8a6508]">Write a message, attach a file, or draft a poll first — then pick a time.</p>}
               {replyingTo && <p className="mt-1.5 text-[11px] text-[#527079]">Will send as a reply to {replyingTo.author}.</p>}
-              <div className="mt-2 flex gap-2">
-                <button type="button" onClick={() => applySchedulePreset(new Date(Date.now() + 60 * 60 * 1000))} data-testid="button-schedule-in-1h" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">In 1 hour</button>
-                <button type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + 1); next.setHours(9, 0, 0, 0); if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1); applySchedulePreset(next); }} data-testid="button-schedule-tomorrow-9am" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">Tomorrow 9am</button>
+              <div className="mt-2">
+                <label htmlFor="input-schedule-natural-language" className="text-[11px] font-semibold text-[#63747c] dark:text-[#b5c5cb]">Describe when to send</label>
+                <div className="mt-1 flex gap-2">
+                  <input id="input-schedule-natural-language" type="text" value={scheduleText} onChange={event => setScheduleText(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void interpretScheduleTime(); } }} maxLength={300} placeholder="e.g. tomorrow at 9am" data-testid="input-schedule-natural-language" className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
+                  <button type="button" onClick={() => void interpretScheduleTime()} disabled={!scheduleText.trim() || interpretScheduledChatTime.isPending} data-testid="button-interpret-schedule-time" className="shrink-0 rounded-lg border border-[#16869a] px-3 text-[11px] font-semibold text-[#12737d] transition hover:bg-[#e3f4f2] disabled:opacity-50 dark:text-[#8fd7e0] dark:hover:bg-[#15323a]">{interpretScheduledChatTime.isPending ? "Asking…" : "Ask AI"}</button>
+                </div>
+                <p className="mt-1 text-[10px] text-[#8a999d] dark:text-[#93a8b2]">AI fills your local date and time below; you can adjust either field.</p>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <label className="block text-[11px] font-semibold text-[#63747c]">Date<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} data-testid="input-schedule-date" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>

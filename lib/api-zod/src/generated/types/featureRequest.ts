@@ -17,4 +17,6 @@ export interface FeatureRequest {
   message: string;
   status: FeatureRequestStatus;
   createdAt: Date;
+  /** Whether the signed-in account authored this request */
+  isMine: boolean;
 }

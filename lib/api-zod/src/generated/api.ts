@@ -1021,7 +1021,8 @@ export const ListFeatureRequestsResponse = zod.object({
   "authorName": zod.string(),
   "message": zod.string(),
   "status": zod.enum(['open', 'done']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "isMine": zod.boolean().describe('Whether the signed-in account authored this request')
 }))
 })
 
@@ -1044,7 +1045,8 @@ export const CreateFeatureRequestResponse = zod.object({
   "authorName": zod.string(),
   "message": zod.string(),
   "status": zod.enum(['open', 'done']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "isMine": zod.boolean().describe('Whether the signed-in account authored this request')
 })
 
 
@@ -1066,7 +1068,45 @@ export const UpdateFeatureRequestResponse = zod.object({
   "authorName": zod.string(),
   "message": zod.string(),
   "status": zod.enum(['open', 'done']),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "isMine": zod.boolean().describe('Whether the signed-in account authored this request')
+})
+
+
+/**
+ * @summary Delete your own feature request
+ */
+export const DeleteOwnFeatureRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const DeleteOwnFeatureRequestResponse = zod.void()
+
+
+/**
+ * @summary Edit the message in your own feature request
+ */
+export const EditOwnFeatureRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const editOwnFeatureRequestBodyMessageMax = 2000;
+
+
+
+export const EditOwnFeatureRequestBody = zod.object({
+  "message": zod.string().min(1).max(editOwnFeatureRequestBodyMessageMax)
+})
+
+export const EditOwnFeatureRequestResponse = zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date(),
+  "isMine": zod.boolean().describe('Whether the signed-in account authored this request')
 })
 
 
@@ -1343,6 +1383,28 @@ export const SendInterviewChatResponse = zod.object({
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
   "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Interpret a natural-language scheduled chat time using the assistant model
+ */
+export const interpretScheduledChatTimeBodyTextMax = 300;
+
+
+
+export const InterpretScheduledChatTimeBody = zod.object({
+  "text": zod.string().min(1).max(interpretScheduledChatTimeBodyTextMax),
+  "timeZone": zod.string().describe('IANA timezone used to interpret and return the local time.')
+})
+
+export const interpretScheduledChatTimeResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const interpretScheduledChatTimeResponseTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const InterpretScheduledChatTimeResponse = zod.object({
+  "date": zod.string().regex(interpretScheduledChatTimeResponseDateRegExp),
+  "time": zod.string().regex(interpretScheduledChatTimeResponseTimeRegExp)
 })
 
 

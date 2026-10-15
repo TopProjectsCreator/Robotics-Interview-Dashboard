@@ -10,7 +10,11 @@ import {
   teamsTable,
   DEFAULT_TEAM_ID,
 } from "@workspace/db";
-import { CreateFeatureRequestBody, UpdateFeatureRequestBody } from "@workspace/api-zod";
+import {
+  CreateFeatureRequestBody,
+  EditOwnFeatureRequestBody,
+  UpdateFeatureRequestBody,
+} from "@workspace/api-zod";
 import {
   authenticatedInterviewerId,
   isSiteOwner,
@@ -23,7 +27,11 @@ import { getTeamById, teamFilter } from "../lib/teams";
 
 const router: IRouter = Router();
 
-function requestResponse(row: typeof featureRequestsTable.$inferSelect, teamName?: string) {
+function requestResponse(
+  row: typeof featureRequestsTable.$inferSelect,
+  teamName?: string,
+  viewerId?: string,
+) {
   return {
     id: row.id,
     ...(row.teamId ? { teamId: row.teamId } : {}),
@@ -32,6 +40,7 @@ function requestResponse(row: typeof featureRequestsTable.$inferSelect, teamName
     message: row.message,
     status: row.status,
     createdAt: (row.createdAt ?? new Date()).toISOString(),
+    isMine: Boolean(viewerId && row.authorId === viewerId),
   };
 }
 
@@ -95,7 +104,7 @@ router.post("/feature-requests", requireAdmin, async (req, res): Promise<void> =
       res.status(500).json({ error: "Could not save the request." });
       return;
     }
-    res.status(201).json(requestResponse(row));
+    res.status(201).json(requestResponse(row, undefined, account.id));
   } catch (error) {
     req.log.error({ err: error }, "Feature request save failed");
     res.status(500).json({ error: "Could not save the request." });
@@ -122,11 +131,83 @@ router.get("/feature-requests", requireAdmin, async (req, res): Promise<void> =>
       items: visible.map((row) => requestResponse(
         row,
         row.teamId ? (names.get(row.teamId) ?? (row.teamId === DEFAULT_TEAM_ID ? "Wolverines" : row.teamId)) : undefined,
+        interviewerId,
       )),
     });
   } catch (error) {
     req.log.error({ err: error }, "Feature request list failed");
     res.status(500).json({ error: "Could not load feature requests." });
+  }
+});
+
+// Authors can edit only their own requests in their signed-in team.
+router.patch("/feature-requests/:requestId/message", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = EditOwnFeatureRequestBody.safeParse(req.body);
+  const requestId = typeof req.params.requestId === "string" ? req.params.requestId : "";
+  const interviewerId = authenticatedInterviewerId(req);
+  if (!parsed.success || !requestId) {
+    res.status(400).json({ error: "Request id and a valid message are required." });
+    return;
+  }
+  if (!interviewerId) {
+    res.status(401).json({ error: "Interviewer session is invalid." });
+    return;
+  }
+  const message = parsed.data.message.trim();
+  if (!message) {
+    res.status(400).json({ error: "Write what you would like to see (1–2000 characters)." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const [updated] = await db.update(featureRequestsTable)
+      .set({ message: message.slice(0, 2000), updatedAt: new Date() })
+      .where(and(
+        eq(featureRequestsTable.id, requestId),
+        eq(featureRequestsTable.authorId, interviewerId),
+        teamFilter(featureRequestsTable.teamId, teamId),
+      ))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Your feature request was not found." });
+      return;
+    }
+    res.json(requestResponse(updated, undefined, interviewerId));
+  } catch (error) {
+    req.log.error({ err: error }, "Feature request edit failed");
+    res.status(500).json({ error: "Could not edit the request." });
+  }
+});
+
+// Authors can delete only their own requests in their signed-in team.
+router.delete("/feature-requests/:requestId", requireAdmin, async (req, res): Promise<void> => {
+  const requestId = typeof req.params.requestId === "string" ? req.params.requestId : "";
+  const interviewerId = authenticatedInterviewerId(req);
+  if (!requestId) {
+    res.status(400).json({ error: "Request id is required." });
+    return;
+  }
+  if (!interviewerId) {
+    res.status(401).json({ error: "Interviewer session is invalid." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const [deleted] = await db.delete(featureRequestsTable)
+      .where(and(
+        eq(featureRequestsTable.id, requestId),
+        eq(featureRequestsTable.authorId, interviewerId),
+        teamFilter(featureRequestsTable.teamId, teamId),
+      ))
+      .returning({ id: featureRequestsTable.id });
+    if (!deleted) {
+      res.status(404).json({ error: "Your feature request was not found." });
+      return;
+    }
+    res.sendStatus(204);
+  } catch (error) {
+    req.log.error({ err: error }, "Feature request delete failed");
+    res.status(500).json({ error: "Could not delete the request." });
   }
 });
 
@@ -158,7 +239,7 @@ router.patch("/feature-requests/:requestId", requireSiteOwner, async (req, res):
       res.status(404).json({ error: "Feature request not found." });
       return;
     }
-    res.json(requestResponse(updated));
+    res.json(requestResponse(updated, undefined, authenticatedInterviewerId(req)));
   } catch (error) {
     req.log.error({ err: error }, "Feature request update failed");
     res.status(500).json({ error: "Could not update the request." });
