@@ -25,7 +25,7 @@ import {
   UpdateCadModelParams,
   UpdateCadModelResponse,
 } from "@workspace/api-zod";
-import { chunkedUploadsTable, db, pool } from "@workspace/db";
+import { chunkedUploadsTable, currentInstance, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth";
 import { cleanCadLabel, cadModelKind, CAD_KIND_CONTENT_TYPES } from "../lib/cadModels";
@@ -45,9 +45,9 @@ const cadAccess = requireWorkspaceAccess("cad");
 
 const OBJECT_PATH_PATTERN = /^\/objects\/[A-Za-z0-9/-]{8,160}$/;
 /** Object path of a single stored file, as opposed to a chunked upload. */
-const SINGLE_OBJECT_PATH = /^\/objects\/([A-Za-z0-9-]{8,128})$/;
+const SINGLE_OBJECT_PATH = /^\/objects\/(?:secondary\/)?([A-Za-z0-9-]{8,128})$/;
 /** Object path of a chunked upload, which is a manifest of stored parts. */
-const CHUNK_OBJECT_PATH = /^\/objects\/chunk\/([A-Za-z0-9-]{8,128})$/;
+const CHUNK_OBJECT_PATH = /^\/objects\/chunk\/(?:(secondary)\/)?([A-Za-z0-9-]{8,128})$/;
 
 type Log = { warn: (fields: object, message?: string) => void };
 
@@ -59,7 +59,8 @@ type Log = { warn: (fields: object, message?: string) => void };
 async function deleteModelFile(objectPath: string, log: Log, teamId?: string): Promise<void> {
   const chunkMatch = CHUNK_OBJECT_PATH.exec(objectPath);
   if (chunkMatch) {
-    const uploadId = chunkMatch[1];
+    const uploadId = chunkMatch[2];
+    const storageInstance = chunkMatch[1] === "secondary" ? "secondary" : currentInstance();
     const manifest = teamId === undefined
       ? await getChunkUpload(uploadId)
       : await getChunkUploadForTeam(uploadId, teamId);
@@ -67,7 +68,7 @@ async function deleteModelFile(objectPath: string, log: Log, teamId?: string): P
       log.warn({ objectPath, uploadId }, "CAD model manifest is missing; parts left in storage");
       return;
     }
-    await deleteChunkParts(uploadId, manifest.totalParts);
+    await deleteChunkParts(uploadId, manifest.totalParts, storageInstance);
     await db
       .delete(chunkedUploadsTable)
       .where(eq(chunkedUploadsTable.uploadId, uploadId));

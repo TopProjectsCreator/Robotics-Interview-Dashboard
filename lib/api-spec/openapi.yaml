@@ -3714,9 +3714,13 @@ components:
         partIndex:
           type: integer
           minimum: 0
+        storageInstance:
+          type: string
+          enum: [primary, secondary]
+          description: Storage location selected for this upload; omit to use the current team instance.
     ChunkUploadUrl:
       type: object
-      required: [uploadId, partIndex, signedUrl]
+      required: [uploadId, partIndex, signedUrl, storageInstance]
       properties:
         uploadId:
           type: string
@@ -3724,9 +3728,12 @@ components:
           type: integer
         signedUrl:
           type: string
+        storageInstance:
+          type: string
+          enum: [primary, secondary]
     ChunkUploadCompleteInput:
       type: object
-      required: [uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes]
+      required: [uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes, storageInstance]
       properties:
         uploadId:
           type: string
@@ -3740,6 +3747,9 @@ components:
           type: integer
         partSizeBytes:
           type: integer
+        storageInstance:
+          type: string
+          enum: [primary, secondary]
     ChunkUploadStored:
       type: object
       required: [objectPath]

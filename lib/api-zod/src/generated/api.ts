@@ -883,13 +883,15 @@ export const createChunkUploadUrlBodyPartIndexMin = 0;
 
 export const CreateChunkUploadUrlBody = zod.object({
   "uploadId": zod.string().describe('Client-generated uuid shared across every part'),
-  "partIndex": zod.number().int().min(createChunkUploadUrlBodyPartIndexMin)
+  "partIndex": zod.number().int().min(createChunkUploadUrlBodyPartIndexMin),
+  "storageInstance": zod.enum(['primary', 'secondary']).optional().describe('Storage location selected for this upload; omit to use the current team instance.')
 })
 
 export const CreateChunkUploadUrlResponse = zod.object({
   "uploadId": zod.string(),
   "partIndex": zod.number().int(),
-  "signedUrl": zod.string()
+  "signedUrl": zod.string(),
+  "storageInstance": zod.enum(['primary', 'secondary'])
 })
 
 
@@ -902,7 +904,8 @@ export const CompleteChunkUploadBody = zod.object({
   "contentType": zod.string(),
   "sizeBytes": zod.number().int(),
   "totalParts": zod.number().int(),
-  "partSizeBytes": zod.number().int()
+  "partSizeBytes": zod.number().int(),
+  "storageInstance": zod.enum(['primary', 'secondary'])
 })
 
 export const CompleteChunkUploadResponse = zod.object({

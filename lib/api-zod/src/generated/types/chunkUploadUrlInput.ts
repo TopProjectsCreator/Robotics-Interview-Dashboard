@@ -5,10 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChunkUploadUrlInputStorageInstance } from './chunkUploadUrlInputStorageInstance';
 
 export interface ChunkUploadUrlInput {
   /** Client-generated uuid shared across every part */
   uploadId: string;
   /** @minimum 0 */
   partIndex: number;
+  /** Storage location selected for this upload; omit to use the current team instance. */
+  storageInstance?: ChunkUploadUrlInputStorageInstance;
 }

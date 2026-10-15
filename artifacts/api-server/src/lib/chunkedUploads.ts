@@ -2,20 +2,10 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { eq } from "drizzle-orm";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { db, chunkedUploadsTable } from "@workspace/db";
+import { ObjectStorageService, type StorageInstance } from "./objectStorage";
 
-let supabaseClient: SupabaseClient | null = null;
-function supabase(): SupabaseClient {
-  if (!supabaseClient) {
-    supabaseClient = createClient(
-      process.env.SUPABASE_URL as string,
-      process.env.SUPABASE_SERVICE_ROLE_KEY as string,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    );
-  }
-  return supabaseClient;
-}
+const objectStorage = new ObjectStorageService();
 
 // Large files are uploaded in parts straight from the browser to Supabase
 // Storage using signed URLs. Nothing large ever passes through the API
@@ -62,17 +52,14 @@ export async function getChunkUploadForTeam(uploadId: string, teamId?: string | 
   return owner === team ? manifest : null;
 }
 
-export async function deleteChunkParts(uploadId: string, totalParts: number): Promise<void> {
+export async function deleteChunkParts(
+  uploadId: string,
+  totalParts: number,
+  instance?: StorageInstance,
+): Promise<void> {
   const paths = Array.from({ length: totalParts }, (_, index) => chunkStoragePath(uploadId, index));
   if (!paths.length) return;
-  // Supabase forbids deleting straight from storage.objects; go through the
-  // Storage API with the service key instead.
-  const { error } = await supabase()
-    .storage.from(process.env.SUPABASE_STORAGE_BUCKET || "app-uploads")
-    .remove(paths);
-  if (error) {
-    throw new Error(`Failed to delete upload parts: ${error.message}`);
-  }
+  await objectStorage.deleteStoragePaths(paths, instance);
 }
 
 /**

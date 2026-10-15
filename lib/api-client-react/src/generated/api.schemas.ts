@@ -415,18 +415,48 @@ export interface PartsRobotAllocationInput {
   quantity: number;
 }
 
+/**
+ * Storage location selected for this upload; omit to use the current team instance.
+ */
+export type ChunkUploadUrlInputStorageInstance = typeof ChunkUploadUrlInputStorageInstance[keyof typeof ChunkUploadUrlInputStorageInstance];
+
+
+export const ChunkUploadUrlInputStorageInstance = {
+  primary: 'primary',
+  secondary: 'secondary',
+} as const;
+
 export interface ChunkUploadUrlInput {
   /** Client-generated uuid shared across every part */
   uploadId: string;
   /** @minimum 0 */
   partIndex: number;
+  /** Storage location selected for this upload; omit to use the current team instance. */
+  storageInstance?: ChunkUploadUrlInputStorageInstance;
 }
+
+export type ChunkUploadUrlStorageInstance = typeof ChunkUploadUrlStorageInstance[keyof typeof ChunkUploadUrlStorageInstance];
+
+
+export const ChunkUploadUrlStorageInstance = {
+  primary: 'primary',
+  secondary: 'secondary',
+} as const;
 
 export interface ChunkUploadUrl {
   uploadId: string;
   partIndex: number;
   signedUrl: string;
+  storageInstance: ChunkUploadUrlStorageInstance;
 }
+
+export type ChunkUploadCompleteInputStorageInstance = typeof ChunkUploadCompleteInputStorageInstance[keyof typeof ChunkUploadCompleteInputStorageInstance];
+
+
+export const ChunkUploadCompleteInputStorageInstance = {
+  primary: 'primary',
+  secondary: 'secondary',
+} as const;
 
 export interface ChunkUploadCompleteInput {
   uploadId: string;
@@ -435,6 +465,7 @@ export interface ChunkUploadCompleteInput {
   sizeBytes: number;
   totalParts: number;
   partSizeBytes: number;
+  storageInstance: ChunkUploadCompleteInputStorageInstance;
 }
 
 export interface ChunkUploadStored {

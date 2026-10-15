@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChunkUploadCompleteInputStorageInstance } from './chunkUploadCompleteInputStorageInstance';
 
 export interface ChunkUploadCompleteInput {
   uploadId: string;
@@ -13,4 +14,5 @@ export interface ChunkUploadCompleteInput {
   sizeBytes: number;
   totalParts: number;
   partSizeBytes: number;
+  storageInstance: ChunkUploadCompleteInputStorageInstance;
 }

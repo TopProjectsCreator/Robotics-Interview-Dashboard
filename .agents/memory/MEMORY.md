@@ -34,3 +34,4 @@
 - [OBJ and PLY inline rendering](obj-ply-inline-rendering.md) — three.js ships both loaders; check declared sizes first because PLYLoader trusts the header and loops on it.
 - [Settings app-adjustment requests](settings-app-adjustment-requests.md) — suggestions sent to Ishaan belong in Settings, not ordinary chat; authors need edit/delete controls.
 - [Natural-language scheduled chat times](natural-language-chat-scheduling.md) — interpret schedule phrases with the existing assistant model in the user's local timezone.
+- [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.

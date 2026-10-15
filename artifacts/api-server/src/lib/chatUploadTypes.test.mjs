@@ -52,6 +52,7 @@ async function loadStorage(t) {
     namedExports: {
       db: {},
       pool: {},
+      currentInstance: () => "primary",
       chunkedUploadsTable: { uploadId: "upload_id" },
       teamsTable: {},
       DEFAULT_TEAM_ID: "default",
@@ -61,6 +62,7 @@ async function loadStorage(t) {
   mock.module("../lib/objectStorage", {
     namedExports: {
       MAX_STORAGE_UPLOAD_BYTES: 50 * 1024 * 1024,
+      hasSecondaryStorage: () => false,
       ObjectNotFoundError: class extends Error {},
       ObjectStorageService: class {},
     },

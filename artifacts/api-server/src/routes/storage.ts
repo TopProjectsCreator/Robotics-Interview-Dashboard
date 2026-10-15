@@ -12,7 +12,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { db, chunkedUploadsTable } from '@workspace/db';
+import { currentInstance, db, chunkedUploadsTable } from '@workspace/db';
 import { eq } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { requireCompleteCadconvertFaceSummary } from '../lib/cadconvertPreview';
 import {
   MAX_STORAGE_UPLOAD_BYTES,
+  hasSecondaryStorage,
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
@@ -360,13 +361,26 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
     return;
   }
   try {
-    const signedUrl = await objectStorageService.mintChunkUpload(
-      chunkStoragePath(parsed.data.uploadId, parsed.data.partIndex),
-    );
+    let storageInstance = parsed.data.storageInstance ?? currentInstance();
+    let signedUrl: string;
+    try {
+      signedUrl = await objectStorageService.mintChunkUpload(
+        chunkStoragePath(parsed.data.uploadId, parsed.data.partIndex),
+        storageInstance,
+      );
+    } catch (primaryError) {
+      if (storageInstance !== 'primary' || !hasSecondaryStorage()) throw primaryError;
+      storageInstance = 'secondary';
+      signedUrl = await objectStorageService.mintChunkUpload(
+        chunkStoragePath(parsed.data.uploadId, parsed.data.partIndex),
+        storageInstance,
+      );
+    }
     res.json(CreateChunkUploadUrlResponse.parse({
       uploadId: parsed.data.uploadId,
       partIndex: parsed.data.partIndex,
       signedUrl,
+      storageInstance,
     }));
   } catch (error) {
     req.log.error({ err: error }, 'Error minting chunk upload URL');
@@ -390,7 +404,7 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     res.status(400).json({ error: 'Upload manifest is incomplete' });
     return;
   }
-  const { uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes } = parsed.data;
+  const { uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes, storageInstance } = parsed.data;
   if (!fileName?.trim() || !Number.isFinite(totalParts) || totalParts < 1) {
     res.status(400).json({ error: 'Upload manifest is incomplete' });
     return;
@@ -414,7 +428,10 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     }
     await db.insert(chunkedUploadsTable).values({ uploadId, teamId, ...manifest, createdBy: account.displayName })
       .onConflictDoUpdate({ target: chunkedUploadsTable.uploadId, set: manifest });
-    res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `/objects/chunk/${uploadId}` }));
+    const pathPrefix = storageInstance === 'secondary' && currentInstance() === 'primary'
+      ? '/objects/chunk/secondary/'
+      : '/objects/chunk/';
+    res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `${pathPrefix}${uploadId}` }));
   } catch (error) {
     req.log.error({ err: error }, 'Error finalising chunked upload');
     if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
@@ -859,7 +876,13 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const objectPath = `/objects/${wildcardPath}`;
 
     if (wildcardPath.startsWith('chunk/')) {
-      const uploadId = wildcardPath.slice('chunk/'.length);
+      const chunkParts = wildcardPath.slice('chunk/'.length).split('/');
+      const storageInstance = chunkParts[0] === 'secondary' ? 'secondary' : currentInstance();
+      const uploadId = chunkParts[0] === 'secondary' ? chunkParts[1] : chunkParts[0];
+      if (!uploadId || chunkParts.length !== (chunkParts[0] === 'secondary' ? 2 : 1)) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
       // Team-scoped: foreign manifests read as missing, so one team can
       // neither download nor probe another team's uploads.
       const manifest = await getChunkUploadForTeam(uploadId, await requestTeamId(req));
@@ -875,7 +898,7 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       await streamChunkedUpload(
         uploadId,
         res as unknown as Parameters<typeof streamChunkedUpload>[1],
-        (path) => objectStorageService.signDownloadUrl(path),
+        (path) => objectStorageService.signDownloadUrl(path, 900, storageInstance),
       );
       return;
     }
@@ -927,7 +950,13 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const objectPath = `/objects/${wildcardPath}`;
 
     if (wildcardPath.startsWith('chunk/')) {
-      const uploadId = wildcardPath.slice('chunk/'.length);
+      const chunkParts = wildcardPath.slice('chunk/'.length).split('/');
+      const storageInstance = chunkParts[0] === 'secondary' ? 'secondary' : currentInstance();
+      const uploadId = chunkParts[0] === 'secondary' ? chunkParts[1] : chunkParts[0];
+      if (!uploadId || chunkParts.length !== (chunkParts[0] === 'secondary' ? 2 : 1)) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
       if (await isPrivateObjectReferenced(objectPath)) {
         res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
         return;
@@ -938,7 +967,7 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
         res.status(404).json({ error: 'Object not found' });
         return;
       }
-      await deleteChunkParts(uploadId, manifest.totalParts);
+      await deleteChunkParts(uploadId, manifest.totalParts, storageInstance);
       await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
       res.status(200).json({ ok: true, deleted: true });
       return;

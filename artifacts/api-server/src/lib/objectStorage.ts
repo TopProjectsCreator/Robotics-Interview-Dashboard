@@ -10,8 +10,10 @@ export class ObjectNotFoundError extends Error {
   }
 }
 
-function supabaseUrl(): string {
-  const url = currentInstance() === "secondary"
+export type StorageInstance = "primary" | "secondary";
+
+function supabaseUrl(instance: StorageInstance = currentInstance()): string {
+  const url = instance === "secondary"
     ? (process.env.SECONDARY_SUPABASE_URL?.trim() || process.env.SUPABASE_URL)
     : process.env.SUPABASE_URL;
   if (!url) {
@@ -22,8 +24,8 @@ function supabaseUrl(): string {
   return url.replace(/\/+$/, '');
 }
 
-function serviceRoleKey(): string {
-  const key = currentInstance() === "secondary"
+function serviceRoleKey(instance: StorageInstance = currentInstance()): string {
+  const key = instance === "secondary"
     ? (process.env.SECONDARY_SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY)
     : process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) {
@@ -34,8 +36,8 @@ function serviceRoleKey(): string {
   return key;
 }
 
-export function storageBucket(): string {
-  if (currentInstance() === "secondary") {
+export function storageBucket(instance: StorageInstance = currentInstance()): string {
+  if (instance === "secondary") {
     return process.env.SECONDARY_SUPABASE_STORAGE_BUCKET?.trim() || process.env.SUPABASE_STORAGE_BUCKET || 'app-uploads';
   }
   return process.env.SUPABASE_STORAGE_BUCKET || 'app-uploads';
@@ -44,21 +46,29 @@ export function storageBucket(): string {
 let client: SupabaseClient | null = null;
 let secondaryClient: SupabaseClient | null = null;
 
-function supabase(): SupabaseClient {
-  if (currentInstance() === "secondary" && process.env.SECONDARY_SUPABASE_URL?.trim()) {
+export function hasSecondaryStorage(): boolean {
+  return Boolean(process.env.SECONDARY_SUPABASE_URL?.trim() && process.env.SECONDARY_SUPABASE_SECRET_KEY?.trim());
+}
+
+function supabaseFor(instance: StorageInstance): SupabaseClient {
+  if (instance === "secondary" && process.env.SECONDARY_SUPABASE_URL?.trim()) {
     if (!secondaryClient) {
-      secondaryClient = createClient(supabaseUrl(), serviceRoleKey(), {
+      secondaryClient = createClient(supabaseUrl("secondary"), serviceRoleKey("secondary"), {
         auth: { persistSession: false, autoRefreshToken: false },
       });
     }
     return secondaryClient;
   }
   if (!client) {
-    client = createClient(supabaseUrl(), serviceRoleKey(), {
+    client = createClient(supabaseUrl("primary"), serviceRoleKey("primary"), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
   }
   return client;
+}
+
+function supabase(): SupabaseClient {
+  return supabaseFor(currentInstance());
 }
 
 const ensuredBuckets = new Map<string, Promise<void>>();
@@ -67,13 +77,13 @@ const ensuredBuckets = new Map<string, Promise<void>>();
 // or below that ceiling so the request is always accepted.
 export const MAX_STORAGE_UPLOAD_BYTES = 50 * 1024 * 1024;
 
-function ensureBucket(): Promise<void> {
-  const bucketKey = `${currentInstance()}:${storageBucket()}`;
+function ensureBucket(instance: StorageInstance = currentInstance()): Promise<void> {
+  const bucketKey = `${instance}:${storageBucket(instance)}`;
   const existing = ensuredBuckets.get(bucketKey);
   if (existing) return existing;
   const pending = (async () => {
-      const bucket = storageBucket();
-      const storage = supabase().storage;
+      const bucket = storageBucket(instance);
+      const storage = supabaseFor(instance).storage;
       const { error } = await storage.createBucket(bucket, {
         public: false,
         fileSizeLimit: MAX_STORAGE_UPLOAD_BYTES,
@@ -117,7 +127,7 @@ function toStoragePath(objectPath: string): string {
   if (!objectPath.startsWith('/objects/')) {
     throw new ObjectNotFoundError();
   }
-  const rest = objectPath.slice('/objects/'.length);
+  const rest = objectPath.slice('/objects/'.length).replace(/^secondary\//, '');
   const parts = rest.split('/');
   if (parts.length === 1 && /^[A-Za-z0-9-]{8,128}$/.test(parts[0])) {
     return `uploads/${parts[0]}`;
@@ -128,13 +138,17 @@ function toStoragePath(objectPath: string): string {
   throw new ObjectNotFoundError();
 }
 
+function objectStorageInstance(objectPath: string): StorageInstance {
+  return objectPath.startsWith("/objects/secondary/") ? "secondary" : currentInstance();
+}
+
 export class ObjectStorageService {
   constructor() {}
 
-  async mintChunkUpload(storagePath: string): Promise<string> {
-    await ensureBucket();
-    const { data, error } = await supabase()
-      .storage.from(storageBucket())
+  async mintChunkUpload(storagePath: string, instance: StorageInstance = currentInstance()): Promise<string> {
+    await ensureBucket(instance);
+    const { data, error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
       .createSignedUploadUrl(storagePath, { upsert: false });
     if (error || !data?.signedUrl) {
       throw new Error(`Failed to mint upload URL: ${error?.message ?? 'unknown error'}`);
@@ -142,10 +156,10 @@ export class ObjectStorageService {
     return data.signedUrl;
   }
 
-  async signDownloadUrl(storagePath: string, expiresInSeconds = 900): Promise<string> {
-    await ensureBucket();
-    const { data, error } = await supabase()
-      .storage.from(storageBucket())
+  async signDownloadUrl(storagePath: string, expiresInSeconds = 900, instance: StorageInstance = currentInstance()): Promise<string> {
+    await ensureBucket(instance);
+    const { data, error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
       .createSignedUrl(storagePath, expiresInSeconds);
     if (error || !data?.signedUrl) {
       throw new Error(`Failed to sign download URL: ${error?.message ?? 'unknown error'}`);
@@ -198,31 +212,53 @@ export class ObjectStorageService {
   }
 
   async uploadChatImage(data: Buffer, contentType: string): Promise<string> {
-    await ensureBucket();
-    const id = randomUUID();
-    const storagePath = `uploads/${id}`;
-    const { error } = await supabase()
-      .storage.from(storageBucket())
-      .upload(storagePath, data, { contentType, upsert: false });
-    if (error) {
-      throw new Error(`Failed to store chat attachment: ${error.message}`);
+    const primary = currentInstance();
+    const uploadTo = async (instance: StorageInstance) => {
+      await ensureBucket(instance);
+      const id = randomUUID();
+      const storagePath = `uploads/${id}`;
+      const { error } = await supabaseFor(instance)
+        .storage.from(storageBucket(instance))
+        .upload(storagePath, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+      return `${instance === "secondary" && primary === "primary" ? "/objects/secondary/" : "/objects/"}${id}`;
+    };
+    try {
+      return await uploadTo(primary);
+    } catch (primaryError) {
+      if (primary !== "primary" || !hasSecondaryStorage()) {
+        throw new Error(`Failed to store chat attachment: ${primaryError instanceof Error ? primaryError.message : String(primaryError)}`);
+      }
+      try {
+        return await uploadTo("secondary");
+      } catch (secondaryError) {
+        throw new Error(`Failed to store chat attachment on primary and secondary: ${secondaryError instanceof Error ? secondaryError.message : String(secondaryError)}`);
+      }
     }
-    return `/objects/${id}`;
   }
 
   async deleteObject(objectPath: string): Promise<void> {
-    await ensureBucket();
+    const instance = objectStorageInstance(objectPath);
+    await ensureBucket(instance);
     const storagePath = toStoragePath(objectPath);
-    const { error } = await supabase().storage.from(storageBucket()).remove([storagePath]);
+    const { error } = await supabaseFor(instance).storage.from(storageBucket(instance)).remove([storagePath]);
     if (error) {
       throw new Error(`Failed to delete object: ${error.message}`);
     }
   }
 
+  async deleteStoragePaths(paths: string[], instance: StorageInstance = currentInstance()): Promise<void> {
+    if (!paths.length) return;
+    await ensureBucket(instance);
+    const { error } = await supabaseFor(instance).storage.from(storageBucket(instance)).remove(paths);
+    if (error) throw new Error(`Failed to delete storage objects: ${error.message}`);
+  }
+
   async downloadObject(objectPath: string): Promise<{ data: Buffer; contentType: string }> {
-    await ensureBucket();
+    const instance = objectStorageInstance(objectPath);
+    await ensureBucket(instance);
     const storagePath = toStoragePath(objectPath);
-    const { data, error } = await supabase().storage.from(storageBucket()).download(storagePath);
+    const { data, error } = await supabaseFor(instance).storage.from(storageBucket(instance)).download(storagePath);
     if (error || !data) {
       throw new ObjectNotFoundError();
     }
