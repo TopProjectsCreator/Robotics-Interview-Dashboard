@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { CadStorageStatus } from "@workspace/api-client-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CadWorkspacePage } from "./CadWorkspacePage";
@@ -101,7 +102,9 @@ function renderPage(
     folders: [intakeFolder, chassisFolder],
     models: [model()],
   },
-  cadStatus = {
+  // Annotated so the timestamps can be real values: without it TypeScript infers
+  // the literal `null` from the default below and rejects any actual timestamp.
+  cadStatus: CadStorageStatus = {
     usingBackupStorage: false,
     lastFailoverAt: null,
     lastRecoveryAt: null,
@@ -254,10 +257,25 @@ describe("CAD workspace uploads", () => {
 
   it("refuses an unsupported file and says why", async () => {
     renderPage();
-    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.pdf")]);
-    expect(await screen.findByTestId("cad-notice")).toHaveTextContent(/not a supported CAD file/i);
+    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.exe")]);
+    expect(await screen.findByTestId("cad-notice")).toHaveTextContent(/not a supported file/i);
     expect(mocks.uploadModelFile).not.toHaveBeenCalled();
     expect(mocks.createModel).not.toHaveBeenCalled();
+  });
+
+  it("uploads a reference file like chat attachments do", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+
+    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.pdf")]);
+
+    await waitFor(() => {
+      expect(mocks.uploadModelFile).toHaveBeenCalledTimes(1);
+    });
+    const [blob, params] = mocks.uploadModelFile.mock.calls[0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(params.fileName).toBe("notes.pdf");
+    expect(params.contentType).toBe("application/pdf");
   });
 
   it("streams a large file in parts instead of buffering it", async () => {

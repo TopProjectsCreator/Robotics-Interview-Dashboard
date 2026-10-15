@@ -28,7 +28,7 @@ import {
 import { chunkedUploadsTable, currentInstance, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth";
-import { cleanCadLabel, cadModelKind, CAD_KIND_CONTENT_TYPES } from "../lib/cadModels";
+import { cleanCadLabel, cadWorkspaceKind, isWorkspaceContentTypeCompatible, CAD_WORKSPACE_ACCEPT_MESSAGE } from "../lib/cadModels";
 import { deleteChunkParts, getChunkUpload, getChunkUploadForTeam } from "../lib/chunkedUploads";
 import { teamSqlCondition } from "../lib/teams";
 import { ObjectStorageService } from "../lib/objectStorage";
@@ -584,10 +584,17 @@ router.post("/cad/models", cadAccess, async (req, res): Promise<void> => {
     return;
   }
   // The upload endpoint already validated the bytes; re-checking the kind here
-  // means a model record can never name a format nothing can render.
-  const kind = cadModelKind(input.fileName);
-  if (!kind || !CAD_KIND_CONTENT_TYPES[kind].includes(input.contentType.toLowerCase())) {
-    res.status(400).json({ error: "Choose a GLB, STL, 3MF, STEP, IGES, BREP, X_T, or X_B file." });
+  // means a library record can never name a format nothing can render. CAD
+  // models and reference files (images, video, docs, slides, sheets) share
+  // this table so robot designs in any format live side by side.
+  const kind = cadWorkspaceKind(input.fileName);
+  if (!kind) {
+    res.status(400).json({ error: CAD_WORKSPACE_ACCEPT_MESSAGE });
+    return;
+  }
+  const declaredType = input.contentType.toLowerCase();
+  if (!isWorkspaceContentTypeCompatible(kind, declaredType)) {
+    res.status(400).json({ error: CAD_WORKSPACE_ACCEPT_MESSAGE });
     return;
   }
   const placement = await resolvePlacement(input.botId ?? null, input.folderId ?? null, await requestTeamId(req));

@@ -1,10 +1,11 @@
-import { cadFormatHint, cadFormatLabel, cadRenderFormat } from "../lib/cadFormats";
+import { cadFormatHint, cadFormatLabel, cadRenderFormat, isCadRenderFormat } from "../lib/cadFormats";
 import { ChatGlbViewer } from "./ChatGlbViewer";
 import { ChatParasolidViewer } from "./ChatParasolidViewer";
 import { ChatStlViewer } from "./ChatStlViewer";
 import { ChatStepViewer } from "./ChatStepViewer";
 import { CadThreeMfViewer } from "./CadThreeMfViewer";
 import { CadMeshViewer } from "./CadMeshViewer";
+import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
 
 type CadModelViewerProps = {
   /** Original file name, which selects the renderer. */
@@ -15,9 +16,10 @@ type CadModelViewerProps = {
 };
 
 /**
- * Renders any supported CAD file inline by handing it to the viewer that can
- * read its format. STEP, IGES, and BREP share the OpenCascade reader; Parasolid
- * converts server side; GLB, STL, and 3MF are already meshes.
+ * Renders any workspace file inline. CAD files go to the 3D viewers;
+ * images, videos, documents, presentations, and spreadsheets render exactly
+ * like chat attachments via WorkspaceFileViewer, so robot designs stored in
+ * any format preview perfectly.
  */
 export function CadModelViewer({ name, src, contentType, height }: CadModelViewerProps) {
   const format = cadRenderFormat(name, contentType);
@@ -31,6 +33,9 @@ export function CadModelViewer({ name, src, contentType, height }: CadModelViewe
   if (format === "parasolid") return <ChatParasolidViewer name={name} src={src} />;
   if (format === "step" || format === "iges" || format === "brep") {
     return <ChatStepViewer name={name} src={src} />;
+  }
+  if (format && !isCadRenderFormat(format)) {
+    return <WorkspaceFileViewer name={name} src={src} />;
   }
 
   return (

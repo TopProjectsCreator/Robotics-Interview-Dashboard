@@ -1,9 +1,10 @@
 const MIB = 1024 * 1024;
 
 /**
- * CAD file kinds the CAD workspace accepts. Everything here can be rendered
- * inline in the browser, either directly (GLB/STL/3MF) or through the OpenCascade
- * WASM reader (STEP/IGES/BREP), or via the server-side Parasolid converter.
+ * CAD file kinds the CAD workspace renders as 3D. Everything here can be
+ * rendered inline in the browser, either directly (GLB/STL/3MF) or through
+ * the OpenCascade WASM reader (STEP/IGES/BREP), or via the server-side
+ * Parasolid converter.
  */
 export type CadModelKind =
   | "glb"
@@ -15,6 +16,23 @@ export type CadModelKind =
   | "step"
   | "iges"
   | "brep";
+
+/**
+ * Every file kind the CAD workspace library accepts. CAD kinds render as 3D;
+ * reference kinds (images, video, documents, presentations, spreadsheets)
+ * render inline exactly like chat attachments, so robot designs stored as
+ * photos, PDFs, slides, or sheets are first-class citizens here.
+ */
+export type CadWorkspaceFileKind =
+  | CadModelKind
+  | "image"
+  | "video"
+  | "audio"
+  | "pdf"
+  | "document"
+  | "presentation"
+  | "spreadsheet"
+  | "text";
 
 const EXTENSION_KINDS: Record<string, CadModelKind> = {
   glb: "glb",
@@ -30,6 +48,57 @@ const EXTENSION_KINDS: Record<string, CadModelKind> = {
   igs: "iges",
   brep: "brep",
   brp: "brep",
+};
+
+/**
+ * Reference (non-CAD) extensions, keyed by lowercase extension without the
+ * dot. These mirror the chat attachment support so anything that renders in
+ * chat — photos of robots, build videos, design docs, slide decks, BOM
+ * spreadsheets — also uploads to the CAD workspace.
+ */
+const REFERENCE_EXTENSION_KINDS: Record<string, Exclude<CadWorkspaceFileKind, CadModelKind>> = {
+  jpg: "image",
+  jpeg: "image",
+  png: "image",
+  gif: "image",
+  webp: "image",
+  svg: "image",
+  bmp: "image",
+  avif: "image",
+  tif: "image",
+  tiff: "image",
+  heic: "image",
+  heif: "image",
+  mp4: "video",
+  mov: "video",
+  webm: "video",
+  m4v: "video",
+  mkv: "video",
+  avi: "video",
+  mp3: "audio",
+  wav: "audio",
+  ogg: "audio",
+  oga: "audio",
+  m4a: "audio",
+  flac: "audio",
+  aac: "audio",
+  pdf: "pdf",
+  doc: "document",
+  docx: "document",
+  odt: "document",
+  rtf: "document",
+  ppt: "presentation",
+  pptx: "presentation",
+  odp: "presentation",
+  ppsx: "presentation",
+  xls: "spreadsheet",
+  xlsx: "spreadsheet",
+  ods: "spreadsheet",
+  csv: "spreadsheet",
+  tsv: "spreadsheet",
+  txt: "text",
+  md: "text",
+  log: "text",
 };
 
 /**
@@ -64,8 +133,121 @@ export const CAD_KIND_CONTENT_TYPES: Record<CadModelKind, string> = {
   brep: "model/brep",
 };
 
+/** Canonical content type for reference kinds, mirroring chat attachments. */
+export const WORKSPACE_KIND_CONTENT_TYPES: Record<Exclude<CadWorkspaceFileKind, CadModelKind>, string> = {
+  image: "image/png",
+  video: "video/mp4",
+  audio: "audio/mpeg",
+  pdf: "application/pdf",
+  document: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  presentation: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  spreadsheet: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  text: "text/plain",
+};
+
+/** Canonical content type for every workspace kind (CAD + reference). */
+export const CAD_WORKSPACE_KIND_CONTENT_TYPES: Record<CadWorkspaceFileKind, string> = {
+  ...CAD_KIND_CONTENT_TYPES,
+  ...WORKSPACE_KIND_CONTENT_TYPES,
+};
+
+/**
+ * Explicit content types accepted per reference kind, beyond the generic
+ * `application/octet-stream`/empty types browsers send on drag-and-drop.
+ * Image/video/audio accept any subtype via prefix matching (see resolver).
+ */
+const REFERENCE_KIND_CONTENT_TYPES: Record<Exclude<CadWorkspaceFileKind, CadModelKind>, string[]> = {
+  image: [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/svg+xml",
+    "image/bmp",
+    "image/avif",
+    "image/tiff",
+    "image/heic",
+    "image/heif",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "",
+  ],
+  video: [
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-msvideo",
+    "video/x-matroska",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "",
+  ],
+  audio: [
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/flac",
+    "audio/aac",
+    "audio/x-wav",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "",
+  ],
+  pdf: ["application/pdf", "application/octet-stream", "binary/octet-stream", ""],
+  document: [
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.text",
+    "application/rtf",
+    "text/rtf",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "text/plain",
+    "",
+  ],
+  presentation: [
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "",
+  ],
+  spreadsheet: [
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "text/csv",
+    "text/tab-separated-values",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "text/plain",
+    "",
+  ],
+  text: [
+    "text/plain",
+    "text/csv",
+    "text/tab-separated-values",
+    "text/markdown",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "",
+  ],
+};
+
 export const CAD_MODEL_ACCEPT =
   ".glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b";
+
+/** Every extension the CAD workspace accepts: CAD models plus reference files. */
+export const CAD_WORKSPACE_ACCEPT =
+  ".glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b" +
+  ",.jpg,.jpeg,.png,.gif,.webp,.svg,.bmp,.avif,.tif,.tiff,.heic,.heif" +
+  ",.mp4,.mov,.webm,.m4v,.mkv,.avi,.mp3,.wav,.ogg,.oga,.m4a,.flac,.aac" +
+  ",.pdf,.doc,.docx,.odt,.rtf,.ppt,.pptx,.odp,.ppsx,.xls,.xlsx,.ods,.csv,.tsv,.txt,.md,.log";
+
+export const CAD_WORKSPACE_ACCEPT_MESSAGE =
+  "Choose a CAD model (GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, X_B) or an image, video, audio, PDF, document, presentation, spreadsheet, or text file.";
 
 export function cadModelKind(fileName: string): CadModelKind | null {
   const extension = fileName.toLowerCase().split(".").pop();
@@ -73,14 +255,42 @@ export function cadModelKind(fileName: string): CadModelKind | null {
   return EXTENSION_KINDS[extension] ?? null;
 }
 
-export function cadModelMaxBytes(kind: CadModelKind): number {
+/**
+ * Every file kind the workspace accepts, CAD first then reference. The
+ * extension is authoritative because browsers report vague types on drop.
+ */
+export function cadWorkspaceKind(fileName: string): CadWorkspaceFileKind | null {
+  const extension = fileName.toLowerCase().split(".").pop();
+  if (!extension) return null;
+  return EXTENSION_KINDS[extension] ?? REFERENCE_EXTENSION_KINDS[extension] ?? null;
+}
+
+/** True for 3D model kinds; false for images, docs, sheets, and other refs. */
+export function isCadModelKind(kind: CadWorkspaceFileKind): kind is CadModelKind {
+  return kind in CAD_KIND_CONTENT_TYPES;
+}
+
+/** True when a declared content type is compatible with a workspace kind. */
+export function isWorkspaceContentTypeCompatible(kind: CadWorkspaceFileKind, normalizedType: string): boolean {
+  if (isCadModelKind(kind)) return KIND_CONTENT_TYPES[kind].includes(normalizedType);
+  if (!normalizedType || normalizedType === "application/octet-stream" || normalizedType === "binary/octet-stream") return true;
+  if (kind === "image") return normalizedType.startsWith("image/");
+  if (kind === "video") return normalizedType.startsWith("video/");
+  if (kind === "audio") return normalizedType.startsWith("audio/");
+  return REFERENCE_KIND_CONTENT_TYPES[kind as Exclude<CadWorkspaceFileKind, CadModelKind>].includes(normalizedType);
+}
+
+export function cadModelMaxBytes(kind: CadModelKind | CadWorkspaceFileKind): number {
   // Parasolid and the B-Rep text formats are large but convert in the browser;
   // meshes are already renderable so they are capped lower.
   if (kind === "glb" || kind === "stl" || kind === "three-mf") return 100 * MIB;
   // OBJ is verbose ASCII and photogrammetry PLY can be very large, so both get
   // the mesh budget rather than the more generous B-Rep one.
   if (kind === "obj" || kind === "ply") return 100 * MIB;
-  return 200 * MIB;
+  if (isCadModelKind(kind)) return 200 * MIB;
+  // Reference files (images, video, docs, sheets) share chat's 100 MB budget
+  // so a build video or a photo set of a robot never hits a surprise cap.
+  return 100 * MIB;
 }
 
 /**
@@ -90,26 +300,49 @@ export function cadModelMaxBytes(kind: CadModelKind): number {
 export function resolveCadUploadKind(
   fileName: string,
   contentType: string,
-): { kind: CadModelKind; contentType: string } | { error: string } {
+): { kind: CadWorkspaceFileKind; contentType: string } | { error: string } {
   const trimmedName = fileName.trim();
   if (!trimmedName) return { error: "The file needs a name." };
   if (trimmedName.length > 255 || /[\\/\u0000-\u001f\u007f]/.test(trimmedName)) {
     return { error: "Use a file name without path separators or control characters." };
   }
-  const kind = cadModelKind(trimmedName);
+  const kind = cadWorkspaceKind(trimmedName);
   if (!kind) {
-    return {
-      error: "Choose a GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, or X_B file.",
-    };
+    return { error: CAD_WORKSPACE_ACCEPT_MESSAGE };
   }
   const normalizedType = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  // An empty or generic type is fine; an explicit mismatched one is not, since
-  // it usually means the wrong file was renamed.
-  const allowed = KIND_CONTENT_TYPES[kind];
-  if (normalizedType && !allowed.includes(normalizedType)) {
-    return { error: `The file contents do not look like a ${kind.toUpperCase()} model.` };
+  if (isCadModelKind(kind)) {
+    // An empty or generic type is fine; an explicit mismatched one is not, since
+    // it usually means the wrong file was renamed.
+    const allowed = KIND_CONTENT_TYPES[kind];
+    if (normalizedType && !allowed.includes(normalizedType)) {
+      return { error: `The file contents do not look like a ${kind.toUpperCase()} model.` };
+    }
+    return { kind, contentType: CAD_KIND_CONTENT_TYPES[kind] };
   }
-  return { kind, contentType: CAD_KIND_CONTENT_TYPES[kind] };
+  // Reference files: the extension is authoritative. Generic/empty types pass;
+  // image/video/audio accept any subtype via prefix, others need an exact hit.
+  if (!normalizedType || normalizedType === "application/octet-stream" || normalizedType === "binary/octet-stream") {
+    return { kind, contentType: WORKSPACE_KIND_CONTENT_TYPES[kind] };
+  }
+  if (kind === "image" && normalizedType.startsWith("image/")) {
+    return { kind, contentType: normalizedType };
+  }
+  if (kind === "video" && normalizedType.startsWith("video/")) {
+    return { kind, contentType: normalizedType };
+  }
+  if (kind === "audio" && normalizedType.startsWith("audio/")) {
+    return { kind, contentType: normalizedType };
+  }
+  const allowed = REFERENCE_KIND_CONTENT_TYPES[kind];
+  if (!allowed.includes(normalizedType)) {
+    return { error: `The file contents do not look like a ${kind} file.` };
+  }
+  const canonical = WORKSPACE_KIND_CONTENT_TYPES[kind];
+  const specific = normalizedType !== "" && normalizedType !== "application/octet-stream" && normalizedType !== "binary/octet-stream"
+    ? normalizedType
+    : canonical;
+  return { kind, contentType: specific };
 }
 
 function isValidStl(data: Buffer): boolean {
@@ -174,13 +407,28 @@ function isValidGlb(data: Buffer): boolean {
 }
 
 /** Checks that the bytes match the kind the extension claims. */
-export function cadFileMatchesKind(kind: CadModelKind, data: Buffer): boolean {
+export function cadFileMatchesKind(kind: CadModelKind | CadWorkspaceFileKind, data: Buffer): boolean {
   if (data.length === 0) return false;
   if (kind === "glb") return isValidGlb(data);
   if (kind === "stl") return isValidStl(data);
   if (kind === "obj") return isValidObj(data);
   if (kind === "ply") return isValidPly(data);
   if (kind === "three-mf") return isValidThreeMf(data);
+  if (!isCadModelKind(kind)) {
+    // Reference files render like chat attachments, which are permissive here
+    // and surface real parse errors in the preview (XLSX, DOCX, images). A
+    // light magic check keeps an obviously renamed file from uploading while
+    // never rejecting a valid photo, video, PDF, slide deck, or spreadsheet.
+    if (kind === "pdf") {
+      if (data.length < 5) return false;
+      const head = data.subarray(0, Math.min(8, data.length)).toString("latin1");
+      if (head.startsWith("%PDF")) return true;
+      // Be permissive: some producers omit the header on tiny exports.
+      return data.length >= 16;
+    }
+    if (kind === "image" || kind === "video" || kind === "audio") return data.length >= 16;
+    return data.length > 0;
+  }
   if (kind === "parasolid") {
     const looksBinary = data.subarray(0, Math.min(data.length, 512)).includes(0);
     // X_T is ASCII text, X_B is a binary transmit stream. Only the text form is
