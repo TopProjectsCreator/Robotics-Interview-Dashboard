@@ -142,6 +142,35 @@ function objectStorageInstance(objectPath: string): StorageInstance {
   return objectPath.startsWith("/objects/secondary/") ? "secondary" : currentInstance();
 }
 
+function objectPathPrefix(instance: StorageInstance): string {
+  return instance === "secondary" ? "/objects/secondary/" : "/objects/";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function withPrimaryStorageFallback<T>(
+  operationName: string,
+  operation: (instance: StorageInstance) => Promise<T>,
+): Promise<T> {
+  const primary = currentInstance();
+  try {
+    return await operation(primary);
+  } catch (primaryError) {
+    if (primary !== "primary" || !hasSecondaryStorage()) {
+      throw new Error(`${operationName}: ${errorMessage(primaryError)}`);
+    }
+    try {
+      return await operation("secondary");
+    } catch (secondaryError) {
+      throw new Error(
+        `${operationName} failed on primary (${errorMessage(primaryError)}) and secondary (${errorMessage(secondaryError)})`,
+      );
+    }
+  }
+}
+
 export class ObjectStorageService {
   constructor() {}
 
@@ -168,17 +197,20 @@ export class ObjectStorageService {
   }
 
   async mintUpload(): Promise<{ uploadURL: string; objectPath: string }> {
-    await ensureBucket();
-    const bucket = storageBucket();
-    const id = randomUUID();
-    const storagePath = `uploads/${id}`;
-    const { data, error } = await supabase()
-      .storage.from(bucket)
-      .createSignedUploadUrl(storagePath, { upsert: false });
-    if (error || !data?.signedUrl) {
-      throw new Error(`Failed to mint upload URL: ${error?.message ?? 'unknown error'}`);
-    }
-    return { uploadURL: data.signedUrl, objectPath: `/objects/${id}` };
+    return withPrimaryStorageFallback("Failed to mint upload URL", async (instance) => {
+      await ensureBucket(instance);
+      const id = randomUUID();
+      const { data, error } = await supabaseFor(instance)
+        .storage.from(storageBucket(instance))
+        .createSignedUploadUrl(`uploads/${id}`, { upsert: false });
+      if (error || !data?.signedUrl) {
+        throw new Error(error?.message ?? "unknown error");
+      }
+      return {
+        uploadURL: data.signedUrl,
+        objectPath: `${objectPathPrefix(instance)}${id}`,
+      };
+    });
   }
 
   async listUploads(limit = 20): Promise<{ name: string; objectPath: string; createdAt: string | null }[]> {
@@ -199,16 +231,17 @@ export class ObjectStorageService {
       }));
   }
 
-  async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {    await ensureBucket();
-    const id = randomUUID();
-    const storagePath = `generated/${id}`;
-    const { error } = await supabase()
-      .storage.from(storageBucket())
-      .upload(storagePath, data, { contentType, upsert: false });
-    if (error) {
-      throw new Error(`Failed to store generated image: ${error.message}`);
-    }
-    return `/objects/generated/${id}`;
+  async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {
+    return withPrimaryStorageFallback("Failed to store generated image", async (instance) => {
+      await ensureBucket(instance);
+      const id = randomUUID();
+      const storagePath = `generated/${id}`;
+      const { error } = await supabaseFor(instance)
+        .storage.from(storageBucket(instance))
+        .upload(storagePath, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+      return `${objectPathPrefix(instance)}generated/${id}`;
+    });
   }
 
   async uploadChatImage(data: Buffer, contentType: string): Promise<string> {
@@ -221,7 +254,7 @@ export class ObjectStorageService {
         .storage.from(storageBucket(instance))
         .upload(storagePath, data, { contentType, upsert: false });
       if (error) throw new Error(error.message);
-      return `${instance === "secondary" && primary === "primary" ? "/objects/secondary/" : "/objects/"}${id}`;
+      return `${objectPathPrefix(instance)}${id}`;
     };
     try {
       return await uploadTo(primary);
