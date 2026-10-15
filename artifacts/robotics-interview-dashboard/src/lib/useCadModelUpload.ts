@@ -38,12 +38,15 @@ function reasonFor(error: unknown): string {
 }
 
 /**
- * Stores CAD files then records them in the library.
+ * Stores workspace files (CAD models plus reference files) then records them
+ * in the library.
  *
  * The bytes are uploaded first and the record created second, so a failed
  * upload never leaves an entry that renders nothing. Files past the chunk
  * threshold stream straight to storage in parts, keeping large assemblies out
- * of the API process entirely.
+ * of the API process entirely. Images, videos, documents, presentations, and
+ * spreadsheets render inline like chat attachments, so robot designs in any
+ * format live side by side with CAD.
  */
 export function useCadModelUpload(options: {
   onUploaded?: (model: CadModel) => void;
@@ -70,7 +73,7 @@ export function useCadModelUpload(options: {
           const contentType = cadUploadContentType(file);
           if (!contentType || !isCadFile(file)) {
             throw new Error(
-              `${file.name} is not a supported CAD file. Use GLB, STL, 3MF, STEP, IGES, BREP, X_T, or X_B.`,
+              `${file.name} is not a supported file. Use a CAD model (GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, X_B) or an image, video, audio, PDF, document, presentation, spreadsheet, or text file.`,
             );
           }
           setProgress({ fileName: file.name, percent: 0, completed, total: files.length });

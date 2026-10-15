@@ -229,10 +229,25 @@ describe("CAD workspace uploads", () => {
 
   it("refuses an unsupported file and says why", async () => {
     renderPage();
-    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.pdf")]);
-    expect(await screen.findByTestId("cad-notice")).toHaveTextContent(/not a supported CAD file/i);
+    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.exe")]);
+    expect(await screen.findByTestId("cad-notice")).toHaveTextContent(/not a supported file/i);
     expect(mocks.uploadModelFile).not.toHaveBeenCalled();
     expect(mocks.createModel).not.toHaveBeenCalled();
+  });
+
+  it("uploads a reference file like chat attachments do", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+
+    dropTarget(screen.getByTestId("cad-model-grid"), {}, [cadFile("notes.pdf")]);
+
+    await waitFor(() => {
+      expect(mocks.uploadModelFile).toHaveBeenCalledTimes(1);
+    });
+    const [blob, params] = mocks.uploadModelFile.mock.calls[0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(params.fileName).toBe("notes.pdf");
+    expect(params.contentType).toBe("application/pdf");
   });
 
   it("streams a large file in parts instead of buffering it", async () => {

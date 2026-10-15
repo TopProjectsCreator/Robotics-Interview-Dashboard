@@ -447,8 +447,7 @@ export function CadWorkspacePage() {
           </p>
           <h1 className="text-3xl font-semibold tracking-[-.045em] md:text-4xl">Models</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Drop CAD files anywhere to upload them, and drag models between folders to organise
-            them. GLB, STL, 3MF, STEP, IGES, BREP, X_T, and X_B all render inline.
+            Drop CAD models, robot photos, build videos, design docs, slide decks, and BOM spreadsheets anywhere to upload them, and drag files between folders to organise them. Everything renders inline just like chat.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -532,7 +531,7 @@ export function CadWorkspacePage() {
             ) : (
               <Upload size={15} aria-hidden="true" />
             )}
-            Upload CAD
+            Upload files
           </Button>
         </div>
       </header>
@@ -731,8 +730,7 @@ export function CadWorkspacePage() {
                 {search ? "No models match that filter" : "No models here yet"}
               </p>
               <p className="max-w-sm text-xs text-muted-foreground">
-                Drag CAD files onto this area, or onto a bot or folder to file them there. STEP,
-                IGES, BREP, X_T, GLB, STL, and 3MF all render inline.
+                Drag CAD models, images, videos, documents, presentations, or spreadsheets onto this area, or onto a bot or folder to file them there. Robot designs in any format render inline just like chat.
               </p>
             </div>
           ) : (
