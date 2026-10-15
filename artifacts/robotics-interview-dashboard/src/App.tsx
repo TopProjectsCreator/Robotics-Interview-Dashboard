@@ -181,6 +181,23 @@ function temporaryAuthRetryDelay(attempt: number): number {
   return Math.min(500 * 2 ** attempt, 2000);
 }
 
+function usePasskeysAvailable(): boolean {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void browserSupportsPasskeys()
+      .then(supported => {
+        if (active) setAvailable(supported);
+      })
+      .catch(() => {
+        if (active) setAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return available;
+}
 function expireSessionOnError(error: unknown) {
   if (!isExpiredSessionError(error)) return;
   markAuthSessionExpired();
@@ -666,7 +683,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       onError: () => { setPasswordError("Could not remove that account. Try again."); },
     });
   };
-  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const passkeysAvailable = usePasskeysAvailable();
   const chatSettings = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
   const updateChatSettings = useUpdateChatSettings();
   const [slowmodeBusy, setSlowmodeBusy] = useState(false);
@@ -2469,7 +2486,7 @@ function Login() {
     );
   };
 
-  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const passkeysAvailable = usePasskeysAvailable();
   const signInWithPasskey = async () => {
     if (!selected || !eventPassword.trim()) {
       setError("Enter the team access code first.");

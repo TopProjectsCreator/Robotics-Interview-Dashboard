@@ -11,7 +11,8 @@
     "test": "vitest run --config vitest.config.ts",
     "test:media-browser": "node browser-tests/chat-attachment-preview.browser.mjs",
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
-    "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs"
+    "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",
+    "test:passkey-browser": "node browser-tests/passkey.browser.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
