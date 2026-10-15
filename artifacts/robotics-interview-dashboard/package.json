@@ -12,7 +12,8 @@
     "test:media-browser": "node browser-tests/chat-attachment-preview.browser.mjs",
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
     "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",
-    "test:passkey-browser": "node browser-tests/passkey.browser.mjs"
+    "test:passkey-browser": "node browser-tests/passkey.browser.mjs",
+    "test:workspace-access-browser": "node browser-tests/workspace-access.browser.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

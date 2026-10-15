@@ -2854,6 +2854,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   // role so legacy role-based settings keep working (as before the per-user switch).
   const sessionRole = session.data?.role ?? "interviewer";
   const workspaceVisibility = useWorkspaceVisibility(isSignedIn, sessionRole, sessionUserId);
+  const workspaceVisibilityLoading = isSignedIn && !isCoordinator && workspaceVisibility.isLoading;
   const visibility = workspaceVisibility.visibility;
   const visibleWorkspaces = useMemo(() => {
     const set = new Set<WorkspaceKey>();
@@ -2901,7 +2902,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     (areaCanSee("parts") && isPartsPath) ||
     (areaCanSee("cad") && isCadPath) ||
     (areaCanSee("code") && isCodePath);
-  const restrictedBlocked = isSignedIn && !restrictedAllowed;
+  const restrictedBlocked = isSignedIn && !workspaceVisibilityLoading && !restrictedAllowed;
   // Send someone who cannot open this workspace to the first one they can, so
   // hiding a workspace also stops it being reachable by URL. /dashboard stays
   // reachable for everyone, so it is the final fallback.
@@ -2915,6 +2916,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   }, [blockedFromCurrent, setLocation, homeWorkspace]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
+  if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
   const workspaceArea = workspaceAreaForPath(location);
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
