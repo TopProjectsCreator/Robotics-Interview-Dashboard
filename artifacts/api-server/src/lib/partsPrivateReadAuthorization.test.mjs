@@ -98,8 +98,19 @@ test("signed-out visitors cannot read private Parts records from any GET endpoin
     namedExports: {
       pool,
       db: {},
+      primaryDb: {},
+      primaryPool: pool,
       interviewerAccountsTable: {},
       revokedSessionsTable: {},
+      teamsTable: {},
+      DEFAULT_TEAM_ID: "default",
+      normalizeTeamName: (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   mock.method(globalThis, "fetch", async () => new Response("", { status: 503 }));

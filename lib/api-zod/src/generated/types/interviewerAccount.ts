@@ -10,6 +10,8 @@ export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
+  /** True when this account has at least one passkey registered */
+  hasPasskey?: boolean;
   /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
 }

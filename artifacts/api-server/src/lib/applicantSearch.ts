@@ -1,5 +1,10 @@
 import type { Applicant } from "@workspace/db";
 
+/** Applicant rows as served by list queries, where the large transcript
+ * column may be omitted (detail views and AI tools fetch it per applicant).
+ * Text/skill matching degrades gracefully without it. */
+export type ApplicantLike = Omit<Applicant, "transcript"> & { transcript?: string | null };
+
 type AgeFilter =
   | { kind: "exact"; value: number }
   | { kind: "comparison"; operator: ">" | ">=" | "<" | "<="; value: number }
@@ -159,7 +164,7 @@ function readTokenValue(raw: string): { value: string; malformed: boolean } {
   return { value: value.slice(1, -1), malformed: false };
 }
 
-function searchableText(applicant: Applicant): string {
+function searchableText(applicant: ApplicantLike): string {
   return [
     applicant.name,
     applicant.id,
@@ -210,7 +215,7 @@ function countMatches(text: string, patterns: RegExp[]): number {
   }, 0);
 }
 
-function applicantSkill(applicant: Applicant): string | null {
+function applicantSkill(applicant: ApplicantLike): string | null {
   const fields = [
     applicant.roboticsExperience,
     applicant.transcript,
@@ -364,6 +369,22 @@ class SearchParser {
   }
 }
 
+/** True when matching needs the transcript column (free-text or skill
+ * predicates). List queries include transcripts only in that case, so
+ * idle polls skip the largest column in the table. */
+export function searchNeedsTranscript(query: ApplicantSearchQuery): boolean {
+  const visit = (expression: SearchExpression | null): boolean => {
+    if (!expression) return false;
+    if (expression.kind === "predicate") {
+      return expression.predicate.field === "text" || expression.predicate.field === "skill";
+    }
+    if (expression.kind === "not") return visit(expression.expression);
+    if (expression.kind === "if") return visit(expression.condition) || visit(expression.consequence);
+    return visit(expression.left) || visit(expression.right);
+  };
+  return visit(query.expression);
+}
+
 export function parseApplicantSearchQuery(input: string): ApplicantSearchQuery {
   const query = emptyQuery();
   const parser = new SearchParser(tokenize(input), query.invalid);
@@ -381,7 +402,7 @@ function matchesAge(age: number | null, filter: AgeFilter): boolean {
   return age <= filter.value;
 }
 
-function matchesPredicate(applicant: Applicant, predicate: SearchPredicate): boolean {
+function matchesPredicate(applicant: ApplicantLike, predicate: SearchPredicate): boolean {
   if (predicate.field === "text") return searchableText(applicant).includes(predicate.value);
   if (predicate.field === "name") return applicant.name.toLowerCase().includes(predicate.value);
   if (predicate.field === "age") return Boolean(predicate.age && matchesAge(applicant.age, predicate.age));
@@ -394,7 +415,7 @@ function matchesPredicate(applicant: Applicant, predicate: SearchPredicate): boo
   return applicant.aiScore === -1;
 }
 
-function matchesExpression(applicant: Applicant, expression: SearchExpression): boolean {
+function matchesExpression(applicant: ApplicantLike, expression: SearchExpression): boolean {
   if (expression.kind === "predicate") return matchesPredicate(applicant, expression.predicate);
   if (expression.kind === "and") return matchesExpression(applicant, expression.left) && matchesExpression(applicant, expression.right);
   if (expression.kind === "or") return matchesExpression(applicant, expression.left) || matchesExpression(applicant, expression.right);
@@ -402,7 +423,7 @@ function matchesExpression(applicant: Applicant, expression: SearchExpression): 
   return !matchesExpression(applicant, expression.condition) || matchesExpression(applicant, expression.consequence);
 }
 
-export function matchesApplicantSearch(applicant: Applicant, query: ApplicantSearchQuery): boolean {
+export function matchesApplicantSearch(applicant: ApplicantLike, query: ApplicantSearchQuery): boolean {
   if (query.invalid.length > 0) return false;
   return query.expression ? matchesExpression(applicant, query.expression) : true;
 }

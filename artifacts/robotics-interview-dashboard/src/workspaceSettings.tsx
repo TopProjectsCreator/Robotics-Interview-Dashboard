@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   defaultSort: "rank",
   autoRefresh: true,
   refreshMs: 3000,
-  realtime: false,
+  realtime: true,
 };
 
 export const REFRESH_OPTIONS = [

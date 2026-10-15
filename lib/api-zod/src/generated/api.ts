@@ -49,7 +49,52 @@ export const LoginResponse = zod.object({
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
+})
+
+
+/**
+ * @summary Generate a random team access code suggestion
+ */
+export const GetRandomTeamCodeResponse = zod.object({
+  "code": zod.string()
+})
+
+
+/**
+ * Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
+ * @summary Create a brand-new team with its own access code
+ */
+export const createTeamBodyTeamNameMax = 80;
+
+export const createTeamBodyTeamCodeMin = 4;
+export const createTeamBodyTeamCodeMax = 128;
+
+export const createTeamBodyDisplayNameMax = 80;
+
+
+
+
+export const CreateTeamBody = zod.object({
+  "teamName": zod.string().min(1).max(createTeamBodyTeamNameMax),
+  "teamCode": zod.string().min(createTeamBodyTeamCodeMin).max(createTeamBodyTeamCodeMax),
+  "displayName": zod.string().min(1).max(createTeamBodyDisplayNameMax),
+  "password": zod.string().min(1),
+  "confirmLowExposure": zod.boolean().optional().describe('Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown')
+})
+
+export const CreateTeamResponse = zod.object({
+  "message": zod.string(),
+  "teamId": zod.string(),
+  "teamName": zod.string(),
+  "authenticated": zod.boolean(),
+  "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
+  "role": zod.string().optional(),
+  "token": zod.string().optional()
 })
 
 
@@ -64,7 +109,9 @@ export const VerifyEventPasscodeBody = zod.object({
 })
 
 export const VerifyEventPasscodeResponse = zod.object({
-  "message": zod.string()
+  "message": zod.string(),
+  "teamId": zod.string().optional().describe('Team unlocked by this access code'),
+  "teamName": zod.string().optional().describe('Display name of the unlocked team')
 })
 
 
@@ -76,6 +123,9 @@ export const GetSessionResponse = zod.object({
   "label": zod.string().optional(),
   "interviewerId": zod.string().optional(),
   "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -83,11 +133,16 @@ export const GetSessionResponse = zod.object({
 /**
  * @summary List interviewer accounts and password setup state
  */
+export const ListInterviewersQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.')
+})
+
 export const ListInterviewersResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 }))
 })
@@ -112,6 +167,7 @@ export const CreateInterviewerResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -134,6 +190,7 @@ export const SetupInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -146,6 +203,122 @@ export const DeleteInterviewerParams = zod.object({
 })
 
 export const DeleteInterviewerResponse = zod.void()
+
+
+/**
+ * @summary WebAuthn options to register a passkey (coordinators only)
+ */
+export const GetPasskeyRegisterOptionsResponse = zod.object({
+  "publicKey": zod.record(zod.string(), zod.unknown()).describe('PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded')
+})
+
+
+/**
+ * Requires a recent registration challenge issued by getPasskeyRegisterOptions.
+ * @summary Register a passkey for the signed-in account
+ */
+export const RegisterPasskeyBody = zod.object({
+  "response": zod.record(zod.string(), zod.unknown()).describe('RegistrationResponseJSON from the authenticator'),
+  "label": zod.string().optional().describe('Friendly name shown in Settings, e.g. \"MacBook touch bar\"')
+})
+
+export const RegisterPasskeyResponse = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish(),
+  "transports": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Passkeys registered to the signed-in account
+ */
+export const ListPasskeysResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish(),
+  "transports": zod.array(zod.string()).optional()
+}))
+})
+
+
+/**
+ * @summary Remove a passkey from the signed-in account
+ */
+export const DeletePasskeyParams = zod.object({
+  "credentialId": zod.coerce.string()
+})
+
+export const DeletePasskeyResponse = zod.void()
+
+
+/**
+ * @summary WebAuthn options to sign in with a passkey
+ */
+
+
+
+export const GetPasskeyLoginOptionsBody = zod.object({
+  "eventPassword": zod.string().min(1),
+  "interviewerId": zod.string()
+})
+
+export const GetPasskeyLoginOptionsResponse = zod.object({
+  "publicKey": zod.record(zod.string(), zod.unknown()).describe('PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded')
+})
+
+
+/**
+ * Session issues exactly like the password login; password auth remains available.
+ * @summary Sign in with a passkey instead of a password
+ */
+
+
+
+export const LoginWithPasskeyBody = zod.object({
+  "eventPassword": zod.string().min(1),
+  "interviewerId": zod.string(),
+  "response": zod.record(zod.string(), zod.unknown()).describe('AuthenticationResponseJSON from the authenticator')
+})
+
+export const LoginWithPasskeyResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "label": zod.string().optional(),
+  "interviewerId": zod.string().optional(),
+  "role": zod.string().optional().describe('coordinator, treasurer, or interviewer'),
+  "teamId": zod.string().optional().describe('Team this session belongs to'),
+  "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
+  "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
+  "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
+})
+
+
+/**
+ * Updates the account, the interviewer labels used by queue assignment, chat authorship, and existing direct-message threads so history is preserved.
+ * @summary Rename an interviewer (coordinators only)
+ */
+export const UpdateInterviewerNameParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+export const updateInterviewerNameBodyDisplayNameMax = 80;
+
+
+
+export const UpdateInterviewerNameBody = zod.object({
+  "displayName": zod.string().min(1).max(updateInterviewerNameBodyDisplayNameMax).describe('New display name for this interviewer')
+})
+
+export const UpdateInterviewerNameResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+})
 
 
 /**
@@ -163,6 +336,7 @@ export const UpdateInterviewerRoleResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -188,6 +362,7 @@ export const UpdateInterviewerPasswordResponse = zod.object({
   "id": zod.string(),
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
   "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
 })
 
@@ -353,6 +528,10 @@ export const GetMyBroadcastsResponse = zod.object({
 /**
  * @summary List unexpired big-screen commands (public; the display needs no login)
  */
+export const GetBroadcastCommandsQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code to scope the public display to one team. Omitted = default team.')
+})
+
 export const GetBroadcastCommandsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -399,6 +578,7 @@ export const ListApplicantsResponse = zod.object({
   "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -460,6 +640,7 @@ export const GetApplicantResponse = zod.object({
   "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -505,6 +686,7 @@ export const UpdateApplicantBody = zod.object({
   "gender": zod.string().nullish().describe('Applicant gender; null clears the value'),
   "email": zod.string().optional(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "attachments": zod.string().nullish(),
   "aiSummary": zod.string().optional(),
@@ -540,6 +722,7 @@ export const UpdateApplicantResponse = zod.object({
   "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -592,6 +775,7 @@ export const RegenerateApplicantResponse = zod.object({
   "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -788,6 +972,119 @@ export const GetQueueResponse = zod.object({
   "completedCount": zod.number().int(),
   "remainingCount": zod.number().int(),
   "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Read chat settings (slow mode)
+ */
+export const getChatSettingsResponseSlowmodeSecondsMin = 0;
+export const getChatSettingsResponseSlowmodeSecondsMax = 600;
+
+
+
+export const GetChatSettingsResponse = zod.object({
+  "slowmodeSeconds": zod.number().int().min(getChatSettingsResponseSlowmodeSecondsMin).max(getChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+
+/**
+ * @summary Update chat settings (coordinators only)
+ */
+export const updateChatSettingsBodySlowmodeSecondsMin = 0;
+export const updateChatSettingsBodySlowmodeSecondsMax = 600;
+
+
+
+export const UpdateChatSettingsBody = zod.object({
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsBodySlowmodeSecondsMin).max(updateChatSettingsBodySlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+export const updateChatSettingsResponseSlowmodeSecondsMin = 0;
+export const updateChatSettingsResponseSlowmodeSecondsMax = 600;
+
+
+
+export const UpdateChatSettingsResponse = zod.object({
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsResponseSlowmodeSecondsMin).max(updateChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+})
+
+
+/**
+ * @summary List feature requests (own team; site owner sees every team)
+ */
+export const ListFeatureRequestsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Send a feature request to the site owner
+ */
+export const createFeatureRequestBodyMessageMax = 2000;
+
+
+
+export const CreateFeatureRequestBody = zod.object({
+  "message": zod.string().min(1).max(createFeatureRequestBodyMessageMax)
+})
+
+export const CreateFeatureRequestResponse = zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Mark a feature request open or done (site owner only)
+ */
+export const UpdateFeatureRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const UpdateFeatureRequestBody = zod.object({
+  "status": zod.enum(['open', 'done'])
+})
+
+export const UpdateFeatureRequestResponse = zod.object({
+  "id": zod.string(),
+  "teamId": zod.string().optional().describe('Team that filed the request (absent for legacy rows)'),
+  "teamName": zod.string().optional().describe('Display name of the team that filed the request'),
+  "authorName": zod.string(),
+  "message": zod.string(),
+  "status": zod.enum(['open', 'done']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Site-wide stats for the site owner (teams, people, requests)
+ */
+export const GetSiteStatsResponse = zod.object({
+  "teams": zod.number().int().describe('Number of teams'),
+  "people": zod.number().int().describe('Number of team member accounts across all teams'),
+  "requests": zod.number().int().describe('Total feature requests across all teams'),
+  "openRequests": zod.number().int().describe('Feature requests still open'),
+  "teamsById": zod.array(zod.object({
+  "teamId": zod.string(),
+  "teamName": zod.string(),
+  "people": zod.number().int(),
+  "requests": zod.number().int(),
+  "openRequests": zod.number().int()
+}))
 })
 
 
@@ -1047,6 +1344,96 @@ export const SendInterviewChatResponse = zod.object({
 }).nullish().describe('Poll attached to this message, null when there is none'),
   "createdAt": zod.string()
 })
+
+
+/**
+ * @summary List server-side scheduled chat messages for the team
+ */
+export const listScheduledChatsResponseItemsItemPollOneOptionsMin = 2;
+export const listScheduledChatsResponseItemsItemPollOneOptionsMax = 8;
+
+
+
+export const ListScheduledChatsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
+  "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullish(),
+  "recipient": zod.string().nullish(),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(listScheduledChatsResponseItemsItemPollOneOptionsMin).max(listScheduledChatsResponseItemsItemPollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date(),
+  "status": zod.enum(['pending', 'sending', 'sent', 'failed']),
+  "attempts": zod.number().int(),
+  "lastError": zod.string().nullish(),
+  "sentMessageId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Schedule a full chat message for later server-side delivery
+ */
+export const createScheduledChatBodyScopeDefault = `shared`;
+export const createScheduledChatBodyPollOneOptionsMin = 2;
+export const createScheduledChatBodyPollOneOptionsMax = 8;
+
+
+
+export const CreateScheduledChatBody = zod.object({
+  "message": zod.string().describe('Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.'),
+  "scope": zod.enum(['shared', 'direct']).default(createScheduledChatBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label receiving a scheduled direct message.'),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(createScheduledChatBodyPollOneOptionsMin).max(createScheduledChatBodyPollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date().describe('ISO timestamp at least ~30 seconds in the future and within one year.')
+})
+
+export const createScheduledChatResponsePollOneOptionsMin = 2;
+export const createScheduledChatResponsePollOneOptionsMax = 8;
+
+
+
+export const CreateScheduledChatResponse = zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
+  "message": zod.string(),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullish(),
+  "recipient": zod.string().nullish(),
+  "parentMessageId": zod.string().nullish(),
+  "poll": zod.object({
+  "question": zod.string(),
+  "options": zod.array(zod.string()).min(createScheduledChatResponsePollOneOptionsMin).max(createScheduledChatResponsePollOneOptionsMax)
+}).nullish(),
+  "scheduledAt": zod.coerce.date(),
+  "status": zod.enum(['pending', 'sending', 'sent', 'failed']),
+  "attempts": zod.number().int(),
+  "lastError": zod.string().nullish(),
+  "sentMessageId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Cancel a pending scheduled chat message
+ */
+export const DeleteScheduledChatParams = zod.object({
+  "scheduledId": zod.coerce.string()
+})
+
+export const DeleteScheduledChatResponse = zod.void()
 
 
 /**
@@ -2006,6 +2393,10 @@ export const CallbackQueueResponse = zod.object({
 /**
  * @summary Get sanitized big-screen state
  */
+export const GetDisplayStateQueryParams = zod.object({
+  "eventPassword": zod.coerce.string().optional().describe('Team access code to scope the public display to one team. Omitted = signed-in user\'s team or default team.')
+})
+
 export const GetDisplayStateResponse = zod.object({
   "mode": zod.string(),
   "headline": zod.string(),
@@ -2095,6 +2486,7 @@ export const AssignSeatResponse = zod.object({
   "gender": zod.string().nullable().describe('Applicant gender from an explicit roster value; null means unknown'),
   "email": zod.string().nullish(),
   "photoUrl": zod.string().nullish(),
+  "photoThumbUrl": zod.string().nullish().describe('Small thumbnail for list views; full photo stays under photoUrl'),
   "transcript": zod.string().nullish(),
   "aiScore": zod.number().int(),
   "aiRecommendation": zod.string(),
@@ -2134,6 +2526,7 @@ export const AskAssistantBody = zod.object({
   "model": zod.string().max(askAssistantBodyModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
   "conversationId": zod.string().optional(),
   "applicantIds": zod.array(zod.string()).optional(),
+  "disabledTools": zod.array(zod.string()).optional().describe('Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called.'),
   "attachments": zod.array(zod.object({
   "fileName": zod.string(),
   "objectPath": zod.string()
@@ -3116,6 +3509,621 @@ export const uploadPartsRobotPreviewFileResponseObjectPathRegExp = new RegExp('^
 export const UploadPartsRobotPreviewFileResponse = zod.object({
   "objectPath": zod.string().regex(uploadPartsRobotPreviewFileResponseObjectPathRegExp)
 })
+
+
+/**
+ * Stores a validated CAD file as a private object and returns its path. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
+ * @summary Upload a CAD model file for the CAD workspace
+ */
+export const uploadCadModelFileQueryFileNameMax = 255;
+
+export const uploadCadModelFileQueryContentTypeMax = 100;
+
+
+
+export const UploadCadModelFileQueryParams = zod.object({
+  "fileName": zod.coerce.string().max(uploadCadModelFileQueryFileNameMax),
+  "contentType": zod.coerce.string().max(uploadCadModelFileQueryContentTypeMax)
+})
+
+export const UploadCadModelFileResponse = zod.object({
+  "objectPath": zod.string().describe('Private storage path to reference from the model record'),
+  "contentType": zod.string().describe('Canonical CAD content type resolved from the file extension'),
+  "sizeBytes": zod.number().int()
+})
+
+
+/**
+ * @summary Which users can open each workspace
+ */
+export const GetWorkspaceVisibilityResponse = zod.object({
+  "interview": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
+})
+
+
+/**
+ * Coordinator-only. Unknown workspaces are discarded.
+ * @summary Change which users can open each workspace
+ */
+export const UpdateWorkspaceVisibilityBody = zod.object({
+  "interview": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).optional().describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
+})
+
+export const UpdateWorkspaceVisibilityResponse = zod.object({
+  "interview": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "chat": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "parts": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "cad": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.'),
+  "code": zod.array(zod.string()).describe('Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.')
+})
+
+
+/**
+ * @summary List server-persisted FTC code projects
+ */
+export const ListCodeProjectsResponse = zod.object({
+  "projects": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create an FTC code project
+ */
+export const createCodeProjectBodyNameMax = 120;
+
+export const createCodeProjectBodySdkVersionMax = 32;
+
+
+
+export const CreateCodeProjectBody = zod.object({
+  "name": zod.string().min(1).max(createCodeProjectBodyNameMax),
+  "sdkVersion": zod.string().max(createCodeProjectBodySdkVersionMax).optional()
+})
+
+export const CreateCodeProjectResponse = zod.object({
+  "project": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Rename a project or update its git endpoint config
+ */
+export const UpdateCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const updateCodeProjectBodyNameMax = 120;
+
+
+
+export const UpdateCodeProjectBody = zod.object({
+  "name": zod.string().min(1).max(updateCodeProjectBodyNameMax).optional(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const UpdateCodeProjectResponse = zod.object({
+  "project": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sdkVersion": zod.string(),
+  "gitConfig": zod.record(zod.string(), zod.unknown()),
+  "fileCount": zod.number().int(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Delete a project and all of its files
+ */
+export const DeleteCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const DeleteCodeProjectResponse = zod.void()
+
+
+/**
+ * @summary List all files in a project
+ */
+export const ListCodeFilesParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodeFilesResponse = zod.object({
+  "files": zod.array(zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create or overwrite a file by path
+ */
+export const createCodeFileBodyPathMax = 255;
+
+
+
+export const CreateCodeFileBody = zod.object({
+  "projectId": zod.string(),
+  "path": zod.string().min(1).max(createCodeFileBodyPathMax),
+  "content": zod.string().optional()
+})
+
+export const CreateCodeFileResponse = zod.object({
+  "file": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Update a file's content or path
+ */
+export const UpdateCodeFileParams = zod.object({
+  "fileId": zod.coerce.string()
+})
+
+export const updateCodeFileBodyPathMax = 255;
+
+
+
+export const UpdateCodeFileBody = zod.object({
+  "path": zod.string().min(1).max(updateCodeFileBodyPathMax).optional(),
+  "content": zod.string().optional()
+})
+
+export const UpdateCodeFileResponse = zod.object({
+  "file": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "path": zod.string(),
+  "content": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "updatedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Delete a file
+ */
+export const DeleteCodeFileParams = zod.object({
+  "fileId": zod.coerce.string()
+})
+
+export const DeleteCodeFileResponse = zod.void()
+
+
+/**
+ * The dashboard server saves each Java file to the hub's OnBotJava server and triggers its on-hub build, then returns the compiler log. Nobody opens the hub's Program and Manage site.
+ * @summary Upload a project straight to the REV hub and build it there
+ */
+export const DeployCodeProjectParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const deployCodeProjectBodyHubBaseUrlMax = 200;
+
+
+
+export const DeployCodeProjectBody = zod.object({
+  "hubBaseUrl": zod.string().max(deployCodeProjectBodyHubBaseUrlMax).describe('Hub address, e.g. http:\/\/192.168.43.1:8080'),
+  "files": zod.array(zod.object({
+  "path": zod.string(),
+  "content": zod.string()
+})).optional().describe('Defaults to the project\'s stored files when omitted')
+})
+
+export const DeployCodeProjectResponse = zod.object({
+  "hubBaseUrl": zod.string(),
+  "pushed": zod.array(zod.object({
+  "path": zod.string(),
+  "hubPath": zod.string()
+})),
+  "skipped": zod.array(zod.object({
+  "path": zod.string(),
+  "reason": zod.string()
+})),
+  "buildStarted": zod.boolean(),
+  "buildSuccessful": zod.boolean().nullish(),
+  "log": zod.string().optional()
+})
+
+
+/**
+ * @summary List commit checkpoints for a project
+ */
+export const ListCodeRevisionsParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodeRevisionsResponse = zod.object({
+  "revisions": zod.array(zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "message": zod.string(),
+  "author": zod.string().nullish(),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Snapshot the project as a commit checkpoint
+ */
+export const CreateCodeRevisionParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const createCodeRevisionBodyMessageMax = 200;
+
+
+
+export const CreateCodeRevisionBody = zod.object({
+  "message": zod.string().max(createCodeRevisionBodyMessageMax).optional()
+})
+
+export const CreateCodeRevisionResponse = zod.object({
+  "revision": zod.object({
+  "id": zod.string(),
+  "projectId": zod.string(),
+  "message": zod.string(),
+  "author": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+})
+
+
+/**
+ * @summary Who is currently in a project
+ */
+export const ListCodePresenceParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListCodePresenceResponse = zod.object({
+  "presence": zod.array(zod.object({
+  "displayName": zod.string(),
+  "fileId": zod.string().nullish(),
+  "color": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Publish where I am in a project
+ */
+export const UpdateCodePresenceParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const UpdateCodePresenceBody = zod.object({
+  "fileId": zod.string().nullish(),
+  "color": zod.string().optional()
+})
+
+export const UpdateCodePresenceResponse = zod.void()
+
+
+/**
+ * Bots, folders, and models together, because the workspace renders the whole tree at once and three round trips would show a half-built tree.
+ * @summary Load the whole CAD library in one request
+ */
+export const ListCadLibraryResponse = zod.object({
+  "bots": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "folders": zod.array(zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "models": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Create a bot to group CAD models
+ */
+export const createCadBotBodyNameMax = 120;
+
+export const createCadBotBodyNotesMax = 2000;
+
+
+
+export const CreateCadBotBody = zod.object({
+  "name": zod.string().min(1).max(createCadBotBodyNameMax),
+  "notes": zod.string().max(createCadBotBodyNotesMax).optional()
+})
+
+export const CreateCadBotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Nested folders are removed with the bot. Models move to Unfiled and their files are deleted.
+ * @summary Delete a bot, its folders, and its models
+ */
+export const DeleteCadBotQueryParams = zod.object({
+  "botId": zod.coerce.string()
+})
+
+export const DeleteCadBotResponse = zod.void()
+
+
+/**
+ * @summary Rename a bot or edit its notes
+ */
+export const UpdateCadBotParams = zod.object({
+  "botId": zod.coerce.string()
+})
+
+export const updateCadBotBodyNameMax = 120;
+
+export const updateCadBotBodyNotesMax = 2000;
+
+
+
+export const UpdateCadBotBody = zod.object({
+  "name": zod.string().min(1).max(updateCadBotBodyNameMax).optional(),
+  "notes": zod.string().max(updateCadBotBodyNotesMax).nullish()
+})
+
+export const UpdateCadBotResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Omit parentId for a top-level folder. Subfolders nest to any depth.
+ * @summary Create a folder inside a bot
+ */
+export const createCadFolderBodyNameMax = 120;
+
+
+
+export const CreateCadFolderBody = zod.object({
+  "botId": zod.string(),
+  "parentId": zod.string().nullish(),
+  "name": zod.string().min(1).max(createCadFolderBodyNameMax)
+})
+
+export const CreateCadFolderResponse = zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Rename a folder, move it, or nest it under another folder
+ */
+export const UpdateCadFolderParams = zod.object({
+  "folderId": zod.coerce.string()
+})
+
+export const updateCadFolderBodyNameMax = 120;
+
+
+
+export const UpdateCadFolderBody = zod.object({
+  "name": zod.string().min(1).max(updateCadFolderBodyNameMax).optional(),
+  "parentId": zod.string().nullish()
+})
+
+export const UpdateCadFolderResponse = zod.object({
+  "id": zod.string(),
+  "botId": zod.string(),
+  "parentId": zod.string().nullish().describe('Null when the folder sits at the top level of its bot'),
+  "name": zod.string(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * Contained models move to Unfiled rather than being deleted.
+ * @summary Delete a folder and its subfolders
+ */
+export const DeleteCadFolderParams = zod.object({
+  "folderId": zod.coerce.string()
+})
+
+export const DeleteCadFolderResponse = zod.object({
+  "error": zod.string()
+})
+
+
+/**
+ * @summary List stored CAD models, optionally filtered by location
+ */
+export const ListCadModelsQueryParams = zod.object({
+  "botId": zod.coerce.string().optional(),
+  "folderId": zod.coerce.string().optional()
+})
+
+export const ListCadModelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+
+/**
+ * Call after the bytes are stored, then place the model in a bot or folder.
+ * @summary Record an uploaded CAD file in the library
+ */
+export const createCadModelBodyNameMax = 255;
+
+export const createCadModelBodyObjectPathMax = 200;
+
+export const createCadModelBodyFileNameMax = 255;
+
+export const createCadModelBodyContentTypeMax = 100;
+
+export const createCadModelBodySizeBytesMin = 0;
+
+export const createCadModelBodyNotesMax = 2000;
+
+
+
+export const CreateCadModelBody = zod.object({
+  "name": zod.string().min(1).max(createCadModelBodyNameMax).optional(),
+  "objectPath": zod.string().max(createCadModelBodyObjectPathMax),
+  "fileName": zod.string().min(1).max(createCadModelBodyFileNameMax).describe('Original upload name, which selects the renderer'),
+  "contentType": zod.string().min(1).max(createCadModelBodyContentTypeMax),
+  "sizeBytes": zod.number().int().min(createCadModelBodySizeBytesMin),
+  "botId": zod.string().nullish(),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().max(createCadModelBodyNotesMax).optional()
+})
+
+export const CreateCadModelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Rename a model, edit notes, or move it to another bot or folder
+ */
+export const UpdateCadModelParams = zod.object({
+  "modelId": zod.coerce.string()
+})
+
+export const updateCadModelBodyNameMax = 255;
+
+export const updateCadModelBodyNotesMax = 2000;
+
+
+
+export const UpdateCadModelBody = zod.object({
+  "name": zod.string().min(1).max(updateCadModelBodyNameMax).optional(),
+  "botId": zod.string().nullish(),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().max(updateCadModelBodyNotesMax).nullish()
+})
+
+export const UpdateCadModelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string(),
+  "objectPath": zod.string(),
+  "sizeBytes": zod.number().int(),
+  "botId": zod.string().nullish().describe('Null while the model sits in Unfiled'),
+  "folderId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "uploadedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a CAD model and its stored file
+ */
+export const DeleteCadModelParams = zod.object({
+  "modelId": zod.coerce.string()
+})
+
+export const DeleteCadModelResponse = zod.void()
 
 
 /**

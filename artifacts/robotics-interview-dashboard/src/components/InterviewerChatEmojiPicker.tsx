@@ -203,7 +203,7 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
           </button>
           {error && <p className="text-[11px] text-[#a34d46] dark:text-[#e89890]" role="alert" data-testid="team-emoji-upload-error">{error}</p>}
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] text-[#71878d] dark:text-[#9aadb5]">Shared with all interviewers · max 512 KB</p>
+            <p className="text-[10px] text-[#71878d] dark:text-[#9aadb5]">Shared with the whole team · max 512 KB</p>
             <button
               type="submit"
               disabled={uploadEmoji.isPending}

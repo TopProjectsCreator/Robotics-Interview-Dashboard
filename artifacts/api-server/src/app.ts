@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -6,6 +7,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 
 const app: Express = express();
@@ -49,12 +51,29 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(attachAdminSession);
+// Shrink JSON over the wire (Render meters every byte out): ~75% off lists
+// and boards for ~1ms of CPU. Skips streams, images, and tiny bodies.
+app.use(compression({
+  threshold: 1024,
+  filter: (req, res) => {
+    const type = res.getHeader("Content-Type");
+    if (typeof type === "string" && /^(image|audio|video|model)\//.test(type)) return false;
+    if (typeof type === "string" && /octet-stream|zip|gzip/.test(type)) return false;
+    if (req.path === "/api/events") return false;
+    return true;
+  },
+}));
 app.use("/api/queue/custom-emojis", express.json({ limit: "1mb" }));
 app.use("/api/spreadsheets", express.json({ limit: "10mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Canonical sitemap for crawlers. Registered before static + SPA fallback
+// so GET /sitemap.xml returns XML instead of index.html. The same handler
+// also serves GET /api/sitemap.xml via routes/index.ts.
+app.get("/sitemap.xml", sitemapHandler);
 
 // Serve the production frontend build from the same origin so the
 // coordinator app can use relative `/api` URLs and cookie sessions.

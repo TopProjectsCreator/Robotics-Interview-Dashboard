@@ -4,12 +4,15 @@ import { z } from "zod/v4";
 
 export const applicantsTable = pgTable("applicants", {
   id: text("id").primaryKey(),
+  // NULL = legacy row belonging to the default team; never lost.
+  teamId: text("team_id"),
   name: text("name").notNull(),
   grade: text("grade").notNull().default("Unknown"),
   age: integer("age"),
   gender: text("gender"),
   email: text("email"),
   photoUrl: text("photo_url"),
+  photoThumbUrl: text("photo_thumb_url"),
   transcript: text("transcript"),
   attachments: text("attachments"),
   aiScore: integer("ai_score").notNull().default(-1),

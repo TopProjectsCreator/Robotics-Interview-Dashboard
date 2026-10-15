@@ -1,17 +1,18 @@
 import { useGetBoard, getGetBoardQueryKey, type Board } from "@workspace/api-client-react";
 import { ChevronRight, ClipboardList } from "lucide-react";
 
+import { useRealtimeHealthy } from "../realtimeHealth";
 type BoardChatCardProps = {
   boardId: string;
   fallbackTitle: string;
   onOpen: () => void;
 };
 
-export function BoardChatCard({ boardId, fallbackTitle, onOpen }: BoardChatCardProps) {
+export function BoardChatCard({ boardId, fallbackTitle, onOpen }: BoardChatCardProps) { const streamHealthy = useRealtimeHealthy();
   const query = useGetBoard(boardId, {
     query: {
       queryKey: getGetBoardQueryKey(boardId),
-      refetchInterval: 3_000,
+      refetchInterval: streamHealthy ? false : (3_000),
     },
   });
   const board = query.data as Board | undefined;

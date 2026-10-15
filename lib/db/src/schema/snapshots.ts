@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const dataSnapshotsTable = pgTable("data_snapshots", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   label: text("label").notNull(),
   createdBy: text("created_by").notNull().default("coordinator"),
   applicantCount: integer("applicant_count").notNull().default(0),

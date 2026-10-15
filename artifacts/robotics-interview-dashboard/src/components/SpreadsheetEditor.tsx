@@ -30,6 +30,7 @@ import {
 } from "@workspace/api-client-react";
 import { normalizeSavedSheetSelection } from "../lib/spreadsheet-selection";
 
+import { useRealtimeHealthy } from "../realtimeHealth";
 type SpreadsheetEditorProps = { spreadsheetId: string };
 type SaveState = "saved" | "saving" | "error" | "conflict";
 type WorkbookSheet = SpreadsheetDataWorkbookItem & Record<string, unknown> & {
@@ -434,7 +435,7 @@ function SaveStatus({ state, savedAt, error }: { state: SaveState; savedAt: stri
   return <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="status-spreadsheet-saved"><Check size={13} className="text-primary" />Saved{savedAt ? ` ${savedAt}` : ""}</span>;
 }
 
-export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
+export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { const streamHealthy = useRealtimeHealthy();
   const [, setLocation] = useLocation();
   const returnTo = useMemo(() => getReturnLocation(), []);
   const queryClient = useQueryClient();
@@ -443,7 +444,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) {
       queryKey: getGetSpreadsheetQueryKey(spreadsheetId),
       enabled: Boolean(spreadsheetId),
       refetchOnWindowFocus: true,
-      refetchInterval: 5_000,
+      refetchInterval: streamHealthy ? false : (5_000),
     },
   });
   const updateSpreadsheet = useUpdateSpreadsheet();

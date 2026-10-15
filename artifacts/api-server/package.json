@@ -9,15 +9,19 @@
     "start": "set -a && . ../../.env && set +a && node --enable-source-maps ./dist/index.mjs",
     "test": "node --experimental-transform-types --experimental-test-module-mocks --test src/lib/*.test.mjs",
     "test:parts-persistence": "node --experimental-transform-types --test src/lib/partsRobotPersistence.integration.test.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "import:rev-catalog": "node --experimental-transform-types ./scripts/import-rev-catalog.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:cad-persistence": "node --experimental-transform-types --test src/lib/cadLibraryPersistence.integration.test.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.16.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@supabase/supabase-js": "^2.116.0",
     "@types/ws": "^8.18.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
+    "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
@@ -32,6 +36,7 @@
     "yjs": "^13.6.32"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

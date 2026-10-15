@@ -1,63 +1,73 @@
 import { createServer } from "node:http";
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initRealtime } from "./lib/realtime";
+import { ensureRealtimePublication, initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
-import { pool, db, interviewQueueTable } from "@workspace/db";
+import { setupCodeCollaboration } from "./lib/codeCollaboration";
+import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { syncPublicPartsCatalogs } from "./routes/parts";
+import { startScheduledChatDispatcher } from "./routes/robotics";
 
 initRealtime();
 
 // One-time removal of test accounts created during development. Best
 // effort and non-fatal; safe to keep running (no-op once they are gone).
 async function removeTestAccounts(): Promise<void> {
-  // Development/verification accounts, matched by name rather than id so a
-  // stray account can never survive by having its id missed here. Everything
-  // else (real coordinators, interviewers and treasurers) is left untouched.
+  // Development/verification accounts, matched by explicit name AND by
+  // pattern so a probe created and forgotten during testing can never
+  // survive a deploy. The same predicate is applied to accounts, their chat
+  // history and the interviewer labels — stripping the labels matters,
+  // otherwise a deleted account is re-created (passwordless) from the
+  // stale label on the next boot.
   const TEST_NAMES = [
     'TempVerify', 'RoleTest', 'DMCheck', 'MsgCheck', 'UpCheck', 'PartsCheck',
     'VerifyParts', 'RobotCheck', 'FinalPeek', 'TreasCheck', 'TreasMatrix',
     'MatrixTwo', 'DmAlice', 'DmBob', 'ModCheck', 'ChatTrim', 'AiDel',
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
-    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot',
-    'CleanupBot', 'CleanupBot2', 'AdminCleaner', 'RealAdmin', 'ProbeBot',
+    'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
+    'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner', 'DiagRunner',
     'test', 'test2', 'test3',
   ];
+  // test-style names anywhere: check / probe / verify / temp / test / bot
+  const TEST_NAME_PATTERNS = ['%check%', '%probe%', '%verify%', '%temp%', '%test%', '%bot%'];
   try {
-    const params = TEST_NAMES.map((name) => name.toLowerCase());
-
+    const params = [TEST_NAMES.map((name) => name.toLowerCase()), TEST_NAME_PATTERNS];
     await pool.query(
-      `DELETE FROM interview_chat_messages
-        WHERE lower(author) = ANY($1::text[])`,
-      [params],
+      `delete from interview_chat_messages
+        where lower(author) = any($1::text[]) or lower(author) like any($2::text[])`,
+      params,
     );
     await pool.query(
-      `DELETE FROM interviewer_accounts
-        WHERE lower(normalized_name) = ANY($1::text[])
-           OR lower(normalized_name) LIKE '%bot'`,
-      [params],
+      `delete from interviewer_accounts
+        where lower(normalized_name) = any($1::text[]) or lower(normalized_name) like any($2::text[])`,
+      params,
     );
     await pool.query(
-      `DELETE FROM parts_robots
-        WHERE lower(name) IN ('previewverify', 'verifybot', 'verifybotrenamed', 'previewcheck', 'previewcheck2')`,
+      `delete from feature_requests
+        where lower(author_name) = any($1::text[]) or lower(author_name) like any($2::text[])`,
+      params,
     );
     await pool.query(
-      `UPDATE interview_queue
-          SET interviewer_labels = (
-            SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)::text
-              FROM jsonb_array_elements_text(interviewer_labels::jsonb) AS elem
-             WHERE lower(elem) <> ALL($1::text[])
-          )
-        WHERE id = 1`,
-      [params],
+      `delete from parts_robots where lower(name) in ('previewverify', 'verifybot', 'verifybotrenamed', 'previewcheck', 'previewcheck2')`,
     );
-    logger.info({ removed: TEST_NAMES.length }, "Test accounts cleanup done");
+    await pool.query(
+      `update interview_queue set interviewer_labels = (
+         select coalesce(jsonb_agg(elem), '[]'::jsonb)::text
+           from jsonb_array_elements_text(interviewer_labels::jsonb) as elem
+          where not (lower(elem) = any($1::text[]) or lower(elem) like any($2::text[]))
+       ) where id = 1`,
+      params,
+    );
+    logger.info("Test accounts cleanup done");
   } catch (err) {
     logger.error({ err }, "Test accounts cleanup failed (non-fatal)");
   }
 }
+
+
 
 
 // Self-healing schema: additive columns the code depends on are created at
@@ -73,6 +83,17 @@ async function ensureSchema(): Promise<void> {
     "broadcasts",
     "chat_custom_emojis",
     "chat_message_reactions",
+    "chat_polls",
+    "chat_poll_votes",
+    "scheduled_chat_messages",
+    "cad_bots",
+    "cad_folders",
+    "cad_models",
+    "code_projects",
+    "code_files",
+    "code_revisions",
+    "code_presence",
+    "workspace_settings",
     "dashboard_charts",
     "data_snapshots",
     "display_settings",
@@ -126,15 +147,29 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
+    `create table if not exists "chat_settings" ("id" text primary key default '1', "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
     `create table if not exists "chunked_uploads" ("upload_id" text primary key, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "total_parts" integer not null, "part_size_bytes" integer not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_poll_votes_one_per_voter" on "chat_poll_votes" ("message_id", "voter")`,
     `create table if not exists "chat_custom_emojis" ("id" text primary key, "name" text not null unique, "image_path" text not null unique, "content_type" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
+    `create table if not exists "scheduled_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "recipient" text, "message" text not null, "parent_message_id" text, "poll_question" text, "poll_options" text, "scheduled_at" timestamptz not null, "status" text not null default 'pending', "attempts" integer not null default 0, "last_error" text, "sent_message_id" text, "created_at" timestamptz not null default now())`,
+    `create index if not exists "scheduled_chat_messages_due_idx" on "scheduled_chat_messages" ("status", "scheduled_at")`,
     `create table if not exists "interview_whiteboards" ("id" text primary key, "title" text not null, "data" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create index if not exists "interview_whiteboards_conversation_updated_idx" on "interview_whiteboards" ("conversation_scope", "conversation_peer", "updated_at")`,
     `create table if not exists "interviewer_accounts" ("id" text primary key, "display_name" text not null, "normalized_name" text not null unique, "password_hash" text, "role" text not null default 'coordinator', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "role" text not null default 'coordinator'`,
+    `create table if not exists "webauthn_credentials" (
+       "id" text primary key,
+       "interviewer_id" text not null references "interviewer_accounts"("id") on delete cascade,
+       "credential_id" text not null unique,
+       "public_key" text not null,
+       "counter" integer not null default 0,
+       "transports" text not null default '[]',
+       "label" text,
+       "created_at" timestamptz not null default now(),
+       "last_used_at" timestamptz
+     )`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
@@ -187,6 +222,148 @@ async function ensureSchema(): Promise<void> {
        "is_starting_at" boolean not null default false
      )`,
     `create index if not exists "parts_price_snapshots_part_captured_idx" on "parts_supplier_price_snapshots" ("part_id", "captured_at" desc)`,
+    `create table if not exists "workspace_settings" (
+       "id" integer primary key default 1 check ("id" = 1),
+       "visibility" jsonb not null default '{"interview":["coordinator"],"chat":["coordinator","treasurer","interviewer"],"parts":["coordinator","treasurer","interviewer"],"cad":["coordinator"]}'::jsonb,
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create table if not exists "cad_bots" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 120),
+       "notes" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "cad_bots_normalized_name_unique" on "cad_bots" (lower("name"))`,
+    `create table if not exists "cad_folders" (
+       "id" text primary key,
+       "bot_id" text not null references "cad_bots"("id") on delete cascade,
+       "parent_id" text references "cad_folders"("id") on delete cascade,
+       "name" text not null check (length("name") between 1 and 120),
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    // COALESCE lets a NULL parent (top level) take part in the unique index, so
+    // two sibling folders can never end up with the same name.
+    `create unique index if not exists "cad_folders_sibling_name_unique" on "cad_folders" ("bot_id", coalesce("parent_id", ''), lower("name"))`,
+    `create index if not exists "cad_folders_parent_idx" on "cad_folders" ("bot_id", "parent_id")`,
+    `create table if not exists "cad_models" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 255),
+       "file_name" text not null check (length("file_name") between 1 and 255),
+       "content_type" text not null,
+       "object_path" text not null check ("object_path" ~ '^/objects/[A-Za-z0-9/-]{8,160}$'),
+       "size_bytes" integer not null default 0 check ("size_bytes" >= 0),
+       "bot_id" text references "cad_bots"("id") on delete set null,
+       "folder_id" text references "cad_folders"("id") on delete set null,
+       "notes" text,
+       "uploaded_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "cad_models_folder_idx" on "cad_models" ("bot_id", "folder_id")`,
+    `create table if not exists "code_projects" (
+       "id" text primary key,
+       "name" text not null check (length("name") between 1 and 120),
+       "sdk_version" text not null default 'v12.0',
+       "git_config" jsonb not null default '{}'::jsonb,
+       "created_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "code_projects_normalized_name_unique" on "code_projects" (lower("name"))`,
+    `create table if not exists "code_files" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "path" text not null check (length("path") between 1 and 255),
+       "content" text not null default '' check (octet_length("content") <= 500000),
+       "updated_by" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "code_files_project_path_unique" on "code_files" ("project_id", "path")`,
+    `create index if not exists "code_files_project_idx" on "code_files" ("project_id")`,
+    `create table if not exists "code_revisions" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "message" text not null,
+       "author" text,
+       "snapshot" jsonb not null,
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "code_revisions_project_idx" on "code_revisions" ("project_id", "created_at")`,
+    `create table if not exists "code_presence" (
+       "id" text primary key,
+       "project_id" text not null references "code_projects"("id") on delete cascade,
+       "file_id" text,
+       "display_name" text not null,
+       "color" text not null default '#f8c84a',
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "code_presence_project_idx" on "code_presence" ("project_id", "updated_at")`,
+    // Multi-team migration: every tenant table carries a nullable team_id
+    // (NULL = legacy row of the default team); the teams table holds each
+    // team's access-code hash. All statements are idempotent.
+    `create table if not exists "teams" ("id" text primary key, "name" text not null, "normalized_name" text not null unique, "code_hash" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "applicants" add column if not exists "team_id" text`,
+    `alter table "application_imports" add column if not exists "team_id" text`,
+    `alter table "assistant_conversations" add column if not exists "team_id" text`,
+    `alter table "assistant_messages" add column if not exists "team_id" text`,
+    `alter table "broadcasts" add column if not exists "team_id" text`,
+    `alter table "cad_bots" add column if not exists "team_id" text`,
+    `alter table "cad_folders" add column if not exists "team_id" text`,
+    `alter table "cad_models" add column if not exists "team_id" text`,
+    `alter table "chat_custom_emojis" add column if not exists "team_id" text`,
+    `alter table "chat_message_reactions" add column if not exists "team_id" text`,
+    `alter table "chat_poll_votes" add column if not exists "team_id" text`,
+    `alter table "chat_polls" add column if not exists "team_id" text`,
+    `alter table "chat_settings" add column if not exists "team_id" text`,
+    `alter table "chunked_uploads" add column if not exists "team_id" text`,
+    `alter table "code_files" add column if not exists "team_id" text`,
+    `alter table "code_presence" add column if not exists "team_id" text`,
+    `alter table "code_projects" add column if not exists "team_id" text`,
+    `alter table "code_revisions" add column if not exists "team_id" text`,
+    `alter table "dashboard_charts" add column if not exists "team_id" text`,
+    `alter table "data_snapshots" add column if not exists "team_id" text`,
+    `alter table "display_settings" add column if not exists "team_id" text`,
+    `alter table "interview_chat_messages" add column if not exists "team_id" text`,
+    `alter table "interview_queue" add column if not exists "team_id" text`,
+    `alter table "interview_whiteboards" add column if not exists "team_id" text`,
+    `alter table "interviewer_accounts" add column if not exists "team_id" text`,
+    `alter table "page_visits" add column if not exists "team_id" text`,
+    `alter table "parts_catalog_items" add column if not exists "team_id" text`,
+    `alter table "parts_inventory" add column if not exists "team_id" text`,
+    `alter table "parts_robots" add column if not exists "team_id" text`,
+    `alter table "parts_supplier_sync_states" add column if not exists "team_id" text`,
+    `alter table "presence_heartbeats" add column if not exists "team_id" text`,
+    `alter table "seating_settings" add column if not exists "team_id" text`,
+    `alter table "workspace_settings" add column if not exists "team_id" text`,
+    // Feature requests inbox for the site owner (Ishaan Bansal): every
+    // team's requests land here. is_site_owner is set once by the migration
+    // below; all statements idempotent.
+    `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
+    `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
+    `alter table "applicants" add column if not exists "photo_thumb_url" text`,
+    // Core tables below predate the boot-DDL array on the primary (created
+    // via drizzle-kit push), but a FRESH secondary boots from this array
+    // alone — so every table needs a CREATE here. All idempotent.
+    `create table if not exists "applicants" ("id" text primary key, "team_id" text, "name" text not null, "grade" text not null default 'Unknown', "age" integer, "gender" text, "email" text, "photo_url" text, "photo_thumb_url" text, "transcript" text, "attachments" text, "ai_score" integer not null default -1, "ai_recommendation" text not null default 'Review', "ai_summary" text not null default '', "ai_strengths" text not null default '', "ai_concerns" text not null default '', "robotics_experience" text not null default '', "commit_10_hours" text not null default 'Unclear', "parent_volunteer" text not null default 'Unclear', "interview_status" text not null default 'queued', "interviewer" text not null default '', "interview_decision" text not null default 'Undecided', "callback_requested" boolean not null default false, "flagged" boolean not null default false, "attendance" text not null default 'unmarked', "late_arrival_time" text, "makeup_date" text, "attendance_excused" boolean, "seat_row" integer, "seat_col" integer, "category" text not null default 'Unsorted', "rank" integer not null default 0, "notes" text not null default '', "queue_position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "interview_queue" ("id" integer primary key default 1, "team_id" text, "interviewer_labels" text not null default '["Interviewer 1","Interviewer 2"]', "updated_at" timestamptz not null default now())`,
+    `create table if not exists "interview_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "message" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "activities" text not null default '[]', "parent_message_id" text, "pinned_at" timestamptz, "created_at" timestamptz not null default now())`,
+    `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,
+    `create table if not exists "broadcast_acks" ("broadcast_id" text not null, "session_hash" text not null, "acked_at" timestamptz not null default now())`,
+    `create table if not exists "dashboard_charts" ("id" text primary key, "team_id" text, "owner_id" text, "source" text not null, "chart" text not null, "x_axis" text, "y_axis" text, "position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "data_snapshots" ("id" text primary key, "team_id" text, "label" text not null, "created_by" text not null default 'coordinator', "applicant_count" integer not null default 0, "payload" text not null, "created_at" timestamptz not null default now())`,
+    `create table if not exists "display_settings" ("id" integer primary key default 1, "team_id" text, "custom_headline" text, "custom_subheadline" text, "show_names" boolean not null default true, "announce" boolean not null default true, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "page_visits" ("id" text primary key, "team_id" text, "session_hash" text not null, "ip" text not null default '', "page" text not null default '', "entered_at" timestamptz not null default now(), "exited_at" timestamptz)`,
+    `create table if not exists "presence_heartbeats" ("session_hash" text primary key, "team_id" text, "ip" text not null default 'unknown', "user_agent" text not null default '', "city" text not null default '', "region" text not null default '', "country" text not null default '', "page" text not null default '', "notify_permission" text not null default '', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "revoked_sessions" ("token_hash" text primary key, "expires_at" timestamptz not null)`,
+    `create table if not exists "seating_settings" ("id" integer primary key default 1, "team_id" text, "rows" integer not null default 4, "cols" integer not null default 6, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "parts_supplier_sync_states" ("vendor_key" text primary key, "status" text not null, "checked_at" timestamptz not null, "item_count" integer not null, "source" text not null, "message" text not null, constraint "parts_supplier_sync_states_valid_result" check ("status" in ('synced', 'search_only', 'unavailable', 'incomplete') and "item_count" >= 0))`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {
@@ -196,6 +373,51 @@ async function ensureSchema(): Promise<void> {
       logger.error({ err, sql }, "Schema migration failed");
       throw err;
     }
+  }
+  // Second instance (new teams): same schema, so fresh teams boot with every
+  // table. Multi-pass because FK references (e.g. chat_polls -> the newly
+  // added interview_chat_messages) only resolve once their target exists.
+  // Never fatal — a secondary outage must not take primary teams down.
+  if (hasSecondary()) {
+    const secondary = secondaryPool();
+    if (secondary) {
+      let pending = [...statements];
+      for (let pass = 0; pass < 4 && pending.length > 0; pass += 1) {
+        const failed: string[] = [];
+        for (const sql of pending) {
+          try {
+            await secondary.query(sql);
+          } catch {
+            failed.push(sql);
+          }
+        }
+        if (failed.length === pending.length) break;
+        pending = failed;
+      }
+      if (pending.length > 0) {
+        logger.warn({ count: pending.length }, "Secondary schema statements still failing (non-fatal)");
+      } else {
+        logger.info("Secondary schema check passed");
+      }
+    }
+  }
+  try {
+    const owners = await pool.query(`select "display_name" from "interviewer_accounts" where "is_site_owner" = true`);
+    logger.info({ owners: owners.rows.map((row) => row.display_name) }, "Site owner flag ensured");
+  } catch (err) {
+    logger.warn({ err }, "Site owner check failed (non-fatal)");
+  }
+  // Tables must be in the supabase_realtime publication or the Supabase
+  // relay subscribes to them forever without receiving a single event.
+  // Idempotent and a no-op on plain Postgres; never block boot on it.
+  try {
+    await ensureRealtimePublication();
+    if (hasSecondary()) {
+      const secondary = secondaryPool();
+      if (secondary) await ensureRealtimePublication(secondary);
+    }
+  } catch (err) {
+    logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
   await removeTestAccounts();
 
@@ -264,6 +486,7 @@ if (Number.isNaN(port) || port <= 0) {
 const server = createServer(app);
 setupDocumentCollaboration(server);
 setupWhiteboardCollaboration(server);
+setupCodeCollaboration(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
@@ -278,6 +501,9 @@ server.listen(port, () => {
         });
       }, 60 * 60 * 1000);
       catalogRefreshCheck.unref();
+      // Server-side scheduled chat delivery: posts due messages even when no
+      // browser is open.
+      startScheduledChatDispatcher();
     })
     .catch((err) => {
       logger.error({ err }, "Schema migration failed; exiting");

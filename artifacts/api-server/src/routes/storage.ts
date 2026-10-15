@@ -2,12 +2,13 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UploadPartsRobotPreviewFileResponse,
+  UploadCadModelFileResponse,
   CreateChunkUploadUrlBody,
   CreateChunkUploadUrlResponse,
   CompleteChunkUploadBody,
   CompleteChunkUploadResponse,
 } from '@workspace/api-zod';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
@@ -25,14 +26,27 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
-import { authenticatedInterviewerId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import {
+  authenticatedInterviewerId,
+  requestTeamId,
+  requireAdmin,
+  requireCoordinator,
+  requireWorkspaceAccess,
+  requireWorkspaceAccessOrCoordinator,
+} from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { validatePartsPreviewFile } from "../lib/partsRobotPreview";
+import {
+  cadFileMatchesKind,
+  cadModelMaxBytes,
+  resolveCadUploadKind,
+} from "../lib/cadModels";
 import {
   CHUNKED_UPLOAD_THRESHOLD_BYTES,
   chunkStoragePath,
   deleteChunkParts,
   getChunkUpload,
+  getChunkUploadForTeam,
   isChunkUploadId,
   streamChunkedUpload,
 } from "../lib/chunkedUploads";
@@ -64,6 +78,19 @@ function hasAuthenticatedSession(
  * write-capable URLs.
  */
 const SIGNED_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Supabase quota outages surface as storage errors (currently: the team's
+ * egress quota is exceeded, so the storage service is restricted). Tell the
+ * browser plainly with a 503 instead of a generic 500 — the UI shows this
+ * message, and nothing is lost: uploads and downloads resume at reset.
+ */
+const STORAGE_PAUSED_MESSAGE =
+  'File storage is temporarily paused (team quota exceeded). Nothing is lost — try again after it resets.';
+function storageRestricted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /exceed_egress_quota|spend ?caps?|restricted|quota exceeded|upgrade.*plan/i.test(message);
+}
 
 router.post(
   '/storage/uploads/request-url',
@@ -98,6 +125,7 @@ router.post(
       );
     } catch (error) {
       req.log.error({ err: error }, 'Error generating upload URL');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Failed to generate upload URL' });
     }
   },
@@ -230,7 +258,7 @@ function parseProgressiveManifest(value: unknown): {
     tiles,
   };
 }
-const CHAT_UPLOAD_CONTENT_TYPES = [
+export const CHAT_UPLOAD_CONTENT_TYPES = [
   'image/*',
   'video/*',
   'audio/*',
@@ -250,12 +278,18 @@ const CHAT_UPLOAD_CONTENT_TYPES = [
   'text/tab-separated-values',
   'model/gltf-binary',
   'model/stl',
+  'model/obj',
+  'model/ply',
+  'application/ply',
+  'model/3mf',
+  'application/3mf',
+  'application/vnd.ms-package.3dmanufacturing-3dmodel+xml',
   'model/x-parasolid',
   'model/step',
   'application/step',
   'application/x-step',
 ];
-function isAllowedChatUploadType(contentType: string): boolean {
+export function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>
     allowed.endsWith('/*') ? contentType.startsWith(allowed.slice(0, -1)) : contentType === allowed,
   );
@@ -279,6 +313,25 @@ async function isValidGlbFile(filePath: string, fileSize: number): Promise<boole
   } finally {
     await file.close();
   }
+}
+export function isPlainMeshUpload(contentType: string): boolean {
+  return isObjUpload(contentType) || isPlyUpload(contentType);
+}
+export function isObjUpload(contentType: string): boolean {
+  return contentType === 'model/obj' || contentType === 'text/model/obj';
+}
+export function isPlyUpload(contentType: string): boolean {
+  return contentType === 'model/ply' || contentType === 'application/ply';
+}
+export function meshKindFor(contentType: string): 'obj' | 'ply' {
+  return isObjUpload(contentType) ? 'obj' : 'ply';
+}
+export function isThreeMfUpload(contentType: string): boolean {
+  return (
+    contentType === 'model/3mf' ||
+    contentType === 'application/3mf' ||
+    contentType === 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml'
+  );
 }
 function isValidStl(data: Buffer): boolean {
   if (data.length >= 84) {
@@ -317,6 +370,7 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
     }));
   } catch (error) {
     req.log.error({ err: error }, 'Error minting chunk upload URL');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to prepare this upload part' });
   }
 });
@@ -349,11 +403,21 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     partSizeBytes: Number(partSizeBytes) || 0,
   };
   try {
-    await db.insert(chunkedUploadsTable).values({ uploadId, ...manifest, createdBy: account.displayName })
+    // Manifests carry the uploader's team; a foreign manifest under the same
+    // uploadId is never overwritten, so teams cannot hijack each other's
+    // uploads.
+    const teamId = await requestTeamId(req);
+    const existing = await getChunkUpload(uploadId);
+    if (existing && !(await getChunkUploadForTeam(uploadId, teamId))) {
+      res.status(403).json({ error: 'This upload belongs to another team' });
+      return;
+    }
+    await db.insert(chunkedUploadsTable).values({ uploadId, teamId, ...manifest, createdBy: account.displayName })
       .onConflictDoUpdate({ target: chunkedUploadsTable.uploadId, set: manifest });
     res.status(201).json(CompleteChunkUploadResponse.parse({ objectPath: `/objects/chunk/${uploadId}` }));
   } catch (error) {
     req.log.error({ err: error }, 'Error finalising chunked upload');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Upload could not be finalised' });
   }
 });
@@ -382,6 +446,16 @@ router.post(
         res.status(400).json({ error: 'This is not a valid STL model' });
         return;
       }
+      // A 3MF is a ZIP archive holding an XML model part. Checking it here means
+      // a renamed file is rejected at upload instead of failing in the viewer.
+      if (isThreeMfUpload(contentType) && !cadFileMatchesKind('three-mf', data)) {
+        res.status(400).json({ error: 'This is not a valid 3MF model' });
+        return;
+      }
+      if (isPlainMeshUpload(contentType) && !cadFileMatchesKind(meshKindFor(contentType), data)) {
+        res.status(400).json({ error: `This is not a valid ${contentType.includes('obj') ? 'OBJ' : 'PLY'} model` });
+        return;
+      }
       if (data.length > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
         const maxMb = Math.floor(CHUNKED_UPLOAD_THRESHOLD_BYTES / (1024 * 1024));
         res.status(413).json({
@@ -393,6 +467,7 @@ router.post(
       res.status(201).json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, 'Error storing uploaded attachment');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Upload failed on the server' });
     }
   },
@@ -431,7 +506,72 @@ router.post(
       res.status(201).json(UploadPartsRobotPreviewFileResponse.parse({ objectPath }));
     } catch (error) {
       req.log.error({ err: error }, 'Robot preview upload failed');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Unable to store this robot preview.' });
+    }
+  },
+);
+
+/**
+ * POST /storage/cad-models
+ *
+ * Store a CAD file for the CAD workspace. The extension picks the renderer, so
+ * both the extension and the bytes are validated before anything is written.
+ * Larger CAD files should use the chunked upload endpoints instead so they never
+ * pass through this process.
+ */
+const CAD_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+
+router.post(
+  '/storage/cad-models',
+  requireWorkspaceAccess('cad'),
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    if (!data || !Buffer.isBuffer(data)) {
+      res.status(400).json({ error: 'No CAD file data received' });
+      return;
+    }
+    const fileName = typeof req.query.fileName === 'string' ? req.query.fileName.trim() : '';
+    const contentType = typeof req.query.contentType === 'string'
+      ? req.query.contentType.trim().toLowerCase()
+      : '';
+    const resolved = resolveCadUploadKind(fileName, contentType);
+    if ('error' in resolved) {
+      res.status(400).json({ error: resolved.error });
+      return;
+    }
+    const { kind } = resolved;
+    if (data.length === 0) {
+      res.status(400).json({ error: 'The CAD file is empty' });
+      return;
+    }
+    if (data.length > CAD_UPLOAD_MAX_BYTES) {
+      res.status(413).json({ error: 'File too big (max 200 MB)' });
+      return;
+    }
+    const maxBytes = cadModelMaxBytes(kind);
+    if (maxBytes !== null && data.length > maxBytes) {
+      res.status(413).json({
+        error: `This file exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB limit for its type.`,
+      });
+      return;
+    }
+    if (!cadFileMatchesKind(kind, data)) {
+      res.status(400).json({ error: `This is not a valid ${kind.toUpperCase()} model` });
+      return;
+    }
+    try {
+      const objectPath = await objectStorageService.uploadChatImage(data, resolved.contentType);
+      res.status(201).json(UploadCadModelFileResponse.parse({
+        objectPath,
+        contentType: resolved.contentType,
+        sizeBytes: data.length,
+      }));
+    } catch (error) {
+      req.log.error({ err: error }, 'CAD model upload failed');
+      if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
+      res.status(500).json({ error: 'Unable to store this CAD file' });
     }
   },
 );
@@ -442,10 +582,14 @@ router.post(
  * Convert a private Parasolid attachment locally. Large X_T files use the
  * bundled strict-tolerance CAD converter; smaller files and X_B retain the
  * existing local worker. The temporary GLB is returned only to the requester.
+ *
+ * Gated on CAD workspace access, plus coordinators, because the CAD library can
+ * be opened up to other roles in settings and they still need Parasolid
+ * previews to work. Coordinators keep access even if CAD is later locked.
  */
 router.post(
   '/storage/parasolid-preview',
-  requireCoordinator,
+  requireWorkspaceAccessOrCoordinator('cad'),
   express.raw({ type: 'model/x-parasolid', limit: PARASOLID_XT_PREVIEW_MAX_BYTES }),
   async (req: Request, res: Response) => {
     let data = req.body as Buffer | undefined;
@@ -716,7 +860,9 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
 
     if (wildcardPath.startsWith('chunk/')) {
       const uploadId = wildcardPath.slice('chunk/'.length);
-      const manifest = await getChunkUpload(uploadId);
+      // Team-scoped: foreign manifests read as missing, so one team can
+      // neither download nor probe another team's uploads.
+      const manifest = await getChunkUploadForTeam(uploadId, await requestTeamId(req));
       if (!manifest) {
         res.status(404).json({ error: 'Object not found' });
         return;
@@ -736,10 +882,25 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
 
     const { data, contentType } = await objectStorageService.downloadObject(objectPath);
 
+    // Every object path is a write-once UUID, so bytes for a path never
+    // change: clients may cache for a year without revalidating, and the
+    // ETag below is only a safety net. (Assembled chunk manifests are the
+    // exception — keep them on a short cache.)
+    const immutable = !wildcardPath.startsWith('chunk/');
+    const etag = `W/"${createHash('sha1').update(objectPath).digest('hex').slice(0, 24)}-${data.byteLength}"`;
+    res.setHeader('ETag', etag);
+    res.setHeader(
+      'Cache-Control',
+      immutable ? 'private, max-age=31536000, immutable' : 'private, max-age=3600',
+    );
+    const ifNoneMatch = req.headers['if-none-match'];
+    if (typeof ifNoneMatch === 'string' && ifNoneMatch.split(',').some((tag) => tag.trim() === etag || tag.trim() === '*')) {
+      res.status(304).end();
+      return;
+    }
     res.status(200);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', String(data.byteLength));
-    res.setHeader('Cache-Control', 'private, max-age=3600');
     res.send(data);
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
@@ -748,6 +909,7 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       return;
     }
     req.log.error({ err: error }, 'Error serving object');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to serve object' });
   }
 });
@@ -770,11 +932,14 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
         res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
         return;
       }
-      const manifest = await getChunkUpload(uploadId);
-      if (manifest) {
-        await deleteChunkParts(uploadId, manifest.totalParts);
-        await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
+      // Team-scoped: only the owning team may delete its manifests and parts.
+      const manifest = await getChunkUploadForTeam(uploadId, await requestTeamId(req));
+      if (!manifest) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
       }
+      await deleteChunkParts(uploadId, manifest.totalParts);
+      await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
       res.status(200).json({ ok: true, deleted: true });
       return;
     }
@@ -796,6 +961,7 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     res.status(200).json({ ok: true });
   } catch (error) {
     req.log.error({ err: error }, 'Error deleting object');
+    if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to delete object' });
   }
 });

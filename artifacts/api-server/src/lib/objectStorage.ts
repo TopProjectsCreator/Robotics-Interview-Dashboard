@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { currentInstance } from '@workspace/db';
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -10,7 +11,9 @@ export class ObjectNotFoundError extends Error {
 }
 
 function supabaseUrl(): string {
-  const url = process.env.SUPABASE_URL;
+  const url = currentInstance() === "secondary"
+    ? (process.env.SECONDARY_SUPABASE_URL?.trim() || process.env.SUPABASE_URL)
+    : process.env.SUPABASE_URL;
   if (!url) {
     throw new Error(
       'SUPABASE_URL must be set. File storage lives in Supabase Storage.',
@@ -20,7 +23,9 @@ function supabaseUrl(): string {
 }
 
 function serviceRoleKey(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = currentInstance() === "secondary"
+    ? (process.env.SECONDARY_SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY)
+    : process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) {
     throw new Error(
       'SUPABASE_SERVICE_ROLE_KEY must be set. File storage lives in Supabase Storage.',
@@ -30,12 +35,24 @@ function serviceRoleKey(): string {
 }
 
 export function storageBucket(): string {
+  if (currentInstance() === "secondary") {
+    return process.env.SECONDARY_SUPABASE_STORAGE_BUCKET?.trim() || process.env.SUPABASE_STORAGE_BUCKET || 'app-uploads';
+  }
   return process.env.SUPABASE_STORAGE_BUCKET || 'app-uploads';
 }
 
 let client: SupabaseClient | null = null;
+let secondaryClient: SupabaseClient | null = null;
 
 function supabase(): SupabaseClient {
+  if (currentInstance() === "secondary" && process.env.SECONDARY_SUPABASE_URL?.trim()) {
+    if (!secondaryClient) {
+      secondaryClient = createClient(supabaseUrl(), serviceRoleKey(), {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    }
+    return secondaryClient;
+  }
   if (!client) {
     client = createClient(supabaseUrl(), serviceRoleKey(), {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -44,15 +61,17 @@ function supabase(): SupabaseClient {
   return client;
 }
 
-let ensuredBucket: Promise<void> | null = null;
+const ensuredBuckets = new Map<string, Promise<void>>();
 // Supabase rejects a bucket file_size_limit above the plan maximum (50 MB on
 // the current plan), and the error is unrelated to bucket existence. Stay at
 // or below that ceiling so the request is always accepted.
 export const MAX_STORAGE_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 function ensureBucket(): Promise<void> {
-  if (!ensuredBucket) {
-    ensuredBucket = (async () => {
+  const bucketKey = `${currentInstance()}:${storageBucket()}`;
+  const existing = ensuredBuckets.get(bucketKey);
+  if (existing) return existing;
+  const pending = (async () => {
       const bucket = storageBucket();
       const storage = supabase().storage;
       const { error } = await storage.createBucket(bucket, {
@@ -87,11 +106,11 @@ function ensureBucket(): Promise<void> {
         }
       }
     })().catch((error: unknown) => {
-      ensuredBucket = null;
+      ensuredBuckets.delete(bucketKey);
       throw error;
     });
-  }
-  return ensuredBucket;
+  ensuredBuckets.set(bucketKey, pending);
+  return pending;
 }
 
 function toStoragePath(objectPath: string): string {

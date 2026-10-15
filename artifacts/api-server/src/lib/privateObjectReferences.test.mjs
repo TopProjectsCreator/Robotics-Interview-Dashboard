@@ -18,13 +18,16 @@ registerHooks({
 const objectPath = "/objects/preview-12345678";
 let importId = 0;
 
-async function checkReferences(t, { robotReferences = [], messages = [] } = {}) {
+async function checkReferences(t, { robotReferences = [], modelReferences = [], messages = [] } = {}) {
   mock.module("@workspace/db", {
     namedExports: {
       pool: {
         query: async (statement) => {
           if (statement.includes('"parts_robots"')) {
             return { rows: robotReferences, rowCount: robotReferences.length };
+          }
+          if (statement.includes('"cad_models"')) {
+            return { rows: modelReferences, rowCount: modelReferences.length };
           }
           if (statement.includes('"interview_chat_messages"')) {
             return { rows: messages.map((message) => ({ message })), rowCount: messages.length };
@@ -45,6 +48,26 @@ async function checkReferences(t, { robotReferences = [], messages = [] } = {}) 
 test("private object cleanup keeps files referenced by another robot", async (t) => {
   assert.equal(
     await checkReferences(t, { robotReferences: [{ id: "other-robot" }] }),
+    true,
+  );
+});
+
+test("private object cleanup keeps files referenced by a CAD model", async (t) => {
+  assert.equal(
+    await checkReferences(t, { modelReferences: [{ id: "other-model" }] }),
+    true,
+  );
+});
+
+test("a CAD model still referenced after its own record is removed is kept", async (t) => {
+  // A robot preview replaced by a CAD model, or a chat attachment promoted into
+  // the library, can share one object path. Both tables must be consulted.
+  assert.equal(
+    await checkReferences(t, {
+      modelReferences: [{ id: "other-model" }],
+      robotReferences: [{ id: "other-robot" }],
+      messages: [`See /api/storage${objectPath}`],
+    }),
     true,
   );
 });

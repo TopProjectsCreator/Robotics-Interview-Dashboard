@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { attachTrackpadPan } from "../lib/trackpadPan";
+
 type ChatStlViewerProps = {
   name: string;
   src: string;
@@ -20,6 +22,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
     let resizeHandler: (() => void) | null = null;
     let renderer: import("three").WebGLRenderer | null = null;
     let controls: import("three/addons/controls/OrbitControls.js").OrbitControls | null = null;
+    let detachTrackpadPan: (() => void) | null = null;
     let geometry: import("three").BufferGeometry | null = null;
     let material: import("three").Material | null = null;
     const fail = () => {
@@ -53,6 +56,9 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
         viewerRenderer.domElement.setAttribute("aria-label", `3D preview of ${name}`);
         viewerRenderer.domElement.setAttribute("role", "img");
         viewerRenderer.domElement.tabIndex = 0;
+        // Without this the browser claims two-finger gestures for page scroll,
+        // so OrbitControls never receives them.
+        viewerRenderer.domElement.style.touchAction = "none";
         host.appendChild(viewerRenderer.domElement);
 
         scene.add(new THREE.AmbientLight(0xffffff, 1.7));
@@ -63,7 +69,13 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
         fillLight.position.set(-5, -3, -4);
         scene.add(fillLight);
 
+        // Registered before OrbitControls so this handler sees the wheel event
+        // first and can consume the pan gestures OrbitControls would zoom.
+        detachTrackpadPan = attachTrackpadPan(viewerRenderer.domElement, () => viewerControls);
         const viewerControls = new OrbitControls(camera, viewerRenderer.domElement);
+        // Pan in the camera's screen plane; panning in the ground plane is
+        // disorienting for a part floating in space.
+        viewerControls.screenSpacePanning = true;
         controls = viewerControls;
         viewerControls.enableDamping = true;
         viewerControls.dampingFactor = 0.08;
@@ -149,6 +161,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
       abortController?.abort();
       resizeObserver?.disconnect();
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+      detachTrackpadPan?.();
       controls?.dispose();
       geometry?.dispose();
       material?.dispose();
@@ -164,7 +177,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
     <figure className="my-2 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-stl-attachment">
       <figcaption className="flex flex-wrap items-center justify-between gap-1 border-b border-[#dce9e8] px-3 py-2 text-[11px] dark:border-[#2a3f52]">
         <span className="min-w-0 truncate font-semibold text-[#183a4b] dark:text-[#e5edf3]">{name}</span>
-        <span className="text-[#718189] dark:text-[#a8bac8]">STL model · drag to rotate, scroll to zoom</span>
+        <span className="text-[#718189] dark:text-[#a8bac8]">STL model · drag to rotate · two fingers to pan and zoom</span>
       </figcaption>
       {failed ? (
         <div className="flex min-h-24 flex-wrap items-center gap-2 p-4 text-xs text-[#a34d46] dark:text-[#e89890]" role="status">

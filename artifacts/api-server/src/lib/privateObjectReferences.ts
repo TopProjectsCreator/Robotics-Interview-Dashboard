@@ -2,6 +2,13 @@ import { pool } from "@workspace/db";
 import { isChatAttachmentReferenced } from "./chatAttachmentReferences";
 
 export async function isPrivateObjectReferenced(objectPath: string): Promise<boolean> {
+  const cadReferences = await pool.query(
+    `select "id" from "cad_models"
+     where "object_path" = $1 limit 1`,
+    [objectPath],
+  );
+  if (cadReferences.rowCount) return true;
+
   const robotReferences = await pool.query(
     `select "id" from "parts_robots"
      where "preview_object_path" = $1 limit 1`,

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const presenceHeartbeatsTable = pgTable("presence_heartbeats", {
   sessionHash: text("session_hash").primaryKey(),
+  teamId: text("team_id"),
   ip: text("ip").notNull().default("unknown"),
   userAgent: text("user_agent").notNull().default(""),
   city: text("city").notNull().default(""),

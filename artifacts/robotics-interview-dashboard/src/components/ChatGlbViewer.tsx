@@ -48,7 +48,7 @@ export function ChatGlbViewer({ name, src }: ChatGlbViewerProps) {
     <figure className="my-2 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-glb-attachment">
       <figcaption className="flex flex-wrap items-center justify-between gap-1 border-b border-[#dce9e8] px-3 py-2 text-[11px] dark:border-[#2a3f52]">
         <span className="min-w-0 truncate font-semibold text-[#183a4b] dark:text-[#e5edf3]">{name}</span>
-        <span className="text-[#718189] dark:text-[#a8bac8]">3D model · drag to rotate, scroll to zoom</span>
+        <span className="text-[#718189] dark:text-[#a8bac8]">3D model · drag to rotate · two fingers to pan and zoom</span>
       </figcaption>
       {failed ? (
         <div className="flex min-h-24 flex-wrap items-center gap-2 p-4 text-xs text-[#a34d46] dark:text-[#e89890]" role="status">

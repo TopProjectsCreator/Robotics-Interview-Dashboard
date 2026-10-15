@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const broadcastsTable = pgTable("broadcasts", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   message: text("message").notNull(),
   // message = popup for coordinators; audio-test / audio-engine / audio-reset
   // are silent commands the big screen executes (payload: engine id).

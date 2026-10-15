@@ -17,6 +17,8 @@ export interface AssistantInput {
   model?: string;
   conversationId?: string;
   applicantIds?: string[];
+  /** Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called. */
+  disabledTools?: string[];
   /** Files attached in chat (already uploaded to storage). */
   attachments?: AssistantInputAttachmentsItem[];
   /** Recent interviewer chat messages for conversational context. */

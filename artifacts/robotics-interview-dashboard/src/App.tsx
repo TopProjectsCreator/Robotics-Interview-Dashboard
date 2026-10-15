@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Check, ChevronRight, CircleDot, ClipboardList,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -21,7 +21,7 @@ import {
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -31,8 +31,12 @@ import {
   useGetPresenceStats, getGetPresenceStatsQueryKey,
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
+  useCreateScheduledChat, useDeleteScheduledChat, useListScheduledChats, getListScheduledChatsQueryKey,
   useUpdateQueueSettings,
   useUpdateApplicant,
+  useGetChatSettings, useUpdateChatSettings, getGetChatSettingsQueryKey,
+  useListFeatureRequests, getListFeatureRequestsQueryKey, useCreateFeatureRequest, useUpdateFeatureRequest,
+  useGetSiteStats, getGetSiteStatsQueryKey,
   useInterpretApplicantSearch,
   useGetSystemUsage,
   useCreateSpreadsheet,
@@ -41,8 +45,10 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
+import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
+import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
@@ -53,37 +59,55 @@ import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTING
 import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
+import { confirmAction, DialogHost, notify } from "./lib/dialogs";
+import { browserSupportsPasskeys, loginWithPasskeyFlow, registerPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
+const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing, { officialDisplayImages } from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
+import CodeLanding from "@/pages/code-landing";
+import CadLanding from "@/pages/cad-landing";
 import PartsPage from "@/pages/PartsPage";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
-import { WhiteboardEditor } from "./components/WhiteboardEditor";
-import { DocumentEditor } from "./components/DocumentEditor";
+const WhiteboardEditor = lazy(() => import("./components/WhiteboardEditor").then((m) => ({ default: m.WhiteboardEditor })));
+const DocumentEditor = lazy(() => import("./components/DocumentEditor").then((m) => ({ default: m.DocumentEditor })));
 import { BoardEditor } from "./components/BoardEditor";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
-import { ChatStlViewer } from "./components/ChatStlViewer";
-import { ChatParasolidViewer } from "./components/ChatParasolidViewer";
-import { SpreadsheetEditor } from "./components/SpreadsheetEditor";
+const ChatStlViewer = lazy(() => import("./components/ChatStlViewer").then((m) => ({ default: m.ChatStlViewer })));
+const ChatParasolidViewer = lazy(() => import("./components/ChatParasolidViewer").then((m) => ({ default: m.ChatParasolidViewer })));
+const SpreadsheetEditor = lazy(() => import("./components/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditor })));
 import { ChatMentionToken } from "./components/ChatMentionToken";
-import { ChatGlbViewer } from "./components/ChatGlbViewer";
-import { ChatStepViewer } from "./components/ChatStepViewer";
+const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) => ({ default: m.ChatGlbViewer })));
+const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
+const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
+const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
 import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
   getWorkspaceNavigation,
+  getCrossWorkspaceSections,
   workspaceAreaForPath,
+  type WorkspaceKey,
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
+import {
+  useWorkspaceVisibility,
+  userCanSeeWorkspace,
+  visibleWorkspacesForUser,
+  WORKSPACE_KEYS,
+  WORKSPACE_LABELS,
+} from "./useWorkspaceVisibility";
 
+import { useRealtimeHealthy } from "./realtimeHealth";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -239,6 +263,29 @@ function ChatActionTooltip({ label, children }: { label: string; children: React
   </Tooltip>;
 }
 
+function CopyButton({ text, label = "Copy response", className = "", testId }: { text: string; label?: string; className?: string; testId?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        // Clipboard unavailable — the response stays on screen instead.
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
+  return <button type="button" onClick={() => void copy()} aria-label={copied ? "Copied" : label} title={copied ? "Copied" : label} data-testid={testId} className={className}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>;
+}
+
 function Skeleton({ className = "" }: { className?: string }) { return <div className={`animate-pulse rounded-lg bg-[#dfe7ea] ${className}`} />; }
 
 function ThemeToggle() {
@@ -300,6 +347,128 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   </div>;
 }
 const SORT_OPTIONS = [{ value: "rank", label: "Rank" }, { value: "queue", label: "Queue order" }, { value: "score", label: "AI score" }, { value: "name", label: "Name" }, { value: "grade", label: "Grade" }, { value: "skill", label: "Skill" }, { value: "gender", label: "Gender" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }];
+function FeatureRequestSection() {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const isOwner = session.data?.isSiteOwner === true;
+  const qc = useQueryClient();
+  const requests = useListFeatureRequests({ query: { queryKey: getListFeatureRequestsQueryKey() } });
+  const stats = useGetSiteStats({ query: { queryKey: getGetSiteStatsQueryKey(), enabled: isOwner } });
+  const createRequest = useCreateFeatureRequest();
+  const updateRequest = useUpdateFeatureRequest();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: getListFeatureRequestsQueryKey() });
+    void qc.invalidateQueries({ queryKey: getGetSiteStatsQueryKey() });
+  };
+  const submit = () => {
+    const message = draft.trim();
+    if (!message) {
+      setError("Write the idea first — one or two sentences is plenty.");
+      return;
+    }
+    setError("");
+    createRequest.mutate({ data: { message: message.slice(0, 2000) } }, {
+      onSuccess: () => {
+        setDraft("");
+        setDialogOpen(false);
+        refresh();
+        notify({ title: "Request sent", description: "Ishaan will see it in the site inbox." });
+      },
+      onError: (err) => setError(err instanceof Error ? err.message : "Could not send the request. Try again."),
+    });
+  };
+  const setStatus = (item: FeatureRequest, status: "open" | "done") => {
+    updateRequest.mutate({ requestId: item.id, data: { status } }, { onSuccess: refresh });
+  };
+  const [teamBusy, setTeamBusy] = useState("");
+  const deleteTeam = async (teamId: string, teamName: string) => {
+    if (!(await confirmAction({ title: `Delete ${teamName} and everything in it?`, detail: "Accounts, applicants, chat, boards, files and settings for this team are removed permanently. This cannot be undone.", danger: true, confirmLabel: "Delete team" }))) return;
+    setTeamBusy(teamId);
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/auth/teams/${encodeURIComponent(teamId)}`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { error?: unknown } | null;
+        throw new Error(typeof body?.error === "string" ? body.error : "Could not delete that team.");
+      }
+      refresh();
+      notify({ title: "Team deleted", description: `${teamName} and its data are gone.` });
+    } catch (err) {
+      notify({ title: "Delete failed", description: err instanceof Error ? err.message : "Could not delete that team." });
+    } finally {
+      setTeamBusy("");
+    }
+  };
+  const items = requests.data?.items ?? [];
+  const openCount = items.filter((item) => item.status !== "done").length;
+  return <div className="mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className="mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">Request a feature</p>
+    <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Ideas go straight to Ishaan Bansal, who built this site.{isOwner ? " You are the site owner, so every team's requests land in your inbox below." : ""}</p>
+    <div className="mt-3">
+      <button type="button" onClick={() => { setDraft(""); setError(""); setDialogOpen(true); }} data-testid="button-request-feature" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={14} /> Request a feature</button>
+    </div>
+    {dialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#112433]/55 p-4" data-testid="dialog-feature-request"><div role="dialog" aria-modal="true" aria-label="Request a feature" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
+      <p className="text-base font-semibold text-[#182232] dark:text-[#e8eef2]">Request a feature</p>
+      <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Describe the idea — Ishaan reads every request.</p>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4} maxLength={2000} autoFocus placeholder="e.g. A dark big-screen theme for night events…" aria-label="Feature request" data-testid="input-feature-request" className="mt-3 h-28 w-full resize-y rounded-xl border border-[#cbd7da] bg-white px-4 py-3 text-sm text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
+      {error && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="feature-request-error">{error}</p>}
+      <div className="mt-4 flex gap-2">
+        <button type="button" disabled={createRequest.isPending} onClick={submit} data-testid="button-send-feature-request" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={15} /> {createRequest.isPending ? "Sending…" : "Send request"}</button>
+        <button type="button" onClick={() => setDialogOpen(false)} data-testid="button-cancel-feature-request" className="rounded-xl border border-[#cbd7da] px-4 py-2.5 text-sm font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">Cancel</button>
+      </div>
+    </div></div>}
+    {isOwner && <div className="mt-4" data-testid="site-inbox">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Site inbox · every team</p>
+      {stats.data && <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[["Teams", stats.data.teams], ["People", stats.data.people], ["Requests", stats.data.requests], ["Open", stats.data.openRequests]].map(([label, value]) => (
+          <div key={label as string} className="rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 text-center dark:border-[#2a3f4c] dark:bg-[#10202a]">
+            <p className="text-xl font-semibold text-[#183a4b] dark:text-[#e8eef2]">{value as number}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2]">{label as string}</p>
+          </div>
+        ))}
+      </div>}
+      {requests.isLoading && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading requests…</p>}
+      {!requests.isLoading && items.length === 0 && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">No requests yet.</p>}
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className={`rounded-xl border px-3 py-3 dark:bg-[#10202a] ${item.status === "done" ? "border-[#e5ecec] bg-[#f8fbfa] opacity-70 dark:border-[#2a3f4c]" : "border-[#dce5e5] bg-white dark:border-[#2a3f4c]"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              {item.teamName && <span className="rounded-md bg-[#e3f4f2] px-1.5 py-0.5 text-[10px] font-semibold text-[#12737d] dark:bg-[#1c3c43] dark:text-[#9bdbe2]">{item.teamName}</span>}
+              <span className="text-[11px] font-semibold text-[#385762] dark:text-[#c3d3db]">{item.authorName}</span>
+              <span className="text-[10px] text-[#9aa7aa]">{new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</span>
+              <button type="button" disabled={updateRequest.isPending} onClick={() => setStatus(item, item.status === "done" ? "open" : "done")} data-testid={`button-resolve-request-${item.id}`} className="ml-auto rounded-md border border-[#cbd7da] px-2 py-1 text-[10px] font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">{item.status === "done" ? "Reopen" : "Done"}</button>
+            </div>
+            <p className="mt-1.5 text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+          </div>
+        ))}
+      </div>
+      {!requests.isLoading && items.length > 0 && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{openCount} open across every team.</p>}
+      {(stats.data?.teamsById ?? []).length > 0 && <div className="mt-3" data-testid="site-teams">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Teams</p>
+        <div className="space-y-2">
+          {(stats.data?.teamsById ?? []).map((team) => (
+            <div key={team.teamId} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+              <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-[#182232] dark:text-[#e8eef2]">{team.teamName}</p><p className="text-[10px] text-[#9aa7aa]">{team.people} people · {team.requests} requests ({team.openRequests} open)</p></div>
+              {team.teamId !== "default" && <button type="button" disabled={teamBusy === team.teamId} onClick={() => void deleteTeam(team.teamId, team.teamName)} data-testid={`button-delete-team-${team.teamId}`} className="rounded-md border border-[#e0b8b4] px-2 py-1 text-[10px] font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:text-[#e89087]">{teamBusy === team.teamId ? "Deleting…" : "Delete"}</button>}
+            </div>
+          ))}
+        </div>
+      </div>}
+    </div>}
+    {!isOwner && !requests.isLoading && items.length > 0 && <div className="mt-3" data-testid="team-requests">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Your team's requests · {openCount} open</p>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className="rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-2.5 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+            <p className="text-xs leading-5 text-[#52666e] dark:text-[#a9bcc6]">{item.message}</p>
+            <p className="mt-1 text-[10px] text-[#9aa7aa]">{item.authorName} · {new Date(item.createdAt).toLocaleDateString()}{item.status === "done" ? " · done" : ""}</p>
+          </div>
+        ))}
+      </div>
+    </div>}
+  </div>;
+}
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
@@ -313,12 +482,104 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [passwordNotice, setPasswordNotice] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [rowNotice, setRowNotice] = useState<Record<string, string>>({});
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const workspaceVisibility = useWorkspaceVisibility();
+  const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewerAccounts = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
+  const interviewerAccounts = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  const teamAccounts = useMemo(
+    () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [interviewerAccounts.data],
+  );
+  const accountRoleById = useMemo(
+    () => new Map(teamAccounts.map((account) => [account.id, account.role])),
+    [teamAccounts],
+  );
+  // Expand the server value (account IDs plus legacy role names) into an
+  // explicit per-person draft, so the toggles below always show actual people.
+  // Coordinators are always on via the access check; they render locked on.
+  const expandToUserDraft = useCallback((server: typeof visibilityDraft) => {
+    const draft = {} as typeof server;
+    for (const key of WORKSPACE_KEYS) {
+      const list = (server[key] ?? []) as string[];
+      const ids = new Set<string>();
+      for (const account of teamAccounts) {
+        if (account.role === "coordinator") {
+          ids.add(account.id);
+          continue;
+        }
+        if (list.includes(account.id) || (account.role && list.includes(account.role))) {
+          ids.add(account.id);
+        }
+      }
+      // Keep server entries for accounts not in the list response (e.g. just
+      // created) so a save never silently drops them.
+      for (const entry of list) {
+        if (entry === "coordinator" || entry === "treasurer" || entry === "interviewer") continue;
+        ids.add(entry);
+      }
+      draft[key] = [...ids].sort();
+    }
+    return draft;
+  }, [teamAccounts]);
+  // Re-sync the draft whenever the server value or the team list changes, so
+  // a save from another admin's tab is not silently reverted by a stale edit.
+  useEffect(() => {
+    setVisibilityDraft(expandToUserDraft(workspaceVisibility.visibility));
+  }, [workspaceVisibility.visibility, expandToUserDraft]);
+  const workspaceVisibilityBusy = workspaceVisibility.isSaving;
+  const toggleVisibility = (key: WorkspaceKey, accountId: string) => {
+    // Admins always keep every workspace, so their dots stay locked on.
+    if (accountRoleById.get(accountId) === "coordinator") return;
+    setVisibilityDraft((current) => {
+      const existing = (current[key] ?? []) as string[];
+      return {
+        ...current,
+        [key]: existing.includes(accountId)
+          ? existing.filter((entry) => entry !== accountId)
+          : [...existing, accountId].sort(),
+      };
+    });
+  };
+  const saveVisibility = async (next: typeof visibilityDraft) => {
+    setWorkspaceVisibilityNotice("");
+    try {
+      await workspaceVisibility.save(next);
+      setWorkspaceVisibilityNotice("Access updated for the whole team.");
+    } catch {
+      setWorkspaceVisibilityNotice("Could not save workspace access. Try again.");
+    }
+  };
   const updateInterviewerPassword = useUpdateInterviewerPassword();
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
   const deleteInterviewer = useDeleteInterviewer();
+  const updateInterviewerName = useUpdateInterviewerName();
+  const renameInterviewer = (id: string, displayName: string) => {
+    const name = displayName.trim();
+    if (!name) {
+      setPasswordError("Enter a name for this person.");
+      return;
+    }
+    setPasswordNotice("");
+    setPasswordError("");
+    setRowNotice((current) => ({ ...current, [id]: "" }));
+    updateInterviewerName.mutate({ interviewerId: id, data: { displayName: name } }, {
+      onSuccess: () => {
+        setNameDrafts((current) => ({ ...current, [id]: "" }));
+        setRowNotice((current) => ({ ...current, [id]: "Name updated" }));
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      },
+      onError: (error) => {
+        const body = (error as { data?: { error?: unknown } }).data;
+        const message = typeof body?.error === "string" ? body.error : error instanceof Error && error.message ? error.message : "Could not rename this person.";
+        setRowNotice((current) => ({ ...current, [id]: "Not renamed" }));
+        setPasswordError(message);
+      },
+    });
+  };
   const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
     updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
       onSuccess: () => {
@@ -339,6 +600,59 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       onError: () => { setPasswordError("Could not remove that account. Try again."); },
     });
   };
+  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const chatSettings = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
+  const updateChatSettings = useUpdateChatSettings();
+  const [slowmodeBusy, setSlowmodeBusy] = useState(false);
+  const setSlowmode = (seconds: number) => {
+    setSlowmodeBusy(true);
+    updateChatSettings.mutate({ data: { slowmodeSeconds: seconds } }, {
+      onSuccess: () => {
+        setSlowmodeBusy(false);
+        setPasswordNotice(seconds > 0 ? `Slow mode on — one message every ${seconds < 60 ? `${seconds}s` : "1m"}.` : "Slow mode off.");
+        setPasswordError("");
+      },
+      onError: () => {
+        setSlowmodeBusy(false);
+        setPasswordError("Could not save slow mode. Try again.");
+      },
+    });
+  };
+  const [passkeyLabel, setPasskeyLabel] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyNotice, setPasskeyNotice] = useState("");
+  const [passkeyError, setPasskeyError] = useState("");
+  const passkeyList = useListPasskeys({ query: { queryKey: getListPasskeysQueryKey() } });
+  const removePasskey = useDeletePasskey();
+  const addPasskey = async () => {
+    setPasskeyNotice("");
+    setPasskeyError("");
+    setPasskeyBusy(true);
+    try {
+      const label = await registerPasskeyFlow(passkeyLabel);
+      setPasskeyLabel("");
+      setPasskeyNotice(`${label} added — you can use it to sign in.`);
+      qc.invalidateQueries({ queryKey: getListPasskeysQueryKey() });
+      qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Passkey registration failed.";
+      setPasskeyError(`${message} — make sure this device has a screen lock (PIN, fingerprint, or face).`);
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+  const forgetPasskey = (credentialId: string) => {
+    setPasskeyNotice("");
+    setPasskeyError("");
+    removePasskey.mutate({ credentialId }, {
+      onSuccess: () => {
+        setPasskeyNotice("Passkey removed. Your password still works.");
+        qc.invalidateQueries({ queryKey: getListPasskeysQueryKey() });
+        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      },
+      onError: () => setPasskeyError("Could not remove that passkey. Try again."),
+    });
+  };
   const enableNotifications = async () => {
     try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ }
     setNotifyState(browserNotifyPermission());
@@ -354,7 +668,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setLocation("/");
     }
   };
-  const changeInterviewerPassword = (interviewerId: string, password: string | null, confirmLowExposure = false) => {
+  const changeInterviewerPassword = async (interviewerId: string, password: string | null, confirmLowExposure = false) => {
     setPasswordNotice("");
     setPasswordError("");
     setRowNotice(current => ({ ...current, [interviewerId]: "" }));
@@ -383,14 +697,14 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             setRowNotice(current => ({ ...current, [interviewerId]: "Password saved" }));
           }
           finishPasswordAction(
-            password === null ? "Password removed. That interviewer must set one up at next sign-in." : "Password updated.",
+            password === null ? "Password removed. That team member must set one up at next sign-in." : "Password updated.",
             password === null && session.data?.interviewerId === interviewerId,
           );
         },
-        onError: error => {
+        onError: async error => {
           const issue = passwordSafetyIssue(error);
           if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && issue.count && window.confirm(passwordExposureConfirmation(issue.count))) {
+            if (!confirmLowExposure && issue.count && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
               changeInterviewerPassword(interviewerId, password, true);
               return;
             }
@@ -404,7 +718,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       },
     );
   };
-  const resetEveryPassword = () => {
+  const resetEveryPassword = async () => {
     setPasswordNotice("");
     setPasswordError("");
     if (!passwordAdminCode.trim()) {
@@ -412,7 +726,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       eventPasscodeRef.current?.focus();
       return;
     }
-    if (!window.confirm("Reset every interviewer password? Everyone will need to set up a new password before signing in again.")) return;
+    if (!(await confirmAction({ title: "Reset every team member password?", detail: "Everyone will need to set up a new password before signing in again.", danger: true, confirmLabel: "Reset all" }))) return;
     resetAllInterviewerPasswords.mutate(
       { data: { eventPassword: passwordAdminCode.trim() } },
       {
@@ -429,9 +743,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const divider = "mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]";
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
     <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
-      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Saved on this device only — your co-coordinator keeps their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
+      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Saved on this device only — your teammates keep their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
       <div className="mt-4 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
-        <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Coordinator" className={`${field} w-44`} /></SettingRow>
+        <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Your name" className={`${field} w-44`} /></SettingRow>
         <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
       </div>
       <div className={divider}><p className={sectionLabel}>Appearance</p>
@@ -464,13 +778,120 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <button type="button" disabled={passwordBusy} onClick={() => void changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className={dangerButton}>Reset</button>
             </form>
             {rowNotice[account.id] && <p className={`text-[11px] font-semibold ${rowNotice[account.id] === "Password saved" ? "text-[#247d63] dark:text-[#6fce8f]" : "text-[#b34a42] dark:text-[#e89087]"}`} data-testid={`settings-password-status-${account.id}`}>{rowNotice[account.id]}</p>}
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={() => { if (window.confirm(`Remove ${account.displayName} from the team? They will be signed out immediately.`)) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
+            <form onSubmit={e => { e.preventDefault(); renameInterviewer(account.id, nameDrafts[account.id] ?? ""); }} className="mt-2 flex flex-wrap gap-2">
+              <input
+                value={nameDrafts[account.id] ?? ""}
+                onChange={e => setNameDrafts(current => ({ ...current, [account.id]: e.target.value }))}
+                placeholder={`Rename ${account.displayName}`}
+                aria-label={`Rename ${account.displayName}`}
+                data-testid={`input-settings-name-${account.id}`}
+                className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
+              />
+              <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
+            </form>
+            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
           </div>)}
         </div>
-        <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all interviewer passwords"}</button>
+        <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all team passwords"}</button>
         {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="settings-password-success">{passwordNotice}</p>}
         {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
       </div>
+      <div className={divider}><p className={sectionLabel}>Workspace access</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
+          <table className="w-full min-w-[420px] text-left text-xs">
+            <thead className="bg-[#f8fbfa] text-[#63747c] dark:bg-[#10202a] dark:text-[#a9bcc6]">
+              <tr>
+                <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
+                {teamAccounts.map(account => (
+                  <th key={account.id} scope="col" className="px-2 py-2 text-center font-semibold">
+                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${account.role})`}>{account.displayName}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf1f1] dark:divide-[#243743]">
+              {WORKSPACE_KEYS.map(key => (
+                <tr key={key} data-testid={`visibility-row-${key}`}>
+                  <th scope="row" className="px-3 py-2 font-semibold text-[#183a4b] dark:text-[#e6eef2]">
+                    {WORKSPACE_LABELS[key]}
+                  </th>
+                  {teamAccounts.map(account => {
+                    const isAdmin = accountRoleById.get(account.id) === "coordinator";
+                    const hasAccess = isAdmin || ((visibilityDraft[key] ?? []) as string[]).includes(account.id);
+                    return (
+                    <td key={account.id} className="px-2 py-2 text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={hasAccess}
+                        aria-label={`${account.displayName} can open ${WORKSPACE_LABELS[key]}`}
+                        disabled={isAdmin || workspaceVisibilityBusy}
+                        data-testid={`toggle-visibility-${key}-${account.id}`}
+                        onClick={() => toggleVisibility(key, account.id)}
+                        className={`relative mx-auto block h-6 w-11 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${hasAccess ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hasAccess ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                      </button>
+                    </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {teamAccounts.length === 0 && (
+            <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">{interviewerAccounts.isLoading ? "Loading team…" : "No team accounts yet."}</p>
+          )}
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void saveVisibility(visibilityDraft)}
+            disabled={workspaceVisibilityBusy}
+            data-testid="button-save-visibility"
+            className="rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#137a8c] disabled:opacity-50"
+          >
+            {workspaceVisibilityBusy ? "Saving…" : "Save access"}
+          </button>
+          {workspaceVisibilityNotice && (
+            <span className="text-xs text-[#7c8c91] dark:text-[#93a8b2]" role="status" data-testid="visibility-notice">
+              {workspaceVisibilityNotice}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={divider}><p className={sectionLabel}>Passkeys</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Sign in with your device (fingerprint, face, or PIN) instead of typing a password. Your password keeps working either way.</p>
+        {!passkeysAvailable && <p className="mt-3 rounded-lg border border-[#e0b8b4] bg-[#fff7f6] px-3 py-2 text-xs text-[#a34d46] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087]">This browser does not support passkeys. Use Chrome, Edge, Firefox 110+, or Safari 16+.</p>}
+        {passkeysAvailable && <div className="mt-3 space-y-2">
+          {passkeyList.isLoading && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading passkeys…</p>}
+          {(passkeyList.data?.items ?? []).map(credential => (
+            <div key={credential.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-3 dark:border-[#2a3f4c] dark:bg-[#10202a]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{credential.label}</p>
+                <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Added {new Date(credential.createdAt).toLocaleDateString()}{credential.lastUsedAt ? ` · last used ${new Date(credential.lastUsedAt).toLocaleDateString()}` : " · never used"}</p>
+              </div>
+              <button type="button" disabled={removePasskey.isPending} onClick={() => forgetPasskey(credential.id)} data-testid={`button-remove-passkey-${credential.id}`} className={dangerButton}>Remove</button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <input value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} placeholder="Label (optional, e.g. MacBook)" aria-label="Passkey label" data-testid="input-passkey-label" className={`${field} h-9 min-w-[160px] flex-1 text-xs`} />
+            <button type="button" disabled={passkeyBusy} onClick={() => void addPasskey()} data-testid="button-add-passkey" className="rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">{passkeyBusy ? "Waiting for device…" : "Add passkey"}</button>
+          </div>
+          {passkeyNotice && <p className="text-[11px] font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="passkey-success">{passkeyNotice}</p>}
+          {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
+        </div>}
+      </div>
+      <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Like Discord: each person on the team chat may only send one message every N seconds. The send button counts down for them. Direct messages are never slowed.</p>
+        <SettingRow title="Slow mode" detail={chatSettings.isLoading ? "Loading…" : `One message every ${(() => { const v = chatSettings.data?.slowmodeSeconds ?? 0; return v === 0 ? "no limit" : v < 60 ? `${v}s` : "1m"; })()}`}>
+          <Segmented options={[{ value: 0, label: "Off" }, { value: 5, label: "5s" }, { value: 10, label: "10s" }, { value: 30, label: "30s" }, { value: 60, label: "1m" }]} value={chatSettings.data?.slowmodeSeconds ?? 0} onChange={(v) => setSlowmode(v)} testId="segment-settings-slowmode" />
+        </SettingRow>
+        {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
+      </div>
+      <FeatureRequestSection />
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
         <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>
@@ -586,7 +1007,7 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "audio" | "document" | "image" | "model" | "parasolid" | "pdf" | "spreadsheet" | "step" | "stl" | "text" | "video";
+type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -598,6 +1019,11 @@ function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
   if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
   if (contentType === "model/gltf-binary" || extension === "glb") return "model";
   if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
+  // 3MF is a ZIP of XML mesh data, so it renders in the browser like STL.
+  if (["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) || extension === "3mf") return "3mf";
+  // Plain triangle meshes; three.js parses both without a CAD kernel.
+  if (contentType === "model/obj" || extension === "obj") return "obj";
+  if (contentType === "model/ply" || contentType === "application/ply" || extension === "ply") return "ply";
   if (
     contentType === "model/step" ||
     contentType === "application/step" ||
@@ -831,10 +1257,12 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
   if (kind === "video" && objectUrl) return <video src={objectUrl} controls preload="metadata" onError={() => setMediaPlaybackFailed(true)} className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]" />;
   if (kind === "audio" && objectUrl) return <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl) return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
-  if (kind === "parasolid" && objectUrl) return <ChatParasolidViewer name={name} src={objectUrl} />;
-  if (kind === "model" && objectUrl) return <ChatGlbViewer name={name} src={objectUrl} />;
-  if (kind === "stl" && objectUrl) return <ChatStlViewer name={name} src={objectUrl} />;
-  if (kind === "step" && objectUrl) return <ChatStepViewer name={name} src={objectUrl} />;
+  if (kind === "parasolid" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatParasolidViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "model" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatGlbViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "stl" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatStlViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "3mf" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><CadThreeMfViewer name={name} src={objectUrl} /></Suspense>;
+  if ((kind === "obj" || kind === "ply") && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><CadMeshViewer name={name} src={objectUrl} /></Suspense>;
+  if (kind === "step" && objectUrl) return <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}><ChatStepViewer name={name} src={objectUrl} /></Suspense>;
   return <ChatAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
 }
 
@@ -994,7 +1422,6 @@ function MarkdownDetails({ text, mentionPeople }: { text: string; mentionPeople:
     </details>
   );
 }
-
 
 function MarkdownContent({
   source,
@@ -1234,6 +1661,53 @@ function serverErrorMessage(error: unknown, fallback: string): string {
 
 const CHAT_PAGE_SIZE = 30;
 
+/** How many recent chat messages the assistant is given for an @ai mention. */
+const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
+/** Chat message cap, in characters. Kept in step with the server. */
+const CHAT_MESSAGE_MAX_CHARS = 2000;
+
+/** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
+const SCHEDULED_CHAT_MAX_FUTURE_MS = 365 * 24 * 60 * 60 * 1000;
+
+function toLocalInputDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalInputTime(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function parseLocalSchedule(dateValue: string, timeValue: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue.trim()) || !/^\d{2}:\d{2}$/.test(timeValue.trim())) return null;
+  const parsed = new Date(`${dateValue.trim()}T${timeValue.trim()}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatScheduledAt(iso: string | Date): string {
+  const date = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatScheduleCountdown(iso: string | Date, nowMs: number): string {
+  const target = iso instanceof Date ? iso.getTime() : Date.parse(iso);
+  if (Number.isNaN(target)) return "";
+  const diffMs = target - nowMs;
+  if (diffMs <= 0) return "sending…";
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "in under a minute";
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `in ${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `in ${days}d ${hours % 24}h`;
+}
+
 function mergeChatItems<T extends { id: string; createdAt: string }>(...lists: T[][]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
@@ -1450,7 +1924,7 @@ function BroadcastCard() {
     });
   };
   return (
-    <Section title="Broadcast" kicker="Message the other coordinator">
+    <Section title="Broadcast" kicker="Message the other admin">
       <form onSubmit={submit} className="mt-1 space-y-2">
         <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-sm outline-none focus:border-[#16869a]" />
         <div className="flex gap-2">
@@ -1462,15 +1936,15 @@ function BroadcastCard() {
         </div>
       </form>
       {sentNote && <p className="mt-2 text-xs text-[#718189]" data-testid="broadcast-sent-note">{sentNote}</p>}
-      <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Coordinators with browser notifications on also get a push, even in another tab.</p>
+      <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Admins with browser notifications on also get a push, even in another tab.</p>
     </Section>
   );
 }
 
-function PresencePanel() {
+function PresencePanel() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const presence = useGetPresence({
-    query: { queryKey: getGetPresenceQueryKey(), refetchInterval: settings.autoRefresh ? settings.refreshMs : false },
+    query: { queryKey: getGetPresenceQueryKey(), refetchInterval: streamHealthy ? false : (settings.autoRefresh ? settings.refreshMs : false )},
   });
   const kick = useKickPresence();
   const queryClient = useQueryClient();
@@ -1480,7 +1954,7 @@ function PresencePanel() {
   if (presence.isError || !presence.data) return <Section title="Live now" kicker="Who is online"><p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p></Section>;
   const entries = presence.data.entries;
   return (
-    <Section title="Live now" kicker="Online coordinators (2-minute window)" >
+    <Section title="Live now" kicker="Who is online (2-minute window)" >
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />
         <p className="text-sm font-semibold" data-testid="presence-count">
@@ -1619,7 +2093,7 @@ function LegacyLogin() {
   const qc = useQueryClient();
   const passwordRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewers = useListInterviewers({ query: { queryKey: getListInterviewersQueryKey() } });
+  const interviewers = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
   const login = useLogin();
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
@@ -1672,20 +2146,107 @@ function LegacyLogin() {
   };
   const selected = interviewers.data?.items.find(item => item.id === selectedId);
   const busy = login.isPending || setup.isPending || create.isPending;
-  const errorMessage = login.isError ? "That password was not recognized." : setup.isError ? "Could not set that password. Check the event passcode." : create.isError ? "Could not create that interviewer. Check the event passcode." : "";
+  const errorMessage = login.isError ? "That password was not recognized." : setup.isError ? "Could not set that password. Check the event passcode." : create.isError ? "Could not create that team member. Check the event passcode." : "";
   return <main className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white">
     <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" /><div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
     <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">
-      <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20"><Logo dark /><div><p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines / Team 23442</p><h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">Build the<br /><span className="text-[#f8c84a]">next team.</span></h1><p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">A quiet control room for sharp eyes, honest signals, and the people ready to build.</p></div><div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]"><span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Coordinator access</span></div></section>
-      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Interviewer access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{creating ? "Add interviewer." : "Welcome back."}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{creating ? "Use the event passcode to add a named interviewer." : "Choose your interviewer and enter their password."}</p>{creating ? <form onSubmit={submitCreate} className="mt-8 space-y-4"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer name</span><input autoFocus autoComplete="name" value={newName} onChange={e => setNewName(e.target.value)} data-testid="input-new-interviewer-name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={eventPassword} onChange={e => setEventPassword(e.target.value)} data-testid="input-event-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} data-testid="input-new-interviewer-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><button disabled={busy || !newName || !eventPassword || !newPassword} data-testid="button-create-interviewer" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{create.isPending ? "Creating..." : <>Create and enter <ArrowRight size={17} /></>}</button><button type="button" onClick={() => setCreating(false)} className="w-full py-2 text-sm font-semibold text-[#527079]">Back to sign in</button></form> : <form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Interviewer</span><select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPassword(""); setEventPassword(""); }} data-testid="select-interviewer" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-base outline-none focus:border-[#16869a]"><option value="" disabled>{interviewers.isLoading ? "Loading interviewers..." : "Select interviewer"}</option>{interviewers.data?.items.map(item => <option key={item.id} value={item.id}>{item.displayName}{item.hasPassword ? "" : " · setup needed"}</option>)}</select></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">{selected?.hasPassword ? "Personal password" : "Event passcode"}</span><input ref={passwordRef} id="interviewer-password" name="password" autoComplete="current-password" type="password" value={selected?.hasPassword ? password : eventPassword} onChange={e => selected?.hasPassword ? setPassword(e.target.value) : setEventPassword(e.target.value)} data-testid="input-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{!selected?.hasPassword && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Choose personal password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} data-testid="input-setup-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a]" /></label>}{errorMessage && <p className="text-sm text-[#b34a42]" data-testid="login-error">{errorMessage}</p>}<button disabled={busy || !selected || (selected.hasPassword ? !password : (!eventPassword || !password))} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room..." : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Set password and enter <ArrowRight size={17} /></>}</button></form>}<button type="button" onClick={() => { setCreating(v => !v); setEventPassword(""); }} className="mt-6 w-full text-sm font-semibold text-[#16869a]" data-testid="button-new-interviewer">{creating ? "" : "+ New interviewer"}</button><div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Each interviewer has an individual password. Account creation requires the event passcode.</div></div></section>
+      <section className="hidden flex-col justify-between p-12 lg:flex xl:p-20"><Logo dark /><div><p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Wolverines / Team 23442</p><h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">Build the<br /><span className="text-[#f8c84a]">next team.</span></h1><p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">A quiet control room for sharp eyes, honest signals, and the people ready to build.</p></div><div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]"><span>All Claws on Deck!</span><span>·</span><span>PLMS · Sammamish, Washington</span><span>·</span><span>Admin access</span></div></section>
+      <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-14"><div className="mb-16 lg:hidden"><Logo /></div><div className="mx-auto w-full max-w-[350px]"><Badge tone="teal">Team access</Badge><h2 className="mt-5 text-4xl font-semibold tracking-[-.05em]">{creating ? "Add team member." : "Welcome back."}</h2><p className="mt-3 text-sm leading-6 text-[#63747c]">{creating ? "Use the event passcode to add a named team member." : "Choose your name and enter your password."}</p>{creating ? <form onSubmit={submitCreate} className="mt-8 space-y-4"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Your name</span><input autoFocus autoComplete="name" value={newName} onChange={e => setNewName(e.target.value)} data-testid="input-new-interviewer-name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Event passcode</span><input type="password" autoComplete="current-password" value={eventPassword} onChange={e => setEventPassword(e.target.value)} data-testid="input-event-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Personal password</span><input type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} data-testid="input-new-interviewer-password" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 outline-none focus:border-[#16869a]" /></label><button disabled={busy || !newName || !eventPassword || !newPassword} data-testid="button-create-interviewer" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{create.isPending ? "Creating..." : <>Create and enter <ArrowRight size={17} /></>}</button><button type="button" onClick={() => setCreating(false)} className="w-full py-2 text-sm font-semibold text-[#527079]">Back to sign in</button></form> : <form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Team member</span><select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPassword(""); setEventPassword(""); }} data-testid="select-interviewer" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-base outline-none focus:border-[#16869a]"><option value="" disabled>{interviewers.isLoading ? "Loading team..." : "Select your name"}</option>{interviewers.data?.items.map(item => <option key={item.id} value={item.id}>{item.displayName}{item.hasPassword ? "" : " · setup needed"}</option>)}</select></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">{selected?.hasPassword ? "Personal password" : "Event passcode"}</span><input ref={passwordRef} id="interviewer-password" name="password" autoComplete="current-password" type="password" value={selected?.hasPassword ? password : eventPassword} onChange={e => selected?.hasPassword ? setPassword(e.target.value) : setEventPassword(e.target.value)} data-testid="input-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10" placeholder="••••••••" /></label>{!selected?.hasPassword && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c]">Choose personal password</span><input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} data-testid="input-setup-password" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.18em] outline-none focus:border-[#16869a]" /></label>}{errorMessage && <p className="text-sm text-[#b34a42]" data-testid="login-error">{errorMessage}</p>}<button disabled={busy || !selected || (selected.hasPassword ? !password : (!eventPassword || !password))} data-testid="button-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Unlocking control room..." : selected?.hasPassword ? <>Enter control room <ArrowRight size={17} /></> : <>Set password and enter <ArrowRight size={17} /></>}</button></form>}<button type="button" onClick={() => { setCreating(v => !v); setEventPassword(""); }} className="mt-6 w-full text-sm font-semibold text-[#16869a]" data-testid="button-new-interviewer">{creating ? "" : "+ New team member"}</button><div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289]"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />Each team member has an individual password. Account creation requires the event passcode.</div></div></section>
     </div>
   </main>;
+}
+
+function randomTeamCodeSuggestion(): string {
+  const words = ["CLAW", "BOLT", "GEAR", "SPARK", "ORBIT", "VOLT", "FLUX", "NOVA", "AXIOM", "KILO", "PULSE", "TITAN"];
+  const pick = () => words[Math.floor(Math.random() * words.length)];
+  const digits = Math.floor(1000 + Math.random() * 9000);
+  return `${pick()}-${digits}-${pick()}`;
+}
+
+function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (response: { token?: string; label?: string; interviewerId?: string; teamId?: string; teamName?: string }) => void }) {
+  const [wizardStep, setWizardStep] = useState<"team" | "code" | "admin">("team");
+  const [teamName, setTeamName] = useState("");
+  const [teamCode, setTeamCode] = useState(() => randomTeamCodeSuggestion());
+  const [adminName, setAdminName] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [wizardError, setWizardError] = useState("");
+  const createTeam = useCreateTeam();
+  const busy = createTeam.isPending;
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setWizardError("");
+    if (wizardStep === "team") {
+      if (!teamName.trim()) {
+        setWizardError("Give your team a name.");
+        return;
+      }
+      setWizardStep("code");
+      return;
+    }
+    if (wizardStep === "code") {
+      if (!teamCode.trim() || teamCode.trim().length < 4) {
+        setWizardError("Choose a team access code with at least 4 characters.");
+        return;
+      }
+      setTeamCode(teamCode.trim());
+      setWizardStep("admin");
+      return;
+    }
+    if (!adminName.trim()) {
+      setWizardError("Add your name so your team can recognize you.");
+      return;
+    }
+    if (!adminPassword) {
+      setWizardError("Choose a personal password for your coordinator account.");
+      return;
+    }
+    createTeam.mutate(
+      { data: { teamName: teamName.trim(), teamCode: teamCode.trim(), displayName: adminName.trim(), password: adminPassword } },
+      {
+        onSuccess: (response) => onCreated(response),
+        onError: (error) => {
+          const body = (error as { data?: { error?: unknown } }).data;
+          setWizardError(typeof body?.error === "string" ? body.error : "Could not create that team. Try another name or code.");
+        },
+      },
+    );
+  };
+  const back = () => {
+    setWizardError("");
+    if (wizardStep === "admin") setWizardStep("code");
+    else if (wizardStep === "code") setWizardStep("team");
+  };
+  const stepLabel = wizardStep === "team" ? "Step 1 of 3" : wizardStep === "code" ? "Step 2 of 3" : "Step 3 of 3";
+  const heading = wizardStep === "team" ? "Name your team." : wizardStep === "code" ? "Set a team access code." : "Create your coordinator account.";
+  const description = wizardStep === "team"
+    ? "Each team is completely separate with its own access code, members, and data."
+    : wizardStep === "code"
+      ? "Share this code with your teammates so they can join. Type your own or roll a random one."
+      : "You will be the first admin. Sign in with this name and password from now on.";
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4" onClick={onClose} data-testid="new-team-wizard">
+    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create a new team" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">New team · {stepLabel}</p><h2 className="mt-1 text-xl font-semibold tracking-[-.02em]">{heading}</h2><p className="mt-1 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">{description}</p></div>
+        <button onClick={onClose} aria-label="Close new team" data-testid="button-close-new-team" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button>
+      </div>
+      <form onSubmit={submit} className="mt-5 space-y-4">
+        {wizardStep === "team" && <label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team name</span><input autoFocus value={teamName} onChange={e => setTeamName(e.target.value)} data-testid="input-new-team-name" placeholder="e.g. Wolverines" maxLength={80} className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label>}
+        {wizardStep === "code" && <div><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span><input autoFocus value={teamCode} onChange={e => setTeamCode(e.target.value)} data-testid="input-new-team-code" placeholder="e.g. CLAW-4821-KILO" maxLength={128} className="mono h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><button type="button" onClick={() => setTeamCode(randomTeamCodeSuggestion())} data-testid="button-random-team-code" className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-[#16869a] hover:underline"><RefreshCw size={13} /> Roll a random code</button><p className="mt-2 text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Each team code opens exactly one team. Keep it private to your team.</p></div>}
+        {wizardStep === "admin" && <><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Your name</span><input autoFocus value={adminName} onChange={e => setAdminName(e.target.value)} data-testid="input-new-team-admin-name" placeholder="e.g. Jordan Lee" maxLength={80} autoComplete="name" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><label className="block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Your personal password</span><input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} data-testid="input-new-team-admin-password" autoComplete="new-password" placeholder="••••••••" className="h-12 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" /></label><div className="rounded-xl border border-[#d5e0e0] bg-[#f8fbfa] px-4 py-3 text-xs leading-5 text-[#63747c] dark:border-[#2a3f4c] dark:bg-[#10202a] dark:text-[#a9bcc6]">Team <strong className="text-[#183a4b] dark:text-[#e6eef2]">{teamName.trim() || "your team"}</strong> · code <strong className="mono text-[#183a4b] dark:text-[#e6eef2]">{teamCode.trim()}</strong> — write the code down before continuing.</div></>}
+        {wizardError && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="new-team-error">{wizardError}</p>}
+        <button disabled={busy || (wizardStep === "team" && !teamName.trim()) || (wizardStep === "code" && (!teamCode.trim() || teamCode.trim().length < 4)) || (wizardStep === "admin" && (!adminName.trim() || !adminPassword))} data-testid="button-new-team-continue" className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Creating team…" : wizardStep === "admin" ? <>Create team and sign in <ArrowRight size={17} /></> : <>Continue <ArrowRight size={17} /></>}</button>
+        {wizardStep !== "team" && <button type="button" onClick={back} className="flex w-full items-center justify-center gap-1 py-1 text-sm font-semibold text-[#527079] dark:text-[#a4bbc3]"><RotateCcw size={14} /> Back</button>}
+      </form>
+    </div>
+  </div>;
 }
 
 function Login() {
   type LoginStep = "event" | "interviewer" | "add" | "password";
   const [step, setStep] = useState<LoginStep>("event");
   const [eventPassword, setEventPassword] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [newTeamOpen, setNewTeamOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [personalPassword, setPersonalPassword] = useState("");
   const [newName, setNewName] = useState("");
@@ -1696,23 +2257,24 @@ function Login() {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const interviewers = useListInterviewers({
+  const interviewerParams = step !== "event" && eventPassword.trim() ? { eventPassword: eventPassword.trim() } : undefined;
+  const interviewers = useListInterviewers(interviewerParams, {
     query: {
-      queryKey: getListInterviewersQueryKey(),
+      queryKey: getListInterviewersQueryKey(interviewerParams),
       enabled: step !== "event",
       retry: false,
       networkMode: "always",
-      queryFn: async ({ signal }) => {
+      queryFn: async ({ signal }: { signal?: AbortSignal }) => {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 5000);
-        const abortFromQuery = () => controller.abort(signal.reason);
-        if (signal.aborted) abortFromQuery();
-        else signal.addEventListener("abort", abortFromQuery, { once: true });
+        const abortFromQuery = () => controller.abort((signal as AbortSignal)?.reason);
+        if (signal?.aborted) abortFromQuery();
+        else signal?.addEventListener("abort", abortFromQuery, { once: true });
         try {
-          return await listInterviewers({ signal: controller.signal });
+          return await listInterviewers(interviewerParams, { signal: controller.signal });
         } finally {
           window.clearTimeout(timeout);
-          signal.removeEventListener("abort", abortFromQuery);
+          signal?.removeEventListener("abort", abortFromQuery);
         }
       },
     },
@@ -1728,7 +2290,8 @@ function Login() {
   const setup = useSetupInterviewerPassword();
   const create = useCreateInterviewer();
   const selected = teamAccounts.find(item => item.id === selectedId);
-  const busy = verifyEventPasscode.isPending || login.isPending || setup.isPending || create.isPending;
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const busy = verifyEventPasscode.isPending || login.isPending || setup.isPending || create.isPending || passkeyBusy;
   const returnTo = getSafeAuthReturnPath(new URLSearchParams(window.location.search).get("returnTo"));
 
   useEffect(() => {
@@ -1761,6 +2324,17 @@ function Login() {
     setLocation(returnTo);
   };
 
+  const finishTeamCreation = (response: { token?: string; label?: string; interviewerId?: string; teamId?: string; teamName?: string }) => {
+    const { token, ...sessionData } = response;
+    clearUserScopedRecords(qc, sessionData);
+    markCurrentSessionQueryAuthenticated();
+    markAuthSessionActive();
+    if (token) storeAuthToken(token);
+    setNewTeamOpen(false);
+    qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    setLocation(returnTo);
+  };
+
   const continueFromEvent = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
@@ -1772,8 +2346,9 @@ function Login() {
     verifyEventPasscode.mutate(
       { data: { eventPassword: normalizedEventPassword } },
       {
-        onSuccess: () => {
+        onSuccess: (response) => {
           setEventPassword(normalizedEventPassword);
+          setTeamName(response.teamName ?? "");
           setStep("interviewer");
         },
         onError: verificationError => setError(eventPasscodeErrorMessage(verificationError)),
@@ -1788,7 +2363,7 @@ function Login() {
     setStep("password");
   };
 
-  const setSelectedPassword = (confirmLowExposure = false) => {
+  const setSelectedPassword = async (confirmLowExposure = false) => {
     if (!selected) return;
     setup.mutate(
       {
@@ -1809,10 +2384,10 @@ function Login() {
             },
           );
         },
-        onError: error => {
+        onError: async error => {
           const issue = passwordSafetyIssue(error);
           if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && window.confirm(passwordExposureConfirmation(issue.count))) {
+            if (!confirmLowExposure && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
               setSelectedPassword(true);
               return;
             }
@@ -1826,6 +2401,24 @@ function Login() {
         },
       },
     );
+  };
+
+  const passkeysAvailable = typeof navigator !== "undefined" && browserSupportsPasskeys();
+  const signInWithPasskey = async () => {
+    if (!selected || !eventPassword.trim()) {
+      setError("Enter the team access code first.");
+      return;
+    }
+    setError("");
+    setPasskeyBusy(true);
+    try {
+      finishLogin(await loginWithPasskeyFlow(eventPassword.trim(), selected.id));
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Passkey was rejected.";
+      setError(`${message} — use the password instead.`);
+    } finally {
+      setPasskeyBusy(false);
+    }
   };
 
   const submitPassword = (event: React.FormEvent) => {
@@ -1842,7 +2435,7 @@ function Login() {
     );
   };
 
-  const createInterviewerAccount = (confirmLowExposure = false) => {
+  const createInterviewerAccount = async (confirmLowExposure = false) => {
     create.mutate(
       {
         data: {
@@ -1863,10 +2456,10 @@ function Login() {
             },
           );
         },
-        onError: error => {
+        onError: async error => {
           const issue = passwordSafetyIssue(error);
           if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && window.confirm(passwordExposureConfirmation(issue.count))) {
+            if (!confirmLowExposure && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
               createInterviewerAccount(true);
               return;
             }
@@ -1903,7 +2496,11 @@ function Login() {
   const back = () => {
     setError("");
     if (step === "event") return;
-    if (step === "interviewer") setStep("event");
+    if (step === "interviewer") {
+      setStep("event");
+      setTeamName("");
+      return;
+    }
     else if (step === "add") setStep("interviewer");
     else if (selectedId) setStep("interviewer");
     else setStep("add");
@@ -1977,14 +2574,19 @@ function Login() {
             )}
 
             {step === "event" && (
-              <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span>
-                  <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
-                </label>
-                {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
-                <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
-              </form>
+              <>
+                <form onSubmit={continueFromEvent} className="mt-9 space-y-5">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[.14em] text-[#63747c] dark:text-[#b5c5cb]">Team access code</span>
+                    <input ref={inputRef} autoFocus type="password" autoComplete="current-password" value={eventPassword} onChange={event => setEventPassword(event.target.value)} data-testid="input-event-passcode" className="h-14 w-full rounded-xl border border-[#cbd7da] bg-white px-4 text-lg tracking-[.25em] text-[#182232] outline-none focus:border-[#16869a] focus:ring-4 focus:ring-[#16869a]/10 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" placeholder="••••••••" />
+                  </label>
+                  {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
+                  <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
+                </form>
+                <div className="mt-4 flex items-center gap-3 text-xs text-[#7c8c91] dark:text-[#91a8b1]"><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /><span>or</span><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /></div>
+                <button type="button" onClick={() => setNewTeamOpen(true)} data-testid="button-new-team" className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#47747c] dark:text-[#80d2ca] dark:hover:bg-[#203b47]"><Plus size={17} /> New team</button>
+                <p className="mt-2 text-center text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Start a separate team with its own access code. Your current team's data stays untouched.</p>
+              </>
             )}
 
             {step === "interviewer" && (
@@ -2050,9 +2652,19 @@ function Login() {
                 </label>
                 {error && <p className="text-sm text-[#b34a42] dark:text-[#ff9388]" data-testid="login-error">{error}</p>}
                 <button disabled={busy || !personalPassword} data-testid="button-personal-password" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white disabled:opacity-50">{busy ? "Signing in…" : selected?.hasPassword ? <>Continue to workspace <ArrowRight size={17} /></> : <>Create password and continue <ArrowRight size={17} /></>}</button>
+                {selected?.hasPasskey && passkeysAvailable && (
+                  <div className="space-y-3 border-t border-[#d7e0e0] pt-4 dark:border-[#314955]">
+                    <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Faster — use a passkey</p>
+                    <button type="button" onClick={() => void signInWithPasskey()} disabled={busy} data-testid="button-passkey-login" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-[#cbd7da] bg-white font-semibold text-[#183a4b] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:hover:border-[#16869a]">{passkeyBusy ? "Waiting for passkey…" : <>Sign in with passkey <ArrowRight size={17} /></>}</button>
+                  <p className="text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Your device unlocks it (fingerprint, face, or PIN). The password still works whenever you prefer it.</p>
+                  </div>
+                )}
               </form>
             )}
 
+            {step !== "event" && teamName && (
+              <p data-testid="login-team-badge" className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#dff4f2] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.08em] text-[#12737d] dark:bg-[#1c3c43] dark:text-[#9bdbe2]">Team: {teamName}</p>
+            )}
             {step !== "event" && <button type="button" onClick={back} className="mt-5 flex w-full items-center justify-center gap-1 py-2 text-sm font-semibold text-[#527079] dark:text-[#a4bbc3]"><RotateCcw size={14} /> Back</button>}
             <div className="mt-8 flex items-start gap-3 border-t border-[#d7e0e0] pt-5 text-xs leading-5 text-[#728289] dark:border-[#314955] dark:text-[#a4bbc3]">
               <ShieldCheck size={17} className="mt-0.5 shrink-0 text-[#16869a]" />
@@ -2061,11 +2673,12 @@ function Login() {
           </div>
         </section>
       </div>
+      {newTeamOpen && <NewTeamWizard onClose={() => setNewTeamOpen(false)} onCreated={finishTeamCreation} />}
     </main>
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
+function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2107,7 +2720,7 @@ function Shell({ children }: { children: ReactNode }) {
   const broadcasts = useGetMyBroadcasts({
     query: {
       queryKey: getGetMyBroadcastsQueryKey(),
-      refetchInterval: 15000,
+      refetchInterval: streamHealthy ? false : (15000),
       enabled: session.data?.authenticated === true,
     },
   });
@@ -2150,19 +2763,76 @@ function Shell({ children }: { children: ReactNode }) {
   const isCoordinator = session.data?.role === "coordinator";
   const isTreasurer = session.data?.role === "treasurer";
   const shellPath = location.split(/[?#]/, 1)[0];
-  const isPartsAssistant = shellPath === "/parts/assistant" || shellPath.startsWith("/parts/assistant/");
-  // Team members: chat + parts. Treasurers also get the read-only roster.
-  const restrictedAllowed =
-    shellPath === "/chat" || shellPath.startsWith("/chat/") ||
+  // Only fetch visibility for a signed-in account: no private request may be
+  // issued before sign-in.
+  const isSignedIn = session.data?.authenticated === true;
+  const sessionUserId = session.data?.interviewerId;
+  // Accounts always have a role; default a missing one to the most restricted
+  // role so legacy role-based settings keep working (as before the per-user switch).
+  const sessionRole = session.data?.role ?? "interviewer";
+  const workspaceVisibility = useWorkspaceVisibility(isSignedIn, sessionRole, sessionUserId);
+  const visibility = workspaceVisibility.visibility;
+  const visibleWorkspaces = useMemo(() => {
+    const set = new Set<WorkspaceKey>();
+    // Per-user access: coordinators always see everything (enforced inside
+    // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
+    for (const key of visibleWorkspacesForUser(visibility, sessionUserId, sessionRole)) {
+      set.add(key);
+    }
+    return set;
+  }, [visibility, sessionUserId, sessionRole]);
+  const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
+  const isDashboardPath = shellPath === "/dashboard";
+  const isInterviewPath =
+    shellPath === "/interview" ||
+    shellPath.startsWith("/interview/") ||
     shellPath === "/applicants" ||
-    shellPath === "/parts" || (shellPath.startsWith("/parts/") && !isPartsAssistant);
-  const restrictedBlocked = session.data?.authenticated === true && !isCoordinator && !isTreasurer && !restrictedAllowed;
+    shellPath.startsWith("/applicants/") ||
+    shellPath === "/applicants/" ||
+    shellPath === "/queue" ||
+    shellPath.startsWith("/queue/") ||
+    shellPath === "/attendance" ||
+    shellPath.startsWith("/attendance/") ||
+    shellPath === "/big-screen" ||
+    shellPath.startsWith("/big-screen/");
+  const isChatPath =
+    shellPath === "/chat" ||
+    shellPath.startsWith("/chat/") ||
+    shellPath === "/assistant" ||
+    shellPath.startsWith("/assistant/") ||
+    shellPath.startsWith("/spreadsheets/");
+  const isPartsPath = shellPath === "/parts" || shellPath.startsWith("/parts/");
+  const isCadPath = shellPath === "/cad" || shellPath.startsWith("/cad/");
+  const isCodePath = shellPath === "/code" || shellPath.startsWith("/code/");
+  const isTreasurerRosterPath =
+    shellPath === "/applicants" || shellPath.startsWith("/applicants/");
+  const restrictedAllowed =
+    // /dashboard is the per-user home: every signed-in account can open it and
+    // sees only their own workspaces there.
+    isDashboardPath ||
+    isCoordinator ||
+    // Treasurers keep the read-only applicant roster even without Interview access.
+    (isTreasurer && isTreasurerRosterPath) ||
+    (areaCanSee("chat") && isChatPath) ||
+    (areaCanSee("interview") && isInterviewPath) ||
+    (areaCanSee("parts") && isPartsPath) ||
+    (areaCanSee("cad") && isCadPath) ||
+    (areaCanSee("code") && isCodePath);
+  const restrictedBlocked = isSignedIn && !restrictedAllowed;
+  // Send someone who cannot open this workspace to the first one they can, so
+  // hiding a workspace also stops it being reachable by URL. /dashboard stays
+  // reachable for everyone, so it is the final fallback.
+  const homeWorkspace = (["chat", "parts", "cad", "code", "interview"] as const).find((key) =>
+    areaCanSee(key),
+  );
+  const blockedFromCurrent =
+    restrictedBlocked && !(homeWorkspace !== undefined && shellPath === `/${homeWorkspace}`);
   useEffect(() => {
-    if (restrictedBlocked) setLocation("/chat");
-  }, [restrictedBlocked, setLocation]);
+    if (blockedFromCurrent) setLocation(homeWorkspace ? `/${homeWorkspace}` : "/dashboard");
+  }, [blockedFromCurrent, setLocation, homeWorkspace]);
   if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
-  if (restrictedBlocked) return null;
+  if (blockedFromCurrent) return null;
   const workspaceArea = workspaceAreaForPath(location);
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
@@ -2173,30 +2843,24 @@ function Shell({ children }: { children: ReactNode }) {
     bigScreen: MonitorCheck,
     assistant: Bot,
     parts: Box,
+    cad: Boxes,
+    code: SquareTerminal,
   };
-  const nav = (isCoordinator
-    ? getWorkspaceNavigation(workspaceArea)
-    : ([
-        { href: "/chat", label: "Chat", iconKey: "chat", kind: "workspace" },
-        { href: "/parts", label: "Parts", iconKey: "parts", kind: "workspace" },
-        ...(isTreasurer ? [{ href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section" }] : []),
-      ] as { href: string; label: string; iconKey: WorkspaceNavIcon; kind: "workspace" | "section" }[])).map((item) => ({
-    ...item,
-    icon: navIcons[item.iconKey],
-  }));
+  const nav = [
+    ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
+    // Treasurers keep the read-only applicant roster, which is granted
+    // separately from the rest of the Interview workspace.
+    ...(isTreasurer ? getCrossWorkspaceSections(visibleWorkspaces) : []),
+  ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace navigation">
-          {nav.map(({ href, label, icon: Icon, kind }) => {
+          {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
             const active = kind === "workspace"
-              ? (
-                  (href === "/interview" && workspaceArea === "interview") ||
-                  (href === "/chat" && workspaceArea === "chat") ||
-                  (href === "/parts" && workspaceArea === "parts")
-                )
+              ? workspaceArea === workspace
               : location === href ||
                 location.startsWith(`${href}/`) ||
                 (href === "/chat" && location.startsWith("/spreadsheets/"));
@@ -2239,7 +2903,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="lg:pl-[248px]">
         <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
           <button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button>
-          <div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Coordinator workspace</p></div>
+          <div><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">Wolverines / Team 23442</p><p className="text-sm font-semibold">Admin workspace</p></div>
           <div className="flex items-center gap-2">
             <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button>
             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
@@ -2252,7 +2916,7 @@ function Shell({ children }: { children: ReactNode }) {
           {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           {children}
         </main>
-        {pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Coordinator message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}
+        {pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Admin message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}
       </div>
     </div>
   );
@@ -2414,25 +3078,45 @@ function CustomCharts() {
     });
   };
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
-  return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with your co-coordinator."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
+  return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with the other admins."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
 function WorkspaceOverview() {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const sessionUserId = session.data?.interviewerId;
+  const sessionRole = session.data?.role ?? "interviewer";
+  const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, sessionRole, sessionUserId);
+  const isCoordinator = sessionRole === "coordinator";
+  const canSee = (key: WorkspaceKey) =>
+    userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
+  // Per-user workspace list in canonical order: numbering and the count below
+  // are relative to what this person can open, so the same workspace can be
+  // Workspace 01 for one person and Workspace 03 for another.
+  const visibleList = WORKSPACE_KEYS.filter((key) => canSee(key));
+  const workspaceNumber = (key: WorkspaceKey) =>
+    String(visibleList.indexOf(key) + 1).padStart(2, "0");
+  const spaceCount = String(visibleList.length).padStart(2, "0");
   return (
     <div className="fade-up min-h-[calc(100dvh-160px)] rounded-3xl bg-[#f1f5f4] px-4 py-5 text-[#182232] dark:bg-[#101b23] dark:text-[#e8eff2] sm:px-7 sm:py-7">
       <div className="mx-auto max-w-[1120px]">
         <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">Team 23442 · Coordinator workspace</p>
+            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">Team 23442 · {isCoordinator ? "Admin workspace" : "Team workspace"}</p>
             <h1 className="text-3xl font-semibold tracking-[-.05em] sm:text-[2.6rem]">Choose a workspace</h1>
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            03 spaces
+            {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
           </span>
         </header>
+        {visibleList.length === 0 && (
+          <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
+            No workspaces are assigned to your account yet. Ask an admin to add you in Settings → Workspace access.
+          </p>
+        )}
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="group" aria-label="Choose a workspace">
+        {canSee("interview") && (
         <Link
           href="/interview"
           data-testid="link-workspace-interview"
@@ -2445,7 +3129,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#d6e3e7]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#f8c84a]" />
-              Workspace 01
+              Workspace {workspaceNumber("interview")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#b5c8d0]">INTERVIEW</span>
           </span>
@@ -2478,7 +3162,9 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8c84a] text-[#182232] transition-transform group-hover:translate-x-1"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
 
+        {canSee("chat") && (
         <Link
           href="/chat"
           data-testid="link-workspace-chat"
@@ -2491,7 +3177,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-[#16869a]/15 bg-white/55 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#46646b] dark:border-white/15 dark:bg-white/[.06] dark:text-[#c3d7da]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#16869a] dark:bg-[#7ed0c4]" />
-              Workspace 02
+              Workspace {workspaceNumber("chat")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#55747a] dark:text-[#bed4d8]">TEAM CHAT</span>
           </span>
@@ -2523,7 +3209,9 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#16869a] text-white transition-transform group-hover:translate-x-1 dark:bg-[#48b8ab] dark:text-[#10252d]"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
 
+        {canSee("parts") && (
         <Link
           href="/parts"
           data-testid="link-workspace-parts"
@@ -2535,7 +3223,7 @@ function WorkspaceOverview() {
           <span className="relative z-10 flex items-center justify-between">
             <span className="mono inline-flex items-center gap-2 rounded-full border border-[#8f7029]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#665426] dark:border-white/15 dark:bg-white/[.06] dark:text-[#e3d6ad]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#b47c16] dark:bg-[#f8d879]" />
-              Workspace 03
+              Workspace {workspaceNumber("parts")}
             </span>
             <span className="mono text-[10px] tracking-[.12em] text-[#75683e] dark:text-[#e2d4a5]">PARTS & INVENTORY</span>
           </span>
@@ -2559,6 +3247,86 @@ function WorkspaceOverview() {
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#b47c16] text-white transition-transform group-hover:translate-x-1 dark:bg-[#f8c84a] dark:text-[#182232]"><ArrowRight size={17} /></span>
           </span>
         </Link>
+        )}
+
+        {canSee("cad") && (
+        <Link
+          href="/cad"
+          data-testid="link-workspace-cad"
+          className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#c9d6e6] bg-gradient-to-br from-[#eef3fa] via-[#e4ecf7] to-[#d5e1f0] p-6 text-[#1d2c3e] shadow-[0_20px_45px_rgba(38,62,96,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(38,62,96,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#263e60] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#3c506b] dark:bg-gradient-to-br dark:from-[#1d2c40] dark:via-[#233449] dark:to-[#2b4059] dark:text-[#e8eff2] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 -z-10 h-64 w-64 rounded-full border border-[#263e60]/15 dark:border-[#8fb3e0]/15" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-8 -z-10 h-52 w-52 rounded-full bg-[#4a6ea8]/[.10] blur-3xl dark:bg-[#7fa5dc]/[.08]" />
+
+          <span className="relative z-10 flex items-center justify-between">
+            <span className="mono inline-flex items-center gap-2 rounded-full border border-[#263e60]/20 bg-white/45 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#3d5878] dark:border-white/15 dark:bg-white/[.06] dark:text-[#cfdaea]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#263e60] dark:bg-[#8fb3e0]" />
+              Workspace {workspaceNumber("cad")}
+            </span>
+            <span className="mono text-[10px] tracking-[.12em] text-[#5a7396] dark:text-[#b6c8e2]">CAD &amp; MODELS</span>
+          </span>
+
+          <span className="relative z-10 flex flex-1 items-center justify-end py-5">
+            <span aria-hidden="true" className="relative mr-2 flex h-[142px] w-[172px] items-center justify-center sm:mr-7 sm:h-[160px] sm:w-[190px]">
+              <span className="absolute right-4 top-2 h-32 w-32 rotate-12 rounded-[28px] border border-[#263e60]/20 bg-white/35 shadow-[0_18px_35px_rgba(38,62,96,.10)] dark:border-white/10 dark:bg-white/[.04]" />
+              <span className="relative flex h-24 w-24 rotate-[-7deg] items-center justify-center rounded-[26px] border border-[#263e60]/20 bg-[#fbfcff] text-[#263e60] shadow-[0_18px_32px_rgba(38,62,96,.16)] dark:border-white/15 dark:bg-[#33465f] dark:text-[#bcd4f2]">
+                <Boxes size={42} strokeWidth={1.6} />
+              </span>
+              <span className="absolute bottom-1 left-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-[#f8c84a] text-[#182232] shadow-lg transition duration-300 group-hover:-translate-y-1 group-hover:rotate-[-6deg]"><Boxes size={19} /></span>
+            </span>
+          </span>
+
+          <span className="relative z-10">
+            <h2 className="text-[2rem] font-semibold leading-none tracking-[-.055em] sm:text-[2.35rem]">CAD</h2>
+            <span className="mt-2 block max-w-[300px] text-sm leading-6 text-[#42566f] dark:text-[#cddaea]">Drop in models, file them under bots and folders, and preview STEP, IGES, 3MF, and more in the browser.</span>
+          </span>
+          <span className="relative z-10 mt-5 flex items-center justify-between border-t border-[#263e60]/20 pt-4 text-sm font-semibold dark:border-white/15">
+            <span>Open CAD workspace</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#263e60] text-white transition-transform group-hover:translate-x-1 dark:bg-[#8fb3e0] dark:text-[#182232]"><ArrowRight size={17} /></span>
+          </span>
+        </Link>
+        )}
+
+        {canSee("code") && (
+        <Link
+          href="/code"
+          data-testid="link-workspace-code"
+          className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#3c4a57] bg-gradient-to-br from-[#232c36] via-[#2a3542] to-[#333f4e] p-6 text-[#eef2f5] shadow-[0_20px_45px_rgba(20,28,36,.20)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(20,28,36,.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f8c84a] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#4a5a6b] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 -z-10 h-64 w-64 rounded-full border border-[#f8c84a]/20" />
+          <span aria-hidden="true" className="pointer-events-none absolute -bottom-20 right-8 -z-10 h-52 w-52 rounded-full bg-[#0e639c]/[.25] blur-3xl" />
+
+          <span className="relative z-10 flex items-center justify-between">
+            <span className="mono inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.16em] text-[#cfd8de]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f8c84a]" />
+              Workspace {workspaceNumber("code")}
+            </span>
+            <span className="mono text-[10px] tracking-[.12em] text-[#9fb0bc]">ROBOT CODE</span>
+          </span>
+
+          <span className="relative z-10 flex flex-1 items-center justify-end py-5">
+            <span aria-hidden="true" className="relative mr-2 flex h-[142px] w-[172px] items-center justify-center sm:mr-7 sm:h-[160px] sm:w-[190px]">
+              <span className="absolute inset-x-4 inset-y-3 rounded-[20px] border border-white/15 bg-[#1e1e1e] shadow-[0_18px_35px_rgba(0,0,0,.30)]" />
+              <span className="mono relative p-4 text-left text-[10px] leading-5">
+                <span className="block text-[#569cd6]">@TeleOp</span>
+                <span className="block text-[#9cdcfe]">runOpMode() {"{"}</span>
+                <span className="block pl-3 text-[#d4d4d4]">drive.setPower(1);</span>
+                <span className="block text-[#9cdcfe]">{"}"}</span>
+              </span>
+              <span className="absolute bottom-1 left-1 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-[#f8c84a] text-[#182232] shadow-lg transition duration-300 group-hover:-translate-y-1 group-hover:rotate-[-6deg]"><SquareTerminal size={19} /></span>
+            </span>
+          </span>
+
+          <span className="relative z-10">
+            <h2 className="text-[2rem] font-semibold leading-none tracking-[-.055em] sm:text-[2.35rem]">Code</h2>
+            <span className="mt-2 block max-w-[300px] text-sm leading-6 text-[#c3cfd6]">Edit FTC Java together live, commit to any git endpoint, and deploy to the REV hub over USB.</span>
+          </span>
+          <span className="relative z-10 mt-5 flex items-center justify-between border-t border-white/15 pt-4 text-sm font-semibold">
+            <span>Open code workspace</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8c84a] text-[#182232] transition-transform group-hover:translate-x-1"><ArrowRight size={17} /></span>
+          </span>
+        </Link>
+        )}
       </div>
       </div>
     </div>
@@ -2595,10 +3363,10 @@ function InterviewOverview() {
     const skillMix = (["BUILD", "CAD", "CODE", "Unknown"] as const).filter(l => (skills.get(l) ?? 0) > 0).map(l => ({ label: l === "Unknown" ? "Unknown" : l[0] + l.slice(1).toLowerCase(), value: skills.get(l) ?? 0 }));
     return { genderMix, skillMix };
   }, [roster.data]);
-  if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, coordinators." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
+  if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, team." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, coordinators." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" xAxisLabel="Resource" yAxisLabel="Usage %" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" xAxisLabel="Resource" yAxisLabel="Usage %" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
 }
 function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
@@ -2739,7 +3507,7 @@ function Applicants() {
       return;
     }
     if (!roster.length) return;
-    if (!window.confirm(`Regenerate AI scores for all ${roster.length} applicants? This overwrites every score, recommendation, and summary from transcripts, and can take several minutes. Keep this tab open.`)) return;
+    if (!(await confirmAction({ title: `Regenerate AI scores for all ${roster.length} applicants?`, detail: "This overwrites every score, recommendation, and summary from transcripts, and can take several minutes. Keep this tab open.", danger: true, confirmLabel: "Regenerate all" }))) return;
     regenAllCancel.current = false;
     setRegenAll({ running: true, done: 0, total: roster.length, current: roster[0].name, failed: [], finished: false, cancelled: false, error: "" });
     const failed: string[] = [];
@@ -2763,7 +3531,7 @@ function Applicants() {
     setRegenAll(prev => ({ ...prev, running: false, failed, finished: true, cancelled }));
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Applicant review / triage" title="The applicant field." detail="Rank with your co-coordinator. Drag a candidate into a decision lane when the signal is clear." action={<div className="flex flex-wrap gap-2">
+    <PageHeading eyebrow="Applicant review / triage" title="The applicant field." detail="Rank with the team. Drag a candidate into a decision lane when the signal is clear." action={<div className="flex flex-wrap gap-2">
       <button onClick={() => setPrintOpen(true)} data-testid="button-print-roster" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Printer size={16} /> Print roster</button>
       <button onClick={() => setImportOpen(!importOpen)} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><FileUp size={16} /> Import roster</button>
       <button onClick={() => setExportOpen(!exportOpen)} data-testid="button-export" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Download size={16} /> Export roster</button>
@@ -2809,7 +3577,7 @@ function Applicants() {
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge><SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoThumbUrl ?? a.photoUrl} alt="" loading="lazy" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge><SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
 function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
 type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
 
@@ -2961,7 +3729,7 @@ const printFieldOptions: { key: PrintField; label: string }[] = [
   { key: "category", label: "Category" },
   { key: "status", label: "Interview status" },
   { key: "email", label: "Email" },
-  { key: "notes", label: "Coordinator notes" },
+  { key: "notes", label: "Admin notes" },
 ];
 
 function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose: () => void }) {
@@ -3005,24 +3773,55 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
 }
 
 function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); useEffect(() => { if (detail.data) { setNotes(detail.data.notes); setEditName(detail.data.name); setEditGrade(detail.data.grade); setEditEmail(detail.data.email ?? ""); setEditScore(String(detail.data.aiScore)); setEditRec(detail.data.aiRecommendation); } }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
-    setPhotoError("");
-    if (!file.type.startsWith("image/")) { setPhotoError("Please choose an image file."); return; }
     if (file.size > 5 * 1024 * 1024) { setPhotoError("Images must be under 5 MB."); return; }
+    // Shrink a list-view thumbnail in this tab (no new dependencies): rows
+    // load the ~15 KB thumb instead of the multi-MB original, which stays
+    // one click away in this detail view. Any thumb failure falls back to
+    // the original everywhere.
+    const buildThumb = async (): Promise<Blob | null> => {
+      try {
+        const bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, 192 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+      } catch {
+        return null;
+      }
+    };
+    const putObject = async (url: string, body: Blob, contentType: string) => {
+      const sameOrigin = (() => { try { return new URL(url, window.location.href).origin === window.location.origin; } catch { return false; } })();
+      const response = await fetch(url, { method: "PUT", headers: { "Content-Type": contentType }, body, ...(sameOrigin ? { credentials: "include" as const } : {}) });
+      if (!response.ok) throw new Error("Upload failed");
+    };
     try {
       const requested = await photoUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType: file.type } });
-      const putUrl = requested.uploadURL;
-      const sameOrigin = (() => { try { return new URL(putUrl, window.location.href).origin === window.location.origin; } catch { return false; } })();
-      const response = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file, ...(sameOrigin ? { credentials: "include" as const } : {}) });
-      if (!response.ok) throw new Error("Upload failed");
+      await putObject(requested.uploadURL, file, file.type);
       const photoUrl = `/api/storage/objects/${requested.objectPath.replace(/^\/objects\//, "")}`;
-      save({ photoUrl });
-    } catch {
-      setPhotoError("Photo upload failed. Try again.");
+      let photoThumbUrl: string | null = null;
+      const thumb = await buildThumb();
+      if (thumb) {
+        try {
+          const thumbRequested = await photoUpload.mutateAsync({ data: { name: `thumb-${file.name}`, size: thumb.size, contentType: "image/jpeg" } });
+          await putObject(thumbRequested.uploadURL, thumb, "image/jpeg");
+          photoThumbUrl = `/api/storage/objects/${thumbRequested.objectPath.replace(/^\/objects\//, "")}`;
+        } catch {
+          photoThumbUrl = null;
+        }
+      }
+      save(photoThumbUrl ? { photoUrl, photoThumbUrl } : { photoUrl });
+    } catch (photoFailure) {
+      setPhotoError(serverErrorMessage(photoFailure, "Photo upload failed. Try again."));
     }
   };
-  const destroy = () => { if (remove.isPending || !window.confirm(`Delete ${a.name} permanently? This cannot be undone.`)) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
-  if (readOnly) return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Coordinator notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
-  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Coordinator decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  const destroy = async () => { if (remove.isPending || !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
+  if (readOnly) return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
+  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Admin decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
 
@@ -3066,10 +3865,10 @@ function localHHMM(d = new Date()): string {
 
 type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; makeupDate?: string | null; attendanceExcused?: boolean | null };
 
-function DisplayTextCard() {
+function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: 5000 } });
-  const live = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 5000 } });
+  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
+  const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
   const update = useUpdateDisplaySettings();
   // Draft-first: edits live here only. Nothing reaches the big screen until
   // "Push to big screen" — the preview below shows exactly what push will do.
@@ -3237,7 +4036,7 @@ function AudioCard() {
     });
   };
   const redownload = async () => {
-    if (!window.confirm("Reset voices on this machine AND the big screen? Downloaded voice files are deleted everywhere; both pages reload fresh. Use this when speech sounds garbled.")) return;
+    if (!(await confirmAction({ title: "Reset voices on this machine AND the big screen?", detail: "Downloaded voice files are deleted everywhere; both pages reload fresh. Use this when speech sounds garbled.", danger: true, confirmLabel: "Reset voices" }))) return;
     setClearing(true);
     try {
       await clearLocalTtsCaches();
@@ -3426,6 +4225,9 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   gif: "image/gif",
   glb: "model/gltf-binary",
   stl: "model/stl",
+  obj: "model/obj",
+  ply: "model/ply",
+  "3mf": "model/3mf",
   x_b: "model/x-parasolid",
   x_t: "model/x-parasolid",
   heic: "image/heic",
@@ -3496,7 +4298,7 @@ function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type.startsWith("audio/")) return "audio";
-  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/x-parasolid") return "model";
+  if (type === "model/gltf-binary" || type === "model/stl" || type === "model/3mf" || type === "application/3mf" || type === "model/obj" || type === "model/ply" || type === "application/ply" || type === "model/x-parasolid") return "model";
   return "file";
 }
 function ChatAttachmentPreview({ file }: { file: { name: string; previewUrl: string; kind: ChatFileKind; inlineImage: boolean } }) {
@@ -3568,7 +4370,7 @@ function parseSpreadsheetChatMessage(message: string): { id: string; title: stri
   return { id: match[1], title: match[2]?.trim() || "Shared spreadsheet" };
 }
 
-function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) {
+function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
   const [location, setLocation] = useLocation();
@@ -3579,7 +4381,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     query: {
       queryKey: getListChatCustomEmojisQueryKey(),
       staleTime: 15_000,
-      refetchInterval: 30_000,
+      refetchInterval: streamHealthy ? false : (30_000),
     },
   });
   const customEmojiItems = useMemo(() => customEmojisQuery.data?.items ?? [], [customEmojisQuery.data?.items]);
@@ -3615,7 +4417,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     } catch { /* private browsing etc. */ }
   }, []);
   const conversations = useGetChatConversations({
-    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: 5000 },
+    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )},
   });
   const unreadPeers = useMemo(() => {
     const active = conversationPeer?.trim().toLowerCase() ?? "";
@@ -3652,7 +4454,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     author: activeInterviewer,
     ...(conversationPeer ? { peer: conversationPeer } : {}),
   }), [activeInterviewer, conversationPeer, conversationScope]);
-  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: refreshMs } });
+  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
   const [chatHasMore, setChatHasMore] = useState(true);
@@ -3682,6 +4484,37 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   }, [chatItems]);
   const chatItemsRef = useRef<InterviewChatMessage[]>([]);
   chatItemsRef.current = chatItems;
+  const [pinnedPreviewIndex, setPinnedPreviewIndex] = useState(0);
+  const pinnedChatMessages = useMemo(() => chatItems
+    .filter(item => Boolean(item.pinnedAt))
+    .sort((a, b) => {
+      const aPinned = a.pinnedAt ? Date.parse(a.pinnedAt) : Number.NaN;
+      const bPinned = b.pinnedAt ? Date.parse(b.pinnedAt) : Number.NaN;
+      if (Number.isFinite(aPinned) && Number.isFinite(bPinned) && aPinned !== bPinned) return bPinned - aPinned;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    }), [chatItems]);
+  const activePinnedMessage = pinnedChatMessages.length
+    ? pinnedChatMessages[Math.min(Math.max(pinnedPreviewIndex, 0), pinnedChatMessages.length - 1)]
+    : null;
+  useEffect(() => {
+    setPinnedPreviewIndex(current => {
+      if (pinnedChatMessages.length === 0) return 0;
+      return Math.min(current, pinnedChatMessages.length - 1);
+    });
+  }, [pinnedChatMessages.length, conversationId]);
+  const jumpToPinnedMessage = useCallback((messageId: string) => {
+    const target = document.getElementById(`chat-message-${messageId}`);
+    if (!target) return;
+    target.scrollIntoView({
+      behavior: settings.reduceMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    target.classList.remove("chat-pinned-flash");
+    // Re-trigger the highlight animation so the jumped-to message is easy to spot.
+    void target.offsetWidth;
+    target.classList.add("chat-pinned-flash");
+    window.setTimeout(() => target.classList.remove("chat-pinned-flash"), 1600);
+  }, [settings.reduceMotion]);
   const sendChat = useSendInterviewChat();
   const chatAttachmentUpload = useRequestUploadUrl();
   const ask = useAskAssistant();
@@ -3696,30 +4529,35 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [pollError, setPollError] = useState("");
-  const [pollBusy, setPollBusy] = useState(false);
   const createPollMutation = useCreateChatPoll();
-  useEffect(() => { setPollBusy(createPollMutation.isPending || sendChat.isPending); }, [createPollMutation.isPending, sendChat.isPending]);
+  const pollBusy = createPollMutation.isPending || sendChat.isPending;
   const votePollMutation = useVoteChatPoll();
   const resetPollDraft = () => {
     setPollQuestion("");
     setPollOptions(["", ""]);
     setPollError("");
   };
-  const submitPoll = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitPoll = async (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     const question = pollQuestion.trim();
     const options = pollOptions.map((option) => option.trim()).filter(Boolean);
     if (!question) { setPollError("Ask a question."); return; }
     if (options.length < 2) { setPollError("Add at least two options."); return; }
-    const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question } });
-    await createPollMutation.mutateAsync({ messageId: posted.id, data: { question, options } });
-    setPollOpen(false);
-    resetPollDraft();
-    qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+    setPollError("");
+    try {
+      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), scope: conversationScope, ...(conversationPeer ? { recipient: conversationPeer } : {}), ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
+      await createPollMutation.mutateAsync({ messageId: posted.id, data: { question: question.slice(0, 200), options: options.slice(0, 8) } });
+      setPollOpen(false);
+      resetPollDraft();
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+    } catch (error) {
+      setPollError(serverErrorMessage(error, "Couldn't post the poll. Try again."));
+    }
   };
   const voteOnPoll = (messageId: string, optionIndex: number) => {
     votePollMutation.mutate({ messageId, data: { optionIndex } }, {
-      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() }); },
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
   };
   const [editDraft, setEditDraft] = useState("");
@@ -3734,7 +4572,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const whiteboards = useListInterviewWhiteboards(chatParams, {
     query: {
       queryKey: getListInterviewWhiteboardsQueryKey(chatParams),
-      refetchInterval: refreshMs,
+      refetchInterval: streamHealthy ? false : (refreshMs),
     },
   });
   const createWhiteboard = useCreateInterviewWhiteboard();
@@ -3778,6 +4616,275 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     saveChatDraft(chatDraftStorageKey, message);
   }, [chatDraftStorageKey, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
+  const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
+  const [slowDeadline, setSlowDeadline] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
+  // 429s can happen without a local send (e.g. a stale tab), so tick whenever
+  // a deadline is pending and stop again once it has elapsed.
+  useEffect(() => {
+    if (slowDeadline === 0) return;
+    const tick = () => {
+      const nowTs = Date.now();
+      setClock(nowTs);
+      if (nowTs >= slowDeadline) setSlowDeadline(0);
+    };
+    const timer = setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, [slowDeadline]);
+  const slowmodeRemaining = slowDeadline > 0 ? Math.max(0, Math.ceil((slowDeadline - clock) / 1000)) : 0;
+  const startSlowmodeCountdown = (seconds: number) => {
+    if (seconds > 0) setSlowDeadline(Date.now() + seconds * 1000);
+  };
+  const scheduledListQuery = useListScheduledChats({
+    query: {
+      queryKey: getListScheduledChatsQueryKey(),
+      refetchInterval: streamHealthy ? false : 5000,
+    },
+  });
+  const scheduledItems = useMemo(() => scheduledListQuery.data?.items ?? [], [scheduledListQuery.data]);
+  const createScheduledChat = useCreateScheduledChat();
+  const deleteScheduledChat = useDeleteScheduledChat();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleError, setScheduleError] = useState("");
+  const [scheduleNotice, setScheduleNotice] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const scheduledForConversation = useMemo(() => scheduledItems
+    .filter(item => (item.status === "pending" || item.status === "sending")
+      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
+    [scheduledItems, conversationScope, conversationPeer]);
+  // Dialog list also surfaces failed deliveries (with the error) so they can
+  // be dismissed or recreated instead of vanishing silently.
+  const scheduledDialogItems = useMemo(() => scheduledItems
+    .filter(item => (item.status === "pending" || item.status === "sending" || item.status === "failed")
+      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+    .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
+    [scheduledItems, conversationScope, conversationPeer]);
+  const openScheduleMenu = () => {
+    setScheduleError("");
+    setScheduleNotice("");
+    const suggested = new Date(Date.now() + 60 * 60 * 1000);
+    setScheduleDate(current => current || toLocalInputDate(suggested));
+    setScheduleTime(current => current || toLocalInputTime(suggested));
+    setScheduleOpen(true);
+    setEmojiOpen(false);
+    setFormattingOpen(false);
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    setVoiceMenuOpen(false);
+    setMentionOpen(false);
+    setPollOpen(false);
+  };
+  const applySchedulePreset = (when: Date) => {
+    setScheduleDate(toLocalInputDate(when));
+    setScheduleTime(toLocalInputTime(when));
+    setScheduleError("");
+  };
+  // Upload composer attachments right now and return markdown embeds, so a
+  // scheduled message carries exactly what an immediate send would post.
+  // Every successful upload is also appended to `collectedIds` for
+  // best-effort cleanup if a later step fails. Shared with submitChat.
+  const uploadComposerAttachments = async (
+    files: typeof chatFiles,
+    onStage: (stage: string) => void,
+    collectedIds: string[] = [],
+  ): Promise<{ embeds: string[]; uploadedIds: string[] }> => {
+    const embeds: string[] = [];
+    const uploadedIds: string[] = [];
+    const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
+    const prepareOrFail = async (file: File, displayName: string): Promise<PreparedChatFile> => {
+      try {
+        return await prepareChatFile(file);
+      } catch (error) {
+        throw new Error(
+          "USER:" +
+            (error instanceof Error && error.message === "unreadable"
+              ? `"${displayName}" can't be read in this browser.`
+              : error instanceof Error && error.message === "unreadable-heic"
+                ? `Couldn't convert "${displayName}" (iPhone photo).`
+                : error instanceof Error && error.message.startsWith("timeout:")
+                  ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
+                  : "Couldn't prepare attachments. Try again."),
+        );
+      }
+    };
+    for (const f of files) {
+      onStage(`prepare:${f.name}`);
+      setFileStatus(current => ({ ...current, [f.id]: "Preparing…" }));
+      const prepared = await prepareOrFail(f.file, f.name);
+      onStage(`upload:${f.name}`);
+      setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
+      let objectId = "";
+      let chunked = false;
+      let response: Response | null = null;
+      try {
+        const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
+        const controller = new AbortController();
+        const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
+        const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
+        try {
+          if (useSignedUpload) {
+            const requested = await chatAttachmentUpload.mutateAsync({
+              data: {
+                name: prepared.name,
+                size: prepared.blob.size,
+                contentType: prepared.type,
+              },
+            });
+            const sameOriginUpload = (() => {
+              try {
+                return new URL(requested.uploadURL, window.location.href).origin === window.location.origin;
+              } catch {
+                return false;
+              }
+            })();
+            response = await fetch(requested.uploadURL, {
+              method: "PUT",
+              headers: { "Content-Type": prepared.type },
+              body: prepared.blob,
+              ...(sameOriginUpload ? { credentials: "include" as const } : {}),
+              signal: controller.signal,
+            });
+            if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
+            objectId = requested.objectPath.replace(/^\/objects\//, "");
+            if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+          } else if (shouldUseChunkedUpload(prepared.blob.size)) {
+            // Big files go part-by-part straight to storage so the API
+            // never has to hold the whole thing in memory.
+            setFileStatus(current => ({ ...current, [f.id]: "Uploading in parts…" }));
+            const chunkedPath = await uploadChunked(prepared.blob, prepared.name, prepared.type, (done, total) => {
+              setFileStatus(current => ({
+                ...current,
+                [f.id]: `Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`,
+              }));
+            });
+            objectId = chunkedPath.replace(/^\/objects\//, "");
+            if (!objectId || !objectId.startsWith("chunk/")) fail("Upload failed (bad response). Try again.");
+            chunked = true;
+          } else {
+            response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
+              method: "POST",
+              headers: { "Content-Type": prepared.type },
+              body: prepared.blob,
+              credentials: "include",
+              signal: controller.signal,
+            });
+          }
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            fail(useSignedUpload
+              ? "CAD upload timed out after 10 minutes. Try again on a faster connection."
+              : "Upload timed out after 45 seconds. Try again on a faster connection.");
+          }
+          throw error;
+        } finally {
+          clearTimeout(abortTimer);
+        }
+        if (!useSignedUpload && !chunked && response && !response.ok) {
+          let detail = "";
+          try {
+            const parsed = await response.json() as { error?: unknown };
+            if (typeof parsed?.error === "string" && parsed.error) detail = `: ${parsed.error}`;
+          } catch { /* ignore parse errors */ }
+          fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
+        }
+        if (!useSignedUpload && !chunked) {
+          const parsed = await (response as Response).json() as { objectPath?: unknown };
+          objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
+          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith("USER:")) throw error;
+        fail("Upload failed (network). Try again.");
+      }
+      uploadedIds.push(objectId);
+      collectedIds.push(objectId);
+      const safeName = prepared.name.replace(/[\[\]\r\n]/g, "_");
+      embeds.push(prepared.inlineImage
+        ? `![${safeName}](/api/storage/objects/${objectId})`
+        : `[${safeName}](/api/storage/objects/${objectId})`);
+    }
+    return { embeds, uploadedIds };
+  };
+  const cancelScheduledMessage = (id: string) => {
+    deleteScheduledChat.mutate({ scheduledId: id }, {
+      onSuccess: () => {
+        setScheduleNotice("Scheduled message cancelled.");
+        void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
+      },
+      onError: (error) => {
+        setScheduleError(serverErrorMessage(error, "Couldn't cancel the scheduled message. Try again."));
+      },
+    });
+  };
+  // Schedule the FULL composer — text, attachments (uploaded now and embedded),
+  // poll draft, and reply reference — for server-side delivery. Nothing needs
+  // to stay open: the server posts it even with every browser closed.
+  const confirmScheduleMessage = async () => {
+    const draft = message.trim();
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((option) => option.trim()).filter(Boolean);
+    const pollTouched = pollOpen && (question.length > 0 || options.length > 0);
+    let pollSpec: { question: string; options: string[] } | null = null;
+    if (pollTouched) {
+      if (!question) { setScheduleError("Give the poll a question, or close the poll form."); return; }
+      if (options.length < 2) { setScheduleError("Add at least two poll options, or close the poll form."); return; }
+      pollSpec = { question: question.slice(0, 200), options: options.slice(0, 8) };
+    }
+    if (!draft && chatFiles.length === 0 && !pollSpec) { setScheduleError("Write a message, attach a file, or add a poll first."); return; }
+    if (draft.length > CHAT_MESSAGE_MAX_CHARS) { setScheduleError("Message is too long — shorten the text."); return; }
+    if (failedAiReply && /@ai\b/i.test(draft)) { setScheduleError("Retry the saved AI reply before scheduling another @ai prompt."); return; }
+    const target = parseLocalSchedule(scheduleDate, scheduleTime);
+    if (!target) { setScheduleError("Pick a date and time."); return; }
+    const nowMs = Date.now();
+    if (target.getTime() <= nowMs + 30_000) { setScheduleError("Pick a time at least a minute in the future."); return; }
+    if (target.getTime() - nowMs > SCHEDULED_CHAT_MAX_FUTURE_MS) { setScheduleError("Pick a time within the next year."); return; }
+    setScheduleError("");
+    setScheduling(true);
+    const uploadedIds: string[] = [];
+    try {
+      let body = draft;
+      if (chatFiles.length > 0) {
+        const result = await uploadComposerAttachments(chatFiles, () => {}, uploadedIds);
+        body = [draft, result.embeds.join("\n")].filter(Boolean).join("\n");
+      }
+      if (!body && pollSpec) body = pollSpec.question;
+      if (!body) { setScheduleError("Write a message first, then schedule it."); return; }
+      await createScheduledChat.mutateAsync({
+        data: {
+          message: body,
+          scope: conversationScope,
+          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
+          ...(pollSpec ? { poll: pollSpec } : {}),
+          scheduledAt: target.toISOString(),
+        },
+      });
+      for (const f of chatFiles) URL.revokeObjectURL(f.previewUrl);
+      setChatFiles([]);
+      setFileStatus({});
+      clearChatDraft(chatDraftStorageKey);
+      setMessage("");
+      setMentionOpen(false);
+      setMentionQuery("");
+      setReplyingTo(null);
+      if (pollSpec) { setPollOpen(false); resetPollDraft(); }
+      setScheduleError("");
+      setScheduleNotice(`Scheduled for ${formatScheduledAt(target.toISOString())} — sends automatically, even with this browser closed.`);
+      setChatError("");
+      void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
+    } catch (error) {
+      for (const id of uploadedIds) {
+        try { await fetch(`${import.meta.env.BASE_URL}api/storage/objects/${id}`, { method: "DELETE", credentials: "include" }); } catch { /* best-effort cleanup */ }
+      }
+      const detail = error instanceof Error && error.message.startsWith("USER:") ? error.message.slice(5) : null;
+      setScheduleError(detail ?? serverErrorMessage(error, "Couldn't schedule — nothing was saved. Try again."));
+    } finally {
+      setScheduling(false);
+    }
+  };
   const [failedAiReply, setFailedAiReply] = useState<{
     answer: string;
     activities: { tool: string; detail: string }[];
@@ -3798,7 +4905,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       query: {
         queryKey: getListApplicantsQueryKey({ sort: "rank" }),
         enabled: mentionOpen,
-        refetchInterval: mentionOpen ? refreshMs : false,
+        refetchInterval: streamHealthy ? false : (mentionOpen ? refreshMs : false),
       },
     },
   );
@@ -3813,7 +4920,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     [applicantMentionsQuery.data?.items, mentionLabels],
   );
   const mentionPeople = useMemo<ChatMentionPerson[]>(() => [
-    { token: "all", label: "All interviewers", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
+    { token: "all", label: "All team members", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
     ...mentionLabels.map(label => ({
       token: label,
       label,
@@ -3844,12 +4951,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setWhiteboardOpen(true);
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
+    setScheduleOpen(false);
   };
   const openBoard = (id: string) => {
     setActiveBoardId(id);
     setBoardOpen(true);
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
+    setScheduleOpen(false);
   };
   const openSpreadsheet = (id: string) => {
     setComposerMenuOpen(false);
@@ -4076,6 +5185,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setMentionOpen(false);
       setEmojiOpen(false);
       setComposerMenuOpen(false);
+      setScheduleOpen(false);
       return;
     }
     if (mentionOpen && filteredMentionPeople.length > 0) {
@@ -4217,6 +5327,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setChatHasMore(true);
     setChatLoadingMore(false);
     setMentionAttention(null);
+    setPinnedPreviewIndex(0);
     seenChatMessagesRef.current = null;
     setReplyingTo(null);
     setEditingMessageId(null);
@@ -4373,8 +5484,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       },
     );
   };
-  const removeChatMessage = (item: InterviewChatMessage) => {
-    if (deleteChatMessage.isPending || !window.confirm("Delete this message? This cannot be undone.")) return;
+  const removeChatMessage = async (item: InterviewChatMessage) => {
+    if (deleteChatMessage.isPending || !(await confirmAction({ title: "Delete this message?", detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return;
     setChatError("");
     deleteChatMessage.mutate(
       { messageId: item.id },
@@ -4433,7 +5544,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!message.trim() && !chatFiles.length) return;
-    if (message.trim().length > 900) { setChatError("Message is too long — shorten the text."); return; }
+    if (message.trim().length > CHAT_MESSAGE_MAX_CHARS) { setChatError("Message is too long — shorten the text."); return; }
     const draft = message.trim();
     if (failedAiReply && /@ai\b/i.test(draft)) {
       setChatError("Retry the saved AI reply before sending another @ai prompt.");
@@ -4449,121 +5560,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     let assistantReplyForRetry: typeof failedAiReply = null;
     const fileInfo = chatFiles.map(f => `${f.name}|${f.file.type || "notype"}|${Math.round(f.size / 1024)}kb`).join(";");
     const diagContext = () => `files:[${fileInfo}] ua:${navigator.userAgent.slice(0, 160)}`;
-    const fail = (userMessage: string): never => { throw new Error(`USER:${userMessage}`); };
-    const prepareOrFail = async (file: File, displayName: string): Promise<PreparedChatFile> => {
-      try {
-        return await prepareChatFile(file);
-      } catch (error) {
-        throw new Error(
-          "USER:" +
-            (error instanceof Error && error.message === "unreadable"
-              ? `"${displayName}" can't be read in this browser.`
-              : error instanceof Error && error.message === "unreadable-heic"
-                ? `Couldn't convert "${displayName}" (iPhone photo).`
-                : error instanceof Error && error.message.startsWith("timeout:")
-                  ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
-                  : "Couldn't prepare attachments. Try again."),
-        );
-      }
-    };
     setChatUploading(true);
     try {
-      const embeds: string[] = [];
-      for (const f of chatFiles) {
-        stage = `prepare:${f.name}`;
-        setFileStatus(current => ({ ...current, [f.id]: "Preparing…" }));
-        const prepared = await prepareOrFail(f.file, f.name);
-        stage = `upload:${f.name}`;
-        setFileStatus(current => ({ ...current, [f.id]: "Uploading…" }));
-        let objectId = "";
-        let chunked = false;
-        let response: Response | null = null;
-        try {
-          const useSignedUpload = prepared.type === "model/x-parasolid" && prepared.blob.size > CHAT_MAX_FILE_BYTES;
-          const controller = new AbortController();
-          const uploadTimeoutMs = useSignedUpload ? 10 * 60_000 : 45_000;
-          const abortTimer = setTimeout(() => controller.abort(), uploadTimeoutMs);
-          try {
-            if (useSignedUpload) {
-              const requested = await chatAttachmentUpload.mutateAsync({
-                data: {
-                  name: prepared.name,
-                  size: prepared.blob.size,
-                  contentType: prepared.type,
-                },
-              });
-              const sameOriginUpload = (() => {
-                try {
-                  return new URL(requested.uploadURL, window.location.href).origin === window.location.origin;
-                } catch {
-                  return false;
-                }
-              })();
-              response = await fetch(requested.uploadURL, {
-                method: "PUT",
-                headers: { "Content-Type": prepared.type },
-                body: prepared.blob,
-                ...(sameOriginUpload ? { credentials: "include" as const } : {}),
-                signal: controller.signal,
-              });
-              if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
-              objectId = requested.objectPath.replace(/^\/objects\//, "");
-              if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
-            } else if (shouldUseChunkedUpload(prepared.blob.size)) {
-              // Big files go part-by-part straight to storage so the API
-              // never has to hold the whole thing in memory.
-              setFileStatus(current => ({ ...current, [f.id]: "Uploading in parts…" }));
-              const chunkedPath = await uploadChunked(prepared.blob, prepared.name, prepared.type, (done, total) => {
-                setFileStatus(current => ({
-                  ...current,
-                  [f.id]: `Uploading ${Math.round((done / Math.max(total, 1)) * 100)}%`,
-                }));
-              });
-              objectId = chunkedPath.replace(/^\/objects\//, "");
-              if (!objectId || !objectId.startsWith("chunk/")) fail("Upload failed (bad response). Try again.");
-              chunked = true;
-            } else {
-              response = await fetch(`${import.meta.env.BASE_URL}api/storage/uploads`, {
-                method: "POST",
-                headers: { "Content-Type": prepared.type },
-                body: prepared.blob,
-                credentials: "include",
-                signal: controller.signal,
-              });
-            }
-          } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") {
-              fail(useSignedUpload
-                ? "CAD upload timed out after 10 minutes. Try again on a faster connection."
-                : "Upload timed out after 45 seconds. Try again on a faster connection.");
-            }
-            throw error;
-          } finally {
-            clearTimeout(abortTimer);
-          }
-          if (!useSignedUpload && !chunked && response && !response.ok) {
-            let detail = "";
-            try {
-              const parsed = await response.json() as { error?: unknown };
-              if (typeof parsed?.error === "string" && parsed.error) detail = `: ${parsed.error}`;
-            } catch { /* ignore parse errors */ }
-            fail(`Upload failed (HTTP ${response.status})${detail}. Try again.`);
-          }
-          if (!useSignedUpload && !chunked) {
-            const parsed = await (response as Response).json() as { objectPath?: unknown };
-            objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
-            if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
-          }
-        } catch (error) {
-          if (error instanceof Error && error.message.startsWith("USER:")) throw error;
-          fail("Upload failed (network). Try again.");
-        }
-        uploadedIds.push(objectId);
-        const safeName = prepared.name.replace(/[\[\]\r\n]/g, "_");
-        embeds.push(prepared.inlineImage
-          ? `![${safeName}](/api/storage/objects/${objectId})`
-          : `[${safeName}](/api/storage/objects/${objectId})`);
-      }
+      const { embeds, uploadedIds: uploaded } = await uploadComposerAttachments(chatFiles, (next) => { stage = next; });
+      uploadedIds.push(...uploaded);
       const submitted = [draft, embeds.join("\n")].filter(Boolean).join("\n");
       stage = "send";
       await withTimeout(sendChat.mutateAsync({
@@ -4576,13 +5576,35 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         },
       }), 30000, "send");
       userPosted = true;
+      const configuredSlowmode = slowmodeConfig.data?.slowmodeSeconds ?? 0;
+      if (configuredSlowmode > 0 && conversationScope === "shared") startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-         const chatContext = [...chatItems, { author, message: submitted }].slice(-12).map(item => ({ author: item.author, message: item.message }));
-        const response = await withTimeout(ask.mutateAsync({ data: { question, applicantIds, chatContext } }), 120000, "ai");
+        // Pull the newest 100 messages straight from the API so the assistant
+        // sees real history, not just the page currently rendered. Falls back
+        // to what is loaded if the extra fetch fails.
+        let history = chatItems;
+        try {
+          const fresh = await withTimeout(
+            getInterviewChat({
+              limit: CHAT_CONTEXT_MESSAGE_LIMIT,
+              scope: conversationScope,
+              ...(conversationPeer ? { peer: conversationPeer } : {}),
+            }),
+            15000,
+            "history",
+          );
+          if (fresh.items.length) history = fresh.items;
+        } catch { /* fall back to the loaded page */ }
+        const chatContext = [...history, { author, message: submitted }]
+          .slice(-CHAT_CONTEXT_MESSAGE_LIMIT)
+          .map(item => ({ author: item.author, message: item.message }));
+        // No timeout here: the agent keeps calling tools until it is done, so
+        // a long multi-step answer must not be cut off at an arbitrary mark.
+        const response = await ask.mutateAsync({ data: { question, applicantIds, chatContext } });
         assistantReplyForRetry = {
           answer: response.answer,
           activities: response.activities ?? [],
@@ -4639,11 +5661,22 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           : userPosted
             ? "The AI answer failed. Your message was saved — try again."
             : serverErrorMessage(error, "Couldn't send — nothing was posted. Try again.");
+      if (error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 429) {
+        const data = (error as { data?: { retryAfter?: number } }).data;
+        const waitSeconds = Math.max(1, Number(data?.retryAfter ?? 10));
+        startSlowmodeCountdown(waitSeconds);
+      }
       setChatError(errorMessage);
     } finally {
       setChatUploading(false);
     }
   };
+  // Countdowns for the server-side scheduled list refresh off the shared clock.
+  useEffect(() => {
+    if (!scheduledForConversation.length) return;
+    const tick = setInterval(() => setClock(Date.now()), 30000);
+    return () => clearInterval(tick);
+  }, [scheduledForConversation.length]);
   const renderChatMessage = (item: InterviewChatMessage) => {
     const parent = item.parentMessageId ? chatItems.find(candidate => candidate.id === item.parentMessageId) : undefined;
     const replyCount = replyCounts.get(item.id) ?? 0;
@@ -4661,6 +5694,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
         </div>
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+          {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
@@ -4730,7 +5764,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
    return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
-      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Interviewer chat"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
       {mentionAttention && <button
         type="button"
         onClick={() => {
@@ -4759,7 +5793,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        </div>
        <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
      </div>
-     <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form onSubmit={submitChat} className="mt-3 space-y-2">
        {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
@@ -4796,10 +5830,50 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
            onSelect={value => { insertAtCursor(value); setEmojiOpen(false); }}
          />}
-           {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
+            {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
+            {scheduleOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-[340px] max-w-[calc(100vw-3rem)] rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="chat-schedule-menu" role="dialog" aria-label="Schedule message send">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-[#183a4b]">Schedule send</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
+                </div>
+                <button type="button" onClick={() => setScheduleOpen(false)} aria-label="Close schedule menu" data-testid="button-close-schedule-menu" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
+              </div>
+              {message.trim() || chatFiles.length > 0 ? <p className="mt-2 truncate rounded-lg bg-[#f4f8f7] px-2.5 py-2 text-xs text-[#52666e]" data-testid="schedule-draft-preview">“{(message.trim() || `${chatFiles.length} attachment${chatFiles.length === 1 ? "" : "s"}`).slice(0, 120)}{(message.trim() || "").length > 120 ? "…" : ""}”{pollOpen && (pollQuestion.trim() || pollOptions.some(option => option.trim())) ? " + poll" : ""}</p> : <p className="mt-2 rounded-lg bg-[#fff8e1] px-2.5 py-2 text-[11px] text-[#8a6508]">Write a message, attach a file, or draft a poll first — then pick a time.</p>}
+              {replyingTo && <p className="mt-1.5 text-[11px] text-[#527079]">Will send as a reply to {replyingTo.author}.</p>}
+              <div className="mt-2 flex gap-2">
+                <button type="button" onClick={() => applySchedulePreset(new Date(Date.now() + 60 * 60 * 1000))} data-testid="button-schedule-in-1h" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">In 1 hour</button>
+                <button type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + 1); next.setHours(9, 0, 0, 0); if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1); applySchedulePreset(next); }} data-testid="button-schedule-tomorrow-9am" className="flex-1 rounded-lg border border-[#d5e0e0] px-2 py-1.5 text-[11px] font-semibold text-[#385762] transition hover:border-[#16869a] hover:text-[#16869a]">Tomorrow 9am</button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="block text-[11px] font-semibold text-[#63747c]">Date<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} data-testid="input-schedule-date" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+                <label className="block text-[11px] font-semibold text-[#63747c]">Time<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} data-testid="input-schedule-time" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+              </div>
+              {scheduleError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="schedule-error">{scheduleError}</p>}
+              {scheduleNotice && <p className="mt-2 text-xs font-medium text-[#16869a]" role="status" data-testid="schedule-notice">{scheduleNotice}</p>}
+              <div className="mt-2 flex items-center gap-2">
+                <button type="button" onClick={() => void confirmScheduleMessage()} disabled={scheduling || createScheduledChat.isPending || (!message.trim() && chatFiles.length === 0 && !pollQuestion.trim() && !pollOptions.some(option => option.trim()))} data-testid="button-confirm-schedule" className="flex-1 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{scheduling || createScheduledChat.isPending ? "Scheduling…" : "Schedule send"}</button>
+                <button type="button" onClick={() => setScheduleOpen(false)} className="rounded-lg border border-[#d5e0e0] px-3 py-2 text-xs font-semibold text-[#52666e]">Done</button>
+              </div>
+              {scheduledDialogItems.length > 0 && <div className="mt-3 border-t border-[#edf1f1] pt-2">
+                <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#7c8c91]">Scheduled here · {scheduledDialogItems.length}</p>
+                <div className="mt-1.5 max-h-44 space-y-1.5 overflow-y-auto">
+                  {scheduledDialogItems.map(item => <div key={item.id} data-testid={`scheduled-message-${item.id}`} className="flex items-start gap-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2">
+                    <Clock size={14} className="mt-0.5 shrink-0 text-[#16869a]" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-[#183a4b]">{item.message.replace(/\s+/g, " ").trim().slice(0, 100) || "(empty)"}</p>
+                      {item.status === "failed"
+                        ? <p className="mt-0.5 text-[11px] text-[#ad4b43]">Failed — {item.lastError ?? "couldn't deliver"}</p>
+                        : <p className="mt-0.5 text-[11px] text-[#7c8c91]">{formatScheduledAt(item.scheduledAt)} · {formatScheduleCountdown(item.scheduledAt, clock)}{item.parentMessageId ? ` · reply` : ""}{item.poll ? ` · poll` : ""}{item.status === "sending" ? " · sending…" : ""}</p>}
+                    </div>
+                    <button type="button" onClick={() => cancelScheduledMessage(item.id)} disabled={deleteScheduledChat.isPending} aria-label={item.status === "failed" ? "Dismiss failed scheduled message" : "Cancel scheduled message"} data-testid={`button-cancel-scheduled-${item.id}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><X size={13} /></button>
+                  </div>)}
+                </div>
+              </div>}
+            </div>}
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
            <div className="flex items-end gap-1.5">
-              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
              <div className="min-w-0 flex-1">
                  <textarea
                    ref={chatMessageInputRef}
@@ -4817,18 +5891,24 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
              </div>
-             <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
-                <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
-                <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
-                <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
-                <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
-               <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
-             </div>
-              <button disabled={(!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label="Send message" data-testid="button-send-interviewer-chat" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16869a] text-white transition hover:bg-[#106d7a] disabled:opacity-40">{chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
+                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
+                 <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+                 <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
+                 <button type="button" onClick={openScheduleMenu} title="Schedule send" aria-label="Schedule message send" aria-expanded={scheduleOpen} data-testid="button-chat-schedule" className={`chat-composer-control relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${scheduleOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Clock size={18} />{scheduledForConversation.length > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#16869a] px-1 text-[9px] font-bold text-white" data-testid="chat-schedule-count">{scheduledForConversation.length}</span>}</button>
+                 <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
+                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
+              </div>
+              <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
-        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
+       {scheduledForConversation.length > 0 && <button type="button" onClick={openScheduleMenu} data-testid="chat-scheduled-bar" className="flex w-full items-center gap-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] px-3 py-2 text-left transition hover:border-[#16869a]">
+         <Clock size={14} className="shrink-0 text-[#16869a]" />
+          <span className="min-w-0 flex-1 truncate text-xs text-[#385762]"><strong>{scheduledForConversation.length} scheduled</strong> · next {formatScheduledAt(scheduledForConversation[0].scheduledAt)} ({formatScheduleCountdown(scheduledForConversation[0].scheduledAt, clock)})</span>
+         <span className="shrink-0 text-[11px] font-semibold text-[#16869a]">View</span>
+       </button>}
+        <input ref={chatFileInputRef} type="file" accept={`${CHAT_FILE_ACCEPT},.glb,.stl,.obj,.ply,.3mf,.step,.stp,.iges,.igs,.brep,.brp,.x_t,.x_b`} multiple className="sr-only" data-testid="input-chat-image" onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void attachChatFiles(files); }} />
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">
@@ -4840,7 +5920,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
-        {pollOpen && <form onSubmit={submitPoll} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
+        {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>
           <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
           <div className="space-y-1.5">
@@ -4854,23 +5934,23 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {pollOptions.length < 8 && <button type="button" onClick={() => setPollOptions(current => [...current, ""])} data-testid="button-poll-add-option" className="rounded-lg border border-dashed border-[#9bbec0] px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-white dark:border-[#3f6d75] dark:text-[#6fc3cf] dark:hover:bg-[#1b3038]">+ Add option</button>}
           {pollError && <p className="text-xs text-[#ad4b43] dark:text-[#ef948b]" data-testid="poll-error">{pollError}</p>}
           <div className="flex items-center gap-2 pt-1">
-            <button type="submit" disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#106d7a] disabled:opacity-50 dark:hover:bg-[#1c8b9d]">{pollBusy ? "Creating…" : "Post poll"}</button>
+            <button type="button" onClick={() => void submitPoll()} disabled={pollBusy} data-testid="button-poll-create" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white hover:bg-[#106d7a] disabled:opacity-50 dark:hover:bg-[#1c8b9d]">{pollBusy ? "Creating…" : "Post poll"}</button>
             <button type="button" onClick={() => { setPollOpen(false); resetPollDraft(); }} data-testid="button-poll-cancel" className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e] dark:border-[#31495a] dark:bg-[#182935] dark:text-[#b3c6cf]">Cancel</button>
           </div>
-        </form>}
+        </div>}
      </form>
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
         : activeWhiteboard && isDocumentData(activeWhiteboard.data)
-          ? <DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} />
-           : <WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} />)}
+          ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
+           : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
   </section>;
 }
-function Queue() {
+function Queue() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: refreshMs } });
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
@@ -4884,7 +5964,7 @@ function Queue() {
   const [board, setBoard] = useState<Applicant[]>([]);
   const [drag, setDrag] = useState<string | null>(null);
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
   const boardDirty = useRef(false);
@@ -4924,8 +6004,8 @@ function Queue() {
   const finishApplicant = (id: string) => {
     advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
-  const recallApplicant = (id: string, name: string) => {
-    if (callback.isPending || !window.confirm(`Call ${name} back? They return to the front of the queue and the big screen will announce it.`)) return;
+  const recallApplicant = async (id: string, name: string) => {
+    if (callback.isPending || !(await confirmAction({ title: `Call ${name} back?`, detail: "They return to the front of the queue and the big screen will announce it.", confirmLabel: "Call back" }))) return;
     callback.mutate({ data: { applicantId: id } }, { onSuccess: () => { { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } finished.refetch(); } });
   };
   const sendBoardOrder = (list: Applicant[]) => {
@@ -5076,8 +6156,8 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
   onSaveNote: (id: string, note: string, original: string) => void;
   onFinish: (id: string) => void;
   onUpdate: (data: ApplicantUpdate) => void;
-}) {
-  const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: 5000 } });
+}) { const streamHealthy = useRealtimeHealthy();
+  const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: streamHealthy ? false : (5000 )} });
   const [notes, setNotes] = useState(applicant.notes);
   const notesEditing = useRef(false);
   useEffect(() => { if (!notesEditing.current) setNotes(detail.data?.notes ?? applicant.notes); }, [detail.data?.notes, applicant.notes]);
@@ -5109,14 +6189,19 @@ function DisplayGallery() {
   </div>;
 }
 
-function Display() {
-  const display = useGetDisplayState({ query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
+function Display() { const streamHealthy = useRealtimeHealthy();
+  const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  // Public big screen: ?code= (or ?eventPassword=) scopes an anonymous display
+  // to that team's queue. Omitted = signed-in user's team or default team, so
+  // the current team's big screen keeps working unchanged.
+  const displayTeamCode = previewParams.get("code") ?? previewParams.get("eventPassword") ?? undefined;
+  const displayParams = displayTeamCode ? { eventPassword: displayTeamCode } : undefined;
+  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: streamHealthy ? false : (3000 )} }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
   const fullscreen = useFullscreen();
   // ?preview=1 turns this page into the big-screen tab's preview: query
   // params override the live text through the exact same render path (so the
   // preview is pixel-identical), and every audio/command behavior is disabled
   // so the preview never speaks, warms voices, or reboots.
-  const previewParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const isPreview = previewParams.get("preview") === "1";
   // The big screen has no audio buttons (they live on the interviewers'
   // Queue screen). It warms the selected on-device voice silently and speaks
@@ -5126,7 +6211,7 @@ function Display() {
     if (isPreview) return;
     void warmEngine(getSelectedEngine()).catch(() => { /* announcements fall back on demand */ });
   }, [isPreview]);
-  const commands = useGetBroadcastCommands({ query: { queryKey: getGetBroadcastCommandsQueryKey(), refetchInterval: 3000, enabled: !isPreview } });
+  const commands = useGetBroadcastCommands(displayParams, { query: { queryKey: getGetBroadcastCommandsQueryKey(displayParams), refetchInterval: streamHealthy ? false : (3000), enabled: !isPreview } });
   useEffect(() => {
     if (isPreview) return;
     const items = commands.data?.items ?? [];
@@ -5208,7 +6293,7 @@ function Display() {
           audio.onerror = () => speakOnce();
           // Cache-buster: without it, repeat finishes reuse the same URL and
           // the browser never refetches, so nothing speaks a second time.
-          audio.src = `${import.meta.env.BASE_URL}api/display/announcement?t=${Date.now()}`;
+          audio.src = `${import.meta.env.BASE_URL}api/display/announcement?t=${Date.now()}${displayTeamCode ? `&eventPassword=${encodeURIComponent(displayTeamCode)}` : ""}`;
           audio.play().catch(() => speakOnce());
         }
       }
@@ -5342,7 +6427,7 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
   );
 }
 
-function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
+function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const [question, setQuestion] = useState("");
   const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode));
@@ -5356,6 +6441,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       return "";
     }
   });
+  const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
+  const rememberDisabledTools = (tools: string[]) => {
+    setDisabledTools(tools);
+    saveDisabledTools(tools);
+  };
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState("");
@@ -5399,7 +6489,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   }, [assistantConfig.data?.textModel, modelOptions, selectedModel]);
-  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: 3000 } });
+  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: streamHealthy ? false : (3000 )} });
   const scopedConversations = useMemo(
     () => (conversations.data?.items ?? []).filter((item) =>
       partsMode
@@ -5412,7 +6502,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     query: {
       queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId),
       enabled: Boolean(activeConversationId),
-      refetchInterval: 3000,
+      refetchInterval: streamHealthy ? false : (3000),
     },
   });
   const createConversation = useCreateAssistantConversation();
@@ -5505,7 +6595,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     streamAbort.current = controller;
     setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}) };
+    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -5632,8 +6722,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     });
   };
 
-  const deleteConversationById = (id: string, title: string) => {
-    if (deleteConversation.isPending || !window.confirm(`Delete "${title}" and its messages?`)) return;
+  const deleteConversationById = async (id: string, title: string) => {
+    if (deleteConversation.isPending || !(await confirmAction({ title: `Delete "${title}" and its messages?`, danger: true, confirmLabel: "Delete" }))) return;
     deleteConversation.mutate({ conversationId: id }, {
       onSuccess: () => {
         if (activeConversationId === id) {
@@ -5649,7 +6739,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>
@@ -5661,12 +6751,12 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </div>
       </aside>
       <section className="relative order-1 min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
-        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the coordinator team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
+        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the admin team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
         
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
           {!activeMessages.isLoading && !history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
-          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div></div></div>)}
+          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-0 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
           {isStreaming && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
@@ -5705,9 +6795,9 @@ function seatDot(attendance: string | null | undefined): string {
   return "bg-[#b4c1c4]";
 }
 
-function SeatingChart({ applicants }: { applicants: Applicant[] }) {
+function SeatingChart({ applicants }: { applicants: Applicant[] }) { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: 5000 } });
+  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
   const updateSettings = useUpdateSeatingSettings();
   const assign = useAssignSeat();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -5743,8 +6833,8 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) {
   const resize = (nextRows: number, nextCols: number) => {
     updateSettings.mutate({ data: { rows: nextRows, cols: nextCols } }, { onSuccess: invalidate });
   };
-  const unseatAll = () => {
-    if (!window.confirm("Remove everyone from their seats?")) return;
+  const unseatAll = async () => {
+    if (!(await confirmAction({ title: "Remove everyone from their seats?", danger: true, confirmLabel: "Clear seats" }))) return;
     const seated = applicants.filter(a => a.seatRow != null && a.seatCol != null);
     seated.forEach(a => assign.mutate({ data: { applicantId: a.id, row: -1, col: -1 } }, { onSuccess: invalidate }));
   };
@@ -5788,12 +6878,12 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) {
   </section>;
 }
 
-function AttendancePage() {
+function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: refreshMs } });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const updateApplicant = useUpdateApplicant();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
@@ -5836,8 +6926,8 @@ function AttendancePage() {
     .sort((x, y) => sort === "seat" ? ((x.seatRow ?? 999) * 100 + (x.seatCol ?? 999) - ((y.seatRow ?? 999) * 100 + (y.seatCol ?? 999)) || x.name.localeCompare(y.name)) : sort === "status" ? (statusRank(x) - statusRank(y) || x.name.localeCompare(y.name)) : x.name.localeCompare(y.name));
   const filterButton = (value: "all" | "remaining" | "completed", label: string, count: number) => <button key={value} onClick={() => setStatusFilter(value)} data-testid={`button-attendance-filter-${value}`} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${statusFilter === value ? "bg-[#183a4b] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{label} · {count}</button>;
   const toggleAtt = (value: "here" | "late" | "absent" | "unmarked" | "excused") => setAttFilter(current => current === value ? "all" : value);
-  const clearMarks = () => {
-    if (!window.confirm("Clear all attendance marks? Everyone goes back to unmarked (times, makeup dates, and excused flags are removed). Seats are kept.")) return;
+  const clearMarks = async () => {
+    if (!(await confirmAction({ title: "Clear all attendance marks?", detail: "Everyone goes back to unmarked (times, makeup dates, and excused flags are removed). Seats are kept.", danger: true, confirmLabel: "Clear marks" }))) return;
     const todo = eligible.filter(a => a.attendance !== "unmarked" || a.lateArrivalTime || a.makeupDate || a.attendanceExcused != null);
     todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
   };
@@ -5953,6 +7043,8 @@ function Router() {
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />
         <Route path="/parts-landing" component={PartsLanding} />
+        <Route path="/code-landing" component={CodeLanding} />
+        <Route path="/cad-landing" component={CadLanding} />
         <Route path="/auth" component={Login} />
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>
@@ -5960,11 +7052,13 @@ function Router() {
         <Route path="/applicants"><Shell><Applicants /></Shell></Route>
         <Route path="/queue"><Shell><Queue /></Shell></Route>
         <Route path="/chat"><Shell><ChatPage /></Shell></Route>
-        <Route path="/spreadsheets/:id">{({ id }) => <Shell><SpreadsheetEditor spreadsheetId={id} /></Shell>}</Route>
+        <Route path="/spreadsheets/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><SpreadsheetEditor spreadsheetId={id} /></Suspense></Shell>}</Route>
         <Route path="/attendance"><Shell><AttendancePage /></Shell></Route>
         <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>
         <Route path="/parts/assistant"><Shell><ConversationAssistant partsMode /></Shell></Route>
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
+        <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
+        <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>
@@ -5973,6 +7067,6 @@ function Router() {
     </ErrorBoundary>
   );
 }
-function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>; }
+function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
 export { InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;

@@ -26,6 +26,10 @@ tags:
     description: AI-assisted analysis
   - name: system
     description: Service and usage info
+  - name: cad
+    description: CAD model library
+  - name: workspaces
+    description: Workspace visibility settings
 paths:
   /healthz:
     get:
@@ -76,6 +80,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/teams/random-code:
+    get:
+      operationId: getRandomTeamCode
+      tags: [auth]
+      summary: Generate a random team access code suggestion
+      responses:
+        "200":
+          description: Random code suggestion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RandomTeamCode"
+  /auth/teams:
+    post:
+      operationId: createTeam
+      tags: [auth]
+      summary: Create a brand-new team with its own access code
+      description: Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamCreateInput"
+      responses:
+        "201":
+          description: Team created and signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamCreateResponse"
+        "400":
+          description: Invalid team name, code, or account details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Team name or access code already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Too many teams created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/verify-event-passcode:
     post:
       operationId: verifyEventPasscode
@@ -93,7 +146,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MessageResponse"
+                $ref: "#/components/schemas/TeamVerifyResponse"
         "400":
           description: Event passcode is required
           content:
@@ -129,6 +182,13 @@ paths:
       operationId: listInterviewers
       tags: [auth]
       summary: List interviewer accounts and password setup state
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
       responses:
         "200":
           description: Interviewer accounts
@@ -226,6 +286,159 @@ paths:
           description: Interviewer deleted
         "404":
           description: Interviewer not found
+  /auth/passkey/register/options:
+    post:
+      operationId: getPasskeyRegisterOptions
+      tags: [auth]
+      summary: WebAuthn options to register a passkey (coordinators only)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registration options for the signed-in account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyPublicKeyOptions"
+  /auth/passkey/register:
+    post:
+      operationId: registerPasskey
+      tags: [auth]
+      summary: Register a passkey for the signed-in account
+      description: Requires a recent registration challenge issued by getPasskeyRegisterOptions.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegistrationInput"
+      responses:
+        "201":
+          description: Passkey stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCredential"
+        "400":
+          description: The passkey could not be verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/passkey/list:
+    get:
+      operationId: listPasskeys
+      tags: [auth]
+      summary: Passkeys registered to the signed-in account
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registered passkeys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyCredentialList"
+  /auth/passkey/{credentialId}:
+    delete:
+      operationId: deletePasskey
+      tags: [auth]
+      summary: Remove a passkey from the signed-in account
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: credentialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Passkey removed
+        "404":
+          description: Passkey not found
+  /auth/passkey/login/options:
+    post:
+      operationId: getPasskeyLoginOptions
+      tags: [auth]
+      summary: WebAuthn options to sign in with a passkey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginChallengeInput"
+      responses:
+        "200":
+          description: Assertion options for that account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyPublicKeyOptions"
+        "401":
+          description: Event passcode rejected
+  /auth/passkey/login:
+    post:
+      operationId: loginWithPasskey
+      tags: [auth]
+      summary: Sign in with a passkey instead of a password
+      description: Session issues exactly like the password login; password auth remains available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginInput"
+      responses:
+        "200":
+          description: Authenticated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+        "401":
+          description: The passkey was rejected
+  /auth/interviewers/{interviewerId}/name:
+    patch:
+      operationId: updateInterviewerName
+      tags: [auth]
+      summary: Rename an interviewer (coordinators only)
+      description: >-
+        Updates the account, the interviewer labels used by queue assignment,
+        chat authorship, and existing direct-message threads so history is
+        preserved.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterviewerNameUpdateInput"
+      responses:
+        "200":
+          description: Updated interviewer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+        "404":
+          description: Interviewer not found
+        "409":
+          description: Another interviewer already uses that name
   /auth/interviewers/{interviewerId}/role:
     patch:
       operationId: updateInterviewerRole
@@ -446,6 +659,13 @@ paths:
       operationId: getBroadcastCommands
       tags: [broadcasts]
       summary: List unexpired big-screen commands (public; the display needs no login)
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code to scope the public display to one team. Omitted = default team.
       responses:
         "200":
           description: Pending display commands, newest first
@@ -697,6 +917,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueState"
+  /chat/settings:
+    get:
+      operationId: getChatSettings
+      tags: [queue]
+      summary: Read chat settings (slow mode)
+      responses:
+        "200":
+          description: Current chat settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSettings"
+    post:
+      operationId: updateChatSettings
+      tags: [queue]
+      summary: Update chat settings (coordinators only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatSettings"
+      responses:
+        "200":
+          description: Saved chat settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatSettings"
+  /feature-requests:
+    get:
+      operationId: listFeatureRequests
+      tags: [site]
+      summary: List feature requests (own team; site owner sees every team)
+      responses:
+        "200":
+          description: Feature requests, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequestList"
+    post:
+      operationId: createFeatureRequest
+      tags: [site]
+      summary: Send a feature request to the site owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFeatureRequestInput"
+      responses:
+        "201":
+          description: Saved feature request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequest"
+  /feature-requests/{requestId}:
+    patch:
+      operationId: updateFeatureRequest
+      tags: [site]
+      summary: Mark a feature request open or done (site owner only)
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFeatureRequestInput"
+      responses:
+        "200":
+          description: Updated feature request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureRequest"
+  /site/stats:
+    get:
+      operationId: getSiteStats
+      tags: [site]
+      summary: Site-wide stats for the site owner (teams, people, requests)
+      responses:
+        "200":
+          description: Site stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteStats"
   /queue/labels:
     get:
       operationId: getQueueLabels
@@ -815,6 +1129,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/scheduled:
+    get:
+      operationId: listScheduledChats
+      tags: [queue]
+      summary: List server-side scheduled chat messages for the team
+      responses:
+        "200":
+          description: Scheduled chat messages, pending first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledChatList"
+    post:
+      operationId: createScheduledChat
+      tags: [queue]
+      summary: Schedule a full chat message for later server-side delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledChatInput"
+      responses:
+        "201":
+          description: Scheduled chat message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledChatMessage"
+  /queue/chat/scheduled/{scheduledId}:
+    delete:
+      operationId: deleteScheduledChat
+      tags: [queue]
+      summary: Cancel a pending scheduled chat message
+      parameters:
+        - name: scheduledId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Scheduled message cancelled
   /queue/custom-emojis:
     get:
       operationId: listChatCustomEmojis
@@ -1257,6 +1614,13 @@ paths:
       operationId: getDisplayState
       tags: [display]
       summary: Get sanitized big-screen state
+      parameters:
+        - name: eventPassword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Team access code to scope the public display to one team. Omitted = signed-in user's team or default team.
       responses:
         "200":
           description: Big-screen display state
@@ -2029,6 +2393,655 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /storage/cad-models:
+    post:
+      operationId: uploadCadModelFile
+      tags: [storage]
+      summary: Upload a CAD model file for the CAD workspace
+      description: >
+        Stores a validated CAD file as a private object and returns its path.
+        The file name decides the renderer, so the extension must match the
+        bytes. Large files should use the chunked upload endpoints instead.
+      parameters:
+        - name: fileName
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+        - name: contentType
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: CAD model object stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModelUpload"
+        "400":
+          description: Unsupported or invalid CAD file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: CAD file exceeds its size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /workspaces/visibility:
+    get:
+      operationId: getWorkspaceVisibility
+      tags: [workspaces]
+      summary: Which users can open each workspace
+      responses:
+        "200":
+          description: Workspace visibility map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceVisibility"
+    put:
+      operationId: updateWorkspaceVisibility
+      tags: [workspaces]
+      summary: Change which users can open each workspace
+      description: Coordinator-only. Unknown workspaces are discarded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceVisibilityInput"
+      responses:
+        "200":
+          description: Updated workspace visibility
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceVisibility"
+  /code/projects:
+    get:
+      operationId: listCodeProjects
+      tags: [code]
+      summary: List server-persisted FTC code projects
+      responses:
+        "200":
+          description: Code projects with file counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeProjectList"
+    post:
+      operationId: createCodeProject
+      tags: [code]
+      summary: Create an FTC code project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project]
+                properties:
+                  project:
+                    $ref: "#/components/schemas/CodeProject"
+        "409":
+          description: A project with that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}:
+    patch:
+      operationId: updateCodeProject
+      tags: [code]
+      summary: Rename a project or update its git endpoint config
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeProjectUpdateInput"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project]
+                properties:
+                  project:
+                    $ref: "#/components/schemas/CodeProject"
+    delete:
+      operationId: deleteCodeProject
+      tags: [code]
+      summary: Delete a project and all of its files
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Project deleted
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/files:
+    get:
+      operationId: listCodeFiles
+      tags: [code]
+      summary: List all files in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeFileList"
+  /code/files:
+    post:
+      operationId: createCodeFile
+      tags: [code]
+      summary: Create or overwrite a file by path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeFileInput"
+      responses:
+        "201":
+          description: Saved file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file]
+                properties:
+                  file:
+                    $ref: "#/components/schemas/CodeFile"
+  /code/files/{fileId}:
+    put:
+      operationId: updateCodeFile
+      tags: [code]
+      summary: Update a file's content or path
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeFileUpdateInput"
+      responses:
+        "200":
+          description: Updated file
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file]
+                properties:
+                  file:
+                    $ref: "#/components/schemas/CodeFile"
+    delete:
+      operationId: deleteCodeFile
+      tags: [code]
+      summary: Delete a file
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: File deleted
+        "404":
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/deploy:
+    post:
+      operationId: deployCodeProject
+      tags: [code]
+      summary: Upload a project straight to the REV hub and build it there
+      description: >
+        The dashboard server saves each Java file to the hub's OnBotJava
+        server and triggers its on-hub build, then returns the compiler log.
+        Nobody opens the hub's Program and Manage site.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeDeployInput"
+      responses:
+        "200":
+          description: Hub upload and build outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeDeployResult"
+        "502":
+          description: The hub could not be reached or refused the upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /code/projects/{projectId}/revisions:
+    get:
+      operationId: listCodeRevisions
+      tags: [code]
+      summary: List commit checkpoints for a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Commit history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeRevisionList"
+    post:
+      operationId: createCodeRevision
+      tags: [code]
+      summary: Snapshot the project as a commit checkpoint
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeRevisionInput"
+      responses:
+        "201":
+          description: Created checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision]
+                properties:
+                  revision:
+                    $ref: "#/components/schemas/CodeRevision"
+  /code/projects/{projectId}/presence:
+    get:
+      operationId: listCodePresence
+      tags: [code]
+      summary: Who is currently in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active collaborators
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodePresenceList"
+    put:
+      operationId: updateCodePresence
+      tags: [code]
+      summary: Publish where I am in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodePresenceInput"
+      responses:
+        "204":
+          description: Presence updated
+  /cad/library:
+    get:
+      operationId: listCadLibrary
+      tags: [cad]
+      summary: Load the whole CAD library in one request
+      description: >
+        Bots, folders, and models together, because the workspace renders the
+        whole tree at once and three round trips would show a half-built tree.
+      responses:
+        "200":
+          description: Bots with their folders and models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadLibrary"
+  /cad/bots:
+    post:
+      operationId: createCadBot
+      tags: [cad]
+      summary: Create a bot to group CAD models
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadBotInput"
+      responses:
+        "201":
+          description: Created bot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadBot"
+        "409":
+          description: A bot with that name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadBot
+      tags: [cad]
+      summary: Delete a bot, its folders, and its models
+      description: Nested folders are removed with the bot. Models move to Unfiled and their files are deleted.
+      parameters:
+        - name: botId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Bot deleted
+        "404":
+          description: Bot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/bots/{botId}:
+    patch:
+      operationId: updateCadBot
+      tags: [cad]
+      summary: Rename a bot or edit its notes
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadBotUpdateInput"
+      responses:
+        "200":
+          description: Updated bot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadBot"
+        "404":
+          description: Bot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/folders:
+    post:
+      operationId: createCadFolder
+      tags: [cad]
+      summary: Create a folder inside a bot
+      description: Omit parentId for a top-level folder. Subfolders nest to any depth.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadFolderInput"
+      responses:
+        "201":
+          description: Created folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadFolder"
+        "404":
+          description: Bot or parent folder not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A sibling folder already has that name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/folders/{folderId}:
+    patch:
+      operationId: updateCadFolder
+      tags: [cad]
+      summary: Rename a folder, move it, or nest it under another folder
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadFolderUpdateInput"
+      responses:
+        "200":
+          description: Updated folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadFolder"
+        "400":
+          description: A folder cannot be moved inside itself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Folder or new parent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadFolder
+      tags: [cad]
+      summary: Delete a folder and its subfolders
+      description: Contained models move to Unfiled rather than being deleted.
+      parameters:
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Folder not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/models:
+    get:
+      operationId: listCadModels
+      tags: [cad]
+      summary: List stored CAD models, optionally filtered by location
+      parameters:
+        - name: botId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CAD models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModelList"
+    post:
+      operationId: createCadModel
+      tags: [cad]
+      summary: Record an uploaded CAD file in the library
+      description: Call after the bytes are stored, then place the model in a bot or folder.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadModelInput"
+      responses:
+        "201":
+          description: Created model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModel"
+        "400":
+          description: Unknown location or unusable object path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /cad/models/{modelId}:
+    patch:
+      operationId: updateCadModel
+      tags: [cad]
+      summary: Rename a model, edit notes, or move it to another bot or folder
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadModelUpdateInput"
+      responses:
+        "200":
+          description: Updated model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadModel"
+        "400":
+          description: Unknown location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteCadModel
+      tags: [cad]
+      summary: Delete a CAD model and its stored file
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Model and file deleted
+        "404":
+          description: Model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/robots/{robotId}/parts/{partId}:
     put:
       operationId: setPartsRobotAllocation
@@ -2747,9 +3760,78 @@ components:
         role:
           type: string
           description: "coordinator, treasurer, or interviewer"
+        teamId:
+          type: string
+          description: Team this session belongs to
+        teamName:
+          type: string
+          description: Display name of the team this session belongs to
+        isSiteOwner:
+          type: boolean
+          description: True when this account is the site owner (sees every team's feature requests and site stats)
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
+    TeamVerifyResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        teamId:
+          type: string
+          description: Team unlocked by this access code
+        teamName:
+          type: string
+          description: Display name of the unlocked team
+    TeamCreateInput:
+      type: object
+      required: [teamName, teamCode, displayName, password]
+      properties:
+        teamName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        teamCode:
+          type: string
+          minLength: 4
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        password:
+          type: string
+          minLength: 1
+        confirmLowExposure:
+          type: boolean
+          description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    TeamCreateResponse:
+      type: object
+      required: [message, teamId, teamName, authenticated]
+      properties:
+        message:
+          type: string
+        teamId:
+          type: string
+        teamName:
+          type: string
+        authenticated:
+          type: boolean
+        label:
+          type: string
+        interviewerId:
+          type: string
+        role:
+          type: string
+        token:
+          type: string
+    RandomTeamCode:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
     InterviewerAccount:
       type: object
       required: [id, displayName, hasPassword, role]
@@ -2760,6 +3842,9 @@ components:
           type: string
         hasPassword:
           type: boolean
+        hasPasskey:
+          type: boolean
+          description: "True when this account has at least one passkey registered"
         role:
           type: string
           description: "coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts"
@@ -2800,6 +3885,80 @@ components:
         confirmLowExposure:
           type: boolean
           description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    PasskeyPublicKeyOptions:
+      type: object
+      required: [publicKey]
+      properties:
+        publicKey:
+          type: object
+          description: PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded
+          additionalProperties: true
+    PasskeyRegistrationInput:
+      type: object
+      required: [response]
+      properties:
+        response:
+          type: object
+          description: RegistrationResponseJSON from the authenticator
+          additionalProperties: true
+        label:
+          type: string
+          description: Friendly name shown in Settings, e.g. "MacBook touch bar"
+    PasskeyLoginChallengeInput:
+      type: object
+      required: [eventPassword, interviewerId]
+      properties:
+        eventPassword:
+          type: string
+          minLength: 1
+        interviewerId:
+          type: string
+    PasskeyLoginInput:
+      type: object
+      required: [eventPassword, interviewerId, response]
+      properties:
+        eventPassword:
+          type: string
+          minLength: 1
+        interviewerId:
+          type: string
+        response:
+          type: object
+          description: AuthenticationResponseJSON from the authenticator
+          additionalProperties: true
+    PasskeyCredential:
+      type: object
+      required: [id, label, createdAt]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        createdAt:
+          type: string
+        lastUsedAt:
+          type: ["string", "null"]
+        transports:
+          type: array
+          items:
+            type: string
+    PasskeyCredentialList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PasskeyCredential"
+    InterviewerNameUpdateInput:
+      type: object
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: New display name for this interviewer
     InterviewerRoleUpdateInput:
       type: object
       required: [role]
@@ -3112,6 +4271,9 @@ components:
           type: ["string", "null"]
         photoUrl:
           type: ["string", "null"]
+        photoThumbUrl:
+          type: ["string", "null"]
+          description: "Small thumbnail for list views; full photo stays under photoUrl"
         transcript:
           type: ["string", "null"]
         aiScore:
@@ -3210,6 +4372,9 @@ components:
           type: string
         photoUrl:
           type: ["string", "null"]
+        photoThumbUrl:
+          type: ["string", "null"]
+          description: "Small thumbnail for list views; full photo stays under photoUrl"
         transcript:
           type: ["string", "null"]
         attachments:
@@ -3279,7 +4444,7 @@ components:
           type: integer
         onlyNew:
           type: boolean
-          description: "When true, insert only brand-new rows and skip updates to existing applicants." 
+          description: "When true, insert only brand-new rows and skip updates to existing applicants."
     ImportResult:
       type: object
       required: [importId, imported, skipped, delimiter, warnings, diff]
@@ -3382,6 +4547,94 @@ components:
               type: integer
             contentType:
               type: string
+    ChatSettings:
+      type: object
+      required: [slowmodeSeconds]
+      properties:
+        slowmodeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: >-
+            Slow mode for the team chat: an author must wait this many seconds
+            between messages. 0 turns it off.
+    FeatureRequest:
+      type: object
+      required: [id, authorName, message, status, createdAt]
+      properties:
+        id:
+          type: string
+        teamId:
+          type: string
+          description: Team that filed the request (absent for legacy rows)
+        teamName:
+          type: string
+          description: Display name of the team that filed the request
+        authorName:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum: [open, done]
+        createdAt:
+          type: string
+          format: date-time
+    FeatureRequestList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureRequest"
+    CreateFeatureRequestInput:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    UpdateFeatureRequestInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [open, done]
+    SiteStats:
+      type: object
+      required: [teams, people, requests, openRequests, teamsById]
+      properties:
+        teams:
+          type: integer
+          description: Number of teams
+        people:
+          type: integer
+          description: Number of team member accounts across all teams
+        requests:
+          type: integer
+          description: Total feature requests across all teams
+        openRequests:
+          type: integer
+          description: Feature requests still open
+        teamsById:
+          type: array
+          items:
+            type: object
+            required: [teamId, teamName, people, requests, openRequests]
+            properties:
+              teamId:
+                type: string
+              teamName:
+                type: string
+              people:
+                type: integer
+              requests:
+                type: integer
+              openRequests:
+                type: integer
     QueueLabels:
       type: object
       required: [interviewerLabels]
@@ -3499,6 +4752,98 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantActivity"
+    ScheduledChatPollInput:
+      type: object
+      required: [question, options]
+      properties:
+        question:
+          type: string
+        options:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: string
+    ScheduledChatInput:
+      type: object
+      required: [message, scheduledAt]
+      properties:
+        message:
+          type: string
+          description: Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.
+        scope:
+          type: string
+          enum: [shared, direct]
+          default: shared
+        recipient:
+          type: string
+          nullable: true
+          description: Configured interviewer label receiving a scheduled direct message.
+        parentMessageId:
+          type: string
+          nullable: true
+        poll:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/ScheduledChatPollInput"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: ISO timestamp at least ~30 seconds in the future and within one year.
+    ScheduledChatMessage:
+      type: object
+      required: [id, author, createdBy, message, scope, scheduledAt, status, attempts, createdAt]
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        createdBy:
+          type: string
+          description: Interviewer account id that scheduled the message.
+        message:
+          type: string
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
+        recipient:
+          type: string
+          nullable: true
+        parentMessageId:
+          type: string
+          nullable: true
+        poll:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/ScheduledChatPollInput"
+        scheduledAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, sending, sent, failed]
+        attempts:
+          type: integer
+        lastError:
+          type: string
+          nullable: true
+        sentMessageId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ScheduledChatList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduledChatMessage"
     InterviewChatMessage:
       type: object
       required: [id, author, message, scope, peer, createdAt]
@@ -4356,6 +5701,11 @@ components:
           type: array
           items:
             type: string
+        disabledTools:
+          type: array
+          description: "Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called."
+          items:
+            type: string
         attachments:
           type: array
           description: "Files attached in chat (already uploaded to storage)."
@@ -4499,3 +5849,422 @@ components:
                   $ref: "#/components/schemas/AssistantActivity"
               createdAt:
                 type: string
+
+    CadModelUpload:
+      type: object
+      required: [objectPath, contentType, sizeBytes]
+      properties:
+        objectPath:
+          type: string
+          description: Private storage path to reference from the model record
+        contentType:
+          type: string
+          description: Canonical CAD content type resolved from the file extension
+        sizeBytes:
+          type: integer
+    CadBot:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadLibrary:
+      type: object
+      required: [bots, folders, models]
+      properties:
+        bots:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadBot"
+        folders:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadFolder"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadModel"
+    CadBotInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        notes:
+          type: string
+          maxLength: 2000
+    CadBotUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        notes:
+          type: ["string", "null"]
+          maxLength: 2000
+    CadFolder:
+      type: object
+      required: [id, botId, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        botId:
+          type: string
+        parentId:
+          type: ["string", "null"]
+          description: Null when the folder sits at the top level of its bot
+        name:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadFolderInput:
+      type: object
+      required: [botId, name]
+      properties:
+        botId:
+          type: string
+        parentId:
+          type: ["string", "null"]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+    CadFolderUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        parentId:
+          type: ["string", "null"]
+    CadModel:
+      type: object
+      required: [id, name, fileName, contentType, objectPath, sizeBytes, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        fileName:
+          type: string
+        contentType:
+          type: string
+        objectPath:
+          type: string
+        sizeBytes:
+          type: integer
+        botId:
+          type: ["string", "null"]
+          description: Null while the model sits in Unfiled
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        uploadedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CadModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CadModel"
+    CadModelInput:
+      type: object
+      required: [objectPath, fileName, contentType, sizeBytes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        objectPath:
+          type: string
+          maxLength: 200
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Original upload name, which selects the renderer
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 100
+        sizeBytes:
+          type: integer
+          minimum: 0
+        botId:
+          type: ["string", "null"]
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: string
+          maxLength: 2000
+    CadModelUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        botId:
+          type: ["string", "null"]
+        folderId:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+          maxLength: 2000
+    WorkspaceRole:
+      type: string
+      enum: [coordinator, treasurer, interviewer]
+    WorkspaceRoleList:
+      type: array
+      description: Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.
+      items:
+        type: string
+    WorkspaceVisibility:
+      type: object
+      required: [interview, chat, parts, cad, code]
+      properties:
+        interview:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        chat:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        parts:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        cad:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        code:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+    WorkspaceVisibilityInput:
+      type: object
+      properties:
+        interview:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        chat:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        parts:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        cad:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+        code:
+          $ref: "#/components/schemas/WorkspaceRoleList"
+    CodeProject:
+      type: object
+      required: [id, name, sdkVersion, gitConfig, fileCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sdkVersion:
+          type: string
+        gitConfig:
+          type: object
+          additionalProperties: true
+        fileCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CodeProjectList:
+      type: object
+      required: [projects]
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeProject"
+    CodeProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        sdkVersion:
+          type: string
+          maxLength: 32
+    CodeProjectUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        gitConfig:
+          type: object
+          additionalProperties: true
+    CodeFile:
+      type: object
+      required: [id, projectId, path, content, sizeBytes, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        sizeBytes:
+          type: integer
+        updatedBy:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    CodeFileList:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeFile"
+    CodeFileInput:
+      type: object
+      required: [projectId, path]
+      properties:
+        projectId:
+          type: string
+        path:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content:
+          type: string
+    CodeFileUpdateInput:
+      type: object
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content:
+          type: string
+    CodeRevision:
+      type: object
+      required: [id, projectId, message, createdAt]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        message:
+          type: string
+        author:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+    CodeRevisionList:
+      type: object
+      required: [revisions]
+      properties:
+        revisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeRevision"
+    CodeRevisionInput:
+      type: object
+      properties:
+        message:
+          type: string
+          maxLength: 200
+    CodePresenceList:
+      type: object
+      required: [presence]
+      properties:
+        presence:
+          type: array
+          items:
+            type: object
+            required: [displayName, color, updatedAt]
+            properties:
+              displayName:
+                type: string
+              fileId:
+                type: ["string", "null"]
+              color:
+                type: string
+              updatedAt:
+                type: string
+    CodePresenceInput:
+      type: object
+      properties:
+        fileId:
+          type: ["string", "null"]
+        color:
+          type: string
+    CodeDeployInput:
+      type: object
+      required: [hubBaseUrl]
+      properties:
+        hubBaseUrl:
+          type: string
+          description: Hub address, e.g. http://192.168.43.1:8080
+          maxLength: 200
+        files:
+          type: array
+          description: Defaults to the project's stored files when omitted
+          items:
+            type: object
+            required: [path, content]
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+    CodeDeployResult:
+      type: object
+      required: [hubBaseUrl, pushed, skipped, buildStarted]
+      properties:
+        hubBaseUrl:
+          type: string
+        pushed:
+          type: array
+          items:
+            type: object
+            required: [path, hubPath]
+            properties:
+              path:
+                type: string
+              hubPath:
+                type: string
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [path, reason]
+            properties:
+              path:
+                type: string
+              reason:
+                type: string
+        buildStarted:
+          type: boolean
+        buildSuccessful:
+          type: ["boolean", "null"]
+        log:
+          type: string

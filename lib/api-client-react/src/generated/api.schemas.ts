@@ -490,14 +490,67 @@ export interface AuthSession {
   interviewerId?: string;
   /** coordinator, treasurer, or interviewer */
   role?: string;
+  /** Team this session belongs to */
+  teamId?: string;
+  /** Display name of the team this session belongs to */
+  teamName?: string;
+  /** True when this account is the site owner (sees every team's feature requests and site stats) */
+  isSiteOwner?: boolean;
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
+}
+
+export interface TeamVerifyResponse {
+  message: string;
+  /** Team unlocked by this access code */
+  teamId?: string;
+  /** Display name of the unlocked team */
+  teamName?: string;
+}
+
+export interface TeamCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  teamName: string;
+  /**
+     * @minLength 4
+     * @maxLength 128
+     */
+  teamCode: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
+  /** @minLength 1 */
+  password: string;
+  /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
+  confirmLowExposure?: boolean;
+}
+
+export interface TeamCreateResponse {
+  message: string;
+  teamId: string;
+  teamName: string;
+  authenticated: boolean;
+  label?: string;
+  interviewerId?: string;
+  role?: string;
+  token?: string;
+}
+
+export interface RandomTeamCode {
+  code: string;
 }
 
 export interface InterviewerAccount {
   id: string;
   displayName: string;
   hasPassword: boolean;
+  /** True when this account has at least one passkey registered */
+  hasPasskey?: boolean;
   /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
 }
@@ -527,6 +580,69 @@ export interface InterviewerPasswordUpdateInput {
   password: string | null;
   /** Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown */
   confirmLowExposure?: boolean;
+}
+
+/**
+ * PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded
+ */
+export type PasskeyPublicKeyOptionsPublicKey = { [key: string]: unknown };
+
+export interface PasskeyPublicKeyOptions {
+  /** PublicKeyCredentialCreationOptions or RequestOptions JSON, base64url encoded */
+  publicKey: PasskeyPublicKeyOptionsPublicKey;
+}
+
+/**
+ * RegistrationResponseJSON from the authenticator
+ */
+export type PasskeyRegistrationInputResponse = { [key: string]: unknown };
+
+export interface PasskeyRegistrationInput {
+  /** RegistrationResponseJSON from the authenticator */
+  response: PasskeyRegistrationInputResponse;
+  /** Friendly name shown in Settings, e.g. "MacBook touch bar" */
+  label?: string;
+}
+
+export interface PasskeyLoginChallengeInput {
+  /** @minLength 1 */
+  eventPassword: string;
+  interviewerId: string;
+}
+
+/**
+ * AuthenticationResponseJSON from the authenticator
+ */
+export type PasskeyLoginInputResponse = { [key: string]: unknown };
+
+export interface PasskeyLoginInput {
+  /** @minLength 1 */
+  eventPassword: string;
+  interviewerId: string;
+  /** AuthenticationResponseJSON from the authenticator */
+  response: PasskeyLoginInputResponse;
+}
+
+export interface PasskeyCredential {
+  id: string;
+  label: string;
+  createdAt: string;
+  /** @nullable */
+  lastUsedAt?: string | null;
+  transports?: string[];
+}
+
+export interface PasskeyCredentialList {
+  items: PasskeyCredential[];
+}
+
+export interface InterviewerNameUpdateInput {
+  /**
+     * New display name for this interviewer
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
 }
 
 export type InterviewerRoleUpdateInputRole = typeof InterviewerRoleUpdateInputRole[keyof typeof InterviewerRoleUpdateInputRole];
@@ -698,6 +814,11 @@ export interface Applicant {
   email?: string | null;
   /** @nullable */
   photoUrl?: string | null;
+  /**
+     * Small thumbnail for list views; full photo stays under photoUrl
+     * @nullable
+     */
+  photoThumbUrl?: string | null;
   /** @nullable */
   transcript?: string | null;
   aiScore: number;
@@ -781,6 +902,11 @@ export interface ApplicantUpdate {
   email?: string;
   /** @nullable */
   photoUrl?: string | null;
+  /**
+     * Small thumbnail for list views; full photo stays under photoUrl
+     * @nullable
+     */
+  photoThumbUrl?: string | null;
   /** @nullable */
   transcript?: string | null;
   /** @nullable */
@@ -897,6 +1023,79 @@ export interface UploadResponse {
   metadata: UploadResponseMetadata;
 }
 
+export interface ChatSettings {
+  /**
+     * Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.
+     * @minimum 0
+     * @maximum 600
+     */
+  slowmodeSeconds: number;
+}
+
+export type FeatureRequestStatus = typeof FeatureRequestStatus[keyof typeof FeatureRequestStatus];
+
+
+export const FeatureRequestStatus = {
+  open: 'open',
+  done: 'done',
+} as const;
+
+export interface FeatureRequest {
+  id: string;
+  /** Team that filed the request (absent for legacy rows) */
+  teamId?: string;
+  /** Display name of the team that filed the request */
+  teamName?: string;
+  authorName: string;
+  message: string;
+  status: FeatureRequestStatus;
+  createdAt: string;
+}
+
+export interface FeatureRequestList {
+  items: FeatureRequest[];
+}
+
+export interface CreateFeatureRequestInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  message: string;
+}
+
+export type UpdateFeatureRequestInputStatus = typeof UpdateFeatureRequestInputStatus[keyof typeof UpdateFeatureRequestInputStatus];
+
+
+export const UpdateFeatureRequestInputStatus = {
+  open: 'open',
+  done: 'done',
+} as const;
+
+export interface UpdateFeatureRequestInput {
+  status: UpdateFeatureRequestInputStatus;
+}
+
+export type SiteStatsTeamsByIdItem = {
+  teamId: string;
+  teamName: string;
+  people: number;
+  requests: number;
+  openRequests: number;
+};
+
+export interface SiteStats {
+  /** Number of teams */
+  teams: number;
+  /** Number of team member accounts across all teams */
+  people: number;
+  /** Total feature requests across all teams */
+  requests: number;
+  /** Feature requests still open */
+  openRequests: number;
+  teamsById: SiteStatsTeamsByIdItem[];
+}
+
 export interface QueueLabels {
   interviewerLabels: string[];
 }
@@ -968,6 +1167,78 @@ export interface InterviewChatInput {
   parentMessageId?: string | null;
   pinnedAt?: string | null;
   activities?: AssistantActivity[];
+}
+
+export interface ScheduledChatPollInput {
+  question: string;
+  /**
+     * @minItems 2
+     * @maxItems 8
+     */
+  options: string[];
+}
+
+export type ScheduledChatInputScope = typeof ScheduledChatInputScope[keyof typeof ScheduledChatInputScope];
+
+
+export const ScheduledChatInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface ScheduledChatInput {
+  /** Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links. */
+  message: string;
+  scope?: ScheduledChatInputScope;
+  /** Configured interviewer label receiving a scheduled direct message. */
+  recipient?: string | null;
+  parentMessageId?: string | null;
+  /** @nullable */
+  poll?: ScheduledChatPollInput | null;
+  /** ISO timestamp at least ~30 seconds in the future and within one year. */
+  scheduledAt: string;
+}
+
+export type ScheduledChatMessageScope = typeof ScheduledChatMessageScope[keyof typeof ScheduledChatMessageScope];
+
+
+export const ScheduledChatMessageScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export type ScheduledChatMessageStatus = typeof ScheduledChatMessageStatus[keyof typeof ScheduledChatMessageStatus];
+
+
+export const ScheduledChatMessageStatus = {
+  pending: 'pending',
+  sending: 'sending',
+  sent: 'sent',
+  failed: 'failed',
+} as const;
+
+export interface ScheduledChatMessage {
+  id: string;
+  author: string;
+  /** Interviewer account id that scheduled the message. */
+  createdBy: string;
+  message: string;
+  scope: ScheduledChatMessageScope;
+  peer?: string | null;
+  recipient?: string | null;
+  parentMessageId?: string | null;
+  /** @nullable */
+  poll?: ScheduledChatPollInput | null;
+  scheduledAt: string;
+  status: ScheduledChatMessageStatus;
+  attempts: number;
+  lastError?: string | null;
+  sentMessageId?: string | null;
+  createdAt: string;
+}
+
+export interface ScheduledChatList {
+  items: ScheduledChatMessage[];
 }
 
 export type InterviewChatMessageScope = typeof InterviewChatMessageScope[keyof typeof InterviewChatMessageScope];
@@ -1730,6 +2001,8 @@ export interface AssistantInput {
   model?: string;
   conversationId?: string;
   applicantIds?: string[];
+  /** Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called. */
+  disabledTools?: string[];
   /** Files attached in chat (already uploaded to storage). */
   attachments?: AssistantInputAttachmentsItem[];
   /** Recent interviewer chat messages for conversational context. */
@@ -1803,6 +2076,331 @@ export interface AssistantHistory {
   items: AssistantHistoryItemsItem[];
 }
 
+export interface CadModelUpload {
+  /** Private storage path to reference from the model record */
+  objectPath: string;
+  /** Canonical CAD content type resolved from the file extension */
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface CadBot {
+  id: string;
+  name: string;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadFolder {
+  id: string;
+  botId: string;
+  /**
+     * Null when the folder sits at the top level of its bot
+     * @nullable
+     */
+  parentId?: string | null;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadModel {
+  id: string;
+  name: string;
+  fileName: string;
+  contentType: string;
+  objectPath: string;
+  sizeBytes: number;
+  /**
+     * Null while the model sits in Unfiled
+     * @nullable
+     */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  uploadedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CadLibrary {
+  bots: CadBot[];
+  folders: CadFolder[];
+  models: CadModel[];
+}
+
+export interface CadBotInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 2000 */
+  notes?: string;
+}
+
+export interface CadBotUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export interface CadFolderInput {
+  botId: string;
+  /** @nullable */
+  parentId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+}
+
+export interface CadFolderUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /** @nullable */
+  parentId?: string | null;
+}
+
+export interface CadModelList {
+  items: CadModel[];
+}
+
+export interface CadModelInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name?: string;
+  /** @maxLength 200 */
+  objectPath: string;
+  /**
+     * Original upload name, which selects the renderer
+     * @minLength 1
+     * @maxLength 255
+     */
+  fileName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  contentType: string;
+  /** @minimum 0 */
+  sizeBytes: number;
+  /** @nullable */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /** @maxLength 2000 */
+  notes?: string;
+}
+
+export interface CadModelUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name?: string;
+  /** @nullable */
+  botId?: string | null;
+  /** @nullable */
+  folderId?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  notes?: string | null;
+}
+
+export type WorkspaceRole = typeof WorkspaceRole[keyof typeof WorkspaceRole];
+
+
+export const WorkspaceRole = {
+  coordinator: 'coordinator',
+  treasurer: 'treasurer',
+  interviewer: 'interviewer',
+} as const;
+
+/**
+ * Interviewer account IDs with access, plus legacy role names (coordinator, treasurer, interviewer) accepted for backwards compatibility.
+ */
+export type WorkspaceRoleList = string[];
+
+export interface WorkspaceVisibility {
+  interview: WorkspaceRoleList;
+  chat: WorkspaceRoleList;
+  parts: WorkspaceRoleList;
+  cad: WorkspaceRoleList;
+  code: WorkspaceRoleList;
+}
+
+export interface WorkspaceVisibilityInput {
+  interview?: WorkspaceRoleList;
+  chat?: WorkspaceRoleList;
+  parts?: WorkspaceRoleList;
+  cad?: WorkspaceRoleList;
+  code?: WorkspaceRoleList;
+}
+
+export type CodeProjectGitConfig = { [key: string]: unknown };
+
+export interface CodeProject {
+  id: string;
+  name: string;
+  sdkVersion: string;
+  gitConfig: CodeProjectGitConfig;
+  fileCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeProjectList {
+  projects: CodeProject[];
+}
+
+export interface CodeProjectInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /** @maxLength 32 */
+  sdkVersion?: string;
+}
+
+export type CodeProjectUpdateInputGitConfig = { [key: string]: unknown };
+
+export interface CodeProjectUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  gitConfig?: CodeProjectUpdateInputGitConfig;
+}
+
+export interface CodeFile {
+  id: string;
+  projectId: string;
+  path: string;
+  content: string;
+  sizeBytes: number;
+  /** @nullable */
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodeFileList {
+  files: CodeFile[];
+}
+
+export interface CodeFileInput {
+  projectId: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  path: string;
+  content?: string;
+}
+
+export interface CodeFileUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  path?: string;
+  content?: string;
+}
+
+export interface CodeRevision {
+  id: string;
+  projectId: string;
+  message: string;
+  /** @nullable */
+  author?: string | null;
+  createdAt: string;
+}
+
+export interface CodeRevisionList {
+  revisions: CodeRevision[];
+}
+
+export interface CodeRevisionInput {
+  /** @maxLength 200 */
+  message?: string;
+}
+
+export type CodePresenceListPresenceItem = {
+  displayName: string;
+  /** @nullable */
+  fileId?: string | null;
+  color: string;
+  updatedAt: string;
+};
+
+export interface CodePresenceList {
+  presence: CodePresenceListPresenceItem[];
+}
+
+export interface CodePresenceInput {
+  /** @nullable */
+  fileId?: string | null;
+  color?: string;
+}
+
+export type CodeDeployInputFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface CodeDeployInput {
+  /**
+     * Hub address, e.g. http://192.168.43.1:8080
+     * @maxLength 200
+     */
+  hubBaseUrl: string;
+  /** Defaults to the project's stored files when omitted */
+  files?: CodeDeployInputFilesItem[];
+}
+
+export type CodeDeployResultPushedItem = {
+  path: string;
+  hubPath: string;
+};
+
+export type CodeDeployResultSkippedItem = {
+  path: string;
+  reason: string;
+};
+
+export interface CodeDeployResult {
+  hubBaseUrl: string;
+  pushed: CodeDeployResultPushedItem[];
+  skipped: CodeDeployResultSkippedItem[];
+  buildStarted: boolean;
+  /** @nullable */
+  buildSuccessful?: boolean | null;
+  log?: string;
+}
+
 /**
  * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
@@ -1830,8 +2428,22 @@ export type BeforeParameter = string;
  */
 export type ChatLimitParameter = number;
 
+export type ListInterviewersParams = {
+/**
+ * Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
+ */
+eventPassword?: string;
+};
+
 export type GetPresenceStatsParams = {
 ip: string;
+};
+
+export type GetBroadcastCommandsParams = {
+/**
+ * Team access code to scope the public display to one team. Omitted = default team.
+ */
+eventPassword?: string;
 };
 
 export type ListApplicantsParams = {
@@ -1906,6 +2518,13 @@ export const GetInterviewWhiteboardByIdScope = {
   direct: 'direct',
 } as const;
 
+export type GetDisplayStateParams = {
+/**
+ * Team access code to scope the public display to one team. Omitted = signed-in user's team or default team.
+ */
+eventPassword?: string;
+};
+
 export type GetAssistantConversationMessagesParams = {
 /**
  * Return messages created before this ISO timestamp (older history page).
@@ -1962,5 +2581,45 @@ fileName: string;
  * @maxLength 100
  */
 contentType: string;
+};
+
+export type UploadCadModelFileParams = {
+/**
+ * @maxLength 255
+ */
+fileName: string;
+/**
+ * @maxLength 100
+ */
+contentType: string;
+};
+
+export type CreateCodeProject201 = {
+  project: CodeProject;
+};
+
+export type UpdateCodeProject200 = {
+  project: CodeProject;
+};
+
+export type CreateCodeFile201 = {
+  file: CodeFile;
+};
+
+export type UpdateCodeFile200 = {
+  file: CodeFile;
+};
+
+export type CreateCodeRevision201 = {
+  revision: CodeRevision;
+};
+
+export type DeleteCadBotParams = {
+botId: string;
+};
+
+export type ListCadModelsParams = {
+botId?: string;
+folderId?: string;
 };
 

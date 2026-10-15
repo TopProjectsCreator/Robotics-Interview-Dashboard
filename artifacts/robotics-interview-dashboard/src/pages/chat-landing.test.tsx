@@ -1191,7 +1191,8 @@ describe("public chat discovery", () => {
   });
 
   it("does not carry cached records into a different interviewer's sign-in", async () => {
-    window.history.replaceState({}, "", "/auth");
+    // /dashboard is every signed-in user's home now, so request /chat explicitly.
+    window.history.replaceState({}, "", "/auth?returnTo=%2Fchat");
     const oldAccountCanary = "PreviousInterviewerPrivateCanary";
     queryClient.setQueryData(getGetSessionQueryKey(), { authenticated: false }, { updatedAt: Date.now() + 60_000 });
     queryClient.setQueryData(getGetInterviewChatQueryKey(), {

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const displaySettingsTable = pgTable("display_settings", {
   id: integer("id").primaryKey().default(1),
+  teamId: text("team_id"),
   // Null = automatic text. Set = coordinator override shown on the big screen.
   customHeadline: text("custom_headline"),
   customSubheadline: text("custom_subheadline"),
@@ -21,6 +22,7 @@ export type DisplaySettings = typeof displaySettingsTable.$inferSelect;
 
 export const seatingSettingsTable = pgTable("seating_settings", {
   id: integer("id").primaryKey().default(1),
+  teamId: text("team_id"),
   rows: integer("rows").notNull().default(4),
   cols: integer("cols").notNull().default(6),
   updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -33,6 +35,7 @@ export type SeatingSettings = typeof seatingSettingsTable.$inferSelect;
 
 export const dashboardChartsTable = pgTable("dashboard_charts", {
   id: text("id").primaryKey(),
+  teamId: text("team_id"),
   ownerId: text("owner_id"),
   source: text("source").notNull(),
   chart: text("chart").notNull(),

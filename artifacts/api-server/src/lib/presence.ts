@@ -55,7 +55,13 @@ export type IpStats = {
   pages: IpPageStat[];
 };
 
-export async function rotatePageVisit(sessionHash: string, ip: string, page: string, storedPage: string): Promise<void> {
+export async function rotatePageVisit(
+  sessionHash: string,
+  ip: string,
+  page: string,
+  storedPage: string,
+  teamId?: string | null,
+): Promise<void> {
   try {
     if (storedPage !== page) {
       await db
@@ -63,8 +69,10 @@ export async function rotatePageVisit(sessionHash: string, ip: string, page: str
         .set({ exitedAt: new Date() })
         .where(and(eq(pageVisitsTable.sessionHash, sessionHash), isNull(pageVisitsTable.exitedAt)));
       if (page) {
+        const trimmedTeam = teamId?.trim();
         await db.insert(pageVisitsTable).values({
           id: randomUUID(),
+          ...(trimmedTeam ? { teamId: trimmedTeam } : {}),
           sessionHash,
           ip,
           page,
@@ -87,12 +95,19 @@ export async function closeOpenVisits(sessionHash: string): Promise<void> {
   }
 }
 
-export async function getIpStats(ip: string): Promise<IpStats> {
+export async function getIpStats(ip: string, teamId?: string | null): Promise<IpStats> {
   const now = Date.now();
+  const conditions = [eq(pageVisitsTable.ip, ip)];
+  const trimmedTeam = teamId?.trim();
+  if (trimmedTeam) {
+    const { teamFilter } = await import("./teams");
+    const teamCondition = teamFilter(pageVisitsTable.teamId, trimmedTeam);
+    if (teamCondition) conditions.push(teamCondition);
+  }
   const rows = await db
     .select()
     .from(pageVisitsTable)
-    .where(eq(pageVisitsTable.ip, ip))
+    .where(and(...conditions))
     .orderBy(desc(pageVisitsTable.enteredAt))
     .limit(5000);
   const sessions = new Set<string>();

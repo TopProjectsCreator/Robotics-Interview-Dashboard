@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { attachTrackpadPan } from "../lib/trackpadPan";
+
 // Emitted as a hashed asset so the WASM loader never guesses a path.
 import occtWasmUrl from "occt-import-js/dist/occt-import-js.wasm?url";
 
@@ -43,6 +45,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
     let resizeHandler: (() => void) | null = null;
     let renderer: import("three").WebGLRenderer | null = null;
     let controls: import("three/addons/controls/OrbitControls.js").OrbitControls | null = null;
+    let detachTrackpadPan: (() => void) | null = null;
     let scene: import("three").Scene | null = null;
     const geometries: import("three").BufferGeometry[] = [];
     const materials: import("three").Material[] = [];
@@ -88,6 +91,9 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
         viewerRenderer.domElement.setAttribute("aria-label", `3D preview of ${name}`);
         viewerRenderer.domElement.setAttribute("role", "img");
         viewerRenderer.domElement.tabIndex = 0;
+        // Without this the browser claims two-finger gestures for page scroll,
+        // so OrbitControls never receives them.
+        viewerRenderer.domElement.style.touchAction = "none";
         host.appendChild(viewerRenderer.domElement);
 
         viewerScene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -98,7 +104,13 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
         fillLight.position.set(-5, -3, -4);
         viewerScene.add(fillLight);
 
+        // Registered before OrbitControls so this handler sees the wheel event
+        // first and can consume the pan gestures OrbitControls would zoom.
+        detachTrackpadPan = attachTrackpadPan(viewerRenderer.domElement, () => viewerControls);
         const viewerControls = new OrbitControls(camera, viewerRenderer.domElement);
+        // Pan in the camera's screen plane; panning in the ground plane is
+        // disorienting for a part floating in space.
+        viewerControls.screenSpacePanning = true;
         controls = viewerControls;
         viewerControls.enableDamping = true;
         viewerControls.dampingFactor = 0.08;
@@ -233,6 +245,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
       abortController?.abort();
       resizeObserver?.disconnect();
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+      detachTrackpadPan?.();
       controls?.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
@@ -249,7 +262,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
     <figure className="my-2 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-step-attachment">
       <figcaption className="flex flex-wrap items-center justify-between gap-1 border-b border-[#dce9e8] px-3 py-2 text-[11px] dark:border-[#2a3f52]">
         <span className="min-w-0 truncate font-semibold text-[#183a4b] dark:text-[#e5edf3]">{name}</span>
-        <span className="text-[#718189] dark:text-[#a8bac8]">STEP model · converted in your browser · drag to rotate</span>
+        <span className="text-[#718189] dark:text-[#a8bac8]">STEP model · converted in your browser · drag to rotate · two fingers to pan and zoom</span>
       </figcaption>
       {failed ? (
         <div className="flex min-h-24 flex-wrap items-center gap-2 p-4 text-xs text-[#a34d46] dark:text-[#e89890]" role="status">

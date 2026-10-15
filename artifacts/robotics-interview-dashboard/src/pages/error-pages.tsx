@@ -98,7 +98,7 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     headlineA: "Pit gate",
     headlineB: "locked.",
     tagline:
-      "No credentials on this badge. Scan in with the coordinator passcode before your robot rolls into the bay.",
+      "No credentials on this badge. Scan in with the admin passcode before your robot rolls into the bay.",
     status: "401 · NO_CREDENTIALS",
     fix: "Sign in from the control room, then retry.",
     icon: Fingerprint,
@@ -120,16 +120,16 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     tagline:
       "The robot tried an alliance station it isn’t cleared for. The route number doesn’t match your access level.",
     status: "403 · FORBIDDEN_BAY",
-    fix: "Ask a coordinator to unlock this area.",
+    fix: "Ask an admin to unlock this area.",
     icon: ShieldX,
     accent: "#f0564a",
     chip: "Access denied",
     panelTitle: "The rulebook says no.",
     panelBody:
-      "Even signed in, this zone is restricted. Grab a coordinator to open it up for you.",
+      "Even signed in, this zone is restricted. Grab an admin to open it up for you.",
     footerLine:
       "Wolverines / Team 23442 · Restricted bay · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — restricted zone, get a coordinator",
+    lightFooter: "Wolverines · Team 23442 — restricted zone, get an admin",
   },
   404: {
     code: 404,

@@ -1,7 +1,9 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
-import { db, interviewerAccountsTable, revokedSessionsTable } from "@workspace/db";
+import { db, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
+import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 
 const SESSION_COOKIE = "robotics_admin_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -43,16 +45,39 @@ export function createAdminSession(): string {
   return createInterviewerSession("legacy");
 }
 
-export function createInterviewerSession(interviewerId: string): string {
-  const payload = `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}`;
+export function createInterviewerSession(interviewerId: string, instance: DbInstance = "primary"): string {
+  // Secondary-instance accounts carry a trailing "s" segment (covered by the
+  // digest), so every later request routes to the right database with zero
+  // extra lookups. Primary tokens keep the exact legacy 4-segment shape.
+  const payload = instance === "secondary"
+    ? `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}.s`
+    : `${Date.now()}.${randomBytes(24).toString("hex")}.${interviewerId}`;
   return `${payload}.${sessionDigest(payload)}`;
 }
 
-export function isValidAdminSession(value: unknown): boolean {
-  if (typeof value !== "string") return false;
+function sessionParts(value: unknown): string[] | null {
+  if (typeof value !== "string") return null;
   const parts = value.split(".");
-  if (parts.length !== 4) return false;
-  const [timestamp, nonce, interviewerId, digest] = parts;
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  return parts;
+}
+
+export function isValidAdminSession(value: unknown): boolean {
+  const parts = sessionParts(value);
+  if (!parts) return false;
+  let timestamp: string;
+  let nonce: string;
+  let interviewerId: string;
+  let digest: string;
+  let payload: string;
+  if (parts.length === 5) {
+    if (parts[3] !== "s") return false;
+    [timestamp, nonce, interviewerId, , digest] = parts;
+    payload = `${timestamp}.${nonce}.${interviewerId}.s`;
+  } else {
+    [timestamp, nonce, interviewerId, digest] = parts;
+    payload = `${timestamp}.${nonce}.${interviewerId}`;
+  }
   const createdAt = Number(timestamp);
   if (!Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS) {
     return false;
@@ -61,7 +86,7 @@ export function isValidAdminSession(value: unknown): boolean {
     return false;
   }
   if (!nonce || !interviewerId || !digest) return false;
-  const expected = sessionDigest(`${timestamp}.${nonce}.${interviewerId}`);
+  const expected = sessionDigest(payload);
   const actualBuffer = Buffer.from(digest);
   const expectedBuffer = Buffer.from(expected);
   return (
@@ -70,14 +95,48 @@ export function isValidAdminSession(value: unknown): boolean {
   );
 }
 
+/** Database instance for a session token. Legacy 4-segment tokens: primary. */
+export function instanceFromSession(value: unknown): DbInstance {
+  const parts = sessionParts(value);
+  if (parts?.length === 5 && parts[3] === "s" && isValidAdminSession(value)) return "secondary";
+  return "primary";
+}
+
 export function interviewerIdFromSession(value: unknown): string | undefined {
   if (!isValidAdminSession(value)) return undefined;
   const parts = (value as string).split(".");
-  return parts.length === 4 ? parts[2] : undefined;
+  return parts.length === 4 || parts.length === 5 ? parts[2] : undefined;
 }
 
 export function authenticatedInterviewerId(req: Request): string | undefined {
   return interviewerIdFromSession(requestAdminSession(req));
+}
+
+/**
+ * Team id for the signed-in account. Falls back to the default team when the
+ * account is missing (pre-migration) or has a legacy NULL team_id, so the
+ * current team's data stays reachable and is never lost.
+ */
+export async function requestTeamId(req: Request): Promise<string> {
+  const { DEFAULT_TEAM_ID } = await import("@workspace/db");
+  const interviewerId = authenticatedInterviewerId(req);
+  if (!interviewerId) return DEFAULT_TEAM_ID;
+  try {
+    const { db, interviewerAccountsTable } = await import("@workspace/db");
+    const { eq } = await import("drizzle-orm");
+    const [account] = await db.select({ teamId: interviewerAccountsTable.teamId })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1);
+    return account?.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
+  } catch {
+    return DEFAULT_TEAM_ID;
+  }
+}
+
+export function requestTeamIdSync(req: Request): string {
+  const enriched = req as Request & { teamId?: string };
+  return enriched.teamId?.trim() ? enriched.teamId : "default";
 }
 
 function bearerSession(req: Request): string | undefined {
@@ -89,6 +148,14 @@ function bearerSession(req: Request): string | undefined {
 export function requestAdminSession(req: Request): string | undefined {
   const bearer = bearerSession(req);
   if (bearer && isValidAdminSession(bearer)) return bearer;
+  // EventSource cannot set an Authorization header, so the SSE client
+  // passes the stored session token as ?access_token= (same convention as
+  // the whiteboard/document/code WebSocket upgrades). Accept it here so the
+  // realtime stream works when cookies are blocked (embedded iframe, etc.).
+  const queryToken = (req.query as Record<string, unknown> | undefined)?.["access_token"];
+  if (typeof queryToken === "string" && queryToken.trim() && isValidAdminSession(queryToken.trim())) {
+    return queryToken.trim();
+  }
   return req.cookies?.[SESSION_COOKIE];
 }
 
@@ -104,7 +171,9 @@ export function attachAdminSession(
   };
   enriched.isAuthenticated = () => isValidAdminSession(session);
   enriched.interviewerId = interviewerIdFromSession(session);
-  next();
+  // Route the whole request to the session's database instance. Primary
+  // sessions (including all legacy tokens) behave exactly as before.
+  runWithInstance(instanceFromSession(session), () => next());
 }
 
 export function requireAdmin(
@@ -182,6 +251,45 @@ export function requireStaff(
   });
 }
 
+/** True when the signed-in account is flagged as the site owner. */
+export async function isSiteOwner(interviewerId: string | undefined): Promise<boolean> {
+  if (!interviewerId) return false;
+  try {
+    const [account] = await db.select({ isSiteOwner: interviewerAccountsTable.isSiteOwner })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1);
+    return account?.isSiteOwner === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Site-owner gate (Ishaan Bansal): the cross-team feature-request inbox and
+ * site-wide stats. Every signed-in account can FILE a request; only the
+ * owner reads all teams' requests and resolves them.
+ */
+export function requireSiteOwner(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    isSiteOwner(interviewerId).then((owner) => {
+      if (!owner) {
+        res.status(403).json({ error: "Site owner only" });
+        return;
+      }
+      next();
+    }).catch((error) => {
+      req.log.error({ err: error }, "Site owner check failed");
+      res.status(503).json({ error: "Authentication unavailable" });
+    });
+  });
+}
+
 export function requireCoordinator(
   req: Request,
   res: Response,
@@ -199,7 +307,7 @@ export function requireCoordinator(
       .limit(1)
       .then(([account]) => {
         if (account?.role !== "coordinator") {
-          res.status(403).json({ error: "Coordinators only" });
+          res.status(403).json({ error: "Admins only" });
           return;
         }
         next();
@@ -209,6 +317,92 @@ export function requireCoordinator(
         res.status(503).json({ error: "Authentication unavailable" });
       });
   });
+}
+
+/**
+ * Gates a route on the per-user workspace access settings. Used by
+ * workspaces such as CAD/Code so that opening one up to another person is a
+ * settings change rather than a redeploy. Coordinators always pass.
+ */
+export function requireWorkspaceAccess(
+  workspace: WorkspaceKey,
+  message = "This workspace is not available for your account",
+) {
+  return function requireWorkspace(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    requireAdmin(req, res, () => {
+      const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+      if (!interviewerId) {
+        res.status(401).json({ error: "Interviewer session is invalid" });
+        return;
+      }
+      void (async () => {
+        const [visibility, [account]] = await Promise.all([
+          readWorkspaceVisibility(await requestTeamId(req)),
+          db
+            .select({ role: interviewerAccountsTable.role })
+            .from(interviewerAccountsTable)
+            .where(eq(interviewerAccountsTable.id, interviewerId))
+            .limit(1),
+        ]);
+        if (!userCanSeeWorkspace(visibility, interviewerId, account?.role, workspace)) {
+          res.status(403).json({ error: message });
+          return;
+        }
+        next();
+      })().catch((error: unknown) => {
+        req.log.error({ err: error }, "Workspace access check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+    });
+  };
+}
+
+/**
+ * Grants access when the caller's account can open `workspace`, and always to
+ * coordinators. Used for capabilities that predate the configurable workspaces
+ * and are shared by several of them, so locking one workspace must never take
+ * a coordinator's existing features away with it.
+ */
+export function requireWorkspaceAccessOrCoordinator(
+  workspace: WorkspaceKey,
+  message = "This workspace is not available for your account",
+) {
+  return function requireWorkspaceOrCoordinator(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    requireAdmin(req, res, () => {
+      const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+      if (!interviewerId) {
+        res.status(401).json({ error: "Interviewer session is invalid" });
+        return;
+      }
+      void (async () => {
+        const [[account], visibility] = await Promise.all([
+          db
+            .select({ role: interviewerAccountsTable.role })
+            .from(interviewerAccountsTable)
+            .where(eq(interviewerAccountsTable.id, interviewerId))
+            .limit(1),
+          readWorkspaceVisibility(await requestTeamId(req)),
+        ]);
+        const role = account?.role;
+        if (userCanSeeWorkspace(visibility, interviewerId, role, workspace)) {
+          next();
+          return;
+        }
+        res.status(403).json({ error: message });
+      })().catch((error: unknown) => {
+        req.log.error({ err: error }, "Workspace access check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+    });
+  };
 }
 
 export function setAdminCookie(res: Response, session: string): void {

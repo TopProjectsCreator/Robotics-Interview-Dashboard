@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
 import { SearchPartsCatalogResponse } from "../../../../lib/api-zod/src/generated/api.ts";
+import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -89,8 +90,19 @@ test("assistant catalog search pages beyond 100 matches without gaps or duplicat
     namedExports: {
       pool,
       db: {},
+      primaryDb: {},
+      primaryPool: pool,
       interviewerAccountsTable: {},
       revokedSessionsTable: {},
+      teamsTable,
+      DEFAULT_TEAM_ID,
+      normalizeTeamName,
+      runWithInstance: (_instance, fn) => fn(),
+      currentInstance: () => "primary",
+      enterInstance: () => {},
+      secondaryDb: () => null,
+      secondaryPool: () => null,
+      hasSecondary: () => false,
     },
   });
   mock.method(

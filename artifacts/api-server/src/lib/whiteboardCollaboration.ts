@@ -1,15 +1,15 @@
 import type { IncomingMessage, Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
-import { eq } from "drizzle-orm";
-import { db, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
+import { db, runWithInstance, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
   isValidAdminSession,
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
-import { isDocumentCollaborationPath } from "./documentCollaboration";
+import { teamFilter, findAccountAnywhere } from "./teams";
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
 const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
@@ -45,6 +45,7 @@ type CollaborationClient = {
 
 type CollaborationRoom = {
   whiteboardId: string;
+  teamId: string;
   clients: Set<CollaborationClient>;
   currentData: string;
   pendingData?: { data: string; updatedBy: string };
@@ -191,10 +192,10 @@ function normalizeCursor(value: unknown): Pick<CursorPresence, "x" | "y" | "visi
   };
 }
 
-function roomFor(whiteboardId: string, currentData: string): CollaborationRoom {
+function roomFor(whiteboardId: string, currentData: string, teamId?: string | null): CollaborationRoom {
   const existing = rooms.get(whiteboardId);
   if (existing) return existing;
-  const room: CollaborationRoom = { whiteboardId, clients: new Set(), currentData };
+  const room: CollaborationRoom = { whiteboardId, teamId: teamId?.trim() ? teamId : DEFAULT_TEAM_ID, clients: new Set(), currentData };
   rooms.set(whiteboardId, room);
   return room;
 }
@@ -208,32 +209,29 @@ function schedulePersist(room: CollaborationRoom): void {
     if (!pending) return;
     void db.update(interviewWhiteboardsTable)
       .set({ data: pending.data, updatedAt: new Date() })
-      .where(eq(interviewWhiteboardsTable.id, room.whiteboardId))
+      .where(and(eq(interviewWhiteboardsTable.id, room.whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
       .catch((error) => logger.error({ err: error, whiteboardId: room.whiteboardId }, "Whiteboard collaboration persist failed"));
   }, 180);
 }
 
-async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{ interviewerId: string; displayName: string } | null> {
+async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{ interviewerId: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const interviewerId = interviewerIdFromSession(session);
   if (!interviewerId) return null;
-  const [account] = await db.select({
-    id: interviewerAccountsTable.id,
-    displayName: interviewerAccountsTable.displayName,
-    passwordHash: interviewerAccountsTable.passwordHash,
-  }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
-  if (!account?.passwordHash) return null;
-  return { interviewerId: account.id, displayName: account.displayName };
+  const found = await findAccountAnywhere(interviewerId);
+  if (!found?.account.passwordHash) return null;
+  return { interviewerId: found.account.id, displayName: found.account.displayName, teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID, instance: found.instance };
 }
 
 async function openCollaboration(
   socket: WebSocket,
-  identity: { interviewerId: string; displayName: string },
+  identity: { interviewerId: string; displayName: string; teamId: string },
   whiteboard: WhiteboardRow,
+  teamId?: string | null,
 ): Promise<void> {
   const whiteboardId = whiteboard.id;
-  const room = roomFor(whiteboardId, whiteboard.data);
+  const room = roomFor(whiteboardId, whiteboard.data, teamId ?? identity.teamId ?? whiteboard.teamId);
   const clientId = randomUUID();
   const client: CollaborationClient = {
     id: clientId,
@@ -321,19 +319,19 @@ async function openCollaboration(
       if (pending) {
         void db.update(interviewWhiteboardsTable)
           .set({ data: pending.data, updatedAt: new Date() })
-          .where(eq(interviewWhiteboardsTable.id, whiteboardId))
+          .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
           .catch((error) => logger.error({ err: error, whiteboardId }, "Whiteboard collaboration final persist failed"));
       }
     }
   });
 }
 
-export function broadcastWhiteboardScene(whiteboardId: string, data: string, updatedBy: string): void {
+export function broadcastWhiteboardScene(whiteboardId: string, data: string, updatedBy: string, _teamId?: string | null): void {
   const room = rooms.get(whiteboardId);
   if (!room) return;
   const normalized = normalizeWhiteboardData(data);
   if (!normalized) return;
-  const mergedData = mergeWhiteboardDataForSave(whiteboardId, normalized);
+  const mergedData = mergeWhiteboardDataForSave(whiteboardId, normalized, _teamId);
   room.currentData = mergedData;
   const updatedAt = new Date().toISOString();
   room.pendingData = { data: mergedData, updatedBy };
@@ -341,7 +339,7 @@ export function broadcastWhiteboardScene(whiteboardId: string, data: string, upd
   broadcast(room, { type: "scene", data: mergedData, updatedAt, updatedBy, clientRevision: 0 });
 }
 
-export function mergeWhiteboardDataForSave(whiteboardId: string, data: string): string {
+export function mergeWhiteboardDataForSave(whiteboardId: string, data: string, _teamId?: string | null): string {
   const normalized = normalizeWhiteboardData(data);
   if (!normalized) return data;
   const room = rooms.get(whiteboardId);
@@ -353,20 +351,24 @@ export function setupWhiteboardCollaboration(server: Server): void {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     const match = WHITEBOARD_PATH.exec(url.pathname);
     if (!match) {
-      if (isDocumentCollaborationPath(url.pathname)) return;
-      socket.destroy();
+      // Do not destroy the socket here: the same HTTP server also handles
+      // document-collab (/api/whiteboards/:id/document-collab) and code-collab
+      // (/api/code/:fileId/collab) upgrades in other listeners. Destroying an
+      // unmatched socket would kill those connections before their handler
+      // runs (notably the code IDE). Just return and let the matching handler
+      // (or nothing, for unknown paths) deal with it.
       return;
     }
     const whiteboardId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => {
+      .then((identity) => runWithInstance(identity?.instance ?? "primary", () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
           socket.destroy();
           return;
         }
         void db.select().from(interviewWhiteboardsTable)
-          .where(eq(interviewWhiteboardsTable.id, whiteboardId))
+          .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, identity.teamId)))
           .limit(1)
           .then(([whiteboard]) => {
             if (!whiteboard || !canAccessWhiteboard(whiteboard, identity.displayName)) {
@@ -375,7 +377,7 @@ export function setupWhiteboardCollaboration(server: Server): void {
               return;
             }
             websocketServer.handleUpgrade(request, socket, head, (clientSocket) => {
-              void openCollaboration(clientSocket, identity, whiteboard).catch((error) => {
+              void openCollaboration(clientSocket, identity, whiteboard, identity.teamId).catch((error) => {
                 logger.error({ err: error, whiteboardId }, "Whiteboard collaboration connection failed");
                 clientSocket.close(1011, "Collaboration unavailable");
               });
@@ -385,7 +387,7 @@ export function setupWhiteboardCollaboration(server: Server): void {
             logger.error({ err: error, whiteboardId }, "Whiteboard collaboration authorization failed");
             socket.destroy();
           });
-      })
+      }))
       .catch((error) => {
         logger.error({ err: error }, "Whiteboard collaboration authentication failed");
         socket.destroy();
