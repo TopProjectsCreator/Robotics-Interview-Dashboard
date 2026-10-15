@@ -49,6 +49,7 @@ import {
 } from "@workspace/api-client-react";
 import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
+import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker } from "./components/AssistantModelPicker";
 import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
@@ -326,6 +327,7 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [, setLocation] = useLocation();
   const logout = useLogout();
   const [open, setOpen] = useState(false);
+  const [notepadOpen, setNotepadOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -343,9 +345,11 @@ function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
       <div className="p-2">
         {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>}
+        <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><FileText size={16} /> Notepad</button>
         <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
       </div>
     </div>}
+    {notepadOpen && <PersonalNotepad accountKey={session.data?.interviewerId || session.data?.label || "current"} onClose={() => setNotepadOpen(false)} />}
   </div>;
 }
 const SORT_OPTIONS = [{ value: "rank", label: "Rank" }, { value: "queue", label: "Queue order" }, { value: "score", label: "AI score" }, { value: "name", label: "Name" }, { value: "grade", label: "Grade" }, { value: "skill", label: "Skill" }, { value: "gender", label: "Gender" }, { value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }];

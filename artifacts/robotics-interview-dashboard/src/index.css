@@ -203,6 +203,16 @@ button { cursor: pointer; }
 .document-editor .document-eyebrow { color: var(--document-accent); }
 .document-editor .document-breadcrumb { color: var(--document-muted); }
 .document-editor .document-title-input { color: var(--document-foreground); }
+.personal-notepad-editor { min-height: 340px; outline: none; color: hsl(var(--foreground)); font-family: var(--app-font-sans); font-size: 15px; line-height: 1.75; }
+.personal-notepad-editor > *:first-child { margin-top: 0; }
+.personal-notepad-editor h1, .personal-notepad-editor h2, .personal-notepad-editor h3 { margin: 1.1em 0 .45em; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; }
+.personal-notepad-editor h1 { font-size: 1.8rem; }
+.personal-notepad-editor h2 { font-size: 1.45rem; }
+.personal-notepad-editor p { margin: .55em 0; }
+.personal-notepad-editor ul, .personal-notepad-editor ol { padding-left: 1.5rem; }
+.personal-notepad-editor ul { list-style: disc; }
+.personal-notepad-editor ol { list-style: decimal; }
+.personal-notepad-editor blockquote { margin: 1rem 0; border-left: 3px solid hsl(var(--ring)); padding-left: .9rem; color: hsl(var(--muted-foreground)); }
 .document-editor .document-title-input::placeholder { color: var(--document-muted); }
 .document-editor .document-meta, .document-editor .document-muted-text, .document-editor .document-muted-icon { color: var(--document-muted); }
 .document-editor .document-save-text { color: var(--document-save-text); }
