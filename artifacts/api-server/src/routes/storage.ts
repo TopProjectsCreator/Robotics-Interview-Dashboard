@@ -1,4 +1,6 @@
 import {
+  AbortChunkUploadBody,
+  AbortChunkUploadResponse,
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UploadPartsRobotPreviewFileResponse,
@@ -386,6 +388,21 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
     req.log.error({ err: error }, 'Error minting chunk upload URL');
     if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
     res.status(500).json({ error: 'Failed to prepare this upload part' });
+  }
+});
+
+router.post('/storage/uploads/chunk-abort', requireAdmin, async (req: Request, res: Response) => {
+  const parsed = AbortChunkUploadBody.safeParse(req.body);
+  if (!parsed.success || !isChunkUploadId(parsed.data.uploadId)) {
+    res.status(400).json({ error: 'A valid uploadId, part count, and storage instance are required' });
+    return;
+  }
+  try {
+    await deleteChunkParts(parsed.data.uploadId, parsed.data.totalParts, parsed.data.storageInstance);
+    res.json(AbortChunkUploadResponse.parse({ ok: true }));
+  } catch (error) {
+    req.log.warn({ err: error, uploadId: parsed.data.uploadId }, 'Could not clean up incomplete chunk upload');
+    res.status(500).json({ error: 'Incomplete upload cleanup failed' });
   }
 });
 

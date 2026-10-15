@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createChunkUploadUrl, completeChunkUpload } = vi.hoisted(() => ({
+const { abortChunkUpload, createChunkUploadUrl, completeChunkUpload } = vi.hoisted(() => ({
+  abortChunkUpload: vi.fn(),
   createChunkUploadUrl: vi.fn(),
   completeChunkUpload: vi.fn(),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
+  abortChunkUpload,
   createChunkUploadUrl,
   completeChunkUpload,
 }));
@@ -15,6 +17,7 @@ import { uploadChunked } from "./chunkedUpload";
 describe("chunked upload storage failover", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    abortChunkUpload.mockResolvedValue({ ok: true });
   });
 
   it("restarts a failed primary upload on secondary storage and records that destination", async () => {
@@ -41,6 +44,11 @@ describe("chunked upload storage failover", () => {
     const primaryUploadId = createChunkUploadUrl.mock.calls[0][0].uploadId;
     const secondaryUploadId = createChunkUploadUrl.mock.calls[1][0].uploadId;
     expect(secondaryUploadId).not.toBe(primaryUploadId);
+    expect(abortChunkUpload).toHaveBeenCalledWith({
+      uploadId: primaryUploadId,
+      totalParts: 1,
+      storageInstance: "primary",
+    });
     expect(completeChunkUpload).toHaveBeenCalledWith(expect.objectContaining({
       uploadId: secondaryUploadId,
       storageInstance: "secondary",

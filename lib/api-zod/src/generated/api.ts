@@ -896,6 +896,24 @@ export const CreateChunkUploadUrlResponse = zod.object({
 
 
 /**
+ * @summary Remove incomplete parts from an abandoned chunked upload
+ */
+export const abortChunkUploadBodyTotalPartsMax = 10000;
+
+
+
+export const AbortChunkUploadBody = zod.object({
+  "uploadId": zod.string(),
+  "totalParts": zod.number().int().min(1).max(abortChunkUploadBodyTotalPartsMax),
+  "storageInstance": zod.enum(['primary', 'secondary'])
+})
+
+export const AbortChunkUploadResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
  * @summary Record the manifest for a finished chunked upload
  */
 export const CompleteChunkUploadBody = zod.object({

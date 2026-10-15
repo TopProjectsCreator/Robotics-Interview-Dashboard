@@ -450,6 +450,28 @@ export interface ChunkUploadUrl {
   storageInstance: ChunkUploadUrlStorageInstance;
 }
 
+export type ChunkUploadAbortInputStorageInstance = typeof ChunkUploadAbortInputStorageInstance[keyof typeof ChunkUploadAbortInputStorageInstance];
+
+
+export const ChunkUploadAbortInputStorageInstance = {
+  primary: 'primary',
+  secondary: 'secondary',
+} as const;
+
+export interface ChunkUploadAbortInput {
+  uploadId: string;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  totalParts: number;
+  storageInstance: ChunkUploadAbortInputStorageInstance;
+}
+
+export interface ChunkUploadAbortResult {
+  ok: boolean;
+}
+
 export type ChunkUploadCompleteInputStorageInstance = typeof ChunkUploadCompleteInputStorageInstance[keyof typeof ChunkUploadCompleteInputStorageInstance];
 
 

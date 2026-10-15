@@ -32,6 +32,8 @@ const SCHEMA_NAMES = [
   "UploadCadModelFileResponse",
   "CreateChunkUploadUrlBody",
   "CreateChunkUploadUrlResponse",
+  "AbortChunkUploadBody",
+  "AbortChunkUploadResponse",
   "CompleteChunkUploadBody",
   "CompleteChunkUploadResponse",
 ];

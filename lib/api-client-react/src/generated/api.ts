@@ -67,6 +67,8 @@ import type {
   ChatReactionInput,
   ChatReactionList,
   ChatSettings,
+  ChunkUploadAbortInput,
+  ChunkUploadAbortResult,
   ChunkUploadCompleteInput,
   ChunkUploadStored,
   ChunkUploadUrl,
@@ -3263,6 +3265,77 @@ export const useCreateChunkUploadUrl = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateChunkUploadUrlMutationOptions(options));
+    }
+
+export const getAbortChunkUploadUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/chunk-abort`
+}
+
+/**
+ * @summary Remove incomplete parts from an abandoned chunked upload
+ */
+export const abortChunkUpload = async (chunkUploadAbortInput: ChunkUploadAbortInput, options?: Parameters<typeof customFetch>[1]): Promise<ChunkUploadAbortResult> => {
+
+  return customFetch<ChunkUploadAbortResult>(getAbortChunkUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chunkUploadAbortInput)
+  }
+);}
+
+
+
+
+
+export const getAbortChunkUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof abortChunkUpload>>, TError,{data: BodyType<ChunkUploadAbortInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof abortChunkUpload>>, TError,{data: BodyType<ChunkUploadAbortInput>}, TContext> => {
+
+const mutationKey = ['abortChunkUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof abortChunkUpload>>, {data: BodyType<ChunkUploadAbortInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  abortChunkUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AbortChunkUploadMutationResult = NonNullable<Awaited<ReturnType<typeof abortChunkUpload>>>
+    export type AbortChunkUploadMutationBody = BodyType<ChunkUploadAbortInput>
+    export type AbortChunkUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove incomplete parts from an abandoned chunked upload
+ */
+export const useAbortChunkUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof abortChunkUpload>>, TError,{data: BodyType<ChunkUploadAbortInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof abortChunkUpload>>,
+        TError,
+        {data: BodyType<ChunkUploadAbortInput>},
+        TContext
+      > => {
+      return useMutation(getAbortChunkUploadMutationOptions(options));
     }
 
 export const getCompleteChunkUploadUrl = () => {

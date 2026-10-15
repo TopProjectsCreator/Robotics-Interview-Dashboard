@@ -1,4 +1,4 @@
-import { createChunkUploadUrl, completeChunkUpload } from "@workspace/api-client-react";
+import { abortChunkUpload, createChunkUploadUrl, completeChunkUpload } from "@workspace/api-client-react";
 
 /** Parts stay well under the storage plan's 50 MB per-object ceiling. */
 export const CHUNK_PART_BYTES = 40 * 1024 * 1024;
@@ -84,6 +84,7 @@ export async function uploadChunked(
       ? (error as { storageInstance?: unknown }).storageInstance
       : null;
     if (failedInstance !== "primary") throw error;
+    await abortChunkUpload({ uploadId, totalParts, storageInstance: "primary" }).catch(() => undefined);
     // A signed primary URL can be minted even when the subsequent PUT is
     // rejected by a quota limit. Restart the complete file on the secondary so
     // every part of the manifest lives in one bucket.

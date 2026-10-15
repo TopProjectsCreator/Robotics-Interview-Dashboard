@@ -869,6 +869,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChunkUploadUrl"
+  /storage/uploads/chunk-abort:
+    post:
+      operationId: abortChunkUpload
+      tags: [storage]
+      summary: Remove incomplete parts from an abandoned chunked upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChunkUploadAbortInput"
+      responses:
+        "200":
+          description: Incomplete upload parts removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChunkUploadAbortResult"
   /storage/uploads/chunk-complete:
     post:
       operationId: completeChunkUpload
@@ -3731,6 +3749,25 @@ components:
         storageInstance:
           type: string
           enum: [primary, secondary]
+    ChunkUploadAbortInput:
+      type: object
+      required: [uploadId, totalParts, storageInstance]
+      properties:
+        uploadId:
+          type: string
+        totalParts:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        storageInstance:
+          type: string
+          enum: [primary, secondary]
+    ChunkUploadAbortResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
     ChunkUploadCompleteInput:
       type: object
       required: [uploadId, fileName, contentType, sizeBytes, totalParts, partSizeBytes, storageInstance]
