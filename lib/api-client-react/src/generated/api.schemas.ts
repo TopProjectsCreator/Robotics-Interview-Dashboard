@@ -1401,6 +1401,8 @@ export interface InterviewChatMessage {
   peer: string | null;
   parentMessageId?: string | null;
   pinnedAt?: string | null;
+  editedAt: string | null;
+  deletedAt: string | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
   /**

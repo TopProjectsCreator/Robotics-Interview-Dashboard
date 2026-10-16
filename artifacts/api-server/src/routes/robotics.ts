@@ -2795,6 +2795,8 @@ function chatResponse(
     message: string;
     parentMessageId: string | null;
     pinnedAt: Date | null;
+    editedAt: Date | null;
+    deletedAt: Date | null;
     activities: string;
     createdAt: Date;
   },
@@ -2810,6 +2812,8 @@ function chatResponse(
     peer: conversation.peer,
     parentMessageId: message.parentMessageId,
     pinnedAt: message.pinnedAt?.toISOString() ?? null,
+    editedAt: message.editedAt?.toISOString() ?? null,
+    deletedAt: message.deletedAt?.toISOString() ?? null,
     activities: parseStoredActivities(message.activities),
     reactions: reactions ?? [],
     poll: poll ?? null,
@@ -3430,13 +3434,14 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     const teamId = await requestTeamId(req);
     try {
       const { rows: versionRows } = await pool.query(
-        `select count(*)::int as n, max(created_at) as m from interview_chat_messages
+        `select count(*)::int as n, max(created_at) as m, max(edited_at) as e, max(deleted_at) as d
+           from interview_chat_messages
           where conversation_scope = 'direct' and position($1 in conversation_peer) > 0
             and (team_id = $2 or ($2 = 'default' and team_id is null))`,
         [account.displayName, teamId],
       );
-      const versionRow = versionRows[0] as { n: number; m: Date | null };
-      const tag = `dm${versionRow.n}|${versionRow.m ? new Date(versionRow.m).getTime() : 0}`;
+      const versionRow = versionRows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null };
+      const tag = `dm${versionRow.n}|${versionRow.m ? new Date(versionRow.m).getTime() : 0}|${versionRow.e ? new Date(versionRow.e).getTime() : 0}|${versionRow.d ? new Date(versionRow.d).getTime() : 0}`;
       if (await notModified(req, res, tag)) return;
     } catch {
       // Version check is best-effort; fall through to the full load.
@@ -3446,7 +3451,8 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
               conversation_peer as "peerKey",
               author,
               message,
-              created_at
+               created_at,
+               deleted_at
          from interview_chat_messages
         where conversation_scope = 'direct'
           and position($1 in conversation_peer) > 0
@@ -3454,7 +3460,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
         order by conversation_peer, created_at desc`,
       [account.displayName, teamId],
     );
-    const items = (rows as { peerKey: string; author: string; message: string; created_at: Date }[])
+     const items = (rows as { peerKey: string; author: string; message: string; created_at: Date; deleted_at: Date | null }[])
       .map((row) => {
         const parts = String(row.peerKey).split("\u001f").filter(Boolean);
         const peer = parts.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? parts[0] ?? "";
@@ -3462,7 +3468,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
           peer,
           lastMessageAt: new Date(row.created_at).toISOString(),
           lastMessageAuthor: String(row.author),
-          lastMessage: String(row.message ?? "").slice(0, 140),
+           lastMessage: row.deleted_at ? "This message was deleted" : String(row.message ?? "").slice(0, 140),
         };
       })
       .filter((item) => item.peer)
@@ -3470,7 +3476,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     // Also report the latest team-channel message so the client can notify
     // about chat activity even when the chat panel is not on screen.
     const sharedResult = await pool.query(
-      `select author, message, created_at
+       `select author, message, created_at, deleted_at
          from interview_chat_messages
         where conversation_scope = 'shared' and conversation_peer is null
           and (team_id = $1 or ($1 = 'default' and team_id is null))
@@ -3478,13 +3484,13 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
         limit 1`,
       [teamId],
     );
-    const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date } | undefined;
+     const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date; deleted_at: Date | null } | undefined;
     const shared = sharedRowValue
       ? {
           peer: "",
           lastMessageAt: new Date(sharedRowValue.created_at).toISOString(),
           lastMessageAuthor: String(sharedRowValue.author),
-          lastMessage: String(sharedRowValue.message ?? "").slice(0, 140),
+           lastMessage: sharedRowValue.deleted_at ? "This message was deleted" : String(sharedRowValue.message ?? "").slice(0, 140),
         }
       : null;
     res.json(GetChatConversationsResponse.parse({ items, shared }));
@@ -3514,12 +3520,18 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   // (`before`) always loads fully — it runs on demand, not on an interval.
   const chatVersion = before ? null : (async () => {
     const { rows } = await pool.query(
-      `select (select count(*)::int from interview_chat_messages m
+       `select (select count(*)::int from interview_chat_messages m
          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
            and m.conversation_scope = $2 and ${peerCondition}) as n,
         (select max(m.created_at) from interview_chat_messages m
          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
            and m.conversation_scope = $2 and ${peerCondition}) as m,
+         (select max(m.edited_at) from interview_chat_messages m
+          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
+            and m.conversation_scope = $2 and ${peerCondition}) as e,
+         (select max(m.deleted_at) from interview_chat_messages m
+          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
+            and m.conversation_scope = $2 and ${peerCondition}) as d,
         (select max(r.created_at) from chat_message_reactions r
          where (r.team_id = $1 or ($1 = 'default' and r.team_id is null))) as r,
         (select max(p.created_at) from chat_polls p
@@ -3531,9 +3543,9 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
            order by m2.created_at desc limit 100)) as v`,
       [teamId, conversation.scope, ...peerParams],
     );
-    const row = rows[0] as { n: number; m: Date | null; r: Date | null; p: Date | null; v: Date | null };
+     const row = rows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; r: Date | null; p: Date | null; v: Date | null };
     const t = (d: Date | null) => (d ? new Date(d).getTime() : 0);
-    return `c${row.n}|${t(row.m)}|${t(row.r)}|${t(row.p)}|${t(row.v)}`;
+     return `c${row.n}|${t(row.m)}|${t(row.e)}|${t(row.d)}|${t(row.r)}|${t(row.p)}|${t(row.v)}`;
   });
   await sendVersioned(req, res, async () => chatVersion ? chatVersion() : null, async () => {
     const conversationFilters = [
@@ -3857,9 +3869,16 @@ router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): 
     res.status(400).json({ error: "Provide one emoji or a valid team emoji shortcode." });
     return;
   }
-  const [existingMessage] = await db.select({ id: interviewChatMessagesTable.id }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
+  const [existingMessage] = await db.select({
+    id: interviewChatMessagesTable.id,
+    deletedAt: interviewChatMessagesTable.deletedAt,
+  }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (existingMessage.deletedAt) {
+    res.status(410).json({ error: "This message was deleted." });
     return;
   }
   const [existing] = await db.select({ id: chatMessageReactionsTable.id }).from(chatMessageReactionsTable).where(and(
@@ -3888,9 +3907,14 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
   const [existingMessage] = await db.select({
     id: interviewChatMessagesTable.id,
     pinnedAt: interviewChatMessagesTable.pinnedAt,
+    deletedAt: interviewChatMessagesTable.deletedAt,
   }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (existingMessage.deletedAt) {
+    res.status(410).json({ error: "This message was deleted." });
     return;
   }
   const pinnedAt = existingMessage.pinnedAt ? null : new Date();
@@ -3923,6 +3947,10 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     res.status(404).json({ error: "Message not found." });
     return;
   }
+  if (existing.deletedAt) {
+    res.status(410).json({ error: "This message was deleted." });
+    return;
+  }
   // The admin role is STORED as "coordinator" (the Settings UI just labels it
   // "Admin"). Comparing against the label literally is how this bypass broke.
   const isAdmin = account.role === "coordinator";
@@ -3940,8 +3968,8 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     }
   }
   const [updated] = await db.update(interviewChatMessagesTable)
-    .set({ message: message.slice(0, CHAT_MESSAGE_MAX_CHARS) })
-    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+    .set({ message: message.slice(0, CHAT_MESSAGE_MAX_CHARS), editedAt: new Date() })
+    .where(and(eq(interviewChatMessagesTable.id, messageId), isNull(interviewChatMessagesTable.deletedAt), teamFilter(interviewChatMessagesTable.teamId, teamId)))
     .returning();
   const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
   const conversation: ChatConversation = updated.conversationScope === "direct"
@@ -3971,9 +3999,14 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     author: interviewChatMessagesTable.author,
     conversationScope: interviewChatMessagesTable.conversationScope,
     conversationPeer: interviewChatMessagesTable.conversationPeer,
+    deletedAt: interviewChatMessagesTable.deletedAt,
   }).from(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId))).limit(1);
   if (!existingMessage) {
     res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (existingMessage.deletedAt) {
+    res.status(410).json({ error: "This message was already deleted." });
     return;
   }
   // Stored admin role is "coordinator" — the UI label "Admin" is display-only.
@@ -3993,7 +4026,9 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
   await db.delete(chatMessageReactionsTable).where(and(eq(chatMessageReactionsTable.messageId, messageId), teamFilter(chatMessageReactionsTable.teamId, teamId)));
   await db.delete(chatPollVotesTable).where(and(eq(chatPollVotesTable.messageId, messageId), teamFilter(chatPollVotesTable.teamId, teamId)));
   await db.delete(chatPollsTable).where(and(eq(chatPollsTable.messageId, messageId), teamFilter(chatPollsTable.teamId, teamId)));
-  await db.delete(interviewChatMessagesTable).where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)));
+  await db.update(interviewChatMessagesTable)
+    .set({ message: "", activities: "[]", pinnedAt: null, deletedAt: new Date() })
+    .where(and(eq(interviewChatMessagesTable.id, messageId), isNull(interviewChatMessagesTable.deletedAt), teamFilter(interviewChatMessagesTable.teamId, teamId)));
   pushRealtimeHint("interview_chat_messages");
   res.status(204).end();
 });

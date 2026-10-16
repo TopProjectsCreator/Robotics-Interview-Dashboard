@@ -24,6 +24,8 @@ export const interviewChatMessagesTable = pgTable("interview_chat_messages", {
   activities: text("activities").notNull().default("[]"),
   parentMessageId: text("parent_message_id"),
   pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+  editedAt: timestamp("edited_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -18,6 +18,8 @@ export interface InterviewChatMessage {
   peer: string | null;
   parentMessageId?: string | null;
   pinnedAt?: Date | null;
+  editedAt: Date | null;
+  deletedAt: Date | null;
   activities?: AssistantActivity[];
   reactions?: ChatReaction[];
   /**
@@ -25,5 +27,5 @@ export interface InterviewChatMessage {
      * @nullable
      */
   poll?: ChatPoll | null;
-  createdAt: string;
+  createdAt: Date;
 }

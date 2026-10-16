@@ -1338,6 +1338,8 @@ export const GetInterviewChatResponse = zod.object({
   "peer": zod.string().nullable(),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
+  "editedAt": zod.coerce.date().nullable(),
+  "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -1359,7 +1361,7 @@ export const GetInterviewChatResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
-  "createdAt": zod.string()
+  "createdAt": zod.coerce.date()
 })),
   "scope": zod.enum(['shared', 'direct']),
   "peer": zod.string().nullable()
@@ -1394,6 +1396,8 @@ export const SendInterviewChatResponse = zod.object({
   "peer": zod.string().nullable(),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
+  "editedAt": zod.coerce.date().nullable(),
+  "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -1415,7 +1419,7 @@ export const SendInterviewChatResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
-  "createdAt": zod.string()
+  "createdAt": zod.coerce.date()
 })
 
 
@@ -1728,6 +1732,8 @@ export const UpdateChatMessageResponse = zod.object({
   "peer": zod.string().nullable(),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
+  "editedAt": zod.coerce.date().nullable(),
+  "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
   "detail": zod.string()
@@ -1749,7 +1755,7 @@ export const UpdateChatMessageResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
-  "createdAt": zod.string()
+  "createdAt": zod.coerce.date()
 })
 
 

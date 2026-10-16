@@ -5019,7 +5019,7 @@ components:
             $ref: "#/components/schemas/ScheduledChatMessage"
     InterviewChatMessage:
       type: object
-      required: [id, author, message, scope, peer, createdAt]
+      required: [id, author, message, scope, peer, editedAt, deletedAt, createdAt]
       properties:
         id:
           type: string
@@ -5040,6 +5040,14 @@ components:
           type: string
           format: date-time
           nullable: true
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
         activities:
           type: array
           items:
@@ -5055,6 +5063,7 @@ components:
             - $ref: "#/components/schemas/ChatPoll"
         createdAt:
           type: string
+          format: date-time
     ChatPollOption:
       type: object
       required: [index, text, votes]
