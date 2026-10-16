@@ -5868,6 +5868,10 @@ components:
           type: string
           maxLength: 200
           description: "Optional model id selected from the configured provider's live model list."
+        thinkingLevel:
+          type: string
+          enum: [low, medium, high]
+          description: "Optional model-supported reasoning effort. Omit for automatic/default reasoning."
         conversationId:
           type: string
         applicantIds:
@@ -5992,6 +5996,12 @@ components:
           type: string
         name:
           type: string
+        thinkingLevels:
+          type: array
+          description: "Thinking levels supported by this model according to provider capability metadata; empty when unsupported."
+          items:
+            type: string
+            enum: [low, medium, high]
     AssistantModelList:
       type: object
       required: [items]

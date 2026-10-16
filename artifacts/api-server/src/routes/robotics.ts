@@ -4630,6 +4630,7 @@ async function generateAssistantAnswer(options: {
   applicantIds?: string[];
   conversationId?: string;
   model?: string;
+  thinkingLevel?: "low" | "medium" | "high";
   disabledTools?: unknown;
   attachments?: { fileName?: unknown; objectPath?: unknown }[];
   authorLabel: string;
@@ -4663,9 +4664,11 @@ async function generateAssistantAnswer(options: {
   const requestedModel = options.model?.trim();
   let model = requestedModel || TEXT_MODEL;
   let freeModelIds: string[] = [];
+  let assistantModels: AssistantProviderModel[] = [];
   let modelCatalogAvailable = true;
   try {
-    freeModelIds = await listFreeAssistantModelIds();
+    assistantModels = await listFreeAssistantModels();
+    freeModelIds = assistantModels.map((item) => item.id);
   } catch (catalogError) {
     modelCatalogAvailable = false;
     log.warn({ err: catalogError }, "Assistant model catalog unavailable");
@@ -4676,6 +4679,14 @@ async function generateAssistantAnswer(options: {
   if (requestedModel && !freeModelIds.includes(requestedModel)) {
     throw new AssistantAnswerError(400, "The selected model is not available.");
   }
+  const initialModelInfo = assistantModels.find((item) => item.id === model);
+  if (options.thinkingLevel && !initialModelInfo?.thinkingLevels.includes(options.thinkingLevel)) {
+    throw new AssistantAnswerError(400, "The selected model does not support that thinking level.");
+  }
+  const thinkingRequest = () => assistantThinkingRequest(
+    assistantModels.find((item) => item.id === model)?.thinkingParameter,
+    options.thinkingLevel,
+  );
   let liveWebContext = "";
   if (!isAssistantToolDisabled("web_search", disabledTools) && needsWebSearch(question)) {
     const webOutcome = await searchWebFallback(question);
@@ -4721,12 +4732,14 @@ async function generateAssistantAnswer(options: {
       return openai.chat.completions.create({
         model,
         temperature: 0.2,
+        ...(thinkingRequest() as {}),
         messages: baseMessages,
       });
     }
     return openai.chat.completions.create({
       model,
       temperature: 0.2,
+      ...(thinkingRequest() as {}),
       messages: baseMessages,
       tools: activeTools,
       tool_choice: "auto",
@@ -4735,6 +4748,7 @@ async function generateAssistantAnswer(options: {
   const plainChat = () => openai.chat.completions.create({
     model,
     temperature: 0.2,
+    ...(thinkingRequest() as {}),
     messages: baseMessages,
   });
   const isRateLimit = (error: unknown) =>
@@ -4833,11 +4847,13 @@ async function generateAssistantAnswer(options: {
       ? await openai.chat.completions.create({
         model,
         temperature: 0.2,
+        ...(thinkingRequest() as {}),
         messages: thread,
       })
       : await openai.chat.completions.create({
         model,
         temperature: 0.2,
+        ...(thinkingRequest() as {}),
         messages: thread,
         tools: activeTools,
         tool_choice: "auto" as const,
@@ -4882,6 +4898,7 @@ async function generateAssistantAnswer(options: {
         const repair = await openai.chat.completions.create({
           model,
           temperature: 0.2,
+          ...(thinkingRequest() as {}),
           messages: [
             ...baseMessages,
             { role: "assistant" as const, content: stripPseudoToolCalls(answer) || null },
@@ -4906,6 +4923,7 @@ async function generateAssistantAnswer(options: {
       const summary = await openai.chat.completions.create({
         model,
         temperature: 0.2,
+        ...(thinkingRequest() as {}),
         messages: [
           ...thread,
           { role: "user" as const, content: "All requested tool calls are done. Now answer the admin's original question directly: report ONLY what the tool results confirm as a per-person table (name → interviewer/decision). Do not call more tools." },
@@ -4922,6 +4940,7 @@ async function generateAssistantAnswer(options: {
       const retry = await openai.chat.completions.create({
         model,
         temperature: 0.2,
+        ...(thinkingRequest() as {}),
         messages: baseMessages,
       });
       answer = stripPseudoToolCalls(assistantText(retry.choices[0]?.message ?? {}).text);
@@ -4959,6 +4978,7 @@ router.post("/assistant/ask", requireCoordinator, async (req, res): Promise<void
       applicantIds: parsed.data.applicantIds ?? undefined,
       conversationId: parsed.data.conversationId ?? undefined,
       model: parsed.data.model ?? undefined,
+      thinkingLevel: parsed.data.thinkingLevel,
       disabledTools: (parsed.data as unknown as Record<string, unknown>).disabledTools,
       attachments: (parsed.data as unknown as Record<string, unknown>).attachments as { fileName?: unknown; objectPath?: unknown }[] | undefined,
       authorLabel: account.displayName,
@@ -5020,9 +5040,11 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
   const requestedModel = parsed.data.model?.trim();
   let model = requestedModel || TEXT_MODEL;
   let freeModelIds: string[] = [];
+  let assistantModels: AssistantProviderModel[] = [];
   let modelCatalogAvailable = true;
   try {
-    freeModelIds = await listFreeAssistantModelIds();
+    assistantModels = await listFreeAssistantModels();
+    freeModelIds = assistantModels.map((item) => item.id);
   } catch (catalogError) {
     modelCatalogAvailable = false;
     req.log.warn({ err: catalogError }, "Assistant model catalog unavailable");
@@ -5035,6 +5057,15 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
     res.status(400).json({ error: "The selected model is not available." });
     return;
   }
+  const initialModelInfo = assistantModels.find((item) => item.id === model);
+  if (parsed.data.thinkingLevel && !initialModelInfo?.thinkingLevels.includes(parsed.data.thinkingLevel)) {
+    res.status(400).json({ error: "The selected model does not support that thinking level." });
+    return;
+  }
+  const thinkingRequest = (modelId: string) => assistantThinkingRequest(
+    assistantModels.find((item) => item.id === modelId)?.thinkingParameter,
+    parsed.data.thinkingLevel,
+  );
   let liveWebContext = "";
   if (!isAssistantToolDisabled("web_search", disabledTools) && needsWebSearch(parsed.data.question)) {
     const webOutcome = await searchWebFallback(parsed.data.question);
@@ -5095,6 +5126,7 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       const stream = await openai.chat.completions.create({
         model: overrides?.model ?? model,
         temperature: 0.2,
+        ...(thinkingRequest(overrides?.model ?? model) as {}),
         ...(overrides?.maxTokens ? { max_tokens: overrides.maxTokens } : {}),
         messages,
         ...(useAssistantTools && activeTools.length > 0 ? { tools: activeTools, tool_choice: "auto" as const } : {}),
@@ -5334,15 +5366,67 @@ router.post("/assistant/images", requireCoordinator, async (req, res): Promise<v
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
 });
 
-async function listFreeAssistantModelIds(): Promise<string[]> {
+type AssistantThinkingLevel = "low" | "medium" | "high";
+type AssistantProviderModel = {
+  id: string;
+  name?: string;
+  thinkingParameter?: "reasoning" | "reasoning_effort";
+  thinkingLevels: AssistantThinkingLevel[];
+};
+
+const ASSISTANT_THINKING_LEVELS: AssistantThinkingLevel[] = ["low", "medium", "high"];
+
+function assistantThinkingParameter(supportedParameters: unknown): "reasoning" | "reasoning_effort" | undefined {
+  if (!Array.isArray(supportedParameters)) return undefined;
+  if (supportedParameters.includes("reasoning")) return "reasoning";
+  if (supportedParameters.includes("reasoning_effort")) return "reasoning_effort";
+  return undefined;
+}
+
+function assistantThinkingRequest(
+  parameter: AssistantProviderModel["thinkingParameter"],
+  level: AssistantThinkingLevel | undefined,
+): Record<string, unknown> {
+  if (!parameter || !level) return {};
+  return parameter === "reasoning"
+    ? { reasoning: { effort: level } }
+    : { reasoning_effort: level };
+}
+
+async function listFreeAssistantModels(): Promise<AssistantProviderModel[]> {
   const result = await openai.models.list();
   // Trust explicit provider metadata; free model ids do not all use :free.
-  const catalog = result.data as Array<(typeof result.data)[number] & { isFree?: unknown }>;
+  const catalog = result.data as Array<(typeof result.data)[number] & {
+    isFree?: unknown;
+    name?: unknown;
+    supported_parameters?: unknown;
+    supportedParameters?: unknown;
+    reasoning_levels?: unknown;
+    reasoningLevels?: unknown;
+    reasoning_efforts?: unknown;
+    reasoningEfforts?: unknown;
+  }>;
   return catalog
     .filter((model) => model.isFree === true)
     .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
-    .map((model) => model.id)
-    .sort((left, right) => left.localeCompare(right));
+    .map((model) => {
+      const thinkingParameter = assistantThinkingParameter(model.supported_parameters ?? model.supportedParameters);
+      const advertisedLevels = model.reasoning_levels ?? model.reasoningLevels ?? model.reasoning_efforts ?? model.reasoningEfforts;
+      const thinkingLevels = Array.isArray(advertisedLevels)
+        ? ASSISTANT_THINKING_LEVELS.filter((level) => advertisedLevels.includes(level))
+        : thinkingParameter ? [...ASSISTANT_THINKING_LEVELS] : [];
+      return {
+        id: model.id,
+        ...(typeof model.name === "string" ? { name: model.name } : {}),
+        ...(thinkingParameter ? { thinkingParameter } : {}),
+        thinkingLevels: thinkingParameter ? thinkingLevels : [],
+      };
+    })
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function listFreeAssistantModelIds(): Promise<string[]> {
+  return (await listFreeAssistantModels()).map((model) => model.id);
 }
 
 function assistantModelSelectionInstructions(modelIds: string[]): string {
@@ -5354,7 +5438,7 @@ function assistantModelSelectionInstructions(modelIds: string[]): string {
 
 router.get("/assistant/models", requireCoordinator, async (req, res): Promise<void> => {
   try {
-    const items = (await listFreeAssistantModelIds()).map((id) => ({ id }));
+    const items = (await listFreeAssistantModels()).map(({ id, name, thinkingLevels }) => ({ id, name, thinkingLevels }));
     res.json(ListAssistantModelsResponse.parse({ items }));
   } catch (error) {
     req.log.error({ err: error }, "Could not load models from the configured AI provider");

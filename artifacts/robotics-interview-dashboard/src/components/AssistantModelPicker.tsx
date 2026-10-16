@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, Settings } from "lucide-react";
+import { Bot, Settings, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -21,7 +21,10 @@ import {
 export type AssistantModelOption = {
   id: string;
   name?: string;
+  thinkingLevels?: ("low" | "medium" | "high")[];
 };
+
+export type AssistantThinkingLevel = "auto" | "low" | "medium" | "high";
 
 type AssistantModelPickerProps = {
   model: string;
@@ -29,6 +32,8 @@ type AssistantModelPickerProps = {
   loading: boolean;
   error: boolean;
   onChange: (model: string) => void;
+  thinkingLevel?: AssistantThinkingLevel;
+  onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
   disabledTools?: string[];
   onDisabledToolsChange?: (tools: string[]) => void;
 };
@@ -39,6 +44,8 @@ export function AssistantModelPicker({
   loading,
   error,
   onChange,
+  thinkingLevel = "auto",
+  onThinkingLevelChange,
   disabledTools: controlledDisabled,
   onDisabledToolsChange,
 }: AssistantModelPickerProps) {
@@ -113,6 +120,32 @@ export function AssistantModelPicker({
               >
                 {option.name || option.id}
               </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={thinkingLevel}
+          disabled={!options.find((option) => option.id === model)?.thinkingLevels?.length}
+          onValueChange={(value) => onThinkingLevelChange?.(value as AssistantThinkingLevel)}
+        >
+          <SelectTrigger
+            aria-label="Assistant thinking level"
+            data-testid="assistant-thinking-picker"
+            title={options.find((option) => option.id === model)?.thinkingLevels?.length
+              ? "Thinking level"
+              : "This model does not expose thinking controls"}
+            className="assistant-thinking-trigger"
+          >
+            <span className="assistant-model-trigger-label" aria-hidden="true">
+              <Sparkles size={14} />
+              <span>Think</span>
+            </span>
+            <SelectValue className="assistant-thinking-current" />
+          </SelectTrigger>
+          <SelectContent position="popper" align="end">
+            <SelectItem value="auto">Auto</SelectItem>
+            {(options.find((option) => option.id === model)?.thinkingLevels ?? []).map((level) => (
+              <SelectItem key={level} value={level}>{level[0].toUpperCase() + level.slice(1)}</SelectItem>
             ))}
           </SelectContent>
         </Select>

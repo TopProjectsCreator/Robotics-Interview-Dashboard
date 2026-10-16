@@ -2619,6 +2619,7 @@ export const askAssistantBodyModelMax = 200;
 export const AskAssistantBody = zod.object({
   "question": zod.string(),
   "model": zod.string().max(askAssistantBodyModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
+  "thinkingLevel": zod.enum(['low', 'medium', 'high']).optional().describe('Optional model-supported reasoning effort. Omit for automatic\/default reasoning.'),
   "conversationId": zod.string().optional(),
   "applicantIds": zod.array(zod.string()).optional(),
   "disabledTools": zod.array(zod.string()).optional().describe('Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called.'),
@@ -2663,7 +2664,8 @@ export const GenerateAssistantImageResponse = zod.object({
 export const ListAssistantModelsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
-  "name": zod.string().optional()
+  "name": zod.string().optional(),
+  "thinkingLevels": zod.array(zod.enum(['low', 'medium', 'high'])).optional().describe('Thinking levels supported by this model according to provider capability metadata; empty when unsupported.')
 }))
 })
 
@@ -3607,8 +3609,8 @@ export const UploadPartsRobotPreviewFileResponse = zod.object({
 
 
 /**
- * Stores a validated CAD file as a private object and returns its path. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
- * @summary Upload a CAD model file for the CAD workspace
+ * Stores a validated CAD workspace file as a private object and returns its path. Accepts CAD models (GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, X_B) plus reference files (images, videos, audio, PDFs, documents, presentations, spreadsheets, text) so robot designs in any format live side by side. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
+ * @summary Upload a CAD workspace file (CAD model or reference file)
  */
 export const uploadCadModelFileQueryFileNameMax = 255;
 

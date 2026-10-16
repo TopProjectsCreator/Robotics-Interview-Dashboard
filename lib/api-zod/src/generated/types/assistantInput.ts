@@ -7,6 +7,7 @@
  */
 import type { AssistantInputAttachmentsItem } from './assistantInputAttachmentsItem';
 import type { AssistantInputChatContextItem } from './assistantInputChatContextItem';
+import type { AssistantInputThinkingLevel } from './assistantInputThinkingLevel';
 
 export interface AssistantInput {
   question: string;
@@ -15,6 +16,8 @@ export interface AssistantInput {
      * @maxLength 200
      */
   model?: string;
+  /** Optional model-supported reasoning effort. Omit for automatic/default reasoning. */
+  thinkingLevel?: AssistantInputThinkingLevel;
   conversationId?: string;
   applicantIds?: string[];
   /** Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called. */

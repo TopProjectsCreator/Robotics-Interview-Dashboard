@@ -5,8 +5,11 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantModelThinkingLevelsItem } from './assistantModelThinkingLevelsItem';
 
 export interface AssistantModel {
   id: string;
   name?: string;
+  /** Thinking levels supported by this model according to provider capability metadata; empty when unsupported. */
+  thinkingLevels?: AssistantModelThinkingLevelsItem[];
 }

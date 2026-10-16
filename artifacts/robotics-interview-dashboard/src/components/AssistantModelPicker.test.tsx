@@ -44,6 +44,39 @@ describe("AssistantModelPicker", () => {
     expect(picker).toHaveTextContent("openrouter/free");
   });
 
+  it("offers thinking levels only for models whose provider metadata advertises reasoning", async () => {
+    const onThinkingLevelChange = vi.fn();
+    const { rerender } = render(
+      <AssistantModelPicker
+        model="plain-model"
+        models={[{ id: "plain-model", thinkingLevels: [] }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        onThinkingLevelChange={onThinkingLevelChange}
+      />,
+    );
+    const thinkingPicker = screen.getByRole("combobox", { name: "Assistant thinking level" });
+    expect(thinkingPicker).toBeDisabled();
+    expect(thinkingPicker).toHaveAttribute("title", "This model does not expose thinking controls");
+
+    rerender(
+      <AssistantModelPicker
+        model="reasoning-model"
+        models={[{ id: "reasoning-model", thinkingLevels: ["low", "medium", "high"] }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        onThinkingLevelChange={onThinkingLevelChange}
+      />,
+    );
+    const supportedPicker = screen.getByRole("combobox", { name: "Assistant thinking level" });
+    expect(supportedPicker).toBeEnabled();
+    fireEvent.click(supportedPicker);
+    fireEvent.click(await screen.findByRole("option", { name: "Medium" }));
+    expect(onThinkingLevelChange).toHaveBeenCalledWith("medium");
+  });
+
   it("shows a gear inline with the model dropdown that opens the tools menu", async () => {
     render(
       <AssistantModelPicker

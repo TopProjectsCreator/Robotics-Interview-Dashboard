@@ -50,7 +50,7 @@ import {
 import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { PersonalNotepad } from "./components/PersonalNotepad";
-import { AssistantModelPicker } from "./components/AssistantModelPicker";
+import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
 import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
@@ -6551,6 +6551,16 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       return "";
     }
   });
+  const [thinkingByModel, setThinkingByModel] = useState<Record<string, AssistantThinkingLevel>>(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("robotics-assistant-thinking-levels") || "{}") as Record<string, unknown>;
+      return Object.fromEntries(Object.entries(saved).filter(([, value]) =>
+        value === "auto" || value === "low" || value === "medium" || value === "high",
+      )) as Record<string, AssistantThinkingLevel>;
+    } catch {
+      return {};
+    }
+  });
   const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
   const rememberDisabledTools = (tools: string[]) => {
     setDisabledTools(tools);
@@ -6586,6 +6596,16 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
     ?? modelOptions[0]?.id
     ?? "";
+  const thinkingLevel = thinkingByModel[availableModel] ?? "auto";
+  const rememberThinkingLevel = (level: AssistantThinkingLevel) => {
+    const next = { ...thinkingByModel, [availableModel]: level };
+    setThinkingByModel(next);
+    try {
+      window.localStorage.setItem("robotics-assistant-thinking-levels", JSON.stringify(next));
+    } catch {
+      // Storage can be unavailable in private browsing.
+    }
+  };
   useEffect(() => {
     if (!modelOptions.length) return;
     const nextModel = modelOptions.some((item) => item.id === selectedModel)
@@ -6705,7 +6725,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     streamAbort.current = controller;
     setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
+    const payload = { question: q, model: availableModel || undefined, ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}), conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -6849,7 +6869,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

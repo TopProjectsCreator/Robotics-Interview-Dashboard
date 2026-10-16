@@ -11,7 +11,7 @@
 - [Scoped package installs](scoped-package-installs.md) — package installation helpers may target the workspace root; app dependencies must be installed with the artifact filter.
 - [Dashboard component test isolation](dashboard-component-test-isolation.md) — jsdom tests for the dashboard need lightweight Excalidraw stubs because the editor’s JSON dependency is browser-build-only.
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.
-- [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and the provider's `isFree` flag; Kilo's catalog is not at `/v1/models`.
+- [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and provider `isFree`/`supported_parameters` metadata; gate reasoning controls per model.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.

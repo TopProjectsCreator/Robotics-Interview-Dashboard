@@ -132,6 +132,8 @@ button { cursor: pointer; }
 .assistant-model-picker-row { display: inline-flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 6px; }
 .assistant-model-actions { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; }
 .assistant-model-trigger { display: flex; width: min(360px, calc(100vw - 32px)); min-width: min(280px, calc(100vw - 32px)); height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); padding: 0 12px; color: hsl(var(--foreground)); box-shadow: 0 2px 8px rgba(24,58,75,.06); transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.assistant-thinking-trigger { display: flex; width: 132px; min-width: 126px; height: 42px; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); padding: 0 9px; color: hsl(var(--foreground)); box-shadow: 0 2px 8px rgba(24,58,75,.06); }
+.assistant-thinking-current { flex: 0 0 auto; color: hsl(var(--foreground)); }
 .assistant-model-trigger:hover:not([data-disabled]) { border-color: hsl(var(--primary) / .55); background: hsl(var(--card)); }
 .assistant-model-trigger:focus-visible { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / .16); }
 .assistant-model-trigger[data-disabled] { cursor: wait; opacity: .68; }

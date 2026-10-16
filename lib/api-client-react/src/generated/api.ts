@@ -9429,8 +9429,8 @@ export const getUploadCadModelFileUrl = (params: UploadCadModelFileParams,) => {
 }
 
 /**
- * Stores a validated CAD file as a private object and returns its path. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
- * @summary Upload a CAD model file for the CAD workspace
+ * Stores a validated CAD workspace file as a private object and returns its path. Accepts CAD models (GLB, STL, OBJ, PLY, 3MF, STEP, IGES, BREP, X_T, X_B) plus reference files (images, videos, audio, PDFs, documents, presentations, spreadsheets, text) so robot designs in any format live side by side. The file name decides the renderer, so the extension must match the bytes. Large files should use the chunked upload endpoints instead.
+ * @summary Upload a CAD workspace file (CAD model or reference file)
  */
 export const uploadCadModelFile = async (uploadCadModelFileBody: Blob,
     params: UploadCadModelFileParams, options?: Parameters<typeof customFetch>[1]): Promise<CadModelUpload> => {
@@ -9480,7 +9480,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UploadCadModelFileMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Upload a CAD model file for the CAD workspace
+ * @summary Upload a CAD workspace file (CAD model or reference file)
  */
 export const useUploadCadModelFile = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadCadModelFile>>, TError,{data: BodyType<Blob>;params: UploadCadModelFileParams}, TContext>, request?: SecondParameter<typeof customFetch>}

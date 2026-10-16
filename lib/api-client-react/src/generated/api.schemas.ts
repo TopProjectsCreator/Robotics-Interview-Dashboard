@@ -2101,6 +2101,18 @@ export interface SnapshotRestoreResult {
   preview?: SnapshotRestoreResultPreview;
 }
 
+/**
+ * Optional model-supported reasoning effort. Omit for automatic/default reasoning.
+ */
+export type AssistantInputThinkingLevel = typeof AssistantInputThinkingLevel[keyof typeof AssistantInputThinkingLevel];
+
+
+export const AssistantInputThinkingLevel = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
 export type AssistantInputAttachmentsItem = {
   fileName: string;
   objectPath: string;
@@ -2118,6 +2130,8 @@ export interface AssistantInput {
      * @maxLength 200
      */
   model?: string;
+  /** Optional model-supported reasoning effort. Omit for automatic/default reasoning. */
+  thinkingLevel?: AssistantInputThinkingLevel;
   conversationId?: string;
   applicantIds?: string[];
   /** Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called. */
@@ -2174,9 +2188,20 @@ export interface AssistantConfig {
   visionModel: string;
 }
 
+export type AssistantModelThinkingLevelsItem = typeof AssistantModelThinkingLevelsItem[keyof typeof AssistantModelThinkingLevelsItem];
+
+
+export const AssistantModelThinkingLevelsItem = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
 export interface AssistantModel {
   id: string;
   name?: string;
+  /** Thinking levels supported by this model according to provider capability metadata; empty when unsupported. */
+  thinkingLevels?: AssistantModelThinkingLevelsItem[];
 }
 
 export interface AssistantModelList {
