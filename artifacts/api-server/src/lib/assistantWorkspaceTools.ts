@@ -85,7 +85,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace from scratch, even if no matching built-in workspace exists (for example, build a Parts-like app without using the Parts workspace). Save it as a draft for preview and coordinator approval; never publish it automatically. The app runs in an isolated iframe and can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested.",
+    "Create a new custom app workspace from scratch, independent of built-in workspaces or the Code workspace. Use it for explicit requests to build a new app; create an interactive standalone HTML/CSS/JavaScript app, not a plan. Save a draft for coordinator preview and approval; never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -188,7 +188,12 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (!(await canUseWorkspace(context, workspace))) {
+  if (name === "create_custom_workspace") {
+    const account = context.accountId ? await accountById(context.accountId) : undefined;
+    if (account?.role !== "coordinator") {
+      return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
+    }
+  } else if (!(await canUseWorkspace(context, workspace))) {
     return { content: `This account does not have access to the ${workspace} workspace.`, detail: "access denied" };
   }
 
