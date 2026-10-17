@@ -49,6 +49,7 @@ import {
 } from "@workspace/api-client-react";
 import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
+import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
 import { BrandMark } from "./components/BrandMark";
@@ -1683,6 +1684,18 @@ function MarkdownContent({
       flush();
       const Heading = `h${Math.min(heading[1].length, 4)}` as "h1" | "h2" | "h3" | "h4";
       blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople)}</Heading>);
+      return;
+    }
+    if (trimmed === "```robotics-mini-tool") {
+      flush();
+      const endIndex = allLines.indexOf("```", lineIndex + 1);
+      const payload = endIndex > lineIndex ? allLines.slice(lineIndex + 1, endIndex).join("\n") : "";
+      const miniTool = payload.length <= 6_000 ? parseChatMiniToolPayload(payload) : null;
+      blocks.push(miniTool
+        ? <ChatMiniTool key={`mini-tool-${key++}`} tool={miniTool} />
+        : <InvalidChatMiniTool key={`mini-tool-fallback-${key++}`} />);
+      const blankThrough = endIndex > lineIndex ? endIndex : allLines.length - 1;
+      for (let index = lineIndex; index <= blankThrough; index += 1) allLines[index] = "";
       return;
     }
     const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
@@ -6649,6 +6662,7 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "set_assistant_model") return { label: "Changed assistant model", Icon: Sparkles };
   if (tool === "python_exec" || tool === "python") return { label: "Ran Python", Icon: SquareTerminal };
   if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };
+  if (tool === "create_chat_mini_tool") return { label: "Created interactive tool", Icon: Sparkles };
   if (tool === "web_fetch" || tool === "fetch_url") return { label: "Fetched page", Icon: Globe };
   if (tool === "rename_conversation" || tool === "rename") return { label: "Renamed chat", Icon: Pencil };
   if (tool === "transfer_interviewer") return { label: "Transferred interviewer", Icon: UsersRound };

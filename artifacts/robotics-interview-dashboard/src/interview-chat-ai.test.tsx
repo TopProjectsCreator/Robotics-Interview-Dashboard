@@ -100,9 +100,25 @@ describe("AI replies in interviewer chat", () => {
   });
 
   it.each([
-    { label: "shared", scope: "shared" as const, answer: "Shared AI answer", peer: null },
-    { label: "direct", scope: "direct" as const, answer: "Direct AI answer", peer: "Jordan" },
-  ])("saves and displays an @ai reply in $label chat under the signed-in interviewer", async ({ scope, answer, peer }) => {
+    { label: "shared", scope: "shared" as const, peer: null },
+    { label: "direct", scope: "direct" as const, peer: "Jordan" },
+  ])("saves and displays an @ai reply in $label chat under the signed-in interviewer", async ({ scope, peer }) => {
+    const answerLabel = scope === "shared" ? "Shared AI answer" : "Direct AI answer";
+    const miniTool = {
+      type: "checklist",
+      title: "Build checklist",
+      items: ["Check the wheels"],
+    };
+    const answer = [
+      answerLabel,
+      "Generated response detail. ".repeat(120),
+      "![Generated image](/api/storage/objects/generated-image)",
+      "[brief.pdf](/api/storage/objects/brief.pdf)",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>',
+      "```robotics-mini-tool",
+      JSON.stringify(miniTool),
+      "```",
+    ].join("\n\n");
     const persistedMessages: StoredMessage[] = [];
     const requests: Array<{ url: URL; init?: RequestInit }> = [];
     const eventSourceConstructor = vi.fn(function MockEventSource() {
@@ -237,7 +253,8 @@ describe("AI replies in interviewer chat", () => {
     });
     fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
 
-    expect(await screen.findByText(answer)).toBeInTheDocument();
+    expect(await screen.findByText(answerLabel)).toBeInTheDocument();
+    expect(await screen.findByTestId("chat-mini-tool")).toHaveTextContent("Build checklist");
     await waitFor(() => {
       expect(persistedMessages.some(item => item.author === "AI assistant" && item.message === answer)).toBe(true);
     });
@@ -252,7 +269,9 @@ describe("AI replies in interviewer chat", () => {
         } as MessageEvent<string>);
       }
     });
-    expect(await within(screen.getByTestId("chat-observer-jordan")).findByText(answer)).toBeInTheDocument();
+    expect(await within(screen.getByTestId("chat-observer-jordan")).findByText(
+      content => content.startsWith(answerLabel),
+    )).toBeInTheDocument();
     await waitFor(() => {
       expect(requests.filter(request =>
         request.url.pathname === "/api/queue/chat" &&
@@ -280,6 +299,12 @@ describe("AI replies in interviewer chat", () => {
       ...(peer ? { recipient: peer } : {}),
     });
     expect(assistantPost?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
+    const assistantAsk = requests
+      .filter(request => request.url.pathname === "/api/assistant/ask" && request.init?.method === "POST")
+      .map(({ init }) => JSON.parse(String(init?.body)) as Record<string, unknown>)[0];
+    expect(assistantAsk?.chatContext).toEqual(expect.arrayContaining([
+      expect.objectContaining({ author: "Alex", message: "@ai Give me a quick read." }),
+    ]));
     expect(persistedMessages.at(-1)).toMatchObject({
       author: "AI assistant",
       message: answer,
@@ -293,7 +318,22 @@ describe("AI replies in interviewer chat", () => {
   });
 
   it("retries an ambiguously failed AI reply without resending the prompt or duplicating the answer", async () => {
-    const answer = "Generated answer survives retry";
+    const answer = [
+      "Generated answer survives retry",
+      "Response detail. ".repeat(160),
+      "![Generated image](/api/storage/objects/generated-image)",
+      "```robotics-mini-tool",
+      JSON.stringify({
+        type: "counter",
+        title: "Parts count",
+        label: "Motors",
+        initial: 1,
+        step: 1,
+        min: 0,
+        max: 12,
+      }),
+      "```",
+    ].join("\n\n");
     const activities = [{ tool: "applicant_lookup", detail: "Reviewed the active roster" }];
     const persistedMessages: StoredMessage[] = [];
     const assistantPosts: Array<Record<string, unknown>> = [];

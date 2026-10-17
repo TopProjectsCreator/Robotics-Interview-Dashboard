@@ -4,7 +4,7 @@ import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 
-import { renderInlineMarkdown } from "./App";
+import { MarkdownContent, renderInlineMarkdown } from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 
 vi.mock("@google/model-viewer", () => ({}));
@@ -359,6 +359,57 @@ beforeEach(() => {
 });
 
 describe("chat attachment inline previews", () => {
+  it("renders generated images, safe SVG, storage-backed files, and mini-tools together in Markdown", async () => {
+    vi.mocked(fetch).mockImplementation(async input => {
+      const url = String(input);
+      const isPdf = url.includes("brief.pdf");
+      return new Response(isPdf ? "%PDF-1.4\nfixture" : "generated image fixture", {
+        status: 200,
+        headers: { "content-type": isPdf ? "application/pdf" : "image/png" },
+      });
+    });
+    const source = [
+      "Generated content:",
+      "",
+      "![Generated image](/api/storage/objects/generated-image)",
+      "",
+      "[brief.pdf](/api/storage/objects/brief.pdf)",
+      "",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>',
+      "",
+      "```robotics-mini-tool",
+      JSON.stringify({
+        type: "checklist",
+        title: "Build checklist",
+        items: ["Check the wheels"],
+      }),
+      "```",
+    ].join("\n");
+    const { container } = render(<MarkdownContent source={source} />);
+
+    await waitFor(() => {
+      expect(container.querySelector("img[alt='Generated image']")).toBeInTheDocument();
+      expect(container.querySelector("iframe[title='brief.pdf']")).toBeInTheDocument();
+    });
+    expect(container.querySelector("svg circle")).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="chat-mini-tool"]')).toHaveTextContent("Build checklist");
+    const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
+      .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
+    expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
+  });
+
+  it("shows a safe fallback for an invalid mini-tool block", () => {
+    const { container } = render(
+      <MarkdownContent source={"```robotics-mini-tool\n" + JSON.stringify({
+        type: "hosted-app",
+        title: "Unsupported",
+        html: "<script>window.location='https://example.com'</script>",
+      }) + "\n```"} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("This interactive preview is unavailable.");
+    expect(container.querySelector("script, iframe, a")).not.toBeInTheDocument();
+  });
+
   it.each(fixtures)("$name renders inline without a storage link", async fixture => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(await fixture.body.arrayBuffer(), {
