@@ -39,6 +39,7 @@ interface SceneFrameProps {
   number: number;
   caption: string;
   duration: number;
+  handoffDuration?: number;
   handoff: HandoffKind;
   children: ReactNode;
   className?: string;
@@ -49,6 +50,7 @@ export function SceneFrame({
   number,
   caption,
   duration,
+  handoffDuration = 0.82,
   handoff,
   children,
   className = '',
@@ -87,8 +89,8 @@ export function SceneFrame({
         initial={{ clipPath: mask.from, opacity: 0 }}
         animate={{ clipPath: mask.to, opacity: 1 }}
         transition={{
-          delay: Math.max(0, duration - 0.82),
-          duration: 0.82,
+          delay: Math.max(0, duration - handoffDuration),
+          duration: handoffDuration,
           ease: [0.76, 0, 0.24, 1],
         }}
         aria-hidden="true"

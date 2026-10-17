@@ -1712,6 +1712,36 @@
   height: 68%;
 }
 
+.voice-workspace {
+  position: absolute;
+  inset: 8.6vmin 1.5vmin 1.5vmin;
+  display: grid;
+  grid-template-columns: 1fr 0.88fr;
+  gap: 1.5vmin;
+}
+
+.voice-compose-column {
+  min-width: 0;
+}
+
+.voice-record-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding-left: 1.5vmin;
+  border-left: 1px solid #e0e9e8;
+}
+
+.voice-record-eyebrow {
+  margin-bottom: 0.8vmin;
+  color: #829196;
+  font-family: var(--font-mono);
+  font-size: 0.82vmin;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
 .voice-context {
   display: flex;
   height: 4.2vmin;
@@ -1753,12 +1783,11 @@
 .voice-transcript-cursor { margin-left: 0.25vmin; height: 1.35vmin; }
 
 .voice-menu {
-  position: absolute;
-  top: 14vmin;
-  right: 2vmin;
+  position: relative;
   z-index: 2;
-  width: 31%;
-  padding: 0.8vmin;
+  width: 100%;
+  margin-top: 1.2vmin;
+  padding: 1vmin;
   border: 1px solid #d6e2e1;
   border-radius: 1vmin;
   background: #fff;
@@ -1779,7 +1808,7 @@
   grid-template-columns: 2.1vmin 1fr;
   align-items: center;
   column-gap: 0.6vmin;
-  padding: 0.7vmin;
+  padding: 0.85vmin 0.7vmin;
   border-radius: 0.6vmin;
   color: #16869a;
 }
@@ -1800,14 +1829,13 @@
 .voice-menu-option--dictate { position: relative; }
 
 .voice-record-card {
-  position: absolute;
-  right: 2vmin;
-  bottom: 10vmin;
-  left: 2vmin;
+  position: relative;
+  width: 100%;
   padding: 0.95vmin 1.1vmin;
   border: 1px solid #d8e5e3;
   border-radius: 0.85vmin;
   background: #fbfdfc;
+  box-shadow: 0 0.8vmin 2vmin rgb(24 58 75 / 7%);
 }
 
 .voice-record-top {
@@ -1866,10 +1894,9 @@
 }
 
 .voice-ready-card {
-  position: absolute;
-  right: 2vmin;
-  bottom: 2vmin;
-  left: 2vmin;
+  position: relative;
+  width: 100%;
+  margin-top: 1vmin;
   display: flex;
   align-items: center;
   gap: 0.7vmin;
