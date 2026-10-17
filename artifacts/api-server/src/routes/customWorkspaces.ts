@@ -114,6 +114,27 @@ async function accessibleWorkspace(
   return row;
 }
 
+async function workspaceForVersionHistory(
+  req: Request,
+  res: Response,
+  id: string,
+): Promise<boolean> {
+  const teamId = await requestTeamId(req);
+  const accountId = authenticatedInterviewerId(req);
+  const result = await pool.query(
+    `select "id" from "custom_workspaces"
+      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        and ("status" = 'published' or ("status" = 'draft' and "created_by" = $3))
+      limit 1`,
+    [id, teamId, accountId],
+  );
+  if (!result.rowCount) {
+    res.status(404).json({ error: "Workspace not found." });
+    return false;
+  }
+  return true;
+}
+
 router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   const accountId = authenticatedInterviewerId(req);
@@ -215,18 +236,37 @@ router.get("/custom-workspaces/:id", requireAdmin, async (req, res): Promise<voi
   if (row) res.json({ workspace: row });
 });
 
-router.get("/custom-workspaces/:id/versions", requireAdmin, async (req, res): Promise<void> => {
-  const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""), true);
-  if (!workspace) return;
+router.get("/custom-workspaces/:id/versions", requireCoordinator, async (req, res): Promise<void> => {
+  const workspaceId = String(req.params.id ?? "");
+  if (!await workspaceForVersionHistory(req, res, workspaceId)) return;
   const teamId = await requestTeamId(req);
   const versions = await pool.query(
     `select "id", "message", "created_by" as "createdBy", "created_at" as "createdAt"
        from "custom_workspace_versions"
       where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
       order by "created_at" desc limit 50`,
-    [workspace.id, teamId],
+    [workspaceId, teamId],
   );
   res.json({ versions: versions.rows });
+});
+
+router.get("/custom-workspaces/:id/versions/:versionId", requireCoordinator, async (req, res): Promise<void> => {
+  const workspaceId = String(req.params.id ?? "");
+  if (!await workspaceForVersionHistory(req, res, workspaceId)) return;
+  const teamId = await requestTeamId(req);
+  const version = await pool.query(
+    `select "id", "html", "capabilities", "message", "created_by" as "createdBy",
+            "created_at" as "createdAt"
+       from "custom_workspace_versions"
+      where "id" = $1 and "workspace_id" = $2 and ${teamSqlCondition('"team_id"', "$3")}
+      limit 1`,
+    [String(req.params.versionId ?? ""), workspaceId, teamId],
+  );
+  if (!version.rowCount) {
+    res.status(404).json({ error: "That version was not found." });
+    return;
+  }
+  res.json({ version: version.rows[0] });
 });
 
 router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res): Promise<void> => {
@@ -303,39 +343,73 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
   const workspaceId = String(req.params.id ?? "");
   const versionId = String(req.params.versionId ?? "");
   const teamId = await requestTeamId(req);
-  const current = await pool.query(
-    `select "id", "html", "capabilities" from "custom_workspaces"
-      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft' limit 1`,
-    [workspaceId, teamId],
-  );
-  if (!current.rowCount) {
-    res.status(404).json({ error: "Draft workspace not found." });
-    return;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query<{
+      id: string;
+      html: string;
+      capabilities: string[];
+      status: "draft" | "published";
+    }>(
+      `select "id", "html", "capabilities", "status" from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "status" in ('draft', 'published')
+        limit 1 for update`,
+      [workspaceId, teamId],
+    );
+    const currentWorkspace = current.rows[0];
+    if (!currentWorkspace) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Workspace not found." });
+      return;
+    }
+    const previous = await client.query<{ html: string; capabilities: string[] }>(
+      `select "html", "capabilities" from "custom_workspace_versions"
+        where "id" = $1 and "workspace_id" = $2 and ${teamSqlCondition('"team_id"', "$3")}
+        limit 1`,
+      [versionId, workspaceId, teamId],
+    );
+    const previousVersion = previous.rows[0];
+    if (!previousVersion) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "That version was not found." });
+      return;
+    }
+    const accountId = authenticatedInterviewerId(req) ?? "";
+    await client.query(
+      `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
+       values ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+      [
+        randomUUID(),
+        teamId,
+        workspaceId,
+        currentWorkspace.html,
+        JSON.stringify(currentWorkspace.capabilities),
+        accountId,
+        currentWorkspace.status === "published" ? "Before published version restore" : "Before version restore",
+      ],
+    );
+    const restored = await client.query(
+      `update "custom_workspaces"
+          set "html" = $3,
+              "capabilities" = case when "status" = 'draft' then $4::jsonb else "capabilities" end,
+              "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                  "allowed_interviewer_ids" as "allowedInterviewerIds",
+                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [workspaceId, teamId, previousVersion.html, JSON.stringify(previousVersion.capabilities)],
+    );
+    await client.query("COMMIT");
+    res.json({ workspace: restored.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    req.log.error({ err: error, workspaceId, versionId }, "Custom workspace version restore failed");
+    res.status(500).json({ error: "Unable to restore this workspace version." });
+  } finally {
+    client.release();
   }
-  const previous = await pool.query(
-    `select "html", "capabilities" from "custom_workspace_versions"
-      where "id" = $1 and "workspace_id" = $2 and ${teamSqlCondition('"team_id"', "$3")} limit 1`,
-    [versionId, workspaceId, teamId],
-  );
-  if (!previous.rowCount) {
-    res.status(404).json({ error: "That version was not found." });
-    return;
-  }
-  const accountId = authenticatedInterviewerId(req) ?? "";
-  await pool.query(
-    `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-     values ($1, $2, $3, $4, $5::jsonb, $6, 'Before version restore')`,
-    [randomUUID(), teamId, workspaceId, current.rows[0].html, JSON.stringify(current.rows[0].capabilities), accountId],
-  );
-  const restored = await pool.query(
-    `update "custom_workspaces" set "html" = $3, "capabilities" = $4::jsonb, "updated_at" = now()
-      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-      returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
-                "allowed_interviewer_ids" as "allowedInterviewerIds",
-                "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-    [workspaceId, teamId, previous.rows[0].html, JSON.stringify(previous.rows[0].capabilities)],
-  );
-  res.json({ workspace: restored.rows[0] });
 });
 
 router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, res): Promise<void> => {

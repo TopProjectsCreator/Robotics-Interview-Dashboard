@@ -3622,11 +3622,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CustomWorkspaceVersionList"
+  /custom-workspaces/{workspaceId}/versions/{versionId}:
+    get:
+      operationId: getCustomWorkspaceVersion
+      tags: [customWorkspaces]
+      summary: Get a saved workspace version for preview
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Saved workspace version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceVersionEnvelope"
+        "404":
+          description: Not found or not accessible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /custom-workspaces/{workspaceId}/versions/{versionId}/restore:
     post:
       operationId: restoreCustomWorkspaceVersion
       tags: [customWorkspaces]
-      summary: Restore a previous draft version
+      summary: Restore a previous draft or published version
       parameters:
         - name: workspaceId
           in: path
@@ -7342,6 +7371,26 @@ components:
         createdAt:
           type: string
           format: date-time
+    CustomWorkspaceVersionPreview:
+      allOf:
+        - $ref: "#/components/schemas/CustomWorkspaceVersion"
+        - type: object
+          required: [html, capabilities]
+          properties:
+            html:
+              type: string
+              maxLength: 120000
+            capabilities:
+              type: array
+              items:
+                type: string
+                enum: [data, llm]
+    CustomWorkspaceVersionEnvelope:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: "#/components/schemas/CustomWorkspaceVersionPreview"
     CustomWorkspaceVersionList:
       type: object
       required: [versions]

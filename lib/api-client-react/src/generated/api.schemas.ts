@@ -2791,6 +2791,24 @@ export interface CustomWorkspaceVersion {
   createdAt: string;
 }
 
+export type CustomWorkspaceVersionPreviewCapabilitiesItem = typeof CustomWorkspaceVersionPreviewCapabilitiesItem[keyof typeof CustomWorkspaceVersionPreviewCapabilitiesItem];
+
+
+export const CustomWorkspaceVersionPreviewCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export type CustomWorkspaceVersionPreview = CustomWorkspaceVersion & {
+  /** @maxLength 120000 */
+  html: string;
+  capabilities: CustomWorkspaceVersionPreviewCapabilitiesItem[];
+};
+
+export interface CustomWorkspaceVersionEnvelope {
+  version: CustomWorkspaceVersionPreview;
+}
+
 export interface CustomWorkspaceVersionList {
   versions: CustomWorkspaceVersion[];
 }

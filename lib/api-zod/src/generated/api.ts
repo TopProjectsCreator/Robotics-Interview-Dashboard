@@ -4631,7 +4631,32 @@ export const ListCustomWorkspaceVersionsResponse = zod.object({
 
 
 /**
- * @summary Restore a previous draft version
+ * @summary Get a saved workspace version for preview
+ */
+export const GetCustomWorkspaceVersionParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "versionId": zod.coerce.string()
+})
+
+export const getCustomWorkspaceVersionResponseVersionTwoHtmlMax = 120000;
+
+
+
+export const GetCustomWorkspaceVersionResponse = zod.object({
+  "version": zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "html": zod.string().max(getCustomWorkspaceVersionResponseVersionTwoHtmlMax),
+  "capabilities": zod.array(zod.enum(['data', 'llm']))
+}))
+})
+
+
+/**
+ * @summary Restore a previous draft or published version
  */
 export const RestoreCustomWorkspaceVersionParams = zod.object({
   "workspaceId": zod.coerce.string(),

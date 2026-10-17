@@ -108,6 +108,7 @@ import type {
   CustomWorkspaceRecordEnvelope,
   CustomWorkspaceRevisionInput,
   CustomWorkspaceTeamMemberList,
+  CustomWorkspaceVersionEnvelope,
   CustomWorkspaceVersionList,
   DashboardChart,
   DashboardChartInput,
@@ -12917,6 +12918,88 @@ export function useListCustomWorkspaceVersions<TData = Awaited<ReturnType<typeof
 
 
 
+export const getGetCustomWorkspaceVersionUrl = (workspaceId: string,
+    versionId: string,) => {
+
+
+
+
+  return `/api/custom-workspaces/${workspaceId}/versions/${versionId}`
+}
+
+/**
+ * @summary Get a saved workspace version for preview
+ */
+export const getCustomWorkspaceVersion = async (workspaceId: string,
+    versionId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceVersionEnvelope> => {
+
+  return customFetch<CustomWorkspaceVersionEnvelope>(getGetCustomWorkspaceVersionUrl(workspaceId,versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCustomWorkspaceVersionQueryKey = (workspaceId: string,
+    versionId: string,) => {
+    return [
+    `/api/custom-workspaces/${workspaceId}/versions/${versionId}`
+    ] as const;
+    }
+
+
+export const getGetCustomWorkspaceVersionQueryOptions = <TData = Awaited<ReturnType<typeof getCustomWorkspaceVersion>>, TError = ErrorType<ErrorResponse>>(workspaceId: string,
+    versionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomWorkspaceVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomWorkspaceVersionQueryKey(workspaceId,versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomWorkspaceVersion>>> = ({ signal }) => getCustomWorkspaceVersion(workspaceId,versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: workspaceId !== null && workspaceId !== undefined && versionId !== null && versionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomWorkspaceVersion>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCustomWorkspaceVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomWorkspaceVersion>>>
+export type GetCustomWorkspaceVersionQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a saved workspace version for preview
+ */
+
+export function useGetCustomWorkspaceVersion<TData = Awaited<ReturnType<typeof getCustomWorkspaceVersion>>, TError = ErrorType<ErrorResponse>>(
+ workspaceId: string,
+    versionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomWorkspaceVersion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCustomWorkspaceVersionQueryOptions(workspaceId,versionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getRestoreCustomWorkspaceVersionUrl = (workspaceId: string,
     versionId: string,) => {
 
@@ -12927,7 +13010,7 @@ export const getRestoreCustomWorkspaceVersionUrl = (workspaceId: string,
 }
 
 /**
- * @summary Restore a previous draft version
+ * @summary Restore a previous draft or published version
  */
 export const restoreCustomWorkspaceVersion = async (workspaceId: string,
     versionId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceEnvelope> => {
@@ -12977,7 +13060,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RestoreCustomWorkspaceVersionMutationError = ErrorType<unknown>
 
     /**
- * @summary Restore a previous draft version
+ * @summary Restore a previous draft or published version
  */
 export const useRestoreCustomWorkspaceVersion = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCustomWorkspaceVersion>>, TError,{workspaceId: string;versionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}

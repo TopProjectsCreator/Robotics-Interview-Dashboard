@@ -5,6 +5,7 @@ import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type Custom
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
 type Version = CustomWorkspaceVersion;
+type VersionPreview = Version & { html: string; capabilities: Capability[] };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
@@ -62,6 +63,7 @@ export function CustomWorkspacesPage() {
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [revisionPrompt, setRevisionPrompt] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
+  const [previewVersion, setPreviewVersion] = useState<VersionPreview | null>(null);
   const [accessMode, setAccessMode] = useState<AccessMode>("team");
   const [allowedInterviewerIds, setAllowedInterviewerIds] = useState<string[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -90,7 +92,8 @@ export function CustomWorkspacesPage() {
       .finally(() => setTeamMembersLoading(false));
   }, [canManage]);
   useEffect(() => {
-    if (!active || active.status !== "draft" || !canManage) {
+    setPreviewVersion(null);
+    if (!active || !canManage) {
       setVersions([]);
       return;
     }
@@ -218,8 +221,22 @@ export function CustomWorkspacesPage() {
       setSelected(result.workspace);
       const history = await request<{ versions: Version[] }>(`${API}/${active.id}/versions`);
       setVersions(history.versions);
+      setPreviewVersion(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore the selected version.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const preview = async (versionId: string) => {
+    if (!active) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request<{ version: VersionPreview }>(`${API}/${active.id}/versions/${versionId}`);
+      setPreviewVersion(result.version);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not preview the selected version.");
     } finally {
       setBusy(false);
     }
@@ -270,7 +287,7 @@ export function CustomWorkspacesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] p-4">
           <div className="min-w-0">
             <h2 className="truncate font-semibold text-[hsl(var(--foreground))]">{active?.title ?? "Preview"}</h2>
-            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
+            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{previewVersion ? `Previewing saved version · ${previewVersion.message}` : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
           </div>
           {active && canManage && <div className="flex flex-wrap items-end gap-2">
             <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
@@ -294,7 +311,7 @@ export function CustomWorkspacesPage() {
               ? <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                 {teamMembers.map((member) => <li key={member.id}>
                   <label className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))]">
-                    <input type="checkbox" checked={allowedInterviewerIds.includes(member.id)} onChange={(event) => setAllowedInterviewerIds((current) => event.target.checked
+                    <input type="checkbox" data-testid={`checkbox-workspace-member-${member.id}`} checked={allowedInterviewerIds.includes(member.id)} onChange={(event) => setAllowedInterviewerIds((current) => event.target.checked
                       ? [...new Set([...current, member.id])]
                       : current.filter((id) => id !== member.id))} />
                     <span>{member.displayName}</span>
@@ -304,8 +321,12 @@ export function CustomWorkspacesPage() {
               : <p className="mt-3 text-sm text-[#60757c] dark:text-[#b3c3cb]">{teamMembersLoading ? "Loading team members…" : "No teammates are available."}</p>}
           </fieldset>
         </div>}
-        {active?.html
-          ? <iframe ref={frame} title={`${active.title} preview`} sandbox="allow-scripts" srcDoc={sandboxDocument(active.html)} className="h-[70vh] min-h-[520px] w-full bg-white" />
+        {previewVersion && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 py-2">
+          <span className="text-xs text-[hsl(var(--foreground))]">Saved {new Date(previewVersion.createdAt).toLocaleString()} · capabilities at save: {previewVersion.capabilities.join(" · ") || "none"}</span>
+          <button type="button" data-testid="button-return-current-app" disabled={busy} onClick={() => setPreviewVersion(null)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-xs font-semibold text-[hsl(var(--foreground))]">Return to current app</button>
+        </div>}
+        {(previewVersion?.html ?? active?.html)
+          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewVersion?.html ?? active?.html ?? "")} className="h-[70vh] min-h-[520px] w-full bg-white" />
           : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />Describe a workspace to generate its first draft.</div></div>}
         {active?.status === "draft" && canManage && <div className="border-t border-[hsl(var(--border))] p-4">
           <label htmlFor="workspace-revision" className="text-sm font-semibold text-[hsl(var(--foreground))]">Revise this draft</label>
@@ -319,7 +340,10 @@ export function CustomWorkspacesPage() {
           <ul className="mt-2 space-y-2">
             {versions.map((version) => <li key={version.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-[#60757c] dark:text-[#b3c3cb]">{version.message} · {new Date(version.createdAt).toLocaleString()}</span>
-              {active.status === "draft" && canManage && <button type="button" disabled={busy} onClick={() => void restore(version.id)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 font-semibold text-[hsl(var(--foreground))] disabled:opacity-50">Restore</button>}
+              {canManage && <span className="flex gap-2">
+                <button type="button" data-testid={`button-preview-version-${version.id}`} disabled={busy} onClick={() => void preview(version.id)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 font-semibold text-[hsl(var(--foreground))] disabled:opacity-50">Preview</button>
+                <button type="button" data-testid={`button-restore-version-${version.id}`} disabled={busy} onClick={() => void restore(version.id)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 font-semibold text-[hsl(var(--foreground))] disabled:opacity-50">Restore</button>
+              </span>}
             </li>)}
           </ul>
         </div>}

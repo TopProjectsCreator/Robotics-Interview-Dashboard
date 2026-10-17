@@ -142,12 +142,41 @@ let importId = 0;
 async function createHarness(t) {
   const workspaces = structuredClone(WORKSPACE_SEEDS);
   const records = structuredClone(RECORD_SEEDS);
+  const versions = [{
+    id: "version-a-older",
+    teamId: "team-a",
+    workspaceId: "workspace-a",
+    html: "<main>Saved app version</main>",
+    capabilities: ["llm"],
+    createdBy: "coordinator-a",
+    message: "Before revision",
+    createdAt: "2026-01-02T00:00:00.000Z",
+  }, {
+    id: "version-a-selected",
+    teamId: "team-a",
+    workspaceId: "workspace-a-selected",
+    html: "<main>Selected app saved version</main>",
+    capabilities: [],
+    createdBy: "coordinator-a",
+    message: "Before selected-app revision",
+    createdAt: "2026-01-02T00:00:00.000Z",
+  }, {
+    id: "version-a-draft",
+    teamId: "team-a",
+    workspaceId: "workspace-a-draft",
+    html: "<main>Draft saved version</main>",
+    capabilities: [],
+    createdBy: "coordinator-a",
+    message: "Before draft revision",
+    createdAt: "2026-01-02T00:00:00.000Z",
+  }];
   const calls = { queries: [], llm: [] };
   const logger = { info() {}, warn() {}, error() {} };
 
   const pool = {
     async query(statement, values = []) {
       calls.queries.push({ statement, values });
+      if (["BEGIN", "COMMIT", "ROLLBACK"].includes(statement)) return { rows: [], rowCount: 0 };
 
       const ensureTeamScope = (column, placeholder, teamId) => {
         assert.ok(
@@ -158,6 +187,25 @@ async function createHarness(t) {
       };
 
       if (statement.startsWith("select") && statement.includes('from "custom_workspaces"')) {
+        if (statement.includes('"created_by" = $3')) {
+          const [id, teamId, accountId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id &&
+            workspace.teamId === teamId &&
+            (workspace.status === "published" ||
+              (workspace.status === "draft" && workspace.createdBy === accountId)),
+          );
+          return { rows: row ? [{ id: row.id }] : [], rowCount: row ? 1 : 0 };
+        }
+        if (statement.includes("for update")) {
+          const [id, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId && ["draft", "published"].includes(workspace.status),
+          );
+          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes('order by "updated_at" desc limit 100')) {
           const teamId = values[0];
           const accountId = values[1];
@@ -187,6 +235,23 @@ async function createHarness(t) {
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
       }
 
+      if (statement.startsWith("select") && statement.includes('from "custom_workspace_versions"')) {
+        if (statement.includes('order by "created_at" desc limit 50')) {
+          const [workspaceId, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const rows = versions
+            .filter((version) => version.workspaceId === workspaceId && version.teamId === teamId)
+            .map(({ id, message, createdBy, createdAt }) => ({ id, message, createdBy, createdAt }));
+          return { rows, rowCount: rows.length };
+        }
+        const [versionId, workspaceId, teamId] = values;
+        ensureTeamScope('"team_id"', "$3", teamId);
+        const row = versions.find((version) =>
+          version.id === versionId && version.workspaceId === workspaceId && version.teamId === teamId,
+        );
+        return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+      }
+
       if (statement.startsWith("select") && statement.includes('from "interviewer_accounts"')) {
         const teamId = values[0];
         ensureTeamScope('"team_id"', "$1", teamId);
@@ -204,7 +269,10 @@ async function createHarness(t) {
         ensureTeamScope('"team_id"', "$2", teamId);
         const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
         if (!row) return { rows: [], rowCount: 0 };
-        if (statement.includes("set \"status\" = 'published'")) {
+        if (statement.includes('set "html" = $3')) {
+          row.html = accessMode;
+          if (row.status === "draft") row.capabilities = JSON.parse(allowedIdsJson);
+        } else if (statement.includes("set \"status\" = 'published'")) {
           row.status = "published";
           row.accessMode = accessMode;
           row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
@@ -284,10 +352,27 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspace_versions"')) {
+        const [id, teamId, workspaceId, html, capabilities, createdBy, message] = values;
+        versions.push({
+          id,
+          teamId,
+          workspaceId,
+          html,
+          capabilities: JSON.parse(capabilities),
+          createdBy,
+          message,
+          createdAt: "2026-01-03T00:00:00.000Z",
+        });
         return { rows: [], rowCount: 1 };
       }
 
       throw new Error(`Unexpected custom workspace query: ${statement}`);
+    },
+    async connect() {
+      return {
+        query: (...args) => pool.query(...args),
+        release() {},
+      };
     },
   };
 
@@ -369,6 +454,7 @@ async function createHarness(t) {
     calls,
     records,
     workspaces,
+    versions,
     async request(user, method, path, body) {
       return fetch(`${baseUrl}${path}`, {
         method,
@@ -522,6 +608,77 @@ test("coordinators can update selected members but cannot grant access across te
     (await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-draft")).status,
     200,
   );
+});
+
+test("coordinators can preview and restore published versions without changing app permissions", async (t) => {
+  const harness = await createHarness(t);
+  const workspace = harness.workspaces.find((item) => item.id === "workspace-a-selected");
+  workspace.allowedInterviewerIds = ["admin-a"];
+  const history = await harness.request(
+    "coordinator-a",
+    "GET",
+    "/custom-workspaces/workspace-a-selected/versions",
+  );
+  assert.equal(history.status, 200);
+  const preview = await harness.request(
+    "coordinator-a",
+    "GET",
+    "/custom-workspaces/workspace-a-selected/versions/version-a-selected",
+  );
+  assert.equal(preview.status, 200);
+  assert.equal((await preview.json()).version.html, "<main>Selected app saved version</main>");
+
+  const forbidden = await harness.request(
+    "admin-a",
+    "POST",
+    "/custom-workspaces/workspace-a-selected/versions/version-a-selected/restore",
+    {},
+  );
+  assert.equal(forbidden.status, 403);
+
+  const restored = await harness.request(
+    "coordinator-a",
+    "POST",
+    "/custom-workspaces/workspace-a-selected/versions/version-a-selected/restore",
+    {},
+  );
+  assert.equal(restored.status, 200);
+  const result = (await restored.json()).workspace;
+  assert.equal(result.html, "<main>Selected app saved version</main>");
+  assert.deepEqual(result.capabilities, ["data", "llm"]);
+  assert.equal(result.accessMode, "selected");
+  assert.deepEqual(result.allowedInterviewerIds, ["admin-a"]);
+  assert.equal(workspace.status, "published");
+
+  const snapshot = harness.versions.find((version) => version.message === "Before published version restore");
+  assert.equal(snapshot.html, "<main>Selected</main>");
+  assert.deepEqual(snapshot.capabilities, ["data", "llm"]);
+  assert.equal(snapshot.createdBy, "coordinator-a");
+
+  const foreignPreview = await harness.request(
+    "coordinator-b",
+    "GET",
+    "/custom-workspaces/workspace-a-selected/versions/version-a-selected",
+  );
+  assert.equal(foreignPreview.status, 404);
+});
+
+test("draft restores keep restoring the saved capability set", async (t) => {
+  const harness = await createHarness(t);
+  const restored = await harness.request(
+    "coordinator-a",
+    "POST",
+    "/custom-workspaces/workspace-a-draft/versions/version-a-draft/restore",
+    {},
+  );
+  assert.equal(restored.status, 200);
+  const result = (await restored.json()).workspace;
+  assert.equal(result.html, "<main>Draft saved version</main>");
+  assert.deepEqual(result.capabilities, []);
+  assert.equal(result.status, "draft");
+  const snapshot = harness.versions.find((version) => version.message === "Before version restore");
+  assert.equal(snapshot.html, "<main>Draft</main>");
+  assert.deepEqual(snapshot.capabilities, ["data", "llm"]);
 });
 
 test("direct record reads and mutations cannot cross team boundaries", async (t) => {
