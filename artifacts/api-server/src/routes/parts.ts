@@ -1315,6 +1315,23 @@ const MAX_PUBLIC_FEED_PAGES = 50;
  */
 const SITEMAP_CRAWL_FLUSH_EVERY = 12;
 
+/**
+ * How many times a sitemap URL may fail before the crawl stops retrying it.
+ * Without a ceiling a URL that always times out stays pending forever, so the
+ * supplier never converges and the crawler re-fetches it every minute for as long
+ * as the site is online. A page that returns no product record at all counts as
+ * terminal on its first attempt, because that answer will not change.
+ */
+const PRODUCT_CRAWL_MAX_ATTEMPTS = 3;
+
+/**
+ * How long a refused sitemap URL stays refused before the crawl tries it once
+ * more. Long enough that a settled "not a product" costs one request a day rather
+ * than one a minute, short enough that a supplier outage cannot silently drop real
+ * products from the catalog.
+ */
+const PRODUCT_CRAWL_SKIP_TTL_SECONDS = 24 * 60 * 60;
+
 async function fetchShopifyProductPage(vendor: VendorConfig, page: number) {
   if (!vendor.publicProductFeedUrl) throw new Error("No verified public product feed.");
   const feedUrl = new URL(vendor.publicProductFeedUrl);
@@ -1483,6 +1500,34 @@ async function collectSitemapCrawledCatalog(
   }
 }
 
+/**
+ * Persists the sitemap URLs this slice will not ask for again, or has failed to
+ * fetch. `greatest` keeps the stored attempt count monotonic, so a terminal
+ * "not-a-product" mark is never walked back by a later transient failure.
+ */
+async function recordSkippedProducts(
+  vendorKey: string,
+  skips: { productUrl: string; reason: string; attempts: number }[],
+) {
+  if (skips.length === 0) return;
+  const values: unknown[] = [vendorKey];
+  const rows = skips.map((skip, index) => {
+    const offset = index * 3 + 2;
+    values.push(skip.productUrl, skip.reason, skip.attempts);
+    return `($1, $${offset}, $${offset + 1}, $${offset + 2}, now())`;
+  });
+  await pool.query(
+    `insert into "parts_catalog_crawl_skips"
+       ("vendor_key", "product_url", "reason", "attempts", "updated_at")
+     values ${rows.join(", ")}
+     on conflict ("vendor_key", "product_url") do update set
+       "reason" = excluded."reason",
+       "attempts" = greatest("parts_catalog_crawl_skips"."attempts", excluded."attempts"),
+       "updated_at" = now()`,
+    values,
+  );
+}
+
 async function crawlSitemapSlice(
   vendor: VendorConfig,
   sitemapUrl: string,
@@ -1504,10 +1549,30 @@ async function crawlSitemapSlice(
       .filter((productUrl): productUrl is string => productUrl !== null),
   );
 
+  // URLs the crawl has recently refused. The pending set is "sitemap URLs minus
+  // indexed URLs", so a sitemap entry that yields no product record never gains a
+  // catalog row and would be re-fetched on every slice for as long as the site is
+  // online. Reading the refusals back is what lets the pending set empty.
+  //
+  // They expire rather than lasting forever: a supplier outage would otherwise let
+  // a few transient failures drop real products permanently. Retrying a refused
+  // URL once a day costs one request, which is nothing next to losing a part.
+  const refused = await pool.query(
+    `select "product_url", "attempts" from "parts_catalog_crawl_skips"
+     where "vendor_key" = $1
+       and "updated_at" > now() - make_interval(secs => $2::int)`,
+    [vendor.key, PRODUCT_CRAWL_SKIP_TTL_SECONDS],
+  );
+  const unproductive = new Map<string, number>(
+    (refused.rows as { product_url: string; attempts: number }[]).map((row) => [
+      row.product_url,
+      row.attempts,
+    ]),
+  );
+
   const records: CatalogFeedRecord[] = [];
   let created = 0;
   let updated = 0;
-  let failed = 0;
 
   /**
    * Writes whatever has been collected so far. Records are flushed as the slice
@@ -1557,8 +1622,13 @@ async function crawlSitemapSlice(
     }
   }
 
-  const pending = sitemapUrls.filter((url) => !known.has(url));
+  const pending = sitemapUrls.filter(
+    (url) => !known.has(url) && (unproductive.get(url) ?? 0) < PRODUCT_CRAWL_MAX_ATTEMPTS,
+  );
   const slice = pending.slice(0, Math.max(0, budget));
+
+  /** Sitemap URLs this slice refuses or fails again, and why. */
+  const skips: { productUrl: string; reason: string; attempts: number }[] = [];
 
   for (const productUrl of slice) {
     try {
@@ -1579,18 +1649,50 @@ async function crawlSitemapSlice(
           imageUrl: product.imageUrl,
         });
       } else {
-        failed += 1;
+        // A page with no product JSON-LD is a settled answer rather than a
+        // transient fault, so record it as terminal instead of asking again.
+        skips.push({
+          productUrl,
+          reason: "not-a-product",
+          attempts: PRODUCT_CRAWL_MAX_ATTEMPTS,
+        });
       }
     } catch (error) {
-      failed += 1;
+      skips.push({
+        productUrl,
+        reason: "fetch-failed",
+        attempts: (unproductive.get(productUrl) ?? 0) + 1,
+      });
       logger.warn({ err: error, vendorKey: vendor.key, productUrl }, "Sitemap product page failed");
     }
     if (records.length >= SITEMAP_CRAWL_FLUSH_EVERY) await flush();
     await crawlDelay(PRODUCT_CRAWL_DELAY_MS);
   }
   await flush();
+  await recordSkippedProducts(vendor.key, skips);
 
-  const remaining = pending.length - slice.length + failed;
+  // An attempted URL only counts as still owed when it failed transiently and has
+  // attempts left; everything else either gained a catalog row or was given up on.
+  const retryable = new Set(
+    skips
+      .filter((skip) => skip.attempts < PRODUCT_CRAWL_MAX_ATTEMPTS)
+      .map((skip) => skip.productUrl),
+  );
+  const attempted = new Set(slice);
+  const remaining = pending.filter((url) => !attempted.has(url) || retryable.has(url)).length;
+  const refusedUrls = new Set([
+    ...[...unproductive.entries()]
+      .filter(([, attempts]) => attempts >= PRODUCT_CRAWL_MAX_ATTEMPTS)
+      .map(([url]) => url),
+    ...skips
+      .filter((skip) => skip.attempts >= PRODUCT_CRAWL_MAX_ATTEMPTS)
+      .map((skip) => skip.productUrl),
+  ]);
+  const skippedCount = sitemapUrls.filter((url) => refusedUrls.has(url)).length;
+  const skippedNote =
+    skippedCount > 0
+      ? ` ${skippedCount} sitemap URL(s) are not product pages or failed repeatedly, and are no longer retried.`
+      : "";
   const enumerated = `${sitemapUrls.length} sitemap URL(s)`;
   // Counted from the catalog rather than derived from this slice: the whole
   // point of flushing is that the running total survives a restart this slice
@@ -1601,7 +1703,7 @@ async function crawlSitemapSlice(
     [vendor.key],
   );
   const itemCount = Number((total.rows[0] as { total: number } | undefined)?.total ?? 0);
-  if (pending.length === 0) {
+  if (remaining === 0) {
     return {
       vendor,
       status: "synced" as const,
@@ -1612,7 +1714,7 @@ async function crawlSitemapSlice(
       itemCount,
       created,
       updated,
-      message: `Product sitemap enumerated (${enumerated}); all ${itemCount} listed product(s) are indexed. Incremental checks now cost one request per run.`,
+      message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) are indexed and nothing is left to fetch. Incremental checks now cost one request per run.${skippedNote}`,
     };
   }
   return {
@@ -1623,7 +1725,7 @@ async function crawlSitemapSlice(
     itemCount,
     created,
     updated,
-    message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.`,
+    message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.${skippedNote}`,
   };
 }
 

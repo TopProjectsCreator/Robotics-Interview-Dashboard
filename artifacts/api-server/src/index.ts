@@ -105,6 +105,7 @@ async function ensureSchema(): Promise<void> {
     "page_visits",
     "parts_catalog_items",
     "parts_catalog_sync_state",
+    "parts_catalog_crawl_skips",
     "parts_catalog_crawl_state",
     "parts_inventory",
     "parts_robots",
@@ -200,6 +201,13 @@ async function ensureSchema(): Promise<void> {
     // host that asks for a delay between fetches.
     `create table if not exists "parts_catalog_crawl_state" ("id" text primary key check ("id" = 'global'), "claimed_at" timestamptz)`,
     `insert into "parts_catalog_crawl_state" ("id") values ('global') on conflict ("id") do nothing`,
+    // Sitemap URLs the crawl has stopped retrying. The pending set is "sitemap
+    // URLs minus indexed URLs", so a URL that never yields a product row would
+    // otherwise be re-fetched on every slice forever: the supplier could never
+    // converge, and the crawler would keep asking a host for a page it has already
+    // declined to serve as a product. Recording the refusal is what makes the
+    // first pass provably finite.
+    `create table if not exists "parts_catalog_crawl_skips" ("vendor_key" text not null, "product_url" text not null, "reason" text not null, "attempts" integer not null default 1, "updated_at" timestamptz not null default now(), primary key ("vendor_key", "product_url"))`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
