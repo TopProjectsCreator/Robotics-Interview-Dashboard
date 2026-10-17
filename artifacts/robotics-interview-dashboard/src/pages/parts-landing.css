@@ -102,17 +102,6 @@
   text-decoration: none;
 }
 
-.parts-landing__brand-mark {
-  display: grid;
-  width: 39px;
-  height: 39px;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--parts-navy);
-  color: var(--parts-yellow);
-  box-shadow: 0 8px 18px rgba(21, 54, 66, .14);
-}
-
 .parts-landing__brand-copy strong {
   display: block;
   font-size: 14px;

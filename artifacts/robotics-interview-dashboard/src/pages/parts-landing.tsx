@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowDownRight,
   ArrowRight,
   Boxes,
   Check,
   ChevronDown,
-  CircleDot,
   ClipboardCheck,
   Database,
   ExternalLink,
@@ -184,9 +184,7 @@ export default function PartsLanding() {
             onClick={closeMenu}
             data-testid="link-parts-brand"
           >
-            <span className="parts-landing__brand-mark" aria-hidden="true">
-              <CircleDot size={20} strokeWidth={2.4} />
-            </span>
+            <BrandMark />
             <span className="parts-landing__brand-copy">
               <strong>ROBOTICS</strong>
               <small>TEAM WORKSPACE</small>

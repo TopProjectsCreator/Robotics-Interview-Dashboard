@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowRight,
-  CircleDot,
   Cpu,
   Boxes,
   LayoutDashboard,
@@ -108,14 +108,7 @@ export default function PublicDashboard() {
             className="inline-flex shrink-0 text-inherit no-underline"
             data-testid="link-public-brand"
           >
-            <span
-              role="img"
-              aria-label="Robotics team logo"
-              className="grid size-14 shrink-0 place-items-center bg-[#153642] text-[#efc34f]"
-              data-testid="public-team-logo"
-            >
-              <CircleDot size={20} strokeWidth={2.4} />
-            </span>
+            <BrandMark ariaLabel="Robotics team logo" dataTestId="public-team-logo" />
           </Link>
 
           <nav

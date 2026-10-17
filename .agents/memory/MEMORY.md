@@ -40,3 +40,4 @@
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
 - [App-level MCP connections](app-level-mcp-connections.md) — a product's MCP client is separate from Replit Agent's own integration catalog; use the provider's hosted endpoint and OAuth.
+- [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.

@@ -61,17 +61,6 @@
   text-decoration: none;
 }
 
-.cad-landing__brand-mark {
-  width: 39px;
-  height: 39px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--cad-deep);
-  color: var(--cad-yellow);
-  box-shadow: 0 9px 22px rgba(21, 59, 73, .16);
-}
-
 .cad-landing__brand-copy strong {
   display: block;
   font-size: 14px;

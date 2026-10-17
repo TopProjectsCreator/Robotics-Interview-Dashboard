@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowRight,
   AtSign,
   BarChart3,
   Check,
   ChevronDown,
-  CircleDot,
   FileCode2,
   FileText,
   FolderKanban,
@@ -54,7 +54,7 @@ export default function ChatLanding() {
       <div className="chat-landing__shell">
         <header className="chat-landing__nav">
           <Link href="/" className="chat-landing__brand" onClick={closeMenu} data-testid="link-chat-brand">
-            <span className="chat-landing__brand-mark" aria-hidden="true"><CircleDot size={20} strokeWidth={2.4} /></span>
+            <BrandMark />
             <span className="chat-landing__brand-copy">
               <strong>ROBOTICS</strong>
               <small>TEAM WORKSPACE</small>

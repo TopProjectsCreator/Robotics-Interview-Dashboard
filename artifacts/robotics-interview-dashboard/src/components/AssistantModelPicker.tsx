@@ -36,6 +36,11 @@ type AssistantModelPickerProps = {
   onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
   disabledTools?: string[];
   onDisabledToolsChange?: (tools: string[]) => void;
+  onshapeConnected?: boolean;
+  onshapeBusy?: boolean;
+  onshapeError?: string;
+  onConnectOnshape?: () => void;
+  onDisconnectOnshape?: () => void;
 };
 
 export function AssistantModelPicker({
@@ -48,6 +53,11 @@ export function AssistantModelPicker({
   onThinkingLevelChange,
   disabledTools: controlledDisabled,
   onDisabledToolsChange,
+  onshapeConnected = false,
+  onshapeBusy = false,
+  onshapeError = "",
+  onConnectOnshape,
+  onDisconnectOnshape,
 }: AssistantModelPickerProps) {
   const options = models.length ? models : model ? [{ id: model }] : [];
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
@@ -153,8 +163,8 @@ export function AssistantModelPicker({
           <PopoverTrigger asChild>
             <button
               type="button"
-              aria-label="Assistant tools"
-              title={disabledTools.length ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled` : "Assistant tools"}
+              aria-label="Assistant settings"
+              title={disabledTools.length ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled` : "Assistant settings"}
               data-testid="assistant-tools-gear"
               className="assistant-tools-gear"
             >
@@ -167,7 +177,7 @@ export function AssistantModelPicker({
           <PopoverContent align="end" sideOffset={8} className="assistant-tools-popover">
             <div className="assistant-tools-head">
               <div>
-                <p className="assistant-tools-title">Assistant tools</p>
+                <p className="assistant-tools-title">Assistant settings</p>
                 <p className="assistant-tools-subtitle" data-testid="assistant-tools-count">
                   {enabledCount} of {ALL_ASSISTANT_TOOL_NAMES.length} enabled
                 </p>
@@ -191,6 +201,32 @@ export function AssistantModelPicker({
                 </button>
               </div>
             </div>
+            {(onConnectOnshape || onDisconnectOnshape) && (
+              <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">
+                <div className="assistant-onshape-setting-copy">
+                  <p className="assistant-onshape-setting-title">Onshape connection</p>
+                  <p className="assistant-onshape-setting-status" role="status">
+                    {onshapeBusy
+                      ? onshapeConnected ? "Disconnecting…" : "Connecting…"
+                      : onshapeConnected ? "Connected" : "Not connected"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="assistant-onshape-setting-action"
+                  onClick={onshapeConnected ? onDisconnectOnshape : onConnectOnshape}
+                  disabled={onshapeBusy}
+                  aria-label={onshapeConnected ? "Disconnect Onshape" : "Connect Onshape"}
+                  title="Subscribe to Onshape's FeatureScript MCP Server in the App Store first"
+                  data-testid="assistant-onshape-toggle"
+                >
+                  {onshapeBusy
+                    ? onshapeConnected ? "Disconnecting…" : "Connecting…"
+                    : onshapeConnected ? "Disconnect" : "Connect"}
+                </button>
+                {onshapeError && <p className="assistant-onshape-setting-error" role="alert">{onshapeError}</p>}
+              </section>
+            )}
             <div className="assistant-tools-groups">
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);

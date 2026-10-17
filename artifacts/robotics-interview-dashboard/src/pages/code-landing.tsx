@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowRight,
   Bot,
   Check,
   ChevronDown,
-  CircleDot,
   FileCode2,
   FolderGit2,
   GitBranch,
@@ -180,9 +180,7 @@ export default function CodeLanding() {
       <div className="code-landing__shell">
         <header className="code-landing__nav">
           <Link href="/" className="code-landing__brand" onClick={closeMenu} data-testid="link-code-brand">
-            <span className="code-landing__brand-mark" aria-hidden="true">
-              <CircleDot size={20} strokeWidth={2.4} />
-            </span>
+            <BrandMark />
             <span className="code-landing__brand-copy">
               <strong>ROBOTICS</strong>
               <small>TEAM WORKSPACE</small>

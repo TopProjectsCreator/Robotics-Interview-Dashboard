@@ -89,13 +89,13 @@ describe("AssistantModelPicker", () => {
     );
 
     const picker = screen.getByRole("combobox", { name: "Assistant model" });
-    const gear = screen.getByRole("button", { name: "Assistant tools" });
+    const gear = screen.getByRole("button", { name: "Assistant settings" });
     // Gear sits in the same inline row as the dropdown.
     expect(gear.closest(".assistant-model-picker-row")).toContainElement(picker);
     expect(screen.getByTestId("assistant-tools-gear")).toBe(gear);
 
     fireEvent.click(gear);
-    expect(await screen.findByText("Assistant tools")).toBeInTheDocument();
+    expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
     expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("44 of 44 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
   });
@@ -114,7 +114,7 @@ describe("AssistantModelPicker", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Assistant tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "Web search tool" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["web_search"]);
   });
@@ -142,5 +142,42 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Enable all" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith([]);
+  });
+
+  it("shows Onshape connection controls inside assistant settings", async () => {
+    const onConnectOnshape = vi.fn();
+    const onDisconnectOnshape = vi.fn();
+    const { rerender } = render(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        onshapeConnected={false}
+        onConnectOnshape={onConnectOnshape}
+        onDisconnectOnshape={onDisconnectOnshape}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByTestId("assistant-onshape-setting")).toHaveTextContent("Not connected");
+    fireEvent.click(screen.getByRole("button", { name: "Connect Onshape" }));
+    expect(onConnectOnshape).toHaveBeenCalledOnce();
+
+    rerender(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        onshapeConnected
+        onDisconnectOnshape={onDisconnectOnshape}
+      />,
+    );
+    expect(screen.getByTestId("assistant-onshape-setting")).toHaveTextContent("Connected");
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect Onshape" }));
+    expect(onDisconnectOnshape).toHaveBeenCalledOnce();
   });
 });

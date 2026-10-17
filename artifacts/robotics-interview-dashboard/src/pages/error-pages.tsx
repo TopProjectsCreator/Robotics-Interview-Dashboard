@@ -1,9 +1,9 @@
 import { Link, useLocation } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  CircleDot,
   ClipboardList,
   ClipboardX,
   Construction,
@@ -262,10 +262,7 @@ export function isErrorPageCode(
 function Mark() {
   return (
     <div className="flex items-center gap-2.5" data-testid="brand-robotics">
-      <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#f8c84a] text-[#182232]">
-        <CircleDot size={20} strokeWidth={2.4} />
-        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-      </span>
+      <BrandMark />
       <span className="leading-none text-white">
         <b className="block text-[15px] tracking-[.18em]">ROBOTICS</b>
         <small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">
@@ -398,10 +395,7 @@ function ErrorStatePage({ config, target, retry }: ErrorStatePageProps) {
         <section className="flex flex-col justify-center bg-[#f3f6f5] px-7 py-12 text-[#182232] sm:px-12">
           <div className="mb-10 lg:hidden">
             <div className="flex items-center gap-2.5">
-              <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#163247] text-[#f8c84a]">
-                <CircleDot size={20} strokeWidth={2.4} />
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-              </span>
+              <BrandMark />
               <span className="leading-none text-[#182232]">
                 <b className="block text-[15px] tracking-[.18em]">ROBOTICS</b>
                 <small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">

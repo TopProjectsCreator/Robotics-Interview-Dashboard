@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowRight,
   Box,
   Boxes,
   Check,
   ChevronDown,
-  CircleDot,
   Download,
   FileBox,
   Folder,
@@ -200,9 +200,7 @@ export default function CadLanding() {
       <div className="cad-landing__shell">
         <header className="cad-landing__nav">
           <Link href="/" className="cad-landing__brand" onClick={closeMenu} data-testid="link-cad-brand">
-            <span className="cad-landing__brand-mark" aria-hidden="true">
-              <CircleDot size={20} strokeWidth={2.4} />
-            </span>
+            <BrandMark />
             <span className="cad-landing__brand-copy">
               <strong>ROBOTICS</strong>
               <small>TEAM WORKSPACE</small>

@@ -4,7 +4,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, ClipboardList, Copy,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock,
 } from "lucide-react";
@@ -51,6 +51,7 @@ import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
+import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
@@ -260,13 +261,9 @@ type BrowserSpeechRecognition = {
 };
 type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
-function Logo({ dark = false, teamName = "Robotics team", primaryColor }: { dark?: boolean; teamName?: string; primaryColor?: string | null }) {
-  const brandColor = primaryColor ?? "#f8c84a";
-  const brandForeground = readableBrandForeground(brandColor);
+function Logo({ dark = false, teamName = "Robotics team" }: { dark?: boolean; teamName?: string }) {
   return <div className="flex items-center gap-2.5" data-testid="brand-robotics">
-    <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl ${dark ? "" : "bg-[#163247] dark:bg-[#f8c84a]"}`} style={dark || primaryColor ? { backgroundColor: brandColor, color: brandForeground } : undefined}>
-      <CircleDot size={20} strokeWidth={2.4} aria-hidden="true" />
-    </span>
+    <BrandMark />
     <span className={`leading-none ${dark ? "text-white" : "text-[#182232] dark:text-white"}`}><b className="block text-[15px] tracking-[.18em]">ROBOTICS</b><small className="mono max-w-40 truncate text-[9px] uppercase tracking-[.2em] opacity-60">{teamName}</small></span>
   </div>;
 }
@@ -3047,7 +3044,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="px-3"><Logo dark teamName={activeTeamName} primaryColor={teamBranding.data?.primaryColor} /></div>
+        <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace navigation">
           {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
@@ -7144,8 +7141,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><button type="button" onClick={onshapeConnected ? disconnectOnshape : connectOnshape} disabled={onshapeBusy} title="Subscribe to Onshape's FeatureScript MCP Server in the App Store first" className="inline-flex shrink-0 items-center rounded-lg border border-[#d2e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#24515b] hover:bg-[#f5f9f8] disabled:opacity-60 dark:border-[#3b5660] dark:bg-[#182d37] dark:text-[#d4e3e5] dark:hover:bg-[#233d48]">{onshapeBusy ? "Connecting…" : onshapeConnected ? "Onshape connected · Disconnect" : "Connect Onshape"}</button><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
-    {onshapeError && <p role="alert" className="mb-3 text-sm text-rose-700">{onshapeError}</p>}
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

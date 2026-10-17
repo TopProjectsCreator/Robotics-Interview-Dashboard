@@ -36,14 +36,6 @@
   color: #eef4f2;
 }
 
-.tutorial-brand-mark {
-  display: grid;
-  width: 3.8vmin;
-  height: 3.8vmin;
-  place-items: center;
-  color: var(--tutorial-yellow);
-}
-
 .tutorial-brand-copy {
   display: grid;
   gap: 0.1vmin;
@@ -2572,14 +2564,6 @@
   align-items: center;
   gap: 1.3vmin;
   transform: translateX(-50%);
-}
-
-.outro-brand-mark {
-  display: grid;
-  width: 7.5vmin;
-  height: 7.5vmin;
-  place-items: center;
-  color: var(--tutorial-yellow);
 }
 
 .outro-lockup div { display: grid; gap: 0.3vmin; }

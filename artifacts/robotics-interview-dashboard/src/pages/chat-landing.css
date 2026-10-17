@@ -81,17 +81,6 @@
   text-decoration: none;
 }
 
-.chat-landing__brand-mark {
-  width: 39px;
-  height: 39px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--chat-deep);
-  color: var(--chat-yellow);
-  box-shadow: 0 9px 22px rgba(21, 59, 73, .16);
-}
-
 .chat-landing__brand-copy strong {
   display: block;
   font-size: 14px;
@@ -1389,11 +1378,6 @@
 
   .chat-landing__brand {
     gap: 8px;
-  }
-
-  .chat-landing__brand-mark {
-    width: 36px;
-    height: 36px;
   }
 
   .chat-landing__brand-copy strong {
