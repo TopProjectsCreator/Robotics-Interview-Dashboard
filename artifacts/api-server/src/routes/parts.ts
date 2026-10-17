@@ -2042,8 +2042,39 @@ let sitemapCrawlTimer: ReturnType<typeof setTimeout> | null = null;
 let sitemapCrawlStopped = false;
 
 /**
+ * How long a crawler lease is held before another instance may take over. Must
+ * comfortably exceed one slice (60 pages at the 10s delay is about ten minutes)
+ * so a healthy crawl is never stolen, while a crashed instance frees the lease
+ * instead of stalling the crawl forever.
+ */
+const SITEMAP_CRAWL_LEASE_SECONDS = 15 * 60;
+
+/**
+ * Takes the cross-instance crawl lease. Autoscaled deployments run several
+ * server instances against one database, and without this every instance would
+ * fetch the same sitemap and crawl the same pending products — multiplying the
+ * request rate against a host that asks for a delay between fetches. Mirrors the
+ * lease the scheduled supplier sync already uses for the same reason.
+ *
+ * Returns true when this instance may crawl.
+ */
+async function claimSitemapCrawlLease(): Promise<boolean> {
+  const claim = await pool.query(
+    `insert into "parts_catalog_crawl_state" ("id", "claimed_at")
+     values ('global', now())
+     on conflict ("id") do update set "claimed_at" = now()
+     where "parts_catalog_crawl_state"."claimed_at" is null
+        or "parts_catalog_crawl_state"."claimed_at"
+             < now() - make_interval(secs => $1::int)
+     returning "id"`,
+    [SITEMAP_CRAWL_LEASE_SECONDS],
+  );
+  return claim.rowCount !== 0;
+}
+
+/**
  * Runs one bounded crawl slice for every sitemap-backed supplier that needs one,
- * and reports whether any of them still has a backlog.
+ * and reports whether the crawler should come back promptly.
  *
  * A first pass cannot live inside a request: goBILDA lists 2,387 products and
  * asks for 10 seconds between page fetches, so a complete walk takes hours.
@@ -2051,6 +2082,10 @@ let sitemapCrawlStopped = false;
  * single slice rather than the whole run, and no tick blocks the event loop.
  */
 async function runSitemapCrawlSlices(): Promise<boolean> {
+  // A lost lease means another instance is mid-slice, so come back soon rather
+  // than sleeping the converged interval and stalling the first pass.
+  if (!(await claimSitemapCrawlLease())) return true;
+
   let backlogRemains = false;
   const states = await readPartsSupplierSyncStates();
   for (const vendor of VENDORS) {
