@@ -5859,8 +5859,11 @@ components:
           type: string
     DisplayState:
       type: object
-      required: [mode, headline, subheadline, announcement, announce, currentApplicants, updatedAt]
+      required: [teamName, mode, headline, subheadline, announcement, announce, currentApplicants, updatedAt]
       properties:
+        teamName:
+          type: string
+          description: Stored name of the team whose display is being shown
         mode:
           type: string
         headline:

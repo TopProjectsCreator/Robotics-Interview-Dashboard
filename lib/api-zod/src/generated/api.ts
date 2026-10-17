@@ -2578,6 +2578,7 @@ export const GetDisplayStateQueryParams = zod.object({
 })
 
 export const GetDisplayStateResponse = zod.object({
+  "teamName": zod.string().describe('Stored name of the team whose display is being shown'),
   "mode": zod.string(),
   "headline": zod.string(),
   "subheadline": zod.string(),

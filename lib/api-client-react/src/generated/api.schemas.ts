@@ -2030,6 +2030,8 @@ export interface DisplayApplicant {
 }
 
 export interface DisplayState {
+  /** Stored name of the team whose display is being shown */
+  teamName: string;
   mode: string;
   headline: string;
   subheadline: string;

@@ -4520,28 +4520,36 @@ router.post("/queue/reorder", requireCoordinator, async (req, res): Promise<void
   res.json(ReorderQueueResponse.parse(await getQueueState(teamId)));
 });
 
-async function resolveDisplayTeamId(req: Request, res: ExpressResponse): Promise<string | null> {
-  const fallbackTeamId = await requestTeamId(req);
+async function resolveDisplayTeam(req: Request, res: ExpressResponse): Promise<{ id: string; name: string } | null> {
   const displayCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword.trim() : "";
-  if (!displayCode) return fallbackTeamId;
-
-  const { findTeamByCode } = await import("../lib/teams");
-  const team = await findTeamByCode(displayCode);
-  if (!team) {
-    res.status(404).json({ error: "Invalid team access code." });
-    return null;
+  if (displayCode) {
+    const { findTeamByCode } = await import("../lib/teams");
+    const team = await findTeamByCode(displayCode);
+    if (!team) {
+      res.status(404).json({ error: "Invalid team access code." });
+      return null;
+    }
+    return { id: team.id, name: team.name };
   }
-  return team.id;
+
+  const teamId = await requestTeamId(req);
+  const { getTeamById } = await import("../lib/teams");
+  const team = await getTeamById(teamId);
+  return {
+    id: teamId,
+    name: team?.name ?? (teamId === "default" ? "Wolverines" : "Robotics team"),
+  };
 }
 
 router.get("/display/state", async (req, res): Promise<void> => {
   // Public big screen: ?eventPassword scopes to that team, otherwise the
   // signed-in user's team, otherwise the default team (current team safe).
-  const teamId = await resolveDisplayTeamId(req, res);
-  if (!teamId) return;
+  const team = await resolveDisplayTeam(req, res);
+  if (!team) return;
+  const teamId = team.id;
   let stateTag: string | null = null;
   try {
-    stateTag = `${await applicantVersion(teamId)}|${await queueVersion(teamId)}|${await displaySettingsVersion(teamId)}`;
+    stateTag = `${team.name}|${await applicantVersion(teamId)}|${await queueVersion(teamId)}|${await displaySettingsVersion(teamId)}`;
   } catch {
     stateTag = null;
   }
@@ -4549,6 +4557,7 @@ router.get("/display/state", async (req, res): Promise<void> => {
   const view = await getDisplayView(teamId);
   const settings = await getDisplaySettings(teamId);
   res.json(GetDisplayStateResponse.parse({
+    teamName: team.name,
     mode: view.mode,
     headline: view.headline,
     subheadline: view.subheadline,
@@ -4561,8 +4570,9 @@ router.get("/display/state", async (req, res): Promise<void> => {
 
 let announcementCache: { key: string; audio: Buffer } | null = null;
 router.get("/display/announcement", async (req, res): Promise<void> => {
-  const teamId = await resolveDisplayTeamId(req, res);
-  if (!teamId) return;
+  const team = await resolveDisplayTeam(req, res);
+  if (!team) return;
+  const teamId = team.id;
   const view = await getDisplayView(teamId);
   // ?test=1 speaks a fixed phrase so admins can check the big-screen
   // speakers. Only this exact phrase is allowed — no custom text, so the
