@@ -5877,6 +5877,7 @@ components:
           type: boolean
           description: "Master switch: false mutes spoken auto-announcements (manual tests still speak)"
         currentApplicants:
+          description: "Empty when the team's display setting hides applicant names; otherwise includes only display fields."
           type: array
           items:
             $ref: "#/components/schemas/DisplayApplicant"
@@ -5945,6 +5946,7 @@ components:
         announce:
           type: boolean
     DisplayApplicant:
+      description: "Public display-only applicant fields; private application, interview, and account data are not returned."
       type: object
       required: [id, name, grade, lane]
       properties:
