@@ -6487,7 +6487,10 @@ function Display() { const streamHealthy = useRealtimeHealthy();
   // the current team's big screen keeps working unchanged.
   const displayTeamCode = previewParams.get("code") ?? previewParams.get("eventPassword") ?? undefined;
   const displayParams = displayTeamCode ? { eventPassword: displayTeamCode } : undefined;
-  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: streamHealthy ? false : (3000 )} }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
+  // Keep polling even when the authenticated SSE connection is open: public
+  // displays may not receive team-row hints (for example when the relay is
+  // unavailable), and the API ETag includes the stored team name.
+  const display = useGetDisplayState(displayParams, { query: { queryKey: getGetDisplayStateQueryKey(displayParams), refetchInterval: 3000 } }); const lastUpdate = useRef(""); const audioRef = useRef<HTMLAudioElement>(null);
   const fullscreen = useFullscreen();
   // ?preview=1 turns this page into the big-screen tab's preview: query
   // params override the live text through the exact same render path (so the

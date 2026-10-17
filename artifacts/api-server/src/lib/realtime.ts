@@ -10,6 +10,7 @@ import { logger } from "./logger";
 // Also used at boot to add these tables to the `supabase_realtime`
 // publication, without which Supabase emits no postgres_changes for them.
 export const REALTIME_WATCHED_TABLES = [
+  "teams",
   "applicants",
   "interview_queue",
   "display_settings",

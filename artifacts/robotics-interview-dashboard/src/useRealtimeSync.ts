@@ -83,6 +83,13 @@ export function useRealtimeSync(authenticated: boolean) {
         void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
         return;
       }
+      if (table === "teams") {
+        // A team rename changes the public display label without touching any
+        // of the queue or display-settings rows. The base key also matches
+        // code-scoped display queries.
+        void qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+        return;
+      }
 
       // applicants, interview_queue, display_settings, interview_chat_messages,
       // broadcasts, seating_settings, dashboard_charts, and anything unknown:

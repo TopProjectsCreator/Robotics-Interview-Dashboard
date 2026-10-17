@@ -1597,9 +1597,8 @@ async function crawlSitemapSlice(
    * is 17 products instead of 389, and the catalog is populated immediately
    * rather than after an hour of polite fetching.
    *
-   * Gated on the vendor having no catalog rows at all, so the seed is a starting
-   * point and never a ceiling — once the supplier lists something new, the crawl
-   * owns the vendor.
+   * Gated on an empty catalog so the seed is a starting point and never a
+   * ceiling — once the supplier lists something new, the crawl owns the vendor.
    */
   if (indexedRows.length === 0) {
     const seed = VENDOR_CATALOG_SEEDS.get(vendor.key);
@@ -1626,10 +1625,8 @@ async function crawlSitemapSlice(
     (url) => !known.has(url) && (unproductive.get(url) ?? 0) < PRODUCT_CRAWL_MAX_ATTEMPTS,
   );
   const slice = pending.slice(0, Math.max(0, budget));
-
   /** Sitemap URLs this slice refuses or fails again, and why. */
   const skips: { productUrl: string; reason: string; attempts: number }[] = [];
-
   for (const productUrl of slice) {
     try {
       const product = await fetchProductPage(productUrl, target);

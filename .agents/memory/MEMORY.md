@@ -28,6 +28,7 @@
 - [Fragment navigation focus](fragment-navigation-focus.md) — make hash targets focusable so compact-menu link activation leaves focus on destination content across engines.
 - [Playwright WebKit on Nix](playwright-webkit-nix.md) — the bundled WPE launcher can hide Nix shared libraries; use a direct wrapper for local Safari-engine tests.
 - [Video preview autoplay](video-preview-autoplay.md) — iframe autoplay permissions vary; show a recoverable mute state and keep export audio independent.
+- [Public display freshness](public-display-freshness.md) — SSE connection health does not prove the database relay is healthy; keep short polling as a display fallback.
 - [CAD library storage cleanup](cad-library-storage-cleanup.md) — chunked CAD deletes must drop parts and manifest; check every table that can reference an object path.
 - [Trackpad panning in 3D viewers](trackpad-panning-viewers.md) — OrbitControls drops wheel deltaX, so two-finger trackpad pan needs a handler registered before it plus touch-action none.
 - [3MF inline rendering](three-mf-inline-rendering.md) — 3MF is a ZIP of XML triangles needing no CAD kernel; its 12-value transform is row-major and silently mispacks.
