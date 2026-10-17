@@ -5,6 +5,25 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface CustomMcpConnection {
+  connected: boolean;
+  endpointUrl: string;
+}
+
+export interface CustomMcpConnectionInput {
+  /** @maxLength 2048 */
+  endpointUrl: string;
+}
+
+export interface CustomMcpConnectResult {
+  connected: boolean;
+  endpointUrl: string;
+  /** @nullable */
+  authorizationUrl?: string | null;
+  /** @nullable */
+  toolCount?: number | null;
+}
+
 export type PartsVendorGroup = typeof PartsVendorGroup[keyof typeof PartsVendorGroup];
 
 

@@ -41,6 +41,13 @@ type AssistantModelPickerProps = {
   onshapeError?: string;
   onConnectOnshape?: () => void;
   onDisconnectOnshape?: () => void;
+  customMcpEndpoint?: string;
+  customMcpConnected?: boolean;
+  customMcpBusy?: boolean;
+  customMcpError?: string;
+  onCustomMcpEndpointChange?: (value: string) => void;
+  onConnectCustomMcp?: () => void;
+  onDisconnectCustomMcp?: () => void;
 };
 
 export function AssistantModelPicker({
@@ -58,6 +65,13 @@ export function AssistantModelPicker({
   onshapeError = "",
   onConnectOnshape,
   onDisconnectOnshape,
+  customMcpEndpoint = "",
+  customMcpConnected = false,
+  customMcpBusy = false,
+  customMcpError = "",
+  onCustomMcpEndpointChange,
+  onConnectCustomMcp,
+  onDisconnectCustomMcp,
 }: AssistantModelPickerProps) {
   const options = models.length ? models : model ? [{ id: model }] : [];
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
@@ -227,6 +241,35 @@ export function AssistantModelPicker({
                 {onshapeError && <p className="assistant-onshape-setting-error" role="alert">{onshapeError}</p>}
               </section>
             )}
+            <section className="assistant-onshape-setting" aria-label="Custom MCP connection" data-testid="assistant-custom-mcp-setting">
+              <div className="assistant-onshape-setting-copy">
+                <p className="assistant-onshape-setting-title">Custom MCP server</p>
+                <p className="assistant-onshape-setting-status" role="status">
+                  {customMcpBusy ? "Connecting…" : customMcpConnected ? "Connected" : "Enter an HTTPS endpoint"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="assistant-onshape-setting-action"
+                onClick={customMcpConnected ? onDisconnectCustomMcp : onConnectCustomMcp}
+                disabled={customMcpBusy || (!customMcpConnected && !customMcpEndpoint.trim())}
+                data-testid="assistant-custom-mcp-toggle"
+              >
+                {customMcpBusy ? "Connecting…" : customMcpConnected ? "Disconnect" : "Connect"}
+              </button>
+              {!customMcpConnected && (
+                <input
+                  type="url"
+                  value={customMcpEndpoint}
+                  onChange={(event) => onCustomMcpEndpointChange?.(event.target.value)}
+                  placeholder="https://example.com/mcp"
+                  aria-label="MCP endpoint URL"
+                  data-testid="assistant-custom-mcp-endpoint"
+                  className="assistant-mcp-endpoint"
+                />
+              )}
+              {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
+            </section>
             <div className="assistant-tools-groups">
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);

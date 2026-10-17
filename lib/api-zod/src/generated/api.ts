@@ -2730,6 +2730,43 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in interviewer's custom MCP connection
+ */
+export const GetCustomMcpConnectionResponse = zod.object({
+  "connected": zod.boolean(),
+  "endpointUrl": zod.string()
+})
+
+
+/**
+ * @summary Connect an MCP endpoint, starting OAuth when required
+ */
+export const connectCustomMcpBodyEndpointUrlMax = 2048;
+
+
+
+export const ConnectCustomMcpBody = zod.object({
+  "endpointUrl": zod.string().url().max(connectCustomMcpBodyEndpointUrlMax)
+})
+
+export const ConnectCustomMcpResponse = zod.object({
+  "connected": zod.boolean(),
+  "endpointUrl": zod.string(),
+  "authorizationUrl": zod.string().nullish(),
+  "toolCount": zod.number().int().nullish()
+})
+
+
+/**
+ * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ */
+export const DisconnectCustomMcpResponse = zod.object({
+  "connected": zod.boolean(),
+  "endpointUrl": zod.string()
+})
+
+
+/**
  * @summary Generate an AI image from a coordinator prompt (keyless provider)
  */
 export const GenerateAssistantImageBody = zod.object({

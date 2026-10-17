@@ -1930,6 +1930,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/custom-mcp/connection:
+    get:
+      operationId: getCustomMcpConnection
+      tags: [assistant]
+      summary: Get the signed-in interviewer's custom MCP connection
+      responses:
+        "200":
+          description: Current MCP endpoint connection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomMcpConnection"
+    post:
+      operationId: connectCustomMcp
+      tags: [assistant]
+      summary: Connect an MCP endpoint, starting OAuth when required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomMcpConnectionInput"
+      responses:
+        "200":
+          description: Connected endpoint or OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomMcpConnectResult"
+        "400":
+          description: Endpoint validation or connection failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: disconnectCustomMcp
+      tags: [assistant]
+      summary: Disconnect the signed-in interviewer's custom MCP endpoint
+      responses:
+        "200":
+          description: Connection removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomMcpConnection"
   /assistant/images:
     post:
       operationId: generateAssistantImage
@@ -3404,6 +3450,34 @@ components:
       schema:
         type: integer
   schemas:
+    CustomMcpConnection:
+      type: object
+      required: [connected, endpointUrl]
+      properties:
+        connected:
+          type: boolean
+        endpointUrl:
+          type: string
+    CustomMcpConnectionInput:
+      type: object
+      required: [endpointUrl]
+      properties:
+        endpointUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+    CustomMcpConnectResult:
+      type: object
+      required: [connected, endpointUrl]
+      properties:
+        connected:
+          type: boolean
+        endpointUrl:
+          type: string
+        authorizationUrl:
+          type: ["string", "null"]
+        toolCount:
+          type: ["integer", "null"]
     PartsVendor:
       type: object
       required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState, lastSync]

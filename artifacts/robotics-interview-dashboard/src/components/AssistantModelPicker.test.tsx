@@ -119,6 +119,41 @@ describe("AssistantModelPicker", () => {
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["web_search"]);
   });
 
+  it("accepts a custom MCP endpoint and starts its connection flow", async () => {
+    const onConnectCustomMcp = vi.fn();
+    const onCustomMcpEndpointChange = vi.fn();
+    const { rerender } = render(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        customMcpEndpoint=""
+        onCustomMcpEndpointChange={onCustomMcpEndpointChange}
+        onConnectCustomMcp={onConnectCustomMcp}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const endpoint = await screen.findByRole("textbox", { name: "MCP endpoint URL" });
+    fireEvent.change(endpoint, { target: { value: "https://tools.example/mcp" } });
+    expect(onCustomMcpEndpointChange).toHaveBeenCalledWith("https://tools.example/mcp");
+    rerender(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        customMcpEndpoint="https://tools.example/mcp"
+        onCustomMcpEndpointChange={onCustomMcpEndpointChange}
+        onConnectCustomMcp={onConnectCustomMcp}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("assistant-custom-mcp-toggle"));
+    expect(onConnectCustomMcp).toHaveBeenCalledOnce();
+  });
+
   it("reflects controlled disabled tools with a count and read-only shortcut", async () => {
     const onDisabledToolsChange = vi.fn();
     render(

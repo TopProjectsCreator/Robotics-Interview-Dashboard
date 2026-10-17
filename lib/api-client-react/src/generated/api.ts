@@ -94,6 +94,9 @@ import type {
   CreateFeatureRequestInput,
   CreateInterviewerInput,
   CreatePartsCatalogItemInput,
+  CustomMcpConnectResult,
+  CustomMcpConnection,
+  CustomMcpConnectionInput,
   DashboardChart,
   DashboardChartInput,
   DashboardChartList,
@@ -7398,6 +7401,225 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
+    }
+
+export const getGetCustomMcpConnectionUrl = () => {
+
+
+
+
+  return `/api/assistant/custom-mcp/connection`
+}
+
+/**
+ * @summary Get the signed-in interviewer's custom MCP connection
+ */
+export const getCustomMcpConnection = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnection> => {
+
+  return customFetch<CustomMcpConnection>(getGetCustomMcpConnectionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCustomMcpConnectionQueryKey = () => {
+    return [
+    `/api/assistant/custom-mcp/connection`
+    ] as const;
+    }
+
+
+export const getGetCustomMcpConnectionQueryOptions = <TData = Awaited<ReturnType<typeof getCustomMcpConnection>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomMcpConnection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomMcpConnectionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomMcpConnection>>> = ({ signal }) => getCustomMcpConnection({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomMcpConnection>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCustomMcpConnectionQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomMcpConnection>>>
+export type GetCustomMcpConnectionQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the signed-in interviewer's custom MCP connection
+ */
+
+export function useGetCustomMcpConnection<TData = Awaited<ReturnType<typeof getCustomMcpConnection>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomMcpConnection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCustomMcpConnectionQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getConnectCustomMcpUrl = () => {
+
+
+
+
+  return `/api/assistant/custom-mcp/connection`
+}
+
+/**
+ * @summary Connect an MCP endpoint, starting OAuth when required
+ */
+export const connectCustomMcp = async (customMcpConnectionInput: CustomMcpConnectionInput, options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnectResult> => {
+
+  return customFetch<CustomMcpConnectResult>(getConnectCustomMcpUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customMcpConnectionInput)
+  }
+);}
+
+
+
+
+
+export const getConnectCustomMcpMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectCustomMcp>>, TError,{data: BodyType<CustomMcpConnectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof connectCustomMcp>>, TError,{data: BodyType<CustomMcpConnectionInput>}, TContext> => {
+
+const mutationKey = ['connectCustomMcp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof connectCustomMcp>>, {data: BodyType<CustomMcpConnectionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  connectCustomMcp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConnectCustomMcpMutationResult = NonNullable<Awaited<ReturnType<typeof connectCustomMcp>>>
+    export type ConnectCustomMcpMutationBody = BodyType<CustomMcpConnectionInput>
+    export type ConnectCustomMcpMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Connect an MCP endpoint, starting OAuth when required
+ */
+export const useConnectCustomMcp = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectCustomMcp>>, TError,{data: BodyType<CustomMcpConnectionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof connectCustomMcp>>,
+        TError,
+        {data: BodyType<CustomMcpConnectionInput>},
+        TContext
+      > => {
+      return useMutation(getConnectCustomMcpMutationOptions(options));
+    }
+
+export const getDisconnectCustomMcpUrl = () => {
+
+
+
+
+  return `/api/assistant/custom-mcp/connection`
+}
+
+/**
+ * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ */
+export const disconnectCustomMcp = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnection> => {
+
+  return customFetch<CustomMcpConnection>(getDisconnectCustomMcpUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDisconnectCustomMcpMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext> => {
+
+const mutationKey = ['disconnectCustomMcp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectCustomMcp>>, void> = () => {
+
+
+          return  disconnectCustomMcp(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectCustomMcpMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectCustomMcp>>>
+
+    export type DisconnectCustomMcpMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ */
+export const useDisconnectCustomMcp = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectCustomMcp>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDisconnectCustomMcpMutationOptions(options));
     }
 
 export const getGenerateAssistantImageUrl = () => {
