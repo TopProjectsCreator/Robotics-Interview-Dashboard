@@ -33,15 +33,24 @@ function loadLegacyNotepad(key: string): string {
 export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; onClose: () => void }) {
   const legacyStorageKey = `robotics-personal-notepad:${accountKey}`;
   const queryKey = [...getGetPersonalNotepadQueryKey(), accountKey];
-  const note = useGetPersonalNotepad({ query: { queryKey, enabled: Boolean(accountKey) } });
+  const note = useGetPersonalNotepad({
+    query: {
+      queryKey,
+      enabled: Boolean(accountKey),
+      refetchInterval: 3000,
+      refetchIntervalInBackground: false,
+    },
+  });
   const saveNote = useUpdatePersonalNotepad();
   const [content, setContent] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
   const hydratedRef = useRef(false);
   const loadedRef = useRef(false);
+  const hasUnsavedChangesRef = useRef(false);
   const latestContentRef = useRef("");
   const lastSavedRef = useRef<string | null>(null);
+  const lastObservedUpdatedAtRef = useRef<string | null>(null);
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const editor = useEditor({
     immediatelyRender: false,
@@ -58,9 +67,10 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     onUpdate({ editor: activeEditor }) {
       if (!hydratedRef.current) return;
       const next = activeEditor.getHTML();
+      hasUnsavedChangesRef.current = next !== lastSavedRef.current;
       latestContentRef.current = next;
       setContent(next);
-      setSaveState("saving");
+      if (hasUnsavedChangesRef.current) setSaveState("saving");
     },
   });
 
@@ -70,8 +80,10 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     const legacyContent = cloudContent ? "" : loadLegacyNotepad(legacyStorageKey);
     const initial = cloudContent || legacyContent || "<p></p>";
     lastSavedRef.current = cloudContent || null;
+    lastObservedUpdatedAtRef.current = note.data.updatedAt;
     latestContentRef.current = initial;
-    editor.commands.setContent(initial);
+    hasUnsavedChangesRef.current = false;
+    editor.commands.setContent(initial, { emitUpdate: false });
     hydratedRef.current = true;
     loadedRef.current = true;
     setContent(initial);
@@ -79,6 +91,38 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     editor.setEditable(true);
     setSaveState(cloudContent || !legacyContent ? "saved" : "saving");
   }, [editor, note.data, note.isSuccess, legacyStorageKey]);
+
+  useEffect(() => {
+    if (!editor || !hydratedRef.current || !loadedRef.current || !note.data) return;
+
+    const remoteUpdatedAt = note.data.updatedAt;
+    if (!remoteUpdatedAt) return;
+
+    const lastObservedUpdatedAt = lastObservedUpdatedAtRef.current;
+    if (
+      lastObservedUpdatedAt &&
+      Date.parse(remoteUpdatedAt) <= Date.parse(lastObservedUpdatedAt)
+    ) {
+      return;
+    }
+
+    const remoteContent = note.data.content || "<p></p>";
+    if (remoteContent === lastSavedRef.current) {
+      lastObservedUpdatedAtRef.current = remoteUpdatedAt;
+      return;
+    }
+
+    // A remote save must never replace text the user has changed locally.
+    if (hasUnsavedChangesRef.current || latestContentRef.current !== lastSavedRef.current) return;
+
+    lastObservedUpdatedAtRef.current = remoteUpdatedAt;
+    editor.commands.setContent(remoteContent, { emitUpdate: false });
+    hasUnsavedChangesRef.current = false;
+    latestContentRef.current = remoteContent;
+    lastSavedRef.current = remoteContent;
+    setContent(remoteContent);
+    setSaveState("saved");
+  }, [content, editor, note.data]);
 
   useEffect(() => {
     if (!hydrated || content === lastSavedRef.current) return;
@@ -91,6 +135,8 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
         .then((saved) => {
           if (saved.content === latestContentRef.current) {
             lastSavedRef.current = saved.content;
+            lastObservedUpdatedAtRef.current = saved.updatedAt;
+            hasUnsavedChangesRef.current = false;
             setSaveState("saved");
             try { localStorage.removeItem(legacyStorageKey); } catch { /* migration cache is optional */ }
           }
@@ -114,6 +160,8 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
         .catch(() => undefined)
         .then(() => saveNote.mutateAsync({ data: { content: latestContentRef.current } }));
       lastSavedRef.current = saved.content;
+      lastObservedUpdatedAtRef.current = saved.updatedAt;
+      hasUnsavedChangesRef.current = false;
       try { localStorage.removeItem(legacyStorageKey); } catch { /* migration cache is optional */ }
       onClose();
     } catch {

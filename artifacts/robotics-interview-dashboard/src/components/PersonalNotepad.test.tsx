@@ -36,15 +36,62 @@ describe("PersonalNotepad", () => {
   });
 
   it("loads rich text from the account's cloud note and exposes formatting controls", async () => {
-    render(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
+    const view = render(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
 
     expect(await screen.findByRole("dialog", { name: "Personal notepad" })).toBeInTheDocument();
     expect(await screen.findByText("Practice plan")).toBeInTheDocument();
     expect(screen.getByTestId("personal-notepad-editor").querySelector("strong")).toHaveTextContent("Bring the robot.");
     expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Bulleted list" })).toBeInTheDocument();
-    expect(mocks.queryArgs[0]).toEqual({ query: { queryKey: ["/api/auth/personal-notepad", "interviewer-1"], enabled: true } });
+    expect(mocks.queryArgs[0]).toEqual({
+      query: {
+        queryKey: ["/api/auth/personal-notepad", "interviewer-1"],
+        enabled: true,
+        refetchInterval: 3000,
+        refetchIntervalInBackground: false,
+      },
+    });
     expect(screen.getByText("Private to your account · saved to the cloud")).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("applies a newer cloud edit while the local editor is clean", async () => {
+    const view = render(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
+    expect(await screen.findByText("Bring the robot.")).toBeInTheDocument();
+
+    mocks.noteData = {
+      content: "<p>Updated from my other device.</p>",
+      updatedAt: "2026-10-17T00:00:01.000Z",
+    };
+    view.rerender(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
+
+    expect(await screen.findByText("Updated from my other device.")).toBeInTheDocument();
+    expect(screen.queryByText("Bring the robot.")).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("keeps local unsaved edits when another device saves", async () => {
+    const view = render(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
+    expect(await screen.findByText("Bring the robot.")).toBeInTheDocument();
+    const editor = await screen.findByTestId("personal-notepad-editor");
+    editor.innerHTML = "<p>My unsaved draft.</p>";
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.input(editor);
+
+    mocks.noteData = {
+      content: "<p>Saved on another device.</p>",
+      updatedAt: "2026-10-17T00:00:01.000Z",
+    };
+    view.rerender(<PersonalNotepad accountKey="interviewer-1" onClose={vi.fn()} />);
+
+    expect(editor).toHaveTextContent("My unsaved draft.");
+    expect(editor).not.toHaveTextContent("Saved on another device.");
+
+    editor.innerHTML = "<h2>Practice plan</h2><p><strong>Bring the robot.</strong></p>";
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.input(editor);
+    expect(await screen.findByText("Saved on another device.")).toBeInTheDocument();
+    view.unmount();
   });
 
   it("autosaves edits to the cloud and waits for a pending save before closing", async () => {
