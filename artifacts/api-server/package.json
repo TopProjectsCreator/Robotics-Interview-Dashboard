@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
-    "start": "set -a && . ../../.env && set +a && node --enable-source-maps ./dist/index.mjs",
+    "start": "node --env-file-if-exists=../../.env --enable-source-maps ./dist/index.mjs",
     "test": "node --experimental-transform-types --experimental-test-module-mocks --test src/lib/*.test.mjs",
     "test:parts-persistence": "node --experimental-transform-types --test src/lib/partsRobotPersistence.integration.test.mjs",
     "import:rev-catalog": "node --experimental-transform-types ./scripts/import-rev-catalog.mjs",

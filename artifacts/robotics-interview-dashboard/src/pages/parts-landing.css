@@ -103,7 +103,6 @@
 }
 
 .parts-landing__brand-mark {
-  position: relative;
   display: grid;
   width: 39px;
   height: 39px;
@@ -112,16 +111,6 @@
   background: var(--parts-navy);
   color: var(--parts-yellow);
   box-shadow: 0 8px 18px rgba(21, 54, 66, .14);
-}
-
-.parts-landing__brand-mark i {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .parts-landing__brand-copy strong {

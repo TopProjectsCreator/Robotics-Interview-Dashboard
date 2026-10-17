@@ -23,7 +23,7 @@ export default function Landing() {
       <header className="landing-nav-wrap">
         <nav className="landing-nav" aria-label="Primary navigation">
           <Link href="/" onClick={closeMenu} className="landing-brand" data-testid="link-landing-brand">
-            <span className="landing-brand-mark"><CircleDot size={19} strokeWidth={2.5} /><span /></span>
+            <span className="landing-brand-mark"><CircleDot size={20} strokeWidth={2.4} /></span>
             <span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span>
           </Link>
           <div className={`landing-nav-links ${menuOpen ? "is-open" : ""}`}>
@@ -129,7 +129,7 @@ export default function Landing() {
         <div className="landing-final-actions"><p>Open the admin workspace or preview the public display. The operating view is ready when you are.</p><Link href="/auth" className="landing-primary-button" data-testid="link-final-coordinator-login">Enter admin workspace <ArrowRight size={17} /></Link><Link href="/display" target="_blank" className="landing-final-display-link" data-testid="link-final-public-display"><Monitor size={15} /> Preview public display</Link></div>
       </section>
 
-      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><span className="landing-brand-mark"><CircleDot size={19} strokeWidth={2.5} /><span /></span><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="mono landing-footer-meta">ROBOTICS TEAM OPERATIONS</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
+      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><span className="landing-brand-mark"><CircleDot size={20} strokeWidth={2.4} /></span><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="mono landing-footer-meta">ROBOTICS TEAM OPERATIONS</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
     </main>
   );
 }

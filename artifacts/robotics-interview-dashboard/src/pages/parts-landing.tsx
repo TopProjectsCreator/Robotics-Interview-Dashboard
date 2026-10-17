@@ -186,7 +186,6 @@ export default function PartsLanding() {
           >
             <span className="parts-landing__brand-mark" aria-hidden="true">
               <CircleDot size={20} strokeWidth={2.4} />
-              <i />
             </span>
             <span className="parts-landing__brand-copy">
               <strong>ROBOTICS</strong>

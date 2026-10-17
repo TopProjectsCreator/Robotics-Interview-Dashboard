@@ -82,7 +82,6 @@
 }
 
 .chat-landing__brand-mark {
-  position: relative;
   width: 39px;
   height: 39px;
   display: grid;
@@ -91,17 +90,6 @@
   background: var(--chat-deep);
   color: var(--chat-yellow);
   box-shadow: 0 9px 22px rgba(21, 59, 73, .16);
-}
-
-.chat-landing__brand-mark::after {
-  content: "";
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .chat-landing__brand-copy strong {

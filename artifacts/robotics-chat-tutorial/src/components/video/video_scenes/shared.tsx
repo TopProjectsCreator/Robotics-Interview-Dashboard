@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { CircleDot } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { SafeFrame } from '@/lib/video';
 
@@ -67,7 +68,7 @@ export function SceneFrame({
     >
       <SafeFrame className="tutorial-safe-frame">
         <div className="tutorial-brand">
-          <span className="tutorial-brand-mark">R</span>
+          <span className="tutorial-brand-mark"><CircleDot size="3vmin" strokeWidth={2.4} /></span>
           <span className="tutorial-brand-copy">
             <strong>ROBOTICS</strong>
             <small>TEAM 23442</small>

@@ -41,13 +41,7 @@
   width: 3.8vmin;
   height: 3.8vmin;
   place-items: center;
-  border: 0.25vmin solid var(--tutorial-yellow);
-  border-radius: 1.15vmin 1.15vmin 1.15vmin 0.3vmin;
   color: var(--tutorial-yellow);
-  font-family: var(--font-display);
-  font-size: 2.35vmin;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .tutorial-brand-copy {
@@ -2585,12 +2579,7 @@
   width: 7.5vmin;
   height: 7.5vmin;
   place-items: center;
-  border: 0.42vmin solid var(--tutorial-yellow);
-  border-radius: 2.1vmin 2.1vmin 2.1vmin 0.6vmin;
   color: var(--tutorial-yellow);
-  font-family: var(--font-display);
-  font-size: 4.5vmin;
-  font-weight: 700;
 }
 
 .outro-lockup div { display: grid; gap: 0.3vmin; }

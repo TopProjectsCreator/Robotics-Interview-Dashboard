@@ -260,14 +260,12 @@ type BrowserSpeechRecognition = {
 };
 type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
-function Logo({ dark = false, teamName = "Robotics team", logoPath, primaryColor }: { dark?: boolean; teamName?: string; logoPath?: string | null; primaryColor?: string | null }) {
+function Logo({ dark = false, teamName = "Robotics team", primaryColor }: { dark?: boolean; teamName?: string; primaryColor?: string | null }) {
   const brandColor = primaryColor ?? "#f8c84a";
   const brandForeground = readableBrandForeground(brandColor);
   return <div className="flex items-center gap-2.5" data-testid="brand-robotics">
     <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl ${dark ? "" : "bg-[#163247] dark:bg-[#f8c84a]"}`} style={dark || primaryColor ? { backgroundColor: brandColor, color: brandForeground } : undefined}>
-      {logoPath
-        ? <AuthenticatedChatImage key={logoPath} src={teamLogoObjectUrl(logoPath)} alt={`${teamName} logo`} className="h-full w-full object-contain" />
-        : <><CircleDot size={20} strokeWidth={2.4} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" /></>}
+      <CircleDot size={20} strokeWidth={2.4} aria-hidden="true" />
     </span>
     <span className={`leading-none ${dark ? "text-white" : "text-[#182232] dark:text-white"}`}><b className="block text-[15px] tracking-[.18em]">ROBOTICS</b><small className="mono max-w-40 truncate text-[9px] uppercase tracking-[.2em] opacity-60">{teamName}</small></span>
   </div>;
@@ -3049,7 +3047,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="px-3"><Logo dark teamName={activeTeamName} logoPath={teamBranding.data?.logoPath} primaryColor={teamBranding.data?.primaryColor} /></div>
+        <div className="px-3"><Logo dark teamName={activeTeamName} primaryColor={teamBranding.data?.primaryColor} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace navigation">
           {nav.map(({ href, label, icon: Icon, kind, workspace }) => {

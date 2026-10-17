@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { CircleDot } from 'lucide-react';
 import { SceneFrame } from './shared';
 
 export function Scene12Outro() {
@@ -12,7 +13,7 @@ export function Scene12Outro() {
     >
       <div className="outro-sweep" aria-hidden="true" />
       <motion.div className="outro-lockup" initial={{ x: '-50%', scale: 0.92, opacity: 0 }} animate={{ x: '-50%', scale: 1, opacity: 1 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}>
-        <span className="outro-brand-mark">R</span>
+        <span className="outro-brand-mark"><CircleDot size="6.2vmin" strokeWidth={2.4} /></span>
         <div><span>ROBOTICS</span><small>TEAM 23442</small></div>
       </motion.div>
       <motion.div className="outro-url-card" initial={{ x: '-50%', y: 14, opacity: 0 }} animate={{ x: '-50%', y: 0, opacity: 1 }} transition={{ delay: 0.18, duration: 0.46 }}>
