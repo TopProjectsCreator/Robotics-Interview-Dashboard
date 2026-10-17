@@ -96,8 +96,9 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(gear);
     expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("44 of 44 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("45 of 45 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Show SVG tool" })).toBeChecked();
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -169,10 +170,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const gear = screen.getByTestId("assistant-tools-gear");
-    expect(gear).toHaveAttribute("title", expect.stringContaining("43 of 44 tools enabled"));
+    expect(gear).toHaveAttribute("title", expect.stringContaining("44 of 45 tools enabled"));
 
     fireEvent.click(gear);
-    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("43 of 44 enabled");
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("44 of 45 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "Enable all" }));
