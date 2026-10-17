@@ -84,6 +84,22 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
     ["name"],
   ),
   tool(
+    "create_custom_workspace",
+    "Create a new custom app workspace from scratch, even if no matching built-in workspace exists (for example, build a Parts-like app without using the Parts workspace). Save it as a draft for preview and coordinator approval; never publish it automatically. The app runs in an isolated iframe and can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested.",
+    {
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", maxLength: 1000 },
+      prompt: { type: "string", minLength: 1, maxLength: 8000 },
+      html: { type: "string", minLength: 1, maxLength: 120000 },
+      capabilities: {
+        type: "array",
+        uniqueItems: true,
+        items: { type: "string", enum: ["data", "llm"] },
+      },
+    },
+    ["title", "prompt", "html", "capabilities"],
+  ),
+  tool(
     "list_code_project_files",
     "List source file paths and ids for one Code workspace project before reading or editing. Results are paged; use offset to continue.",
     {
@@ -365,6 +381,44 @@ export async function runAssistantWorkspaceTool(
       if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
         return { content: "A code project with that name already exists in this team.", detail: "code project name already exists" };
       }
+      throw error;
+    }
+  }
+
+  if (name === "create_custom_workspace") {
+    const title = textArg(args, "title", 120).replace(/\s+/g, " ");
+    const prompt = textArg(args, "prompt", 8000);
+    const description = textArg(args, "description", 1000);
+    const html = typeof args.html === "string" ? args.html : "";
+    const capabilities = Array.isArray(args.capabilities) ? [...new Set(args.capabilities)] : null;
+    if (
+      !title || !prompt || !html || Buffer.byteLength(html, "utf8") > 120_000 ||
+      !capabilities || capabilities.some((value) => value !== "data" && value !== "llm")
+    ) {
+      return { content: "The custom workspace draft is invalid or too large.", detail: "invalid custom workspace" };
+    }
+    const id = randomUUID();
+    const serializedCapabilities = JSON.stringify(capabilities);
+    try {
+      const created = await pool.query(
+        `insert into "custom_workspaces"
+          ("id", "team_id", "title", "description", "prompt", "html", "capabilities", "status", "created_by")
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'draft', $8)
+         returning "id", "title", "description", "capabilities", "status",
+                   "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+        [id, context.teamId, title, description, prompt, html, serializedCapabilities, context.accountId],
+      );
+      await pool.query(
+        `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
+         values ($1, $2, $3, $4, $5::jsonb, $6, 'Created by assistant')`,
+        [randomUUID(), context.teamId, id, html, serializedCapabilities, context.accountId],
+      );
+      pushRealtimeHint("custom_workspaces", "INSERT");
+      return {
+        content: JSON.stringify(created.rows[0]),
+        detail: `created custom workspace draft ${title}`,
+      };
+    } catch (error) {
       throw error;
     }
   }

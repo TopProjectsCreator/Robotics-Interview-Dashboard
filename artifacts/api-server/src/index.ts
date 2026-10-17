@@ -94,6 +94,9 @@ async function ensureSchema(): Promise<void> {
     "code_files",
     "code_revisions",
     "code_presence",
+    "custom_workspaces",
+    "custom_workspace_versions",
+    "custom_workspace_data",
     "workspace_settings",
     "dashboard_charts",
     "data_snapshots",
@@ -145,6 +148,42 @@ async function ensureSchema(): Promise<void> {
   `);
 
   const statements = [
+    `create table if not exists "custom_workspaces" (
+       "id" text primary key,
+       "team_id" text,
+       "title" text not null check (length("title") between 1 and 120),
+       "description" text not null default '',
+       "prompt" text not null,
+       "html" text not null check (octet_length("html") <= 120000),
+       "capabilities" jsonb not null default '[]'::jsonb,
+       "status" text not null default 'draft' check ("status" in ('draft', 'published')),
+       "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner')),
+       "created_by" text not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `alter table "custom_workspaces" add column if not exists "access_mode" text not null default 'team'`,
+    `create index if not exists "custom_workspaces_team_updated_idx" on "custom_workspaces" ("team_id", "updated_at" desc)`,
+    `create table if not exists "custom_workspace_versions" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "html" text not null check (octet_length("html") <= 120000),
+       "capabilities" jsonb not null default '[]'::jsonb,
+       "created_by" text not null,
+       "message" text not null default '',
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
+    `create table if not exists "custom_workspace_data" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "value" jsonb not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "custom_workspace_data_scope_idx" on "custom_workspace_data" ("team_id", "workspace_id", "updated_at" desc)`,
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
     `alter table "dashboard_charts" add column if not exists "x_axis" text`,
     `alter table "dashboard_charts" add column if not exists "y_axis" text`,

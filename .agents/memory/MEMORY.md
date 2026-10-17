@@ -43,3 +43,4 @@
 - [App-level MCP connections](app-level-mcp-connections.md) — a product's MCP client is separate from Replit Agent's own integration catalog; use the provider's hosted endpoint and OAuth.
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
+- [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.

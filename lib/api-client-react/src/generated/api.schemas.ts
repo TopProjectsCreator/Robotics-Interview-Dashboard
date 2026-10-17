@@ -2684,6 +2684,129 @@ export interface PersonalNotepadInput {
   content: string;
 }
 
+export type CustomWorkspaceCapabilitiesItem = typeof CustomWorkspaceCapabilitiesItem[keyof typeof CustomWorkspaceCapabilitiesItem];
+
+
+export const CustomWorkspaceCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export type CustomWorkspaceStatus = typeof CustomWorkspaceStatus[keyof typeof CustomWorkspaceStatus];
+
+
+export const CustomWorkspaceStatus = {
+  draft: 'draft',
+  published: 'published',
+} as const;
+
+export type CustomWorkspaceAccessMode = typeof CustomWorkspaceAccessMode[keyof typeof CustomWorkspaceAccessMode];
+
+
+export const CustomWorkspaceAccessMode = {
+  team: 'team',
+  owner: 'owner',
+} as const;
+
+export interface CustomWorkspace {
+  id: string;
+  title: string;
+  description: string;
+  html?: string;
+  capabilities: CustomWorkspaceCapabilitiesItem[];
+  status: CustomWorkspaceStatus;
+  accessMode: CustomWorkspaceAccessMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomWorkspaceEnvelope {
+  workspace: CustomWorkspace;
+}
+
+export interface CustomWorkspaceList {
+  workspaces: CustomWorkspace[];
+}
+
+export type CustomWorkspaceGenerationInputCapabilitiesItem = typeof CustomWorkspaceGenerationInputCapabilitiesItem[keyof typeof CustomWorkspaceGenerationInputCapabilitiesItem];
+
+
+export const CustomWorkspaceGenerationInputCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export interface CustomWorkspaceGenerationInput {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  prompt: string;
+  capabilities: CustomWorkspaceGenerationInputCapabilitiesItem[];
+}
+
+export interface CustomWorkspaceRevisionInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  prompt: string;
+}
+
+export type CustomWorkspaceAccessInputAccessMode = typeof CustomWorkspaceAccessInputAccessMode[keyof typeof CustomWorkspaceAccessInputAccessMode];
+
+
+export const CustomWorkspaceAccessInputAccessMode = {
+  team: 'team',
+  owner: 'owner',
+} as const;
+
+export interface CustomWorkspaceAccessInput {
+  accessMode: CustomWorkspaceAccessInputAccessMode;
+}
+
+export interface CustomWorkspaceVersion {
+  id: string;
+  message: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CustomWorkspaceVersionList {
+  versions: CustomWorkspaceVersion[];
+}
+
+export type CustomWorkspaceDataRecordValue = { [key: string]: unknown };
+
+export interface CustomWorkspaceDataRecord {
+  id: string;
+  value: CustomWorkspaceDataRecordValue;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomWorkspaceDataList {
+  records: CustomWorkspaceDataRecord[];
+}
+
+export interface CustomWorkspaceRecordEnvelope {
+  record: CustomWorkspaceDataRecord;
+}
+
+export type CustomWorkspaceDataInputRecord = { [key: string]: unknown };
+
+export interface CustomWorkspaceDataInput {
+  record: CustomWorkspaceDataInputRecord;
+}
+
+export interface CustomWorkspaceLlmInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  prompt: string;
+}
+
 /**
  * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
@@ -2922,5 +3045,13 @@ botId: string;
 export type ListCadModelsParams = {
 botId?: string;
 folderId?: string;
+};
+
+export type DeleteCustomWorkspaceRecord200 = {
+  deleted: boolean;
+};
+
+export type AskCustomWorkspaceLlm200 = {
+  answer: string;
 };
 

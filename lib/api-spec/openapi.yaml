@@ -8,6 +8,8 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: customWorkspaces
+    description: AI-generated team workspaces and scoped capabilities
   - name: health
     description: Health operations
   - name: auth
@@ -3434,6 +3436,321 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces:
+    get:
+      operationId: listCustomWorkspaces
+      tags: [customWorkspaces]
+      summary: List custom workspaces available to the current team
+      responses:
+        "200":
+          description: Custom workspaces
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceList"
+  /custom-workspaces/generate:
+    post:
+      operationId: generateCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Generate a custom workspace draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceGenerationInput"
+      responses:
+        "201":
+          description: Generated draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Generation rate limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}:
+    get:
+      operationId: getCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Get a published workspace or owned draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "404":
+          description: Not found or not accessible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/publish:
+    post:
+      operationId: publishCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Publish a custom workspace draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceAccessInput"
+      responses:
+        "200":
+          description: Published workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/access:
+    patch:
+      operationId: updateCustomWorkspaceAccess
+      tags: [customWorkspaces]
+      summary: Set a published workspace's access mode
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceAccessInput"
+      responses:
+        "200":
+          description: Updated workspace access
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "400":
+          description: Invalid access mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/revise:
+    post:
+      operationId: reviseCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Revise a workspace draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceRevisionInput"
+      responses:
+        "200":
+          description: Revised workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+  /custom-workspaces/{workspaceId}/versions:
+    get:
+      operationId: listCustomWorkspaceVersions
+      tags: [customWorkspaces]
+      summary: List workspace versions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceVersionList"
+  /custom-workspaces/{workspaceId}/versions/{versionId}/restore:
+    post:
+      operationId: restoreCustomWorkspaceVersion
+      tags: [customWorkspaces]
+      summary: Restore a previous draft version
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restored workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+  /custom-workspaces/{workspaceId}/data:
+    get:
+      operationId: listCustomWorkspaceData
+      tags: [customWorkspaces]
+      summary: List records in a workspace's isolated data namespace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workspace records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceDataList"
+    post:
+      operationId: createCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Create a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceDataInput"
+      responses:
+        "201":
+          description: Created record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceRecordEnvelope"
+  /custom-workspaces/{workspaceId}/data/{recordId}:
+    patch:
+      operationId: updateCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Update a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceDataInput"
+      responses:
+        "200":
+          description: Updated record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceRecordEnvelope"
+    delete:
+      operationId: deleteCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Delete a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted record status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+  /custom-workspaces/{workspaceId}/llm:
+    post:
+      operationId: askCustomWorkspaceLlm
+      tags: [customWorkspaces]
+      summary: Run a server-managed LLM request for a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceLlmInput"
+      responses:
+        "200":
+          description: LLM response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer]
+                properties:
+                  answer:
+                    type: string
 components:
   parameters:
     ApplicantId:
@@ -6893,3 +7210,141 @@ components:
         content:
           type: string
           maxLength: 200000
+    CustomWorkspace:
+      type: object
+      required: [id, title, description, capabilities, status, accessMode, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        html:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [data, llm]
+        status:
+          type: string
+          enum: [draft, published]
+        accessMode:
+          type: string
+          enum: [team, owner]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomWorkspaceEnvelope:
+      type: object
+      required: [workspace]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/CustomWorkspace"
+    CustomWorkspaceList:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspace"
+    CustomWorkspaceGenerationInput:
+      type: object
+      required: [prompt, capabilities]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [data, llm]
+    CustomWorkspaceRevisionInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    CustomWorkspaceAccessInput:
+      type: object
+      required: [accessMode]
+      properties:
+        accessMode:
+          type: string
+          enum: [team, owner]
+    CustomWorkspaceVersion:
+      type: object
+      required: [id, message, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    CustomWorkspaceVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceVersion"
+    CustomWorkspaceDataRecord:
+      type: object
+      required: [id, value, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomWorkspaceDataList:
+      type: object
+      required: [records]
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceDataRecord"
+    CustomWorkspaceRecordEnvelope:
+      type: object
+      required: [record]
+      properties:
+        record:
+          $ref: "#/components/schemas/CustomWorkspaceDataRecord"
+    CustomWorkspaceDataInput:
+      type: object
+      required: [record]
+      properties:
+        record:
+          type: object
+          minProperties: 1
+          additionalProperties: true
+    CustomWorkspaceLlmInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000

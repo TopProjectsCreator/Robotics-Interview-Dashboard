@@ -4435,3 +4435,285 @@ export const SetPartsRobotAllocationResponse = zod.object({
 })
 
 
+/**
+ * @summary List custom workspaces available to the current team
+ */
+export const ListCustomWorkspacesResponse = zod.object({
+  "workspaces": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Generate a custom workspace draft
+ */
+export const generateCustomWorkspaceBodyPromptMax = 8000;
+
+
+
+export const GenerateCustomWorkspaceBody = zod.object({
+  "prompt": zod.string().min(1).max(generateCustomWorkspaceBodyPromptMax),
+  "capabilities": zod.array(zod.enum(['data', 'llm']))
+})
+
+export const GenerateCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Get a published workspace or owned draft
+ */
+export const GetCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const GetCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Publish a custom workspace draft
+ */
+export const PublishCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const PublishCustomWorkspaceBody = zod.object({
+  "accessMode": zod.enum(['team', 'owner'])
+})
+
+export const PublishCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Set a published workspace's access mode
+ */
+export const UpdateCustomWorkspaceAccessParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const UpdateCustomWorkspaceAccessBody = zod.object({
+  "accessMode": zod.enum(['team', 'owner'])
+})
+
+export const UpdateCustomWorkspaceAccessResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Revise a workspace draft
+ */
+export const ReviseCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const reviseCustomWorkspaceBodyPromptMax = 4000;
+
+
+
+export const ReviseCustomWorkspaceBody = zod.object({
+  "prompt": zod.string().min(1).max(reviseCustomWorkspaceBodyPromptMax)
+})
+
+export const ReviseCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary List workspace versions
+ */
+export const ListCustomWorkspaceVersionsParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const ListCustomWorkspaceVersionsResponse = zod.object({
+  "versions": zod.array(zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Restore a previous draft version
+ */
+export const RestoreCustomWorkspaceVersionParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "versionId": zod.coerce.string()
+})
+
+export const RestoreCustomWorkspaceVersionResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary List records in a workspace's isolated data namespace
+ */
+export const ListCustomWorkspaceDataParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const ListCustomWorkspaceDataResponse = zod.object({
+  "records": zod.array(zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a record in a published workspace
+ */
+export const CreateCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const CreateCustomWorkspaceRecordBody = zod.object({
+  "record": zod.record(zod.string(), zod.unknown())
+})
+
+export const CreateCustomWorkspaceRecordResponse = zod.object({
+  "record": zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Update a record in a published workspace
+ */
+export const UpdateCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "recordId": zod.coerce.string()
+})
+
+export const UpdateCustomWorkspaceRecordBody = zod.object({
+  "record": zod.record(zod.string(), zod.unknown())
+})
+
+export const UpdateCustomWorkspaceRecordResponse = zod.object({
+  "record": zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Delete a record in a published workspace
+ */
+export const DeleteCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "recordId": zod.coerce.string()
+})
+
+export const DeleteCustomWorkspaceRecordResponse = zod.object({
+  "deleted": zod.boolean()
+})
+
+
+/**
+ * @summary Run a server-managed LLM request for a workspace
+ */
+export const AskCustomWorkspaceLlmParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const askCustomWorkspaceLlmBodyPromptMax = 2000;
+
+
+
+export const AskCustomWorkspaceLlmBody = zod.object({
+  "prompt": zod.string().min(1).max(askCustomWorkspaceLlmBodyPromptMax)
+})
+
+export const AskCustomWorkspaceLlmResponse = zod.object({
+  "answer": zod.string()
+})
+
+

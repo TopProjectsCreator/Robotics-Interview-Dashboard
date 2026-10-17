@@ -73,6 +73,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import NotFound from "@/pages/not-found";
 const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
 const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
+const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").then((m) => ({ default: m.CustomWorkspacesPage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -3033,6 +3034,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   const isTreasurerRosterPath =
     shellPath === "/applicants" || shellPath.startsWith("/applicants/");
   const restrictedAllowed =
+    location.split(/[?#]/, 1)[0].startsWith("/custom-workspaces") ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
     isDashboardPath ||
@@ -7673,6 +7675,7 @@ function Router() {
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
         <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
         <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
+        <Route path="/custom-workspaces"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

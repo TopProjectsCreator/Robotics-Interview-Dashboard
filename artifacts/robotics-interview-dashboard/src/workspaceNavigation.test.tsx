@@ -15,6 +15,7 @@ describe("workspace navigation", () => {
       ["Parts", "workspace"],
       ["CAD", "workspace"],
       ["Code", "workspace"],
+      ["Custom apps", "section"],
     ]);
   });
 
@@ -61,6 +62,7 @@ describe("workspace navigation", () => {
     expect(workspaceAreaForPath("/cad/")).toBe("cad");
     expect(workspaceAreaForPath("/code")).toBe("code");
     expect(workspaceAreaForPath("/code/")).toBe("code");
+    expect(workspaceAreaForPath("/custom-workspaces")).toBe("overview");
     expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(getWorkspaceNavigation("parts").map(({ label }) => label)).toEqual([
       "Interview",
@@ -82,6 +84,7 @@ describe("workspace navigation", () => {
       "Parts",
       "CAD",
       "Code",
+      "Custom apps",
     ]);
   });
 
@@ -90,6 +93,7 @@ describe("workspace navigation", () => {
     expect(getWorkspaceNavigation("overview", visible).map(({ label }) => label)).toEqual([
       "Chat",
       "Parts",
+      "Custom apps",
     ]);
     expect(getWorkspaceNavigation("chat", visible).map(({ label }) => label)).toEqual([
       "Chat",
