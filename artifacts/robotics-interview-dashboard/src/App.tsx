@@ -2877,6 +2877,7 @@ function Login() {
 function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { settings } = useWorkspaceSettings();
   const [displayPromoVisible, setDisplayPromoVisible] = useState(() => {
@@ -2908,6 +2909,30 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     enabled: session.data?.authenticated === true,
   });
   const qc = useQueryClient();
+  useEffect(() => {
+    if (!mobileNav) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileNav(false);
+        mobileMenuButtonRef.current?.focus();
+      }
+    };
+    const closeOnDesktop = () => {
+      if (window.matchMedia("(min-width: 1024px)").matches) setMobileNav(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnDesktop);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnDesktop);
+    };
+  }, [mobileNav]);
+  useEffect(() => {
+    setMobileNav(false);
+  }, [location]);
   useEffect(() => listenForAuthSessionEnd(() => {
     forgetCurrentSessionQueryAuthentication();
     markAuthSessionEndedByAnotherTab();
@@ -3056,10 +3081,11 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
-      <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
+      {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-20 bg-black/45 backdrop-blur-[1px] lg:hidden" data-testid="button-close-mobile-navigation" />}
+      <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
-        <nav className="space-y-1" aria-label="Workspace navigation">
+        <nav className="space-y-1" aria-label="Workspace links">
           {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
             const active = kind === "workspace"
               ? workspaceArea === workspace
@@ -3078,8 +3104,8 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
                   : undefined}
                 className={`flex items-center gap-3 text-sm font-medium transition ${
                   kind === "workspace"
-                    ? "rounded-full px-4 py-2.5"
-                    : "ml-2 rounded-xl px-3 py-2.5"
+                    ? "min-h-11 rounded-full px-4 py-3"
+                    : "ml-2 min-h-11 rounded-xl px-3 py-3"
                 } ${
                   active
                     ? kind === "workspace"
@@ -3106,10 +3132,10 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
-          <button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button>
-          <div><p className="mono max-w-[45vw] truncate text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">{activeTeamName}</p><p className="text-sm font-semibold">Team workspace</p></div>
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md sm:h-16 sm:px-5 lg:h-[72px] lg:px-9">
+          <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] lg:hidden"><Menu size={21} /></button>
+          <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold">Team workspace</p></div>
+          <div className="ml-1 flex shrink-0 items-center gap-0.5 sm:ml-2 sm:gap-2">
             <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button>
             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
             <ThemeToggle />
@@ -3117,7 +3143,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
             <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] p-5 lg:p-9">
+        <main className="mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9">
           {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           {children}
         </main>

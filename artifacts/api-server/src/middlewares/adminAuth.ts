@@ -4,9 +4,9 @@ import { eq, lt } from "drizzle-orm";
 import { db, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
+import { ADMIN_SESSION_TTL_MS, isAdminSessionExpired } from "../lib/adminSessionPolicy";
 
 const SESSION_COOKIE = "robotics_admin_session";
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 function sessionSecret(): string {
   const secret = process.env.SESSION_SECRET;
@@ -28,7 +28,7 @@ export async function revokeAdminSession(session: string | undefined): Promise<v
   if (typeof session !== "string" || !session) return;
   await db.insert(revokedSessionsTable).values({
     tokenHash: sessionTokenHash(session),
-    expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    expiresAt: new Date(Date.now() + ADMIN_SESSION_TTL_MS),
   }).onConflictDoNothing();
   await db.delete(revokedSessionsTable).where(lt(revokedSessionsTable.expiresAt, new Date()));
 }
@@ -79,12 +79,7 @@ export function isValidAdminSession(value: unknown): boolean {
     payload = `${timestamp}.${nonce}.${interviewerId}`;
   }
   const createdAt = Number(timestamp);
-  if (!Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS) {
-    return false;
-  }
-  if (createdAt > Date.now() + 60000) {
-    return false;
-  }
+  if (isAdminSessionExpired(createdAt)) return false;
   if (!nonce || !interviewerId || !digest) return false;
   const expected = sessionDigest(payload);
   const actualBuffer = Buffer.from(digest);
@@ -420,7 +415,7 @@ export function setAdminCookie(res: Response, session: string): void {
     // that reject SameSite=None cookies without Secure.
     sameSite: isSecureRequest ? "none" : "lax",
     secure: isSecureRequest,
-    maxAge: SESSION_TTL_MS,
+    maxAge: ADMIN_SESSION_TTL_MS,
     path: "/",
   });
 }
