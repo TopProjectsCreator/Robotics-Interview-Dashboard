@@ -2042,12 +2042,16 @@ let sitemapCrawlTimer: ReturnType<typeof setTimeout> | null = null;
 let sitemapCrawlStopped = false;
 
 /**
- * How long a crawler lease is held before another instance may take over. Must
- * comfortably exceed one slice (60 pages at the 10s delay is about ten minutes)
- * so a healthy crawl is never stolen, while a crashed instance frees the lease
- * instead of stalling the crawl forever.
+ * How long a crawler lease is held before another instance may take over.
+ *
+ * Sized for the timeout path, not the happy path: a page normally costs about
+ * 10s (delay only), but `fetchProductPage` allows a 30s request timeout, so a
+ * slice of 60 pages against a slow supplier can take up to ~40 minutes. A lease
+ * shorter than that would let a second instance start crawling alongside a
+ * healthy one. A crashed instance still frees the lease long before the nightly
+ * first pass would be missed.
  */
-const SITEMAP_CRAWL_LEASE_SECONDS = 15 * 60;
+const SITEMAP_CRAWL_LEASE_SECONDS = 45 * 60;
 
 /**
  * Takes the cross-instance crawl lease. Autoscaled deployments run several
