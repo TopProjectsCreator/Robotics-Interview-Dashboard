@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -23,7 +23,7 @@ import {
 import {
   getGetPartsDashboardQueryKey,
   getListPartsCatalogQueryKey,
-  searchPartsCatalog,
+  consumePartsCatalogSearchStream,
   useSyncPartsCatalog,
   useCreatePartsCatalogItem,
   useCreatePartsRobot,
@@ -33,6 +33,7 @@ import {
   useUpdatePartsCatalogStock,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
+  type PartsCatalogSearchStreamEvent,
   type PartsRobot,
   type PartsVendor,
 } from "@workspace/api-client-react";
@@ -142,6 +143,18 @@ function searchResultPriceValue(result: PartsCatalogSearchResult): number {
   if (result.price === null) return Number.POSITIVE_INFINITY;
   const value = Number(result.price);
   return Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
+}
+
+function mergeSearchResults(
+  current: PartsCatalogSearchResult[],
+  incoming: PartsCatalogSearchResult,
+): PartsCatalogSearchResult[] {
+  const incomingKey = normalizedProductUrl(incoming.url) ?? incoming.url;
+  const existingIndex = current.findIndex(
+    (result) => (normalizedProductUrl(result.url) ?? result.url) === incomingKey,
+  );
+  if (existingIndex === -1) return [...current, incoming];
+  return current.map((result, index) => index === existingIndex ? incoming : result);
 }
 
 function isOfferInStock(result: PartsCatalogSearchResult): boolean {
@@ -485,7 +498,13 @@ export default function PartsPage() {
   const [lastSearch, setLastSearch] = useState("");
   const [savedSearchOffset, setSavedSearchOffset] = useState(0);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<"available" | "partial" | "unavailable" | null>(null);
   const [searchError, setSearchError] = useState("");
+  const [saveFeedback, setSaveFeedback] = useState<Record<string, {
+    status: "pending" | "success" | "error";
+    message: string;
+  }>>({});
+  const searchRunId = useRef(0);
   const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
@@ -527,7 +546,9 @@ export default function PartsPage() {
   const robots = dashboardQuery.data?.robots ?? [];
   const catalogItems = catalogQuery.data?.items ?? [];
   const currentlyAdded = new Set(
-    catalogItems.map((item) => item.productUrl).filter((url): url is string => Boolean(url)),
+    catalogItems
+      .map((item) => normalizedProductUrl(item.productUrl))
+      .filter((url): url is string => Boolean(url)),
   );
   const draftQuantities = orderDraft.reduce((total, line) => total + line.quantity, 0);
   const orderTotalsByCurrency = orderDraft.reduce<Record<string, number>>((totals, line) => {
@@ -605,29 +626,58 @@ export default function PartsPage() {
       setSearchError("Enter at least two characters.");
       return;
     }
+    const query = searchText.trim();
+    const runId = ++searchRunId.current;
     setSearchBusy(true);
+    setSearchStatus(null);
     setSearchError("");
     setSearchResults([]);
     setSavedSearchOffset(0);
-    setLastSearch(searchText.trim());
+    setLastSearch(query);
+    let receivedCompletion = false;
+    let receivedResultCount = 0;
     try {
-      const result = await searchPartsCatalog({ q: searchText.trim() });
-      setSearchResults(result.results);
-      if (result.liveSearchStatus === "unavailable") {
-        setSearchError(
-          result.catalogTotal > 0
-            ? "Live supplier discovery is unavailable right now. Matching indexed products are still shown below."
-            : "Live supplier discovery is unavailable right now. Try again shortly.",
-        );
-      } else if (result.results.length === 0 && result.catalogTotal === 0) {
-        setSearchError("No verified supplier products matched this search. Try a broader term or search again.");
+      await consumePartsCatalogSearchStream({ q: query }, (event: PartsCatalogSearchStreamEvent) => {
+        if (searchRunId.current !== runId) return;
+        if (event.type === "result") {
+          receivedResultCount += 1;
+          setSearchResults((previous) => mergeSearchResults(previous, event.result));
+          return;
+        }
+        if (event.type !== "complete") return;
+        receivedCompletion = true;
+        setSearchStatus(event.status);
+        if (event.status === "partial") {
+          setSearchError(
+            `Search completed with partial supplier coverage: ${event.failedProviderCount} of ${event.providerCount} discovery providers failed. Verified results found so far are shown below.`,
+          );
+        } else if (event.status === "unavailable") {
+          setSearchError(
+            `Live supplier search failed completely: all ${event.failedProviderCount} of ${event.providerCount} discovery providers were unavailable. Matching indexed products are still shown below; try again shortly.`,
+          );
+        } else if (event.resultCount === 0) {
+          setSearchError("No verified supplier products matched this search. Try a broader term or search again.");
+        }
+      });
+      if (!receivedCompletion) {
+        throw new Error("Supplier search ended before the completion status arrived.");
       }
     } catch (error) {
-      setSearchError(
-        `${errorMessage(error, "Supplier search is unavailable right now.")} Matching indexed products may still appear below.`,
-      );
+      if (searchRunId.current === runId) {
+        if (receivedResultCount > 0) {
+          setSearchStatus("partial");
+          setSearchError(
+            `Supplier search ended before completion. ${receivedResultCount} verified result(s) received so far remain available; additional supplier results may be missing.`,
+          );
+        } else {
+          setSearchStatus("unavailable");
+          setSearchError(
+            `${errorMessage(error, "Supplier search is unavailable right now.")} Matching indexed products may still appear below.`,
+          );
+        }
+      }
     } finally {
-      setSearchBusy(false);
+      if (searchRunId.current === runId) setSearchBusy(false);
     }
   };
 
@@ -662,6 +712,11 @@ export default function PartsPage() {
   };
 
   const saveSearchResultToInventory = async (product: PartsCatalogSearchResult) => {
+    const url = normalizedProductUrl(product.url) ?? product.url;
+    setSaveFeedback((previous) => ({
+      ...previous,
+      [url]: { status: "pending", message: "Saving to inventory…" },
+    }));
     try {
       await createItemMutation.mutateAsync({
         data: {
@@ -675,9 +730,18 @@ export default function PartsPage() {
         },
       });
       setNotice({ kind: "success", text: `${product.title} saved to inventory.` });
+      setSaveFeedback((previous) => ({
+        ...previous,
+        [url]: { status: "success", message: "Saved to inventory." },
+      }));
       await refreshParts();
     } catch (error) {
-      setNotice({ kind: "error", text: errorMessage(error, "Unable to save this part to inventory.") });
+      const message = errorMessage(error, "Unable to save this part to inventory.");
+      setNotice({ kind: "error", text: message });
+      setSaveFeedback((previous) => ({
+        ...previous,
+        [url]: { status: "error", message },
+      }));
     }
   };
 
@@ -1181,6 +1245,15 @@ export default function PartsPage() {
                     <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
                   </div>
                 )}
+                {!searchBusy && searchStatus && (
+                  <p role="status" className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+                    {searchStatus === "available"
+                      ? `Search complete. ${liveResultGroups.length} verified live product group(s) found.`
+                      : searchStatus === "partial"
+                        ? "Search complete with partial supplier coverage. Results found before completion remain available."
+                        : "Search complete, but live supplier discovery did not return results. Indexed catalog matches remain available."}
+                  </p>
+                )}
 
                 {lastSearch && savedCatalogSearchQuery.isLoading && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
@@ -1213,7 +1286,10 @@ export default function PartsPage() {
                   {liveResultGroups.map((group) => {
                     const result = group.defaultOffer;
                     const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
-                    const alreadyInInventory = currentlyAdded.has(result.url);
+                    const resultSaveKey = normalizedProductUrl(result.url) ?? result.url;
+                    const saveState = saveFeedback[resultSaveKey];
+                    const alreadyInInventory =
+                      currentlyAdded.has(resultSaveKey) || saveState?.status === "success";
                     const canAddToDraft = result.price !== null && result.currency !== null;
                     const otherOffers = group.offers.filter((offer) => offer.url !== result.url);
                     return (
@@ -1284,11 +1360,13 @@ export default function PartsPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={alreadyInInventory || createItemMutation.isPending}
+                                disabled={alreadyInInventory || saveState?.status === "pending"}
                                 onClick={() => void saveSearchResultToInventory(result)}
                               >
-                                {alreadyInInventory ? <Check size={15} /> : <Package size={15} />}
-                                {alreadyInInventory ? "In inventory" : "Save to inventory"}
+                                {saveState?.status === "pending"
+                                  ? <Loader2 className="animate-spin" size={15} />
+                                  : alreadyInInventory ? <Check size={15} /> : <Package size={15} />}
+                                {alreadyInInventory ? "In inventory" : saveState?.status === "pending" ? "Saving…" : "Save to inventory"}
                               </Button>
                               <Button
                                 size="sm"
@@ -1301,6 +1379,17 @@ export default function PartsPage() {
                                 {alreadyAdded ? "Add another" : canAddToDraft ? "Add to draft" : "Price unavailable"}
                               </Button>
                             </span>
+                            {saveState && (
+                              <span
+                                role={saveState.status === "error" ? "alert" : "status"}
+                                className={`w-full text-right text-xs ${
+                                  saveState.status === "error" ? "text-destructive" : "text-muted-foreground"
+                                }`}
+                                data-testid={`status-save-search-result-${resultSaveKey}`}
+                              >
+                                {saveState.message}
+                              </span>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -1313,6 +1402,7 @@ export default function PartsPage() {
 
                 {lastSearch &&
                   !searchBusy &&
+                  searchStatus !== "unavailable" &&
                   !savedCatalogSearchQuery.isLoading &&
                   !savedCatalogSearchQuery.isError &&
                   liveResultGroups.length === 0 &&

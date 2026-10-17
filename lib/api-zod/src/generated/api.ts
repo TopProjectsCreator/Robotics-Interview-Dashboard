@@ -2589,7 +2589,7 @@ export const GetDisplayStateResponse = zod.object({
   "name": zod.string(),
   "grade": zod.string(),
   "lane": zod.string()
-})),
+}).describe('Public display-only applicant fields; private application, interview, and account data are not returned.')).describe('Empty when the team\'s display setting hides applicant names; otherwise includes only display fields.'),
   "updatedAt": zod.string()
 })
 
@@ -3254,6 +3254,31 @@ export const SearchPartsCatalogResponse = zod.object({
   "catalogLimit": zod.number().int(),
   "liveSearchStatus": zod.enum(['available', 'unavailable']).describe('Whether current live supplier-page discovery providers responded.')
 })
+
+
+/**
+ * Returns newline-delimited JSON events. The catalog event arrives first, zero or more verified result events follow while providers and official product pages are processed, and one complete event reports available, partial, or unavailable provider status. Existing JSON search callers should continue using /parts/catalog/search.
+ * @summary Stream verified supplier search results as they are found
+ */
+export const searchPartsCatalogStreamQueryQMin = 2;
+export const searchPartsCatalogStreamQueryQMax = 120;
+
+export const searchPartsCatalogStreamQueryLimitDefault = 100;
+export const searchPartsCatalogStreamQueryLimitMax = 100;
+
+export const searchPartsCatalogStreamQueryOffsetDefault = 0;
+export const searchPartsCatalogStreamQueryOffsetMin = 0;
+
+
+
+export const SearchPartsCatalogStreamQueryParams = zod.object({
+  "vendorKey": zod.coerce.string().optional(),
+  "q": zod.coerce.string().min(searchPartsCatalogStreamQueryQMin).max(searchPartsCatalogStreamQueryQMax),
+  "limit": zod.coerce.number().int().min(1).max(searchPartsCatalogStreamQueryLimitMax).default(searchPartsCatalogStreamQueryLimitDefault),
+  "offset": zod.coerce.number().int().min(searchPartsCatalogStreamQueryOffsetMin).default(searchPartsCatalogStreamQueryOffsetDefault)
+})
+
+export const SearchPartsCatalogStreamResponse = zod.unknown()
 
 
 /**

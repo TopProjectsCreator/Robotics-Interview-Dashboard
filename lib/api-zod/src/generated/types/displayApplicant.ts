@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Public display-only applicant fields; private application, interview, and account data are not returned.
+ */
 export interface DisplayApplicant {
   id: string;
   name: string;

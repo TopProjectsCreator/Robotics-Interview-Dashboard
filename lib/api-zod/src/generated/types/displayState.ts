@@ -17,6 +17,7 @@ export interface DisplayState {
   announcement: string;
   /** Master switch: false mutes spoken auto-announcements (manual tests still speak) */
   announce: boolean;
+  /** Empty when the team's display setting hides applicant names; otherwise includes only display fields. */
   currentApplicants: DisplayApplicant[];
   updatedAt: string;
 }

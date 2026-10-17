@@ -183,6 +183,7 @@ import type {
   ScheduledChatTime,
   ScheduledChatTimeInput,
   SearchPartsCatalogParams,
+  SearchPartsCatalogStreamParams,
   SeatingAssignInput,
   SeatingSettings,
   SeatingSettingsInput,
@@ -8967,6 +8968,91 @@ export function useSearchPartsCatalog<TData = Awaited<ReturnType<typeof searchPa
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchPartsCatalogQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSearchPartsCatalogStreamUrl = (params: SearchPartsCatalogStreamParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/parts/catalog/search/stream?${stringifiedParams}` : `/api/parts/catalog/search/stream`
+}
+
+/**
+ * Returns newline-delimited JSON events. The catalog event arrives first, zero or more verified result events follow while providers and official product pages are processed, and one complete event reports available, partial, or unavailable provider status. Existing JSON search callers should continue using /parts/catalog/search.
+ * @summary Stream verified supplier search results as they are found
+ */
+export const searchPartsCatalogStream = async (params: SearchPartsCatalogStreamParams, options?: Parameters<typeof customFetch>[1]): Promise<Response> => {
+
+  return customFetch<Response>(getSearchPartsCatalogStreamUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchPartsCatalogStreamQueryKey = (params?: SearchPartsCatalogStreamParams,) => {
+    return [
+    `/api/parts/catalog/search/stream`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchPartsCatalogStreamQueryOptions = <TData = Awaited<ReturnType<typeof searchPartsCatalogStream>>, TError = ErrorType<ErrorResponse>>(params: SearchPartsCatalogStreamParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchPartsCatalogStream>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchPartsCatalogStreamQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchPartsCatalogStream>>> = ({ signal }) => searchPartsCatalogStream(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchPartsCatalogStream>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchPartsCatalogStreamQueryResult = NonNullable<Awaited<ReturnType<typeof searchPartsCatalogStream>>>
+export type SearchPartsCatalogStreamQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Stream verified supplier search results as they are found
+ */
+
+export function useSearchPartsCatalogStream<TData = Awaited<ReturnType<typeof searchPartsCatalogStream>>, TError = ErrorType<ErrorResponse>>(
+ params: SearchPartsCatalogStreamParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchPartsCatalogStream>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchPartsCatalogStreamQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -301,6 +301,49 @@ export interface PartsCatalogSearch {
   liveSearchStatus: PartsCatalogSearchLiveSearchStatus;
 }
 
+export interface PartsCatalogSearchStreamCatalogEvent {
+  type: 'catalog';
+  query: string;
+  catalogItems: PartsCatalogItem[];
+  catalogTotal: number;
+  catalogOffset: number;
+  catalogLimit: number;
+}
+
+export interface PartsCatalogSearchStreamResultEvent {
+  type: 'result';
+  result: PartsCatalogSearchResult;
+}
+
+/**
+ * Whether all live discovery providers responded successfully.
+ */
+export type PartsCatalogSearchStreamCompleteEventStatus = typeof PartsCatalogSearchStreamCompleteEventStatus[keyof typeof PartsCatalogSearchStreamCompleteEventStatus];
+
+
+export const PartsCatalogSearchStreamCompleteEventStatus = {
+  available: 'available',
+  partial: 'partial',
+  unavailable: 'unavailable',
+} as const;
+
+export interface PartsCatalogSearchStreamCompleteEvent {
+  type: 'complete';
+  /** Whether all live discovery providers responded successfully. */
+  status: PartsCatalogSearchStreamCompleteEventStatus;
+  /** @minimum 0 */
+  providerCount: number;
+  /** @minimum 0 */
+  failedProviderCount: number;
+  /** @minimum 0 */
+  resultCount: number;
+}
+
+/**
+ * A newline-delimited event from the progressive supplier search.
+ */
+export type PartsCatalogSearchStreamEvent = PartsCatalogSearchStreamCatalogEvent | PartsCatalogSearchStreamResultEvent | PartsCatalogSearchStreamCompleteEvent;
+
 export type PartsCatalogSyncVendorStatus = typeof PartsCatalogSyncVendorStatus[keyof typeof PartsCatalogSyncVendorStatus];
 
 
@@ -2022,6 +2065,9 @@ export interface QueueCallbackInput {
   note?: string;
 }
 
+/**
+ * Public display-only applicant fields; private application, interview, and account data are not returned.
+ */
 export interface DisplayApplicant {
   id: string;
   name: string;
@@ -2039,6 +2085,7 @@ export interface DisplayState {
   announcement: string;
   /** Master switch: false mutes spoken auto-announcements (manual tests still speak) */
   announce: boolean;
+  /** Empty when the team's display setting hides applicant names; otherwise includes only display fields. */
   currentApplicants: DisplayApplicant[];
   updatedAt: string;
 }
@@ -2760,6 +2807,24 @@ offset?: number;
 };
 
 export type SearchPartsCatalogParams = {
+vendorKey?: string;
+/**
+ * @minLength 2
+ * @maxLength 120
+ */
+q: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type SearchPartsCatalogStreamParams = {
 vendorKey?: string;
 /**
  * @minLength 2

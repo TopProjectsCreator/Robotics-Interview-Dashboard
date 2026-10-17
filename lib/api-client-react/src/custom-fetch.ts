@@ -1,5 +1,5 @@
 export type CustomFetchOptions = RequestInit & {
-  responseType?: "json" | "text" | "blob" | "auto";
+  responseType?: "json" | "text" | "blob" | "stream" | "auto";
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
@@ -307,7 +307,7 @@ function inferResponseType(response: Response): "json" | "text" | "blob" {
 
 async function parseSuccessBody(
   response: Response,
-  responseType: "json" | "text" | "blob" | "auto",
+  responseType: "json" | "text" | "blob" | "stream" | "auto",
   requestInfo: { method: string; url: string },
 ): Promise<unknown> {
   if (hasNoBody(response, requestInfo.method)) {
@@ -334,6 +334,12 @@ async function parseSuccessBody(
         );
       }
       return response.blob();
+
+    case "stream":
+      if (!response.body) {
+        throw new TypeError("The response does not support streaming.");
+      }
+      return response.body;
   }
 }
 
@@ -412,7 +418,18 @@ export async function customFetch<T = unknown>(
     throw new ApiError(response, errorData, requestInfo);
   }
 
+  const isNdjsonResponse =
+    responseType === "auto" &&
+    getMediaType(response.headers) === "application/x-ndjson";
+  if (isNdjsonResponse) {
+    // OpenAPI clients for NDJSON endpoints are generated as Response-returning
+    // helpers. Preserve the readable body rather than consuming it as text.
+    return response as T;
+  }
+
   const data = (await parseSuccessBody(response, responseType, requestInfo)) as T;
-  if (method === "GET") storeFreshResponse(requestInfo.url, data);
+  if (method === "GET" && responseType !== "stream" && !isNdjsonResponse) {
+    storeFreshResponse(requestInfo.url, data);
+  }
   return data;
 }

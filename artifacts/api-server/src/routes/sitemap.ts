@@ -141,6 +141,7 @@ const FALLBACK_API_ROUTES = [
   "/parts/dashboard",
   "/parts/catalog",
   "/parts/catalog/search",
+  "/parts/catalog/search/stream",
   "/parts/catalog/import",
   "/parts/catalog/sync",
   "/parts/catalog/:partId/stock",

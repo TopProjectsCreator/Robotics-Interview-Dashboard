@@ -983,15 +983,31 @@ async function enrichOfficialProductPage(
   return null;
 }
 
-async function searchPublicCatalog(
+export async function searchPublicCatalog(
   query: string,
   vendor?: VendorConfig,
-  options: { maxCandidatesPerVendor?: number; includePartialDetails?: boolean } = {},
+  options: {
+    maxCandidatesPerVendor?: number;
+    includePartialDetails?: boolean;
+    onResult?: (result: PublicCatalogSearchResult) => void | Promise<void>;
+    onComplete?: (summary: {
+      providerCount: number;
+      failedProviderCount: number;
+      resultCount: number;
+    }) => void | Promise<void>;
+  } = {},
 ) {
   const allowedVendors = (vendor ? [vendor] : VENDORS).filter(
     (item) => item.coverageState !== "access_restricted",
   );
-  if (allowedVendors.length === 0) return [];
+  if (allowedVendors.length === 0) {
+    await options.onComplete?.({
+      providerCount: 0,
+      failedProviderCount: 0,
+      resultCount: 0,
+    });
+    return [];
+  }
   const vendorGroups: VendorConfig[][] = [];
   for (let index = 0; index < allowedVendors.length; index += 4) {
     vendorGroups.push(allowedVendors.slice(index, index + 4));
@@ -1008,6 +1024,83 @@ async function searchPublicCatalog(
       searchWithTavily(query, group),
       searchWithExa(query, group),
     ]);
+
+  if (options.onResult) {
+    const seen = new Set<string>();
+    const candidateCounts = new Map(allowedVendors.map((item) => [item.key, 0]));
+    const verifiedResults: PublicCatalogSearchResult[] = [];
+    let failedProviderCount = 0;
+    const candidatesPerVendor = options.maxCandidatesPerVendor ?? 8;
+    let activeEnrichments = 0;
+    const enrichmentWaiters: Array<() => void> = [];
+    const withEnrichmentSlot = async <T>(operation: () => Promise<T>): Promise<T> => {
+      if (activeEnrichments >= 12) {
+        await new Promise<void>((resolve) => enrichmentWaiters.push(resolve));
+      } else {
+        activeEnrichments += 1;
+      }
+      try {
+        return await operation();
+      } finally {
+        const next = enrichmentWaiters.shift();
+        if (next) next();
+        else activeEnrichments -= 1;
+      }
+    };
+
+    await Promise.all(providerRequests.map(async (providerRequest) => {
+      let providerCandidates: PublicCatalogSearchCandidate[];
+      try {
+        providerCandidates = await providerRequest;
+      } catch {
+        failedProviderCount += 1;
+        return;
+      }
+
+      const candidates = providerCandidates.filter((candidate) => {
+        if (!isRelevantCatalogSearchResult(query, candidate.title, candidate.description)) return false;
+        let parsedUrl: URL;
+        try {
+          parsedUrl = new URL(candidate.url);
+        } catch {
+          return false;
+        }
+        const key = `${candidate.vendorKey}:${parsedUrl.origin}${parsedUrl.pathname}`.toLowerCase();
+        const count = candidateCounts.get(candidate.vendorKey);
+        if (count === undefined || count >= candidatesPerVendor || seen.has(key)) return false;
+        seen.add(key);
+        candidateCounts.set(candidate.vendorKey, count + 1);
+        return true;
+      });
+
+      await Promise.all(candidates.map(async (candidate) => {
+        await withEnrichmentSlot(async () => {
+          try {
+            const result = await enrichOfficialProductPage(candidate, options.includePartialDetails);
+            if (
+              !result ||
+              !isRelevantCatalogSearchResult(query, result.title, result.description)
+            ) {
+              return;
+            }
+            verifiedResults.push(result);
+            await options.onResult?.(result);
+          } catch {
+            // A single broken product page or disconnected consumer must not stop
+            // other suppliers from returning their verified results.
+          }
+        });
+      }));
+    }));
+
+    await options.onComplete?.({
+      providerCount: providerRequests.length,
+      failedProviderCount,
+      resultCount: verifiedResults.length,
+    });
+    return verifiedResults;
+  }
+
   const providerResults = await Promise.allSettled(providerRequests);
   const combined = providerResults.flatMap((result) =>
     result.status === "fulfilled" ? result.value : [],
@@ -2059,6 +2152,101 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     );
   } catch (error) {
     req.log.error({ err: error, vendorKey }, "Public supplier catalog search failed");
+    res.status(502).json({
+      error: "Keyless supplier search is temporarily unavailable. Try again shortly.",
+    });
+  }
+});
+
+router.get("/parts/catalog/search/stream", requireAdmin, async (req, res): Promise<void> => {
+  const vendorKey = cleanText(req.query.vendorKey, 100);
+  const query = cleanText(req.query.q, 120);
+  if (!query || query.length < 2) {
+    res.status(400).json({ error: "Enter at least two search characters." });
+    return;
+  }
+  const limitRaw = Number(req.query.limit);
+  const offsetRaw = Number(req.query.offset);
+  const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 100;
+  const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  const vendor = vendorKey ? vendorByKey.get(vendorKey) : undefined;
+  if (vendorKey && !vendor) {
+    res.status(400).json({ error: "Choose one of the listed vendors." });
+    return;
+  }
+
+  try {
+    const teamId = await requestTeamId(req);
+    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
+    const catalogItems = ListPartsCatalogResponse.parse({
+      items: syncedCatalog.items,
+      total: syncedCatalog.total,
+    }).items;
+
+    res.status(200);
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    let connected = true;
+    let resultCount = 0;
+    res.on("close", () => {
+      connected = false;
+    });
+    const writeEvent = (event: Record<string, unknown>) => {
+      if (!connected || res.destroyed || res.writableEnded) return;
+      res.write(`${JSON.stringify(event)}\n`);
+      res.flush?.();
+    };
+
+    writeEvent({
+      type: "catalog",
+      query,
+      catalogItems,
+      catalogTotal: syncedCatalog.total,
+      catalogOffset: syncedCatalog.offset,
+      catalogLimit: syncedCatalog.limit,
+    });
+
+    await searchPublicCatalog(query, vendor, {
+      maxCandidatesPerVendor: 40,
+      includePartialDetails: true,
+      onResult: (result) => {
+        const validated = SearchPartsCatalogResponse.parse({
+          query,
+          results: [result],
+          catalogItems: [],
+          catalogTotal: 0,
+          catalogOffset: 0,
+          catalogLimit: 0,
+          liveSearchStatus: "available",
+        }).results[0];
+        resultCount += 1;
+        writeEvent({ type: "result", result: validated });
+      },
+      onComplete: ({ providerCount, failedProviderCount }) => {
+        const status = failedProviderCount === 0
+          ? "available"
+          : failedProviderCount >= providerCount
+            ? "unavailable"
+            : "partial";
+        writeEvent({
+          type: "complete",
+          status,
+          providerCount,
+          failedProviderCount,
+          resultCount,
+        });
+      },
+    });
+    if (connected && !res.writableEnded) res.end();
+  } catch (error) {
+    req.log.error({ err: error, vendorKey }, "Progressive supplier catalog search failed");
+    if (res.headersSent) {
+      if (!res.destroyed && !res.writableEnded) res.end();
+      return;
+    }
     res.status(502).json({
       error: "Keyless supplier search is temporarily unavailable. Try again shortly.",
     });

@@ -2312,6 +2312,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/search/stream:
+    get:
+      operationId: searchPartsCatalogStream
+      tags: [parts]
+      summary: Stream verified supplier search results as they are found
+      description: Returns newline-delimited JSON events. The catalog event arrives first, zero or more verified result events follow while providers and official product pages are processed, and one complete event reports available, partial, or unavailable provider status. Existing JSON search callers should continue using /parts/catalog/search.
+      parameters:
+        - name: vendorKey
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Newline-delimited catalog, verified-result, and completion events
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogSearchStreamEvent"
+        "400":
+          description: Invalid search query or supplier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Catalog search could not be started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog/sync:
     post:
       operationId: syncPartsCatalog
@@ -3719,6 +3770,60 @@ components:
           type: string
           enum: [available, unavailable]
           description: Whether current live supplier-page discovery providers responded.
+    PartsCatalogSearchStreamEvent:
+      oneOf:
+        - $ref: "#/components/schemas/PartsCatalogSearchStreamCatalogEvent"
+        - $ref: "#/components/schemas/PartsCatalogSearchStreamResultEvent"
+        - $ref: "#/components/schemas/PartsCatalogSearchStreamCompleteEvent"
+      description: A newline-delimited event from the progressive supplier search.
+    PartsCatalogSearchStreamCatalogEvent:
+      type: object
+      required: [type, query, catalogItems, catalogTotal, catalogOffset, catalogLimit]
+      properties:
+        type:
+          type: string
+          const: catalog
+        query:
+          type: string
+        catalogItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsCatalogItem"
+        catalogTotal:
+          type: integer
+        catalogOffset:
+          type: integer
+        catalogLimit:
+          type: integer
+    PartsCatalogSearchStreamResultEvent:
+      type: object
+      required: [type, result]
+      properties:
+        type:
+          type: string
+          const: result
+        result:
+          $ref: "#/components/schemas/PartsCatalogSearchResult"
+    PartsCatalogSearchStreamCompleteEvent:
+      type: object
+      required: [type, status, providerCount, failedProviderCount, resultCount]
+      properties:
+        type:
+          type: string
+          const: complete
+        status:
+          type: string
+          enum: [available, partial, unavailable]
+          description: Whether all live discovery providers responded successfully.
+        providerCount:
+          type: integer
+          minimum: 0
+        failedProviderCount:
+          type: integer
+          minimum: 0
+        resultCount:
+          type: integer
+          minimum: 0
     PartsCatalogSyncVendor:
       type: object
       required: [vendorKey, vendorName, status, checkedAt, itemCount, created, updated, source, message]
