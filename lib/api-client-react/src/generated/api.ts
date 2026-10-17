@@ -168,6 +168,8 @@ import type {
   PasskeyPublicKeyOptions,
   PasskeyRegistrationInput,
   PasswordSafetyError,
+  PersonalNotepad,
+  PersonalNotepadInput,
   PresenceHeartbeat,
   PresenceHeartbeatInput,
   PresenceIpStats,
@@ -767,6 +769,154 @@ export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TE
 
 
 
+
+export const getGetPersonalNotepadUrl = () => {
+
+
+
+
+  return `/api/auth/personal-notepad`
+}
+
+/**
+ * @summary Get the signed-in account's private cloud notepad
+ */
+export const getPersonalNotepad = async ( options?: Parameters<typeof customFetch>[1]): Promise<PersonalNotepad> => {
+
+  return customFetch<PersonalNotepad>(getGetPersonalNotepadUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPersonalNotepadQueryKey = () => {
+    return [
+    `/api/auth/personal-notepad`
+    ] as const;
+    }
+
+
+export const getGetPersonalNotepadQueryOptions = <TData = Awaited<ReturnType<typeof getPersonalNotepad>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonalNotepad>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPersonalNotepadQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonalNotepad>>> = ({ signal }) => getPersonalNotepad({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPersonalNotepad>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPersonalNotepadQueryResult = NonNullable<Awaited<ReturnType<typeof getPersonalNotepad>>>
+export type GetPersonalNotepadQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the signed-in account's private cloud notepad
+ */
+
+export function useGetPersonalNotepad<TData = Awaited<ReturnType<typeof getPersonalNotepad>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonalNotepad>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPersonalNotepadQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePersonalNotepadUrl = () => {
+
+
+
+
+  return `/api/auth/personal-notepad`
+}
+
+/**
+ * @summary Save the signed-in account's private cloud notepad
+ */
+export const updatePersonalNotepad = async (personalNotepadInput: PersonalNotepadInput, options?: Parameters<typeof customFetch>[1]): Promise<PersonalNotepad> => {
+
+  return customFetch<PersonalNotepad>(getUpdatePersonalNotepadUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(personalNotepadInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePersonalNotepadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePersonalNotepad>>, TError,{data: BodyType<PersonalNotepadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePersonalNotepad>>, TError,{data: BodyType<PersonalNotepadInput>}, TContext> => {
+
+const mutationKey = ['updatePersonalNotepad'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePersonalNotepad>>, {data: BodyType<PersonalNotepadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePersonalNotepad(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePersonalNotepadMutationResult = NonNullable<Awaited<ReturnType<typeof updatePersonalNotepad>>>
+    export type UpdatePersonalNotepadMutationBody = BodyType<PersonalNotepadInput>
+    export type UpdatePersonalNotepadMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Save the signed-in account's private cloud notepad
+ */
+export const useUpdatePersonalNotepad = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePersonalNotepad>>, TError,{data: BodyType<PersonalNotepadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePersonalNotepad>>,
+        TError,
+        {data: BodyType<PersonalNotepadInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePersonalNotepadMutationOptions(options));
+    }
 
 export const getGetTeamBrandingUrl = () => {
 

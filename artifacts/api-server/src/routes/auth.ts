@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
@@ -69,10 +69,62 @@ import {
   GetTeamBrandingResponse,
   UpdateTeamBrandingBody,
   UploadTeamLogoResponse,
+  GetPersonalNotepadResponse,
+  UpdatePersonalNotepadBody,
+  UpdatePersonalNotepadResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+router.get("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = interviewerIdFromSession(requestAdminSession(req));
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [note] = await db.select({
+    content: personalNotepadTable.content,
+    updatedAt: personalNotepadTable.updatedAt,
+  }).from(personalNotepadTable).where(and(
+    eq(personalNotepadTable.accountId, accountId),
+    eq(personalNotepadTable.teamId, teamId),
+  )).limit(1);
+  res.json(GetPersonalNotepadResponse.parse({
+    content: note?.content ?? "",
+    updatedAt: note?.updatedAt.toISOString() ?? null,
+  }));
+});
+
+router.put("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = interviewerIdFromSession(requestAdminSession(req));
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const body = UpdatePersonalNotepadBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Notepad content must be text and no longer than 200,000 characters." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [note] = await db.insert(personalNotepadTable).values({
+    accountId,
+    teamId,
+    content: body.data.content,
+  }).onConflictDoUpdate({
+    target: personalNotepadTable.accountId,
+    set: { teamId, content: body.data.content, updatedAt: new Date() },
+  }).returning({
+    content: personalNotepadTable.content,
+    updatedAt: personalNotepadTable.updatedAt,
+  });
+  res.json(UpdatePersonalNotepadResponse.parse({
+    content: note.content,
+    updatedAt: note.updatedAt.toISOString(),
+  }));
+});
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();

@@ -131,6 +131,40 @@ export const GetSessionResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in account's private cloud notepad
+ */
+export const getPersonalNotepadResponseContentMax = 200000;
+
+
+
+export const GetPersonalNotepadResponse = zod.object({
+  "content": zod.string().max(getPersonalNotepadResponseContentMax),
+  "updatedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Save the signed-in account's private cloud notepad
+ */
+export const updatePersonalNotepadBodyContentMax = 200000;
+
+
+
+export const UpdatePersonalNotepadBody = zod.object({
+  "content": zod.string().max(updatePersonalNotepadBodyContentMax)
+})
+
+export const updatePersonalNotepadResponseContentMax = 200000;
+
+
+
+export const UpdatePersonalNotepadResponse = zod.object({
+  "content": zod.string().max(updatePersonalNotepadResponseContentMax),
+  "updatedAt": zod.string().nullable()
+})
+
+
+/**
  * @summary Get branding for the signed-in team
  */
 export const getTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');

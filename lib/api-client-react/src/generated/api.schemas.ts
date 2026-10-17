@@ -2672,6 +2672,18 @@ export interface CodeDeployResult {
   log?: string;
 }
 
+export interface PersonalNotepad {
+  /** @maxLength 200000 */
+  content: string;
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface PersonalNotepadInput {
+  /** @maxLength 200000 */
+  content: string;
+}
+
 /**
  * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */

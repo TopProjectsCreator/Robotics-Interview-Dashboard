@@ -241,6 +241,8 @@ export * from './passkeyRegistrationInput';
 export * from './passkeyRegistrationInputResponse';
 export * from './passwordSafetyError';
 export * from './passwordSafetyErrorCode';
+export * from './personalNotepad';
+export * from './personalNotepadInput';
 export * from './presenceEntry';
 export * from './presenceHeartbeat';
 export * from './presenceHeartbeatInput';
