@@ -1308,6 +1308,13 @@ async function savePartsSupplierSyncState(
 const SHOPIFY_PAGE_SIZE = 250;
 const MAX_PUBLIC_FEED_PAGES = 50;
 
+/**
+ * Records buffered during a sitemap crawl slice before they are written. Bounds
+ * how much fetched work a mid-slice restart can discard; at the supplier's 10s
+ * per-page delay this is roughly two minutes of fetching.
+ */
+const SITEMAP_CRAWL_FLUSH_EVERY = 12;
+
 async function fetchShopifyProductPage(vendor: VendorConfig, page: number) {
   if (!vendor.publicProductFeedUrl) throw new Error("No verified public product feed.");
   const feedUrl = new URL(vendor.publicProductFeedUrl);
@@ -1463,6 +1470,8 @@ async function collectSitemapCrawledCatalog(
       source: sitemapUrl,
       records: [] as CatalogFeedRecord[],
       itemCount: current?.itemCount ?? 0,
+      created: 0,
+      updated: 0,
       message: "A crawl slice for this supplier was already running; the last persisted state is reported.",
     };
   }
@@ -1494,7 +1503,25 @@ async function crawlSitemapSlice(
   const slice = pending.slice(0, Math.max(0, budget));
 
   const records: CatalogFeedRecord[] = [];
+  let created = 0;
+  let updated = 0;
   let failed = 0;
+
+  /**
+   * Writes whatever has been collected so far. Records are flushed as the slice
+   * runs rather than held until it finishes: a slice takes about ten minutes at
+   * the supplier's delay, and a restart partway through would otherwise discard
+   * every page fetched so far — work the sitemap diff would have to repeat in
+   * full. Flushing bounds that loss to a couple of minutes of fetching.
+   */
+  const flush = async () => {
+    if (records.length === 0) return;
+    const counts = await saveCatalogFeedRecords(records);
+    created += counts.created;
+    updated += counts.updated;
+    records.length = 0;
+  };
+
   for (const productUrl of slice) {
     try {
       const product = await fetchProductPage(productUrl, target);
@@ -1520,21 +1547,33 @@ async function crawlSitemapSlice(
       failed += 1;
       logger.warn({ err: error, vendorKey: vendor.key, productUrl }, "Sitemap product page failed");
     }
+    if (records.length >= SITEMAP_CRAWL_FLUSH_EVERY) await flush();
     await crawlDelay(PRODUCT_CRAWL_DELAY_MS);
   }
+  await flush();
 
   const remaining = pending.length - slice.length + failed;
   const enumerated = `${sitemapUrls.length} sitemap URL(s)`;
-  // Report the supplier's whole indexed catalog, not just this slice, so the
-  // sync state answers "how much of goBILDA do we actually hold?".
-  const itemCount = known.size + records.length;
+  // Counted from the catalog rather than derived from this slice: the whole
+  // point of flushing is that the running total survives a restart this slice
+  // did not, so the honest figure is whatever the database now holds.
+  const total = await pool.query(
+    `select count(*)::int as "total" from "parts_catalog_items"
+     where "vendor_key" = $1 and "product_url" is not null`,
+    [vendor.key],
+  );
+  const itemCount = Number((total.rows[0] as { total: number } | undefined)?.total ?? 0);
   if (pending.length === 0) {
     return {
       vendor,
       status: "synced" as const,
       source: sitemapUrl,
-      records,
+      // Records are already persisted by the flush above; returning them again
+      // would make every caller re-save work that is already in the catalog.
+      records: [] as CatalogFeedRecord[],
       itemCount,
+      created,
+      updated,
       message: `Product sitemap enumerated (${enumerated}); all ${itemCount} listed product(s) are indexed. Incremental checks now cost one request per run.`,
     };
   }
@@ -1542,8 +1581,10 @@ async function crawlSitemapSlice(
     vendor,
     status: "incomplete" as const,
     source: sitemapUrl,
-    records,
+    records: [] as CatalogFeedRecord[],
     itemCount,
+    created,
+    updated,
     message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.`,
   };
 }
@@ -2099,9 +2140,6 @@ async function runSitemapCrawlSlices(): Promise<boolean> {
     if (converged && Date.now() - state.checkedAt.getTime() < SITEMAP_RECHECK_MS) continue;
     try {
       const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
-      const counts = collection.records.length > 0
-        ? await saveCatalogFeedRecords(collection.records)
-        : { created: 0, updated: 0 };
       await savePartsSupplierSyncState(vendor.key, {
         status: collection.status,
         checkedAt: new Date(),
@@ -2115,8 +2153,10 @@ async function runSitemapCrawlSlices(): Promise<boolean> {
           vendorKey: vendor.key,
           status: collection.status,
           itemCount: collection.itemCount,
-          created: counts.created,
-          updated: counts.updated,
+          // The crawl persists incrementally so a mid-slice restart keeps its
+          // work; these counts are reported by the crawl, not saved here.
+          created: collection.created,
+          updated: collection.updated,
         },
         "Sitemap crawl slice processed",
       );

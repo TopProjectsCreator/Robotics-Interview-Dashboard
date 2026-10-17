@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import team23442Logo from "../../../../attached_assets/image_1792206903822.png";
 import {
   ArrowRight,
+  CircleDot,
   Cpu,
   Boxes,
   LayoutDashboard,
@@ -105,17 +105,17 @@ export default function PublicDashboard() {
           <Link
             href="/"
             onClick={closeMenu}
-            className="inline-flex shrink-0 items-center gap-3 text-inherit no-underline"
+            className="inline-flex shrink-0 text-inherit no-underline"
             data-testid="link-public-brand"
           >
-            <img
-              src={team23442Logo}
-              alt="Wolverines Robotics Team 23442"
-              width={388}
-              height={134}
-              className="block h-auto w-[min(388px,calc(100vw-110px))] max-w-[388px]"
+            <span
+              role="img"
+              aria-label="Robotics team logo"
+              className="grid size-14 shrink-0 place-items-center bg-[#153642] text-[#efc34f]"
               data-testid="public-team-logo"
-            />
+            >
+              <CircleDot size={20} strokeWidth={2.4} />
+            </span>
           </Link>
 
           <nav
