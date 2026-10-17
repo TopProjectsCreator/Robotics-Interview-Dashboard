@@ -89,6 +89,7 @@ test("public display state scopes by event code and exposes only approved fields
     runWithInstance: (_instance, callback) => callback(),
     enterInstance: () => {},
     DEFAULT_TEAM_ID: "default",
+    codeFilesTable: {},
     teamsTable: {},
     interviewerAccountsTable: {},
     revokedSessionsTable: {},

@@ -38,6 +38,7 @@ const databaseTableNames = [
   "chatPollsTable",
   "chatPollVotesTable",
   "chatSettingsTable",
+  "codeFilesTable",
   "dashboardChartsTable",
   "dataSnapshotsTable",
   "displaySettingsTable",

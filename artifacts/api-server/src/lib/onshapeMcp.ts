@@ -288,20 +288,23 @@ async function getAccessToken(accountId: string, teamId: string): Promise<string
     return undefined;
   }
   const expiresIn = typeof token.expires_in === "number" ? token.expires_in : 3600;
-  await pool.query(
+  const refreshed = await pool.query(
     `update onshape_mcp_connections
         set access_token = $2::jsonb,
             refresh_token = $3::jsonb,
             expires_at = now() + ($4 * interval '1 second'),
             updated_at = now()
-      where account_id = $1`,
+      where account_id = $1 and team_id = $5
+      returning account_id`,
     [
       accountId,
       JSON.stringify(encrypt(token.access_token)),
       typeof token.refresh_token === "string" ? JSON.stringify(encrypt(token.refresh_token)) : JSON.stringify(connection.refresh_token),
       Math.max(60, expiresIn),
+      teamId,
     ],
   );
+  if (!refreshed.rows.length) return undefined;
   return token.access_token;
 }
 
