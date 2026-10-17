@@ -18,7 +18,8 @@ type WorkspaceRow = {
   html: string;
   capabilities: string[];
   status: "draft" | "published";
-  accessMode: "team" | "owner";
+  accessMode: "team" | "owner" | "selected";
+  allowedInterviewerIds: string[];
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -36,6 +37,33 @@ function clipped(value: unknown, limit: number): string {
 function parseCapabilities(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !CAPABILITIES.has(item))) return null;
   return [...new Set(value as string[])];
+}
+
+function parseAllowedInterviewerIds(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) return null;
+  if (value.length > 500) return null;
+  return [...new Set((value as string[]).map((item) => item.trim()))];
+}
+
+async function saveableAccessSettings(value: unknown, teamId: string): Promise<{
+  accessMode: "team" | "owner" | "selected";
+  allowedInterviewerIds: string[];
+} | null> {
+  const body = bodyObject(value);
+  const accessMode = body.accessMode;
+  if (accessMode !== "team" && accessMode !== "owner" && accessMode !== "selected") return null;
+  const allowedInterviewerIds = body.allowedInterviewerIds === undefined && accessMode !== "selected"
+    ? []
+    : parseAllowedInterviewerIds(body.allowedInterviewerIds);
+  if (!allowedInterviewerIds) return null;
+  if (!allowedInterviewerIds.length) return { accessMode, allowedInterviewerIds };
+  const members = await pool.query<{ id: string }>(
+    `select "id" from "interviewer_accounts"
+      where ${teamSqlCondition('"team_id"', "$1")} and "id" = any($2::text[])`,
+    [teamId, allowedInterviewerIds],
+  );
+  if (members.rows.length !== allowedInterviewerIds.length) return null;
+  return { accessMode, allowedInterviewerIds };
 }
 
 function limited(key: string, maximum = 30): boolean {
@@ -64,12 +92,17 @@ async function accessibleWorkspace(
   const accountId = authenticatedInterviewerId(req);
   const result = await pool.query<WorkspaceRow>(
     `select "id", "title", "description", "html", "capabilities", "status",
-            "access_mode" as "accessMode", "created_at" as "createdAt",
+            "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
+            "created_at" as "createdAt",
             "updated_at" as "updatedAt"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-        and (("status" = 'published' and ("access_mode" = 'team' or "created_by" = $4))
-          or ($3::boolean and "created_by" = $4))
+        and (("status" = 'published' and (
+              "access_mode" = 'team'
+              or ("access_mode" = 'owner' and "created_by" = $4)
+              or ("access_mode" = 'selected' and "allowed_interviewer_ids" ? $4)
+            ))
+          or ($3::boolean and "status" = 'draft' and "created_by" = $4))
       limit 1`,
     [id, teamId, allowDraftOwner, accountId],
   );
@@ -86,14 +119,31 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
   const accountId = authenticatedInterviewerId(req);
   const result = await pool.query(
     `select "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
+            "allowed_interviewer_ids" as "allowedInterviewerIds",
             "created_at" as "createdAt", "updated_at" as "updatedAt"
        from "custom_workspaces"
       where ${teamSqlCondition('"team_id"', "$1")}
-        and (("status" = 'published' and ("access_mode" = 'team' or "created_by" = $2)) or "created_by" = $2)
+        and (("status" = 'published' and (
+              "access_mode" = 'team'
+              or ("access_mode" = 'owner' and "created_by" = $2)
+              or ("access_mode" = 'selected' and "allowed_interviewer_ids" ? $2)
+            )) or "created_by" = $2)
       order by "updated_at" desc limit 100`,
     [teamId, accountId],
   );
   res.json({ workspaces: result.rows });
+});
+
+router.get("/custom-workspaces/team-members", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const members = await pool.query<{ id: string; displayName: string }>(
+    `select "id", "display_name" as "displayName"
+       from "interviewer_accounts"
+      where ${teamSqlCondition('"team_id"', "$1")}
+      order by "display_name" asc`,
+    [teamId],
+  );
+  res.json({ members: members.rows });
 });
 
 router.post("/custom-workspaces/generate", requireCoordinator, async (req, res): Promise<void> => {
@@ -143,7 +193,8 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       `insert into "custom_workspaces"
         ("id", "team_id", "title", "description", "prompt", "html", "capabilities", "status", "created_by")
        values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'draft', $8)
-         returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+      returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                "allowed_interviewer_ids" as "allowedInterviewerIds",
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [id, teamId, title, description, prompt, html, JSON.stringify(capabilities), accountId],
     );
@@ -236,7 +287,8 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
     const updated = await pool.query(
       `update "custom_workspaces" set "title" = $3, "description" = $4, "html" = $5, "updated_at" = now()
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-        returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+      returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                "allowed_interviewer_ids" as "allowedInterviewerIds",
                   "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [workspaceId, teamId, title, description, html],
     );
@@ -279,6 +331,7 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
     `update "custom_workspaces" set "html" = $3, "capabilities" = $4::jsonb, "updated_at" = now()
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
       returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                "allowed_interviewer_ids" as "allowedInterviewerIds",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
     [workspaceId, teamId, previous.rows[0].html, JSON.stringify(previous.rows[0].capabilities)],
   );
@@ -287,13 +340,19 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
 
 router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
-  const accessMode = bodyObject(req.body).accessMode === "owner" ? "owner" : "team";
+  const accessSettings = await saveableAccessSettings(req.body, teamId);
+  if (!accessSettings) {
+    res.status(400).json({ error: "Choose a valid access mode and current team members." });
+    return;
+  }
   const result = await pool.query(
-    `update "custom_workspaces" set "status" = 'published', "access_mode" = $3, "updated_at" = now()
+    `update "custom_workspaces" set "status" = 'published', "access_mode" = $3,
+              "allowed_interviewer_ids" = $4::jsonb, "updated_at" = now()
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
       returning "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
+                "allowed_interviewer_ids" as "allowedInterviewerIds",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-    [String(req.params.id ?? ""), teamId, accessMode],
+    [String(req.params.id ?? ""), teamId, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
   );
   if (!result.rowCount) {
     res.status(404).json({ error: "Workspace not found." });
@@ -303,17 +362,20 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
 });
 
 router.patch("/custom-workspaces/:id/access", requireCoordinator, async (req, res): Promise<void> => {
-  const accessMode = bodyObject(req.body).accessMode;
-  if (accessMode !== "team" && accessMode !== "owner") {
-    res.status(400).json({ error: "Choose team access or creator-only access." });
+  const teamId = await requestTeamId(req);
+  const accessSettings = await saveableAccessSettings(req.body, teamId);
+  if (!accessSettings) {
+    res.status(400).json({ error: "Choose a valid access mode and current team members." });
     return;
   }
   const result = await pool.query(
-    `update "custom_workspaces" set "access_mode" = $3, "updated_at" = now()
+    `update "custom_workspaces" set "access_mode" = $3,
+              "allowed_interviewer_ids" = $4::jsonb, "updated_at" = now()
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'published'
       returning "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
+                "allowed_interviewer_ids" as "allowedInterviewerIds",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-    [String(req.params.id ?? ""), await requestTeamId(req), accessMode],
+    [String(req.params.id ?? ""), teamId, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
   );
   if (!result.rowCount) {
     res.status(404).json({ error: "Published workspace not found." });

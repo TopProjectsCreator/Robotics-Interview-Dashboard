@@ -37,6 +37,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data", "llm"],
     status: "published",
     accessMode: "team",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -50,6 +51,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data", "llm"],
     status: "published",
     accessMode: "owner",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -63,6 +65,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data", "llm"],
     status: "draft",
     accessMode: "team",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -76,6 +79,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["llm"],
     status: "published",
     accessMode: "team",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -89,6 +93,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data"],
     status: "published",
     accessMode: "team",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -102,7 +107,22 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data", "llm"],
     status: "published",
     accessMode: "team",
+    allowedInterviewerIds: [],
     createdBy: "coordinator-b",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "workspace-a-selected",
+    teamId: "team-a",
+    title: "Selected teammates app",
+    description: "",
+    html: "<main>Selected</main>",
+    capabilities: ["data", "llm"],
+    status: "published",
+    accessMode: "selected",
+    allowedInterviewerIds: ["admin-a"],
+    createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -110,6 +130,7 @@ const WORKSPACE_SEEDS = [
 
 const RECORD_SEEDS = [
   { id: "record-a", teamId: "team-a", workspaceId: "workspace-a", value: { secret: "team A record" } },
+  { id: "record-a-selected", teamId: "team-a", workspaceId: "workspace-a-selected", value: { visible: "selected record" } },
   { id: "record-b", teamId: "team-b", workspaceId: "workspace-b", value: { note: "team B record" } },
   // A mismatched row makes sure record-level team predicates still protect
   // reads and mutations even when a record id is supplied directly.
@@ -144,7 +165,9 @@ async function createHarness(t) {
           const rows = workspaces.filter((workspace) =>
             workspace.teamId === teamId &&
             ((workspace.status === "published" &&
-              (workspace.accessMode === "team" || workspace.createdBy === accountId)) ||
+              (workspace.accessMode === "team" ||
+                (workspace.accessMode === "owner" && workspace.createdBy === accountId) ||
+                (workspace.accessMode === "selected" && workspace.allowedInterviewerIds.includes(accountId)))) ||
               workspace.createdBy === accountId),
           );
           return { rows, rowCount: rows.length };
@@ -156,22 +179,38 @@ async function createHarness(t) {
           workspace.id === id &&
           workspace.teamId === teamId &&
           ((workspace.status === "published" &&
-            (workspace.accessMode === "team" || workspace.createdBy === accountId)) ||
-            (allowDraftOwner && workspace.createdBy === accountId)),
+            (workspace.accessMode === "team" ||
+              (workspace.accessMode === "owner" && workspace.createdBy === accountId) ||
+              (workspace.accessMode === "selected" && workspace.allowedInterviewerIds.includes(accountId)))) ||
+            (allowDraftOwner && workspace.status === "draft" && workspace.createdBy === accountId)),
         );
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
       }
 
+      if (statement.startsWith("select") && statement.includes('from "interviewer_accounts"')) {
+        const teamId = values[0];
+        ensureTeamScope('"team_id"', "$1", teamId);
+        const members = Object.entries(USERS)
+          .filter(([, user]) => user.teamId === teamId)
+          .map(([id]) => ({ id, displayName: id }));
+        if (values.length === 1) return { rows: members, rowCount: members.length };
+        const ids = new Set(values[1]);
+        const matching = members.filter((member) => ids.has(member.id)).map(({ id }) => ({ id }));
+        return { rows: matching, rowCount: matching.length };
+      }
+
       if (statement.startsWith("update \"custom_workspaces\"")) {
-        const [id, teamId, value] = values;
+        const [id, teamId, accessMode, allowedIdsJson] = values;
         ensureTeamScope('"team_id"', "$2", teamId);
         const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
         if (!row) return { rows: [], rowCount: 0 };
         if (statement.includes("set \"status\" = 'published'")) {
           row.status = "published";
-          row.accessMode = value;
+          row.accessMode = accessMode;
+          row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
         } else if (statement.includes('set "access_mode" = $3')) {
-          row.accessMode = value;
+          row.accessMode = accessMode;
+          row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
         }
         return { rows: [row], rowCount: 1 };
       }
@@ -237,6 +276,7 @@ async function createHarness(t) {
           capabilities: JSON.parse(capabilities),
           status: "draft",
           accessMode: "team",
+          allowedInterviewerIds: [],
           createdBy,
         };
         workspaces.push(row);
@@ -387,6 +427,103 @@ test("workspace lists, reads, and coordinator changes stay within the caller's t
   assert.equal(creatorOnlyRead.status, 404);
 });
 
+test("selected access is enforced for the app, records, and LLM", async (t) => {
+  const harness = await createHarness(t);
+
+  const allowedApp = await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-selected");
+  assert.equal(allowedApp.status, 200);
+  assert.deepEqual((await allowedApp.json()).workspace.allowedInterviewerIds, ["admin-a"]);
+
+  const allowedRecords = await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-selected/data");
+  assert.equal(allowedRecords.status, 200);
+  assert.deepEqual((await allowedRecords.json()).records.map((record) => record.id), ["record-a-selected"]);
+  const allowedLlm = await harness.request("admin-a", "POST", "/custom-workspaces/workspace-a-selected/llm", {
+    prompt: "Summarize these records",
+  });
+  assert.equal(allowedLlm.status, 200);
+  assert.equal(harness.calls.llm.length, 1);
+
+  const deniedApp = await harness.request("admin-a-other", "GET", "/custom-workspaces/workspace-a-selected");
+  assert.equal(deniedApp.status, 404);
+  const deniedRecordRead = await harness.request("admin-a-other", "GET", "/custom-workspaces/workspace-a-selected/data");
+  assert.equal(deniedRecordRead.status, 404);
+  const deniedRecordCreate = await harness.request(
+    "admin-a-other",
+    "POST",
+    "/custom-workspaces/workspace-a-selected/data",
+    { record: { shouldNotPersist: true } },
+  );
+  assert.equal(deniedRecordCreate.status, 404);
+  const deniedRecordUpdate = await harness.request(
+    "admin-a-other",
+    "PATCH",
+    "/custom-workspaces/workspace-a-selected/data/record-a-selected",
+    { record: { shouldNotPersist: true } },
+  );
+  assert.equal(deniedRecordUpdate.status, 404);
+  const deniedRecordDelete = await harness.request(
+    "admin-a-other",
+    "DELETE",
+    "/custom-workspaces/workspace-a-selected/data/record-a-selected",
+  );
+  assert.equal(deniedRecordDelete.status, 404);
+  const deniedLlm = await harness.request("admin-a-other", "POST", "/custom-workspaces/workspace-a-selected/llm", {
+    prompt: "This must not be sent to the model",
+  });
+  assert.equal(deniedLlm.status, 404);
+  assert.equal(harness.calls.llm.length, 1, "denied requests must not reach the model");
+  assert.deepEqual(
+    harness.records.find((record) => record.id === "record-a-selected").value,
+    { visible: "selected record" },
+  );
+
+  const creatorList = await harness.request("coordinator-a", "GET", "/custom-workspaces");
+  assert.ok((await creatorList.json()).workspaces.some((workspace) => workspace.id === "workspace-a-selected"));
+  const creatorApp = await harness.request("coordinator-a", "GET", "/custom-workspaces/workspace-a-selected");
+  assert.equal(creatorApp.status, 404, "the creator does not bypass an explicit selected-member allowlist");
+});
+
+test("coordinators can update selected members but cannot grant access across teams", async (t) => {
+  const harness = await createHarness(t);
+
+  const membersResponse = await harness.request("coordinator-a", "GET", "/custom-workspaces/team-members");
+  assert.equal(membersResponse.status, 200);
+  const members = await membersResponse.json();
+  assert.deepEqual(members.members.map((member) => member.id).sort(), ["admin-a", "admin-a-other", "coordinator-a"]);
+  assert.equal((await harness.request("admin-a", "GET", "/custom-workspaces/team-members")).status, 403);
+
+  const changed = await harness.request("coordinator-a", "PATCH", "/custom-workspaces/workspace-a/access", {
+    accessMode: "selected",
+    allowedInterviewerIds: ["admin-a", "admin-a-other", "admin-a"],
+  });
+  assert.equal(changed.status, 200);
+  assert.deepEqual((await changed.json()).workspace.allowedInterviewerIds, ["admin-a", "admin-a-other"]);
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a").accessMode, "selected");
+
+  const crossTeam = await harness.request("coordinator-a", "PATCH", "/custom-workspaces/workspace-a/access", {
+    accessMode: "selected",
+    allowedInterviewerIds: ["admin-b"],
+  });
+  assert.equal(crossTeam.status, 400);
+  assert.deepEqual(
+    harness.workspaces.find((workspace) => workspace.id === "workspace-a").allowedInterviewerIds,
+    ["admin-a", "admin-a-other"],
+  );
+
+  const selectedOnPublish = await harness.request(
+    "coordinator-a",
+    "POST",
+    "/custom-workspaces/workspace-a-draft/publish",
+    { accessMode: "selected", allowedInterviewerIds: ["admin-a"] },
+  );
+  assert.equal(selectedOnPublish.status, 200);
+  assert.deepEqual((await selectedOnPublish.json()).workspace.allowedInterviewerIds, ["admin-a"]);
+  assert.equal(
+    (await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-draft")).status,
+    200,
+  );
+});
+
 test("direct record reads and mutations cannot cross team boundaries", async (t) => {
   const harness = await createHarness(t);
 
@@ -495,6 +632,13 @@ test("LLM requests require workspace visibility and the LLM capability", async (
   });
   assert.equal(missingCapability.status, 403);
 
+  const creatorOnlyRead = await harness.request("coordinator-a", "GET", "/custom-workspaces/workspace-a-owner");
+  assert.equal(creatorOnlyRead.status, 200);
+  const creatorOnlyLlm = await harness.request("coordinator-a", "POST", "/custom-workspaces/workspace-a-owner/llm", {
+    prompt: "Use creator-only app access",
+  });
+  assert.equal(creatorOnlyLlm.status, 200);
+
   const creatorOnly = await harness.request("admin-a-other", "POST", "/custom-workspaces/workspace-a-owner/llm", {
     prompt: "Try a creator-only app",
   });
@@ -504,7 +648,7 @@ test("LLM requests require workspace visibility and the LLM capability", async (
     prompt: "Try a draft",
   });
   assert.equal(unpublished.status, 404);
-  assert.equal(harness.calls.llm.length, 1, "denied requests must not reach the model");
+  assert.equal(harness.calls.llm.length, 2, "denied requests must not reach the model");
 });
 
 test("assistant-created custom apps remain drafts owned by the current team", async (t) => {

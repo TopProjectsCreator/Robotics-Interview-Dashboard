@@ -107,6 +107,7 @@ import type {
   CustomWorkspaceLlmInput,
   CustomWorkspaceRecordEnvelope,
   CustomWorkspaceRevisionInput,
+  CustomWorkspaceTeamMemberList,
   CustomWorkspaceVersionList,
   DashboardChart,
   DashboardChartInput,
@@ -12386,6 +12387,83 @@ export function useListCustomWorkspaces<TData = Awaited<ReturnType<typeof listCu
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCustomWorkspacesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCustomWorkspaceTeamMembersUrl = () => {
+
+
+
+
+  return `/api/custom-workspaces/team-members`
+}
+
+/**
+ * @summary List current team members for custom-app access settings
+ */
+export const listCustomWorkspaceTeamMembers = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceTeamMemberList> => {
+
+  return customFetch<CustomWorkspaceTeamMemberList>(getListCustomWorkspaceTeamMembersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCustomWorkspaceTeamMembersQueryKey = () => {
+    return [
+    `/api/custom-workspaces/team-members`
+    ] as const;
+    }
+
+
+export const getListCustomWorkspaceTeamMembersQueryOptions = <TData = Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCustomWorkspaceTeamMembersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>> = ({ signal }) => listCustomWorkspaceTeamMembers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCustomWorkspaceTeamMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>>
+export type ListCustomWorkspaceTeamMembersQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List current team members for custom-app access settings
+ */
+
+export function useListCustomWorkspaceTeamMembers<TData = Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomWorkspaceTeamMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCustomWorkspaceTeamMembersQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

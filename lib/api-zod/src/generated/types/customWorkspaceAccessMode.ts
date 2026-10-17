@@ -12,4 +12,5 @@ export type CustomWorkspaceAccessMode = typeof CustomWorkspaceAccessMode[keyof t
 export const CustomWorkspaceAccessMode = {
   team: 'team',
   owner: 'owner',
+  selected: 'selected',
 } as const;

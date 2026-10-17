@@ -146,6 +146,8 @@ export * from './customWorkspaceLlmInput';
 export * from './customWorkspaceRecordEnvelope';
 export * from './customWorkspaceRevisionInput';
 export * from './customWorkspaceStatus';
+export * from './customWorkspaceTeamMember';
+export * from './customWorkspaceTeamMemberList';
 export * from './customWorkspaceVersion';
 export * from './customWorkspaceVersionList';
 export * from './dashboardChart';

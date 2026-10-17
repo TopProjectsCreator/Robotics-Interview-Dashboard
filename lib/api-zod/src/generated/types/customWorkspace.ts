@@ -17,6 +17,8 @@ export interface CustomWorkspace {
   capabilities: CustomWorkspaceCapabilitiesItem[];
   status: CustomWorkspaceStatus;
   accessMode: CustomWorkspaceAccessMode;
+  /** Interviewer account IDs allowed when accessMode is selected */
+  allowedInterviewerIds: string[];
   createdAt: Date;
   updatedAt: Date;
 }

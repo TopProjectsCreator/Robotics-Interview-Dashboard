@@ -3448,6 +3448,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CustomWorkspaceList"
+  /custom-workspaces/team-members:
+    get:
+      operationId: listCustomWorkspaceTeamMembers
+      tags: [customWorkspaces]
+      summary: List current team members for custom-app access settings
+      responses:
+        "200":
+          description: Current team members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceTeamMemberList"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /custom-workspaces/generate:
     post:
       operationId: generateCustomWorkspace
@@ -7212,7 +7230,7 @@ components:
           maxLength: 200000
     CustomWorkspace:
       type: object
-      required: [id, title, description, capabilities, status, accessMode, createdAt, updatedAt]
+      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -7232,7 +7250,12 @@ components:
           enum: [draft, published]
         accessMode:
           type: string
-          enum: [team, owner]
+          enum: [team, owner, selected]
+        allowedInterviewerIds:
+          type: array
+          items:
+            type: string
+          description: Interviewer account IDs allowed when accessMode is selected
         createdAt:
           type: string
           format: date-time
@@ -7253,6 +7276,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CustomWorkspace"
+    CustomWorkspaceTeamMember:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+    CustomWorkspaceTeamMemberList:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTeamMember"
     CustomWorkspaceGenerationInput:
       type: object
       required: [prompt, capabilities]
@@ -7281,7 +7320,15 @@ components:
       properties:
         accessMode:
           type: string
-          enum: [team, owner]
+          enum: [team, owner, selected]
+        allowedInterviewerIds:
+          type: array
+          uniqueItems: true
+          maxItems: 500
+          items:
+            type: string
+            minLength: 1
+          description: Required for selected access; account IDs from the current team
     CustomWorkspaceVersion:
       type: object
       required: [id, message, createdBy, createdAt]

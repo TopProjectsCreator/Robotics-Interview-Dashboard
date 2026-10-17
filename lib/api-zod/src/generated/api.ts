@@ -4446,9 +4446,21 @@ export const ListCustomWorkspacesResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary List current team members for custom-app access settings
+ */
+export const ListCustomWorkspaceTeamMembersResponse = zod.object({
+  "members": zod.array(zod.object({
+  "id": zod.string(),
+  "displayName": zod.string()
 }))
 })
 
@@ -4473,7 +4485,8 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -4495,7 +4508,8 @@ export const GetCustomWorkspaceResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -4509,8 +4523,14 @@ export const PublishCustomWorkspaceParams = zod.object({
   "workspaceId": zod.coerce.string()
 })
 
+
+export const publishCustomWorkspaceBodyAllowedInterviewerIdsMax = 500;
+
+
+
 export const PublishCustomWorkspaceBody = zod.object({
-  "accessMode": zod.enum(['team', 'owner'])
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string().min(1)).max(publishCustomWorkspaceBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
 export const PublishCustomWorkspaceResponse = zod.object({
@@ -4521,7 +4541,8 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -4535,8 +4556,14 @@ export const UpdateCustomWorkspaceAccessParams = zod.object({
   "workspaceId": zod.coerce.string()
 })
 
+
+export const updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax = 500;
+
+
+
 export const UpdateCustomWorkspaceAccessBody = zod.object({
-  "accessMode": zod.enum(['team', 'owner'])
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string().min(1)).max(updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
 export const UpdateCustomWorkspaceAccessResponse = zod.object({
@@ -4547,7 +4574,8 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -4577,7 +4605,8 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -4617,7 +4646,8 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "html": zod.string().optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
-  "accessMode": zod.enum(['team', 'owner']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })

@@ -5,6 +5,8 @@ import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type Custom
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
 type Version = CustomWorkspaceVersion;
+type AccessMode = Workspace["accessMode"];
+type TeamMember = { id: string; displayName: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
 
 const API = "/api/custom-workspaces";
@@ -60,7 +62,10 @@ export function CustomWorkspacesPage() {
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [revisionPrompt, setRevisionPrompt] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
-  const [accessMode, setAccessMode] = useState<"team" | "owner">("team");
+  const [accessMode, setAccessMode] = useState<AccessMode>("team");
+  const [allowedInterviewerIds, setAllowedInterviewerIds] = useState<string[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamMembersLoading, setTeamMembersLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
@@ -74,16 +79,25 @@ export function CustomWorkspacesPage() {
   useEffect(() => { void refresh().catch((err) => setError(err.message)); }, []);
   useEffect(() => {
     setAccessMode(active?.accessMode ?? "team");
-  }, [active?.id, active?.accessMode]);
+    setAllowedInterviewerIds(active?.allowedInterviewerIds ?? []);
+  }, [active?.id, active?.accessMode, JSON.stringify(active?.allowedInterviewerIds ?? [])]);
   useEffect(() => {
-    if (!active) {
+    if (!canManage) return;
+    setTeamMembersLoading(true);
+    void request<{ members: TeamMember[] }>(`${API}/team-members`)
+      .then((result) => setTeamMembers(result.members))
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load team members."))
+      .finally(() => setTeamMembersLoading(false));
+  }, [canManage]);
+  useEffect(() => {
+    if (!active || active.status !== "draft" || !canManage) {
       setVersions([]);
       return;
     }
     void request<{ versions: Version[] }>(`${API}/${active.id}/versions`)
       .then((result) => setVersions(result.versions))
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load version history."));
-  }, [active?.id]);
+  }, [active?.id, active?.status, canManage]);
 
   useEffect(() => {
     const onMessage = async (event: MessageEvent<BridgeRequest>) => {
@@ -149,7 +163,7 @@ export function CustomWorkspacesPage() {
     setError("");
     try {
       const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/publish`, {
-        method: "POST", body: JSON.stringify({ accessMode }),
+        method: "POST", body: JSON.stringify({ accessMode, allowedInterviewerIds }),
       });
       setSelected(result.workspace);
       await refresh();
@@ -159,20 +173,18 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
-  const changeAccess = async (next: "team" | "owner") => {
+  const saveAccess = async () => {
     if (!active) return;
-    setAccessMode(next);
     if (active.status === "draft") return;
     setBusy(true);
     setError("");
     try {
       const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/access`, {
-        method: "PATCH", body: JSON.stringify({ accessMode: next }),
+        method: "PATCH", body: JSON.stringify({ accessMode, allowedInterviewerIds }),
       });
       setSelected(result.workspace);
       await refresh();
     } catch (err) {
-      setAccessMode(active.accessMode);
       setError(err instanceof Error ? err.message : "Could not update workspace access.");
     } finally {
       setBusy(false);
@@ -212,6 +224,11 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
+
+  const accessChanged = active && (
+    active.accessMode !== accessMode ||
+    [...(active.allowedInterviewerIds ?? [])].sort().join("\0") !== [...allowedInterviewerIds].sort().join("\0")
+  );
 
   return <main className="mx-auto w-full max-w-7xl p-4 md:p-8">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -255,13 +272,38 @@ export function CustomWorkspacesPage() {
             <h2 className="truncate font-semibold text-[hsl(var(--foreground))]">{active?.title ?? "Preview"}</h2>
             <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
           </div>
-          {active && canManage && <label className="flex items-center gap-2 text-xs text-[hsl(var(--foreground))]">
-            <input type="checkbox" checked={accessMode === "team"} disabled={busy} onChange={(event) => void changeAccess(event.target.checked ? "team" : "owner")} />
-            Share with the team
-          </label>}
+          {active && canManage && <div className="flex flex-wrap items-end gap-2">
+            <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
+              <span>Who can use this app?</span>
+              <select aria-label="Who can use this app?" value={accessMode} disabled={busy} onChange={(event) => setAccessMode(event.target.value as AccessMode)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-sm text-[hsl(var(--foreground))]">
+                <option value="team">Everyone on the team</option>
+                <option value="owner">Only the creator</option>
+                <option value="selected">Choose teammates</option>
+              </select>
+            </label>
+            {active.status === "published" && <button type="button" disabled={busy || !accessChanged} onClick={() => void saveAccess()} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Save access</button>}
+          </div>}
           {active && canManage && active.status === "draft" && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
+        {active && canManage && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
+          <fieldset disabled={busy}>
+            <legend className="text-sm font-semibold text-[hsl(var(--foreground))]">Choose teammates</legend>
+            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Only selected accounts can open this app or use its data and AI tools.</p>
+            {teamMembers.length
+              ? <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                {teamMembers.map((member) => <li key={member.id}>
+                  <label className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))]">
+                    <input type="checkbox" checked={allowedInterviewerIds.includes(member.id)} onChange={(event) => setAllowedInterviewerIds((current) => event.target.checked
+                      ? [...new Set([...current, member.id])]
+                      : current.filter((id) => id !== member.id))} />
+                    <span>{member.displayName}</span>
+                  </label>
+                </li>)}
+              </ul>
+              : <p className="mt-3 text-sm text-[#60757c] dark:text-[#b3c3cb]">{teamMembersLoading ? "Loading team members…" : "No teammates are available."}</p>}
+          </fieldset>
+        </div>}
         {active?.html
           ? <iframe ref={frame} title={`${active.title} preview`} sandbox="allow-scripts" srcDoc={sandboxDocument(active.html)} className="h-[70vh] min-h-[520px] w-full bg-white" />
           : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />Describe a workspace to generate its first draft.</div></div>}

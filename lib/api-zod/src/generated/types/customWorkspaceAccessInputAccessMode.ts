@@ -12,4 +12,5 @@ export type CustomWorkspaceAccessInputAccessMode = typeof CustomWorkspaceAccessI
 export const CustomWorkspaceAccessInputAccessMode = {
   team: 'team',
   owner: 'owner',
+  selected: 'selected',
 } as const;

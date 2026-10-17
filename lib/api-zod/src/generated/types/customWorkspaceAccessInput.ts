@@ -9,4 +9,10 @@ import type { CustomWorkspaceAccessInputAccessMode } from './customWorkspaceAcce
 
 export interface CustomWorkspaceAccessInput {
   accessMode: CustomWorkspaceAccessInputAccessMode;
+  /**
+     * Required for selected access; account IDs from the current team
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  allowedInterviewerIds?: string[];
 }

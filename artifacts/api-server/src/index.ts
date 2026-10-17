@@ -157,12 +157,28 @@ async function ensureSchema(): Promise<void> {
        "html" text not null check (octet_length("html") <= 120000),
        "capabilities" jsonb not null default '[]'::jsonb,
        "status" text not null default 'draft' check ("status" in ('draft', 'published')),
-       "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner')),
+       "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner', 'selected')),
+       "allowed_interviewer_ids" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
     `alter table "custom_workspaces" add column if not exists "access_mode" text not null default 'team'`,
+    `alter table "custom_workspaces" add column if not exists "allowed_interviewer_ids" jsonb not null default '[]'::jsonb`,
+    `do $custom_access$
+       begin
+         if not exists (
+           select 1 from pg_constraint
+            where conrelid = '"custom_workspaces"'::regclass
+              and conname = 'custom_workspaces_access_mode_check'
+              and pg_get_constraintdef(oid) like '%selected%'
+         ) then
+           alter table "custom_workspaces" drop constraint if exists "custom_workspaces_access_mode_check";
+           alter table "custom_workspaces" add constraint "custom_workspaces_access_mode_check"
+             check ("access_mode" in ('team', 'owner', 'selected'));
+         end if;
+       end;
+     $custom_access$`,
     `create index if not exists "custom_workspaces_team_updated_idx" on "custom_workspaces" ("team_id", "updated_at" desc)`,
     `create table if not exists "custom_workspace_versions" (
        "id" text primary key,

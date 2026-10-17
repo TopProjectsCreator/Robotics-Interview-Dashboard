@@ -2706,6 +2706,7 @@ export type CustomWorkspaceAccessMode = typeof CustomWorkspaceAccessMode[keyof t
 export const CustomWorkspaceAccessMode = {
   team: 'team',
   owner: 'owner',
+  selected: 'selected',
 } as const;
 
 export interface CustomWorkspace {
@@ -2716,6 +2717,8 @@ export interface CustomWorkspace {
   capabilities: CustomWorkspaceCapabilitiesItem[];
   status: CustomWorkspaceStatus;
   accessMode: CustomWorkspaceAccessMode;
+  /** Interviewer account IDs allowed when accessMode is selected */
+  allowedInterviewerIds: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -2726,6 +2729,15 @@ export interface CustomWorkspaceEnvelope {
 
 export interface CustomWorkspaceList {
   workspaces: CustomWorkspace[];
+}
+
+export interface CustomWorkspaceTeamMember {
+  id: string;
+  displayName: string;
+}
+
+export interface CustomWorkspaceTeamMemberList {
+  members: CustomWorkspaceTeamMember[];
 }
 
 export type CustomWorkspaceGenerationInputCapabilitiesItem = typeof CustomWorkspaceGenerationInputCapabilitiesItem[keyof typeof CustomWorkspaceGenerationInputCapabilitiesItem];
@@ -2759,10 +2771,17 @@ export type CustomWorkspaceAccessInputAccessMode = typeof CustomWorkspaceAccessI
 export const CustomWorkspaceAccessInputAccessMode = {
   team: 'team',
   owner: 'owner',
+  selected: 'selected',
 } as const;
 
 export interface CustomWorkspaceAccessInput {
   accessMode: CustomWorkspaceAccessInputAccessMode;
+  /**
+     * Required for selected access; account IDs from the current team
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  allowedInterviewerIds?: string[];
 }
 
 export interface CustomWorkspaceVersion {
