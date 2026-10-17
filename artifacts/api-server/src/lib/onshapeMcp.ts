@@ -255,6 +255,10 @@ async function getConnection(accountId: string, teamId?: string): Promise<Connec
   return result.rows[0] as ConnectionRow | undefined;
 }
 
+async function removeConnection(accountId: string, teamId: string): Promise<void> {
+  await pool.query(`delete from onshape_mcp_connections where account_id = $1 and team_id = $2`, [accountId, teamId]);
+}
+
 async function getAccessToken(accountId: string, teamId: string): Promise<string | undefined> {
   const connection = await getConnection(accountId, teamId);
   if (!connection) return undefined;
@@ -263,7 +267,7 @@ async function getAccessToken(accountId: string, teamId: string): Promise<string
     return decrypt(connection.access_token);
   }
   if (!connection.refresh_token) {
-    await pool.query(`delete from onshape_mcp_connections where account_id = $1 and team_id = $2`, [accountId, teamId]);
+    await removeConnection(accountId, teamId);
     return undefined;
   }
   const metadata = await oauthMetadata();
@@ -284,7 +288,7 @@ async function getAccessToken(accountId: string, teamId: string): Promise<string
     expires_in?: unknown;
   };
   if (!response.ok || typeof token.access_token !== "string") {
-    await pool.query(`delete from onshape_mcp_connections where account_id = $1 and team_id = $2`, [accountId, teamId]);
+    await removeConnection(accountId, teamId);
     return undefined;
   }
   const expiresIn = typeof token.expires_in === "number" ? token.expires_in : 3600;
@@ -337,7 +341,12 @@ async function mcpRequest(
   return { response, payload };
 }
 
-async function withMcpSession<T>(accessToken: string, action: (session: string | undefined) => Promise<T>): Promise<T> {
+async function withMcpSession<T>(
+  accountId: string,
+  teamId: string,
+  accessToken: string,
+  action: (session: string | undefined) => Promise<T>,
+): Promise<T> {
   const { response, payload } = await mcpRequest(accessToken, undefined, {
     jsonrpc: "2.0",
     id: 1,
@@ -349,7 +358,10 @@ async function withMcpSession<T>(accessToken: string, action: (session: string |
     },
   });
   if (!response.ok) {
-    if (response.status === 401) throw new Error("Onshape authorization expired. Reconnect Onshape in the assistant settings.");
+    if (response.status === 401) {
+      await removeConnection(accountId, teamId);
+      throw new Error("Onshape authorization expired. Reconnect Onshape in the assistant settings.");
+    }
     throw new Error(`Onshape MCP initialization returned ${response.status}.`);
   }
   const session = response.headers.get("mcp-session-id") ?? undefined;
@@ -363,14 +375,20 @@ export async function listOnshapeMcpTools(accountId: string, teamId: string): Pr
 }> {
   const accessToken = await getAccessToken(accountId, teamId);
   if (!accessToken) return { tools: [], bindings: new Map() };
-  return withMcpSession(accessToken, async (session) => {
+  return withMcpSession(accountId, teamId, accessToken, async (session) => {
     const { response, payload } = await mcpRequest(accessToken, session, {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/list",
       params: {},
     });
-    if (!response.ok) throw new Error(`Onshape MCP tools/list returned ${response.status}.`);
+    if (!response.ok) {
+      if (response.status === 401) {
+        await removeConnection(accountId, teamId);
+        throw new Error("Onshape authorization expired. Reconnect Onshape in the assistant settings.");
+      }
+      throw new Error(`Onshape MCP tools/list returned ${response.status}.`);
+    }
     const result = payload.result as { tools?: McpTool[] } | undefined;
     const bindings = new Map<string, OnshapeToolBinding>();
     const tools: OnshapeMcpTool[] = [];
@@ -403,7 +421,7 @@ export async function callOnshapeMcpTool(
 ): Promise<string> {
   const accessToken = await getAccessToken(accountId, teamId);
   if (!accessToken) throw new Error("Onshape is not connected. Connect Onshape in the assistant first.");
-  return withMcpSession(accessToken, async (session) => {
+  return withMcpSession(accountId, teamId, accessToken, async (session) => {
     const { response, payload } = await mcpRequest(accessToken, session, {
       jsonrpc: "2.0",
       id: 3,
@@ -411,7 +429,10 @@ export async function callOnshapeMcpTool(
       params: { name: toolName, arguments: args },
     });
     if (!response.ok) {
-      if (response.status === 401) throw new Error("Onshape authorization expired. Reconnect Onshape in the assistant settings.");
+      if (response.status === 401) {
+        await removeConnection(accountId, teamId);
+        throw new Error("Onshape authorization expired. Reconnect Onshape in the assistant settings.");
+      }
       throw new Error(`Onshape MCP tool call returned ${response.status}.`);
     }
     const result = payload.result as { content?: { type?: string; text?: string }[]; isError?: boolean } | undefined;

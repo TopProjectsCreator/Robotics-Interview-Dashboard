@@ -27,6 +27,7 @@ const state = {
   nextClientId: 0,
   onRefreshWrite: null,
   onRefreshResponse: null,
+  mcpStatus: 200,
 };
 
 function resetState() {
@@ -38,6 +39,7 @@ function resetState() {
   state.nextClientId = 0;
   state.onRefreshWrite = null;
   state.onRefreshResponse = null;
+  state.mcpStatus = 200;
 }
 
 function parseJson(value) {
@@ -169,7 +171,7 @@ test.beforeEach(() => {
       request.payload = payload;
       if (payload.method === "initialize") {
         return new Response(JSON.stringify({ result: {} }), {
-          status: 200,
+          status: state.mcpStatus,
           headers: { "mcp-session-id": `session-${token}` },
         });
       }
@@ -179,7 +181,10 @@ test.beforeEach(() => {
         return Response.json({ result: { tools: [{ name: toolName, description: `${token} tool`, inputSchema: { type: "object" } }] } });
       }
       if (payload.method === "tools/call") {
-        return Response.json({ result: { content: [{ type: "text", text: `${token}:${payload.params.name}` }] } });
+        return Response.json(
+          { result: { content: [{ type: "text", text: `${token}:${payload.params.name}` }] } },
+          { status: state.mcpStatus },
+        );
       }
     }
     throw new Error(`Unexpected Onshape HTTP request: ${url}`);
@@ -307,6 +312,18 @@ test("refresh is team-scoped, replaces encrypted tokens, and drops a connection 
   state.tokenResponse = { error: "invalid_grant" };
   assert.deepEqual((await listOnshapeMcpTools("interviewer-a", "team-a")).tools, []);
   assert.equal(await connectionScopeForAccount("interviewer-a", "team-a"), false);
+});
+
+test("removes the scoped connection when Onshape rejects MCP authorization", async () => {
+  await connect("interviewer-a", "team-a", "alpha");
+  await connect("interviewer-b", "team-a", "beta");
+  state.mcpStatus = 401;
+
+  await assert.rejects(listOnshapeMcpTools("interviewer-a", "team-a"), /authorization expired/i);
+  assert.equal(await connectionScopeForAccount("interviewer-a", "team-a"), false);
+  assert.equal(await connectionScopeForAccount("interviewer-b", "team-a"), true);
+  await assert.rejects(callOnshapeMcpTool("interviewer-b", "team-a", "beta_tool", {}), /authorization expired/i);
+  assert.equal(await connectionScopeForAccount("interviewer-b", "team-a"), false);
 });
 
 test("does not use a refreshed token if the connection changes teams during refresh", async () => {

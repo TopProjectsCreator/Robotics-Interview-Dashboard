@@ -6718,6 +6718,8 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
 
 function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const [question, setQuestion] = useState("");
+  const questionDraftRef = useRef("");
+  const onshapeRetryQuestionRef = useRef("");
   const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode));
   const [renamingId, setRenamingId] = useState("");
@@ -6754,6 +6756,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [attachError, setAttachError] = useState("");
   const [attaching, setAttaching] = useState(false);
   const [onshapeConnected, setOnshapeConnected] = useState(false);
+  const onshapeConnectedRef = useRef(false);
+  const [onshapeReconnectRequired, setOnshapeReconnectRequired] = useState(false);
   const [onshapeBusy, setOnshapeBusy] = useState(false);
   const [onshapeError, setOnshapeError] = useState("");
   const attachmentUpload = useRequestUploadUrl();
@@ -6836,7 +6840,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         });
         if (response.ok && active) {
           const status = await response.json() as { connected?: boolean };
-          setOnshapeConnected(status.connected === true);
+          onshapeConnectedRef.current = status.connected === true;
+          setOnshapeConnected(onshapeConnectedRef.current);
         }
       } catch {
         // Keep the last known status while the API is temporarily unavailable.
@@ -6845,6 +6850,34 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     void check();
     return () => { active = false; };
   }, []);
+
+  const updateOnshapeStatus = (connected: boolean, detectExpired = false) => {
+    if (detectExpired && onshapeConnectedRef.current && !connected) {
+      setOnshapeReconnectRequired(true);
+      if (onshapeRetryQuestionRef.current && !questionDraftRef.current.trim()) {
+        questionDraftRef.current = onshapeRetryQuestionRef.current;
+        setQuestion(onshapeRetryQuestionRef.current);
+      }
+    }
+    if (connected) setOnshapeReconnectRequired(false);
+    onshapeConnectedRef.current = connected;
+    setOnshapeConnected(connected);
+  };
+
+  const refreshOnshapeStatus = async (detectExpired = false) => {
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/status`, {
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      if (!response.ok) return;
+      const status = await response.json() as { connected?: boolean };
+      updateOnshapeStatus(status.connected === true, detectExpired);
+    } catch {
+      // Keep the last known status while the API is temporarily unavailable.
+    }
+  };
 
   const connectOnshape = async () => {
     setOnshapeError("");
@@ -6880,7 +6913,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           if (statusResponse.ok) {
             const status = await statusResponse.json() as { connected?: boolean };
             if (status.connected) {
-              setOnshapeConnected(true);
+              updateOnshapeStatus(true);
               setOnshapeBusy(false);
               window.clearInterval(poll);
             }
@@ -6907,7 +6940,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
       if (!response.ok) throw new Error("Could not disconnect Onshape.");
-      setOnshapeConnected(false);
+      setOnshapeReconnectRequired(false);
+      updateOnshapeStatus(false);
     } catch (error) {
       setOnshapeError(error instanceof Error ? error.message : "Could not disconnect Onshape.");
     } finally {
@@ -6987,6 +7021,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     event.preventDefault();
     if (!question.trim() || !activeConversationId || isStreaming) return;
     const q = question.trim();
+    onshapeRetryQuestionRef.current = q;
+    questionDraftRef.current = "";
     setQuestion("");
     setStreamError("");
     setStreamingText("");
@@ -7073,6 +7109,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             if (response.model) rememberModel(response.model);
             setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
             setAttachments([]);
+            void refreshOnshapeStatus(true);
             queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
             queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
             queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
@@ -7084,11 +7121,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
             }
           },
-          onError: fallback => setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again.")),
+          onError: fallback => {
+            setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again."));
+            void refreshOnshapeStatus(true);
+          },
         });
       } finally {
         setIsStreaming(false);
         setStreamingText("");
+        void refreshOnshapeStatus(true);
       }
     })();
   };
@@ -7163,10 +7204,29 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           {isStreaming && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
           {streamError && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
+          {onshapeReconnectRequired && !onshapeConnected && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+              role="alert"
+              data-testid="assistant-onshape-reconnect"
+            >
+              <p>Onshape access expired. Reconnect to restore CAD tools; your question is ready to retry.</p>
+              <button
+                type="button"
+                onClick={() => void connectOnshape()}
+                disabled={onshapeBusy}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white hover:bg-[#245268] disabled:opacity-50 dark:bg-sky-800 dark:hover:bg-sky-700"
+                data-testid="button-reconnect-onshape"
+              >
+                <RefreshCw size={13} className={onshapeBusy ? "animate-spin" : ""} />
+                {onshapeBusy ? "Connecting…" : "Reconnect Onshape"}
+              </button>
+            </div>
+          )}
         </div>
         {attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
         {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
-        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={question} onChange={event => setQuestion(event.target.value)} data-testid="input-assistant-question" placeholder={partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={question} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
         {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
       {partsMode ? (
