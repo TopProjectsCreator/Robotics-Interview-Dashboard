@@ -84,7 +84,7 @@ export function SceneFrame({
       </SafeFrame>
       <motion.div
         className="tutorial-handoff"
-        initial={{ clipPath: mask.from, opacity: 0.96 }}
+        initial={{ clipPath: mask.from, opacity: 0 }}
         animate={{ clipPath: mask.to, opacity: 1 }}
         transition={{
           delay: Math.max(0, duration - 0.82),
