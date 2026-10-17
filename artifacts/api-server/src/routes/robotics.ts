@@ -176,6 +176,11 @@ import {
   ASSISTANT_PARTS_TOOL_NAMES,
   runAssistantPartsTool,
 } from "./parts";
+import {
+  ASSISTANT_WORKSPACE_TOOLS,
+  ASSISTANT_WORKSPACE_TOOL_NAMES,
+  runAssistantWorkspaceTool,
+} from "../lib/assistantWorkspaceTools";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -826,6 +831,7 @@ const ASSISTANT_TOOLS = [
   ASSISTANT_KICK_PRESENCE_TOOL,
   ...ASSISTANT_ARTIFACT_TOOLS,
   ...ASSISTANT_PARTS_TOOLS,
+  ...ASSISTANT_WORKSPACE_TOOLS,
 ];
 
 const ALL_ASSISTANT_TOOL_NAMES = new Set(
@@ -1120,7 +1126,8 @@ async function runAssistantTools(
       name !== "set_assistant_model" &&
        !onshapeBindings.has(name ?? "") &&
       !ASSISTANT_PARTS_TOOL_NAMES.has(name ?? "") &&
-      !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name ?? "")
+      !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name ?? "") &&
+      !ASSISTANT_WORKSPACE_TOOL_NAMES.has(name ?? "")
     )
       continue;
     if (name && isAssistantToolDisabled(name, disabledTools)) {
@@ -1769,6 +1776,15 @@ async function runAssistantTools(
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: result.content, tool_call_id: call.id });
       if (result.activity) activities.push(result.activity as AssistantActivity);
+    } else if (ASSISTANT_WORKSPACE_TOOL_NAMES.has(name ?? "")) {
+      const result = await runAssistantWorkspaceTool(name ?? "", args, {
+        accountId: onshapeAccountId,
+        teamId: team,
+        authorName: requesterDisplayName,
+      });
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      toolMessages.push({ role: "tool", content: result.content, tool_call_id: call.id });
+      activities.push({ tool: name ?? "workspace_tool", detail: result.detail });
     } else if (name === "kick_presence") {
       const ip = String((args as Record<string, unknown>).ip ?? "").trim().slice(0, 45);
       if (!ip) continue;
@@ -5567,6 +5583,25 @@ router.get("/onshape-mcp/status", requireCoordinator, async (req, res): Promise<
   res.json({ connected: accountId ? await connectionScopeForAccount(accountId, teamId) : false });
 });
 
+function onshapeCallbackOrigin(req: Request): string {
+  const replitDevDomain = process.env.NODE_ENV === "development"
+    ? process.env.REPLIT_DEV_DOMAIN?.trim()
+    : "";
+  if (replitDevDomain) return `https://${replitDevDomain}`;
+
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  const host = forwardedHost || req.get("host")?.split(",")[0]?.trim();
+  if (!host || (protocol !== "https" && protocol !== "http")) {
+    throw new Error("The public callback origin could not be determined.");
+  }
+  if (process.env.NODE_ENV === "production" && protocol !== "https") {
+    throw new Error("Onshape OAuth callbacks require HTTPS.");
+  }
+  return new URL(`${protocol}://${host}`).origin;
+}
+
 router.get("/onshape-mcp/connect", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -5575,7 +5610,7 @@ router.get("/onshape-mcp/connect", requireCoordinator, async (req, res): Promise
     return;
   }
   try {
-    const origin = `${req.protocol}://${req.get("host")}`;
+    const origin = onshapeCallbackOrigin(req);
     const { authorizationUrl } = await beginOnshapeAuthorization({
       accountId: account.id,
       teamId: await requestTeamId(req),
@@ -5585,7 +5620,13 @@ router.get("/onshape-mcp/connect", requireCoordinator, async (req, res): Promise
     res.json({ authorizationUrl });
   } catch (error) {
     req.log.error({ err: error }, "Could not start Onshape authorization");
-    res.status(502).json({ error: "Onshape sign-in could not be started. Try again." });
+    const detail = error instanceof Error ? error.message : "";
+    const publicError = detail.startsWith("Onshape client registration returned")
+      ? detail
+      : detail.includes("SESSION_SECRET")
+        ? "Onshape connection encryption is not configured on the server."
+        : "Onshape sign-in could not be started. Try again; the server logged the setup error.";
+    res.status(502).json({ error: publicError });
   }
 });
 

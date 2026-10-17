@@ -117,7 +117,15 @@ async function registerClient(redirectUri: string): Promise<string> {
     }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Onshape client registration returned ${response.status}.`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error_description?: unknown; error?: unknown } | null;
+    const detail = typeof body?.error_description === "string"
+      ? body.error_description
+      : typeof body?.error === "string"
+        ? body.error
+        : "";
+    throw new Error(`Onshape client registration returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}.`);
+  }
   const client = await response.json() as { client_id?: unknown };
   if (typeof client.client_id !== "string" || !client.client_id) {
     throw new Error("Onshape did not return a client id.");

@@ -142,7 +142,7 @@ export function AssistantModelPicker({
             </span>
             <SelectValue className="assistant-thinking-current" />
           </SelectTrigger>
-          <SelectContent position="popper" align="end">
+          <SelectContent position="popper" align="end" className="assistant-thinking-menu">
             <SelectItem value="auto">Auto</SelectItem>
             {(options.find((option) => option.id === model)?.thinkingLevels ?? []).map((level) => (
               <SelectItem key={level} value={level}>{level[0].toUpperCase() + level.slice(1)}</SelectItem>
