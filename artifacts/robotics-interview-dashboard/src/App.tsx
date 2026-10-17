@@ -338,7 +338,7 @@ function Segmented<T extends string | number>({ options, value, onChange, testId
 function SettingRow({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
   return <div className="flex items-center justify-between gap-4 py-3"><div className="min-w-0"><p className="text-sm font-semibold">{title}</p>{detail && <p className="mt-0.5 text-xs text-[#7c8c91]">{detail}</p>}</div><div className="shrink-0">{children}</div></div>;
 }
-function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { settings } = useWorkspaceSettings();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const [, setLocation] = useLocation();

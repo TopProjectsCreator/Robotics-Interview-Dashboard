@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -79,9 +80,9 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     </button>
   );
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-[2px] sm:p-6"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
       data-testid="personal-notepad-overlay"
     >
@@ -89,9 +90,10 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
         role="dialog"
         aria-modal="true"
         aria-labelledby="personal-notepad-title"
-        className="flex max-h-[min(82vh,760px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl"
+        className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl"
+        style={{ maxHeight: "min(760px, calc(100dvh - 1.5rem))" }}
       >
-        <header className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-5">
+        <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-5">
           <div>
             <h2 id="personal-notepad-title" className="text-base font-semibold">Personal notepad</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">Private to this account on this device</p>
@@ -101,7 +103,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
           </button>
         </header>
 
-        <div className="flex flex-wrap items-center gap-1 border-b border-border px-3 py-2" role="toolbar" aria-label="Notepad formatting">
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-3 py-2" role="toolbar" aria-label="Notepad formatting">
           {editor && <>
             {command("Bold", editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), <Bold size={16} />)}
             {command("Italic", editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), <Italic size={16} />)}
@@ -118,13 +120,14 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
           </>}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-8 sm:py-6" data-testid="personal-notepad-editor-scroll">
           <EditorContent editor={editor} />
         </div>
-        <footer className="flex min-h-10 items-center border-t border-border px-4 text-xs text-muted-foreground">
+        <footer className="flex min-h-10 shrink-0 items-center border-t border-border px-4 text-xs text-muted-foreground">
           {storageError ? "Couldn’t save on this device. Copy your notes before closing." : "Notes save automatically on this device."}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
