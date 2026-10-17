@@ -6755,6 +6755,9 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [attachments, setAttachments] = useState<{ fileName: string; objectPath: string; added: number; updated: number }[]>([]);
   const [attachError, setAttachError] = useState("");
   const [attaching, setAttaching] = useState(false);
+  const [onshapeConnected, setOnshapeConnected] = useState(false);
+  const [onshapeBusy, setOnshapeBusy] = useState(false);
+  const [onshapeError, setOnshapeError] = useState("");
   const attachmentUpload = useRequestUploadUrl();
   const attachmentPreview = usePreviewImport();
   const streamAbort = useRef<AbortController | null>(null);
@@ -6823,6 +6826,96 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const prompts = partsMode
     ? ["Find verified 8 mm parts across suppliers.", "Add a robot named Prototype.", "Show parts available for a robot."]
     : ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const authToken = getStoredAuthToken();
+        const response = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/status`, {
+          credentials: "include",
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+        if (response.ok && active) {
+          const status = await response.json() as { connected?: boolean };
+          setOnshapeConnected(status.connected === true);
+        }
+      } catch {
+        // Keep the last known status while the API is temporarily unavailable.
+      }
+    };
+    void check();
+    return () => { active = false; };
+  }, []);
+
+  const connectOnshape = async () => {
+    setOnshapeError("");
+    setOnshapeBusy(true);
+    const popup = window.open("about:blank", "onshape-mcp-auth", "popup,width=620,height=760");
+    if (!popup) {
+      setOnshapeError("Allow pop-ups to sign in to Onshape.");
+      setOnshapeBusy(false);
+      return;
+    }
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/connect`, {
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      const result = await response.json() as { authorizationUrl?: string; error?: string };
+      if (!response.ok || !result.authorizationUrl) throw new Error(result.error || "Could not start Onshape sign-in.");
+      popup.location.href = result.authorizationUrl;
+      let checks = 0;
+      const poll = window.setInterval(async () => {
+        checks += 1;
+        if (popup.closed || checks > 180) {
+          window.clearInterval(poll);
+          setOnshapeBusy(false);
+          return;
+        }
+        try {
+          const statusResponse = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/status`, {
+            credentials: "include",
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          });
+          if (statusResponse.ok) {
+            const status = await statusResponse.json() as { connected?: boolean };
+            if (status.connected) {
+              setOnshapeConnected(true);
+              setOnshapeBusy(false);
+              window.clearInterval(poll);
+            }
+          }
+        } catch {
+          // Continue polling until the popup closes or authorization completes.
+        }
+      }, 2000);
+    } catch (error) {
+      popup.close();
+      setOnshapeError(error instanceof Error ? error.message : "Could not connect to Onshape.");
+      setOnshapeBusy(false);
+    }
+  };
+
+  const disconnectOnshape = async () => {
+    setOnshapeBusy(true);
+    setOnshapeError("");
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/connection`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      if (!response.ok) throw new Error("Could not disconnect Onshape.");
+      setOnshapeConnected(false);
+    } catch (error) {
+      setOnshapeError(error instanceof Error ? error.message : "Could not disconnect Onshape.");
+    } finally {
+      setOnshapeBusy(false);
+    }
+  };
 
   useEffect(() => {
     // Only ever fill a missing/invalid selection — never override the user's
@@ -7050,7 +7143,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><button type="button" onClick={onshapeConnected ? disconnectOnshape : connectOnshape} disabled={onshapeBusy} title="Subscribe to Onshape's FeatureScript MCP Server in the App Store first" className="inline-flex shrink-0 items-center rounded-lg border border-[#d2e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#24515b] hover:bg-[#f5f9f8] disabled:opacity-60 dark:border-[#3b5660] dark:bg-[#182d37] dark:text-[#d4e3e5] dark:hover:bg-[#233d48]">{onshapeBusy ? "Connecting…" : onshapeConnected ? "Onshape connected · Disconnect" : "Connect Onshape"}</button><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} /></div>} />
+    {onshapeError && <p role="alert" className="mb-3 text-sm text-rose-700">{onshapeError}</p>}
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

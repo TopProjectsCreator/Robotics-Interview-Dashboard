@@ -38,3 +38,4 @@
 - [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
+- [App-level MCP connections](app-level-mcp-connections.md) — a product's MCP client is separate from Replit Agent's own integration catalog; use the provider's hosted endpoint and OAuth.
