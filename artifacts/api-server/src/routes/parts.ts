@@ -1491,16 +1491,18 @@ async function crawlSitemapSlice(
 ) {
   const sitemapUrls = await fetchSitemapProductUrls(target);
 
+  // Every row for the vendor, not just the ones carrying a URL: an empty result is
+  // what tells the seed bootstrap below that this is the vendor's first pass.
   const indexed = await pool.query(
-    `select "product_url" from "parts_catalog_items"
-     where "vendor_key" = $1 and "product_url" is not null`,
+    `select "product_url" from "parts_catalog_items" where "vendor_key" = $1`,
     [vendor.key],
   );
+  const indexedRows = indexed.rows as { product_url: string | null }[];
   const known = new Set<string>(
-    (indexed.rows as { product_url: string }[]).map((row) => row.product_url),
+    indexedRows
+      .map((row) => row.product_url)
+      .filter((productUrl): productUrl is string => productUrl !== null),
   );
-  const pending = sitemapUrls.filter((url) => !known.has(url));
-  const slice = pending.slice(0, Math.max(0, budget));
 
   const records: CatalogFeedRecord[] = [];
   let created = 0;
@@ -1521,6 +1523,42 @@ async function crawlSitemapSlice(
     updated += counts.updated;
     records.length = 0;
   };
+
+  /**
+   * A supplier that also ships a hand-collected seed starts from it rather than
+   * re-crawling a catalog this repository already carries. The seed is complete
+   * as of when it was collected and costs a single bulk write, so the first pass
+   * then only fetches what the supplier has listed since: for REV Robotics that
+   * is 17 products instead of 389, and the catalog is populated immediately
+   * rather than after an hour of polite fetching.
+   *
+   * Gated on the vendor having no catalog rows at all, so the seed is a starting
+   * point and never a ceiling — once the supplier lists something new, the crawl
+   * owns the vendor.
+   */
+  if (indexedRows.length === 0) {
+    const seed = VENDOR_CATALOG_SEEDS.get(vendor.key);
+    if (seed && seed.records.length > 0) {
+      for (const record of seed.records) {
+        records.push({
+          vendorKey: record.vendorKey,
+          externalKey: record.externalKey,
+          name: record.name,
+          sku: record.sku,
+          category: record.category,
+          description: record.description,
+          productUrl: record.productUrl,
+          imageUrl: record.imageUrl,
+        });
+        // Registered as known so the diff below asks only for what the seed missed.
+        if (record.productUrl) known.add(record.productUrl);
+      }
+      await flush();
+    }
+  }
+
+  const pending = sitemapUrls.filter((url) => !known.has(url));
+  const slice = pending.slice(0, Math.max(0, budget));
 
   for (const productUrl of slice) {
     try {
@@ -2059,9 +2097,11 @@ export async function syncPublicPartsCatalogs() {
 }
 
 /**
- * Product pages fetched per slice. At the host's declared 10s delay this is
- * about ten minutes of work, which comfortably fits the delay between slices
- * and still seeds a full sitemap in a little over one night.
+ * Product pages fetched per slice. At the hosts' declared 10s delay this is about
+ * ten minutes of work, and still lands inside the lease below if every page hits
+ * the 30s request timeout. The sitemap suppliers total roughly 7,900 product
+ * pages, so a full first pass is about a day of polite background fetching; every
+ * later check costs a single sitemap request per supplier.
  */
 const SITEMAP_CRAWL_PAGE_BUDGET = 60;
 
@@ -2118,52 +2158,69 @@ async function claimSitemapCrawlLease(): Promise<boolean> {
 }
 
 /**
- * Runs one bounded crawl slice for every sitemap-backed supplier that needs one,
- * and reports whether the crawler should come back promptly.
+ * Runs one bounded crawl slice and reports whether the crawler should come back
+ * promptly.
  *
- * A first pass cannot live inside a request: goBILDA lists 2,387 products and
- * asks for 10 seconds between page fetches, so a complete walk takes hours.
- * Slicing lets the sitemap diff do the bookkeeping instead — a restart costs a
- * single slice rather than the whole run, and no tick blocks the event loop.
+ * A first pass cannot live inside a request: the sitemap suppliers list 2,387,
+ * 5,152 and 389 products and each asks for 10 seconds between page fetches, so a
+ * complete walk is hours of polite fetching. Slicing lets the sitemap diff do the
+ * bookkeeping instead — a restart costs a single slice rather than the whole run,
+ * and no tick blocks the event loop.
  */
 async function runSitemapCrawlSlices(): Promise<boolean> {
   // A lost lease means another instance is mid-slice, so come back soon rather
   // than sleeping the converged interval and stalling the first pass.
   if (!(await claimSitemapCrawlLease())) return true;
 
-  let backlogRemains = false;
   const states = await readPartsSupplierSyncStates();
-  for (const vendor of VENDORS) {
-    if (!vendor.productSitemapUrl) continue;
+  const due = VENDORS.filter((vendor) => {
+    if (!vendor.productSitemapUrl) return false;
     const state = states.get(vendor.key);
-    const converged = state?.status === "synced";
-    if (converged && Date.now() - state.checkedAt.getTime() < SITEMAP_RECHECK_MS) continue;
-    try {
-      const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
-      await savePartsSupplierSyncState(vendor.key, {
+    // No converged run yet: a first pass is still owed.
+    if (state?.status !== "synced") return true;
+    return Date.now() - state.checkedAt.getTime() >= SITEMAP_RECHECK_MS;
+  });
+  if (due.length === 0) return false;
+
+  // One supplier per slice, oldest check first. Crawling every sitemap supplier
+  // back to back would run for hours and outlive the lease above, so a slice stays
+  // at 60 pages (~10 minutes at the declared delay) however many suppliers are
+  // configured. Rotation is read back from persisted `checkedAt`, so it survives a
+  // restart without a cursor anyone has to keep.
+  const vendor = due.reduce((best, candidate) => {
+    const bestAt = states.get(best.key)?.checkedAt.getTime() ?? 0;
+    const candidateAt = states.get(candidate.key)?.checkedAt.getTime() ?? 0;
+    return candidateAt < bestAt ? candidate : best;
+  });
+
+  // Another supplier still waiting counts as backlog: this one advancing does not
+  // mean the rest should sleep for the converged interval.
+  let backlogRemains = due.length > 1;
+  try {
+    const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
+    await savePartsSupplierSyncState(vendor.key, {
+      status: collection.status,
+      checkedAt: new Date(),
+      itemCount: collection.itemCount,
+      source: collection.source,
+      message: collection.message,
+    });
+    if (collection.status === "incomplete") backlogRemains = true;
+    logger.info(
+      {
+        vendorKey: vendor.key,
         status: collection.status,
-        checkedAt: new Date(),
         itemCount: collection.itemCount,
-        source: collection.source,
-        message: collection.message,
-      });
-      if (collection.status === "incomplete") backlogRemains = true;
-      logger.info(
-        {
-          vendorKey: vendor.key,
-          status: collection.status,
-          itemCount: collection.itemCount,
-          // The crawl persists incrementally so a mid-slice restart keeps its
-          // work; these counts are reported by the crawl, not saved here.
-          created: collection.created,
-          updated: collection.updated,
-        },
-        "Sitemap crawl slice processed",
-      );
-    } catch (error) {
-      backlogRemains = true;
-      logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
-    }
+        // The crawl persists incrementally so a mid-slice restart keeps its
+        // work; these counts are reported by the crawl, not saved here.
+        created: collection.created,
+        updated: collection.updated,
+      },
+      "Sitemap crawl slice processed",
+    );
+  } catch (error) {
+    backlogRemains = true;
+    logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
   }
   return backlogRemains;
 }
