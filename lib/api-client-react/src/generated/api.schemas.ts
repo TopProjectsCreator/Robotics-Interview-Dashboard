@@ -592,6 +592,33 @@ export interface AuthSession {
   token?: string;
 }
 
+export interface TeamBranding {
+  /**
+     * Private object path for this team's logo
+     * @nullable
+     */
+  logoPath: string | null;
+  /**
+     * Team primary brand color
+     * @nullable
+     * @pattern ^#[0-9A-Fa-f]{6}$
+     */
+  primaryColor: string | null;
+}
+
+export interface UpdateTeamBranding {
+  /**
+     * @nullable
+     * @pattern ^#[0-9A-Fa-f]{6}$
+     */
+  primaryColor: string | null;
+}
+
+export interface UploadTeamLogo {
+  /** Private object path for this team's logo */
+  logoPath: string;
+}
+
 export interface TeamVerifyResponse {
   message: string;
   /** Team unlocked by this access code */

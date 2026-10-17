@@ -177,6 +177,105 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/team-branding:
+    get:
+      operationId: getTeamBranding
+      tags: [auth]
+      summary: Get branding for the signed-in team
+      responses:
+        "200":
+          description: Current team's logo path and primary color
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamBranding"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateTeamBranding
+      tags: [auth]
+      summary: Set or reset the signed-in team's primary color
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamBranding"
+      responses:
+        "200":
+          description: Updated team branding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamBranding"
+        "400":
+          description: Invalid branding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/team-branding/logo:
+    post:
+      operationId: uploadTeamLogo
+      tags: [auth]
+      summary: Upload a logo for the signed-in team
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Team logo saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadTeamLogo"
+        "400":
+          description: Unsupported or invalid image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: resetTeamLogo
+      tags: [auth]
+      summary: Reset the signed-in team's logo
+      responses:
+        "204":
+          description: Team logo removed
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/interviewers:
     get:
       operationId: listInterviewers
@@ -3937,6 +4036,31 @@ components:
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
+    TeamBranding:
+      type: object
+      required: [logoPath, primaryColor]
+      properties:
+        logoPath:
+          type: [string, "null"]
+          description: Private object path for this team's logo
+        primaryColor:
+          type: [string, "null"]
+          pattern: "^#[0-9A-Fa-f]{6}$"
+          description: Team primary brand color
+    UpdateTeamBranding:
+      type: object
+      required: [primaryColor]
+      properties:
+        primaryColor:
+          type: [string, "null"]
+          pattern: "^#[0-9A-Fa-f]{6}$"
+    UploadTeamLogo:
+      type: object
+      required: [logoPath]
+      properties:
+        logoPath:
+          type: string
+          description: Private object path for this team's logo
     TeamVerifyResponse:
       type: object
       required: [message]

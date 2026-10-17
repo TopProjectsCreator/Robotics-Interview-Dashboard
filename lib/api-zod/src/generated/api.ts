@@ -131,6 +131,51 @@ export const GetSessionResponse = zod.object({
 
 
 /**
+ * @summary Get branding for the signed-in team
+ */
+export const getTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+
+
+export const GetTeamBrandingResponse = zod.object({
+  "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
+  "primaryColor": zod.string().regex(getTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color')
+})
+
+
+/**
+ * @summary Set or reset the signed-in team's primary color
+ */
+export const updateTeamBrandingBodyPrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+
+
+export const UpdateTeamBrandingBody = zod.object({
+  "primaryColor": zod.string().regex(updateTeamBrandingBodyPrimaryColorRegExp).nullable()
+})
+
+export const updateTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+
+
+export const UpdateTeamBrandingResponse = zod.object({
+  "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
+  "primaryColor": zod.string().regex(updateTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color')
+})
+
+
+/**
+ * @summary Upload a logo for the signed-in team
+ */
+export const UploadTeamLogoResponse = zod.object({
+  "logoPath": zod.string().describe('Private object path for this team\'s logo')
+})
+
+
+/**
+ * @summary Reset the signed-in team's logo
+ */
+export const ResetTeamLogoResponse = zod.void()
+
+
+/**
  * @summary List interviewer accounts and password setup state
  */
 export const ListInterviewersQueryParams = zod.object({

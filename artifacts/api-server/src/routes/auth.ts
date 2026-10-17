@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
+import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
@@ -62,12 +63,125 @@ import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQ
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
+import { ObjectStorageService } from "../lib/objectStorage";
+import { requestTeamId } from "../middlewares/adminAuth";
+import {
+  GetTeamBrandingResponse,
+  UpdateTeamBrandingBody,
+  UploadTeamLogoResponse,
+} from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const objectStorageService = new ObjectStorageService();
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
 const eventPasscodeFailures = new Map<string, { count: number; resetAt: number }>();
+
+router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [team] = await db.select({
+    logoPath: teamsTable.logoPath,
+    primaryColor: teamsTable.primaryColor,
+  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  res.json(GetTeamBrandingResponse.parse({
+    logoPath: team?.logoPath ?? null,
+    primaryColor: team?.primaryColor ?? null,
+  }));
+});
+
+router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = UpdateTeamBrandingBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [team] = await db.update(teamsTable)
+    .set({ primaryColor: parsed.data.primaryColor })
+    .where(eq(teamsTable.id, teamId))
+    .returning({ primaryColor: teamsTable.primaryColor });
+  if (!team) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  res.json(GetTeamBrandingResponse.parse({
+    logoPath: (await db.select({ logoPath: teamsTable.logoPath }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1))[0]?.logoPath ?? null,
+    primaryColor: team.primaryColor ?? null,
+  }));
+});
+
+const TEAM_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const TEAM_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+function isValidTeamLogo(data: Buffer, contentType: string): boolean {
+  if (contentType === "image/png") {
+    return data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  }
+  if (contentType === "image/jpeg") {
+    return data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  }
+  if (contentType === "image/webp") {
+    return data.length >= 12 && data.toString("ascii", 0, 4) === "RIFF" && data.toString("ascii", 8, 12) === "WEBP";
+  }
+  return false;
+}
+
+router.post(
+  "/auth/team-branding/logo",
+  requireCoordinator,
+  express.raw({ type: [...TEAM_LOGO_TYPES], limit: TEAM_LOGO_MAX_BYTES }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    const contentType = req.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!Buffer.isBuffer(data) || data.length === 0 || data.length > TEAM_LOGO_MAX_BYTES || !TEAM_LOGO_TYPES.has(contentType) || !isValidTeamLogo(data, contentType)) {
+      res.status(400).json({ error: "Choose a valid PNG, JPEG, or WebP image up to 2 MB." });
+      return;
+    }
+    const teamId = await requestTeamId(req);
+    const [existing] = await db.select({ logoPath: teamsTable.logoPath }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    let logoPath: string;
+    try {
+      logoPath = await objectStorageService.uploadTeamLogo(data, contentType, teamId);
+    } catch (error) {
+      req.log.error({ err: error }, "Could not store team logo");
+      res.status(503).json({ error: "Logo storage is temporarily unavailable. Try again shortly." });
+      return;
+    }
+    try {
+      await db.update(teamsTable).set({ logoPath }).where(eq(teamsTable.id, teamId));
+    } catch (error) {
+      await objectStorageService.deleteObject(logoPath).catch(() => undefined);
+      throw error;
+    }
+    if (existing.logoPath) await objectStorageService.deleteObject(existing.logoPath).catch((error) => {
+      req.log.warn({ err: error }, "Could not remove the replaced team logo");
+    });
+    res.status(201).json(UploadTeamLogoResponse.parse({ logoPath }));
+  },
+);
+
+router.delete("/auth/team-branding/logo", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [existing] = await db.select({ logoPath: teamsTable.logoPath })
+    .from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const [team] = await db.update(teamsTable)
+    .set({ logoPath: null })
+    .where(eq(teamsTable.id, teamId))
+    .returning({ id: teamsTable.id });
+  if (!team) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  if (existing?.logoPath) await objectStorageService.deleteObject(existing.logoPath).catch((error) => {
+    req.log.warn({ err: error }, "Could not remove the reset team logo");
+  });
+  res.status(204).end();
+});
 
 async function rejectUnsafePassword(
   req: Request,

@@ -284,6 +284,14 @@ function toStoragePath(objectPath: string): string {
   }
   const rest = objectPath.slice('/objects/'.length).replace(/^secondary\//, '');
   const parts = rest.split('/');
+  if (
+    parts.length === 3 &&
+    parts[0] === 'team-branding' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(parts[1]) &&
+    /^[A-Za-z0-9-]{8,128}$/.test(parts[2])
+  ) {
+    return `team-branding/${parts[1]}/${parts[2]}`;
+  }
   if (parts.length === 1 && /^[A-Za-z0-9-]{8,128}$/.test(parts[0])) {
     return `uploads/${parts[0]}`;
   }
@@ -524,6 +532,18 @@ export class ObjectStorageService {
       if (error) throw new Error(error.message);
     });
     return `${objectPathPrefix(instance)}${id}`;
+  }
+
+  async uploadTeamLogo(data: Buffer, contentType: string, teamId: string): Promise<string> {
+    const id = randomUUID();
+    const path = `team-branding/${teamId}/${id}`;
+    const { instance } = await writeWithFailover("Failed to store team logo", async (target) => {
+      const { error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .upload(path, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+    });
+    return `${objectPathPrefix(instance)}${path}`;
   }
 
   async deleteObject(objectPath: string): Promise<void> {

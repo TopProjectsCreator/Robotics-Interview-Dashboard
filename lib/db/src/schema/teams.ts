@@ -18,6 +18,8 @@ export const teamsTable = pgTable("teams", {
   name: text("name").notNull(),
   normalizedName: text("normalized_name").notNull().unique(),
   codeHash: text("code_hash").notNull(),
+  logoPath: text("logo_path"),
+  primaryColor: text("primary_color"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

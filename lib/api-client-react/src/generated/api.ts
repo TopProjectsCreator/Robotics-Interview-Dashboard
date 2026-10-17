@@ -197,16 +197,19 @@ import type {
   SpreadsheetCreateInput,
   SpreadsheetUpdateInput,
   SystemUsage,
+  TeamBranding,
   TeamCreateInput,
   TeamCreateResponse,
   TeamVerifyResponse,
   UpdateCodeFile200,
   UpdateCodeProject200,
   UpdateFeatureRequestInput,
+  UpdateTeamBranding,
   UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
   UploadResponse,
+  UploadTeamLogo,
   WorkspaceVisibility,
   WorkspaceVisibilityInput
 } from './api.schemas';
@@ -760,6 +763,296 @@ export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TE
 
 
 
+
+export const getGetTeamBrandingUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding`
+}
+
+/**
+ * @summary Get branding for the signed-in team
+ */
+export const getTeamBranding = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamBranding> => {
+
+  return customFetch<TeamBranding>(getGetTeamBrandingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamBrandingQueryKey = () => {
+    return [
+    `/api/auth/team-branding`
+    ] as const;
+    }
+
+
+export const getGetTeamBrandingQueryOptions = <TData = Awaited<ReturnType<typeof getTeamBranding>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamBranding>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamBrandingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamBranding>>> = ({ signal }) => getTeamBranding({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamBranding>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamBrandingQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamBranding>>>
+export type GetTeamBrandingQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get branding for the signed-in team
+ */
+
+export function useGetTeamBranding<TData = Awaited<ReturnType<typeof getTeamBranding>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamBranding>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamBrandingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTeamBrandingUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding`
+}
+
+/**
+ * @summary Set or reset the signed-in team's primary color
+ */
+export const updateTeamBranding = async (updateTeamBranding: UpdateTeamBranding, options?: Parameters<typeof customFetch>[1]): Promise<TeamBranding> => {
+
+  return customFetch<TeamBranding>(getUpdateTeamBrandingUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateTeamBranding)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamBrandingMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamBranding>>, TError,{data: BodyType<UpdateTeamBranding>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamBranding>>, TError,{data: BodyType<UpdateTeamBranding>}, TContext> => {
+
+const mutationKey = ['updateTeamBranding'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamBranding>>, {data: BodyType<UpdateTeamBranding>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateTeamBranding(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamBrandingMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamBranding>>>
+    export type UpdateTeamBrandingMutationBody = BodyType<UpdateTeamBranding>
+    export type UpdateTeamBrandingMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Set or reset the signed-in team's primary color
+ */
+export const useUpdateTeamBranding = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamBranding>>, TError,{data: BodyType<UpdateTeamBranding>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamBranding>>,
+        TError,
+        {data: BodyType<UpdateTeamBranding>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamBrandingMutationOptions(options));
+    }
+
+export const getUploadTeamLogoUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding/logo`
+}
+
+/**
+ * @summary Upload a logo for the signed-in team
+ */
+export const uploadTeamLogo = async (uploadTeamLogoBody: Blob, options?: Parameters<typeof customFetch>[1]): Promise<UploadTeamLogo> => {
+
+  return customFetch<UploadTeamLogo>(getUploadTeamLogoUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png', ...options?.headers },
+    body: uploadTeamLogoBody
+  }
+);}
+
+
+
+
+
+export const getUploadTeamLogoMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamLogo>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadTeamLogo>>, TError,{data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['uploadTeamLogo'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadTeamLogo>>, {data: BodyType<Blob>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadTeamLogo(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadTeamLogoMutationResult = NonNullable<Awaited<ReturnType<typeof uploadTeamLogo>>>
+    export type UploadTeamLogoMutationBody = BodyType<Blob>
+    export type UploadTeamLogoMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload a logo for the signed-in team
+ */
+export const useUploadTeamLogo = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamLogo>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadTeamLogo>>,
+        TError,
+        {data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getUploadTeamLogoMutationOptions(options));
+    }
+
+export const getResetTeamLogoUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding/logo`
+}
+
+/**
+ * @summary Reset the signed-in team's logo
+ */
+export const resetTeamLogo = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getResetTeamLogoUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getResetTeamLogoMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamLogo>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetTeamLogo>>, TError,void, TContext> => {
+
+const mutationKey = ['resetTeamLogo'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetTeamLogo>>, void> = () => {
+
+
+          return  resetTeamLogo(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetTeamLogoMutationResult = NonNullable<Awaited<ReturnType<typeof resetTeamLogo>>>
+
+    export type ResetTeamLogoMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Reset the signed-in team's logo
+ */
+export const useResetTeamLogo = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamLogo>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetTeamLogo>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResetTeamLogoMutationOptions(options));
+    }
 
 export const getListInterviewersUrl = (params?: ListInterviewersParams,) => {
   const normalizedParams = new URLSearchParams();

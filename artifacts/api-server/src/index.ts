@@ -318,6 +318,8 @@ async function ensureSchema(): Promise<void> {
     // (NULL = legacy row of the default team); the teams table holds each
     // team's access-code hash. All statements are idempotent.
     `create table if not exists "teams" ("id" text primary key, "name" text not null, "normalized_name" text not null unique, "code_hash" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "teams" add column if not exists "logo_path" text`,
+    `alter table "teams" add column if not exists "primary_color" text`,
     `alter table "applicants" add column if not exists "team_id" text`,
     `alter table "application_imports" add column if not exists "team_id" text`,
     `alter table "assistant_conversations" add column if not exists "team_id" text`,

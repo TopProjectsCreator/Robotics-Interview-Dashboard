@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
@@ -54,6 +54,7 @@ import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/
 import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
+import { readableBrandForeground } from "./lib/team-branding";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
@@ -259,10 +260,14 @@ type BrowserSpeechRecognition = {
 };
 type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
-function Logo({ dark = false, teamName = "Robotics team" }: { dark?: boolean; teamName?: string }) {
+function Logo({ dark = false, teamName = "Robotics team", logoPath, primaryColor }: { dark?: boolean; teamName?: string; logoPath?: string | null; primaryColor?: string | null }) {
+  const brandColor = primaryColor ?? "#f8c84a";
+  const brandForeground = readableBrandForeground(brandColor);
   return <div className="flex items-center gap-2.5" data-testid="brand-robotics">
-    <span className={`relative flex h-9 w-9 items-center justify-center rounded-xl ${dark ? "bg-[#f8c84a] text-[#182232]" : "bg-[#163247] text-[#f8c84a] dark:bg-[#f8c84a] dark:text-[#182232]"}`}>
-      <CircleDot size={20} strokeWidth={2.4} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+    <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl ${dark ? "" : "bg-[#163247] dark:bg-[#f8c84a]"}`} style={dark || primaryColor ? { backgroundColor: brandColor, color: brandForeground } : undefined}>
+      {logoPath
+        ? <AuthenticatedChatImage key={logoPath} src={teamLogoObjectUrl(logoPath)} alt={`${teamName} logo`} className="h-full w-full object-contain" />
+        : <><CircleDot size={20} strokeWidth={2.4} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-current" /></>}
     </span>
     <span className={`leading-none ${dark ? "text-white" : "text-[#182232] dark:text-white"}`}><b className="block text-[15px] tracking-[.18em]">ROBOTICS</b><small className="mono max-w-40 truncate text-[9px] uppercase tracking-[.2em] opacity-60">{teamName}</small></span>
   </div>;
@@ -570,6 +575,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
+  const [brandColorDraft, setBrandColorDraft] = useState("#16869a");
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setBrandColorDraft(branding.data?.primaryColor ?? "#16869a");
+  }, [branding.data?.primaryColor]);
   const interviewerAccounts = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
   const teamAccounts = useMemo(
     () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
@@ -826,7 +837,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const divider = "mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]";
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
     <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
-      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Saved on this device only — your teammates keep their own.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
+      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding is shared with your teammates.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
       <div className="mt-4 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
         <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Your name" className={`${field} w-44`} /></SettingRow>
         <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
@@ -837,6 +848,41 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
+      {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-branding">
+        <p className={sectionLabel}>Team branding</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
+        <SettingRow title="Primary color" detail="Used for the team mark and selected workspace">
+          <div className="flex items-center gap-2">
+            <input aria-label="Team primary color" type="color" value={brandColorDraft} onChange={event => setBrandColorDraft(event.target.value)} data-testid="input-team-brand-color" className="h-10 w-14 cursor-pointer rounded-lg border border-[#dce5e5] bg-white p-1 dark:border-[#31495a] dark:bg-[#0f1e27]" />
+            <code className="mono text-xs uppercase text-[#52666e] dark:text-[#c3d3db]">{brandColorDraft}</code>
+            <button type="button" disabled={branding.updateColor.isPending || brandColorDraft === (branding.data?.primaryColor ?? "#16869a")} onClick={() => branding.updateColor.mutate(brandColorDraft)} data-testid="button-save-team-brand-color" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]">Save</button>
+            {branding.data?.primaryColor && <button type="button" disabled={branding.updateColor.isPending} onClick={() => branding.updateColor.mutate(null)} data-testid="button-reset-team-brand-color" className={ghostButton}>Reset</button>}
+          </div>
+        </SettingRow>
+        <SettingRow title="Team logo" detail="PNG, JPEG, or WebP · up to 2 MB">
+          <div className="flex flex-wrap items-center gap-2">
+            {branding.data?.logoPath && <AuthenticatedChatImage key={branding.data.logoPath} src={teamLogoObjectUrl(branding.data.logoPath)} alt="Current team logo" className="h-10 w-10 rounded-lg border border-[#dce5e5] object-contain dark:border-[#31495a]" />}
+            <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team logo" data-testid="input-team-logo" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) {
+                notify({ title: "Logo is too large", description: "Choose an image smaller than 2 MB." });
+                return;
+              }
+              branding.uploadLogo.mutate(file, {
+                onSuccess: () => notify({ title: "Team logo saved" }),
+                onError: error => notify({ title: "Could not save team logo", description: error.message }),
+              });
+            }} />
+            {branding.data?.logoPath && <button type="button" disabled={branding.resetLogo.isPending} onClick={() => branding.resetLogo.mutate(undefined, {
+              onSuccess: () => notify({ title: "Team logo reset" }),
+              onError: error => notify({ title: "Could not reset team logo", description: error.message }),
+            })} data-testid="button-reset-team-logo" className={dangerButton}>Reset logo</button>}
+          </div>
+          {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
+        </SettingRow>
+      </div>}
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
@@ -1046,7 +1092,64 @@ function appRelativeUrl(path: string): string {
   return `${base}${path}`;
 }
 
-function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt: string; inline?: boolean }) {
+type TeamBranding = { logoPath: string | null; primaryColor: string | null };
+const TEAM_BRANDING_QUERY_KEY = ["/api/auth/team-branding"] as const;
+function teamBrandingQueryKey(teamId?: string) {
+  return [...TEAM_BRANDING_QUERY_KEY, teamId ?? "unknown"];
+}
+function teamLogoObjectUrl(logoPath: string): string {
+  const safePath = logoPath.replace(/^\/objects\//, "");
+  return `/api/storage/objects/${safePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+function teamBrandingApi(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = getStoredAuthToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(appRelativeUrl(path), { ...init, headers, credentials: "include" });
+}
+async function readTeamBranding(response: Response): Promise<TeamBranding> {
+  if (!response.ok) throw new Error((await response.text()) || "Could not load team branding.");
+  return response.json() as Promise<TeamBranding>;
+}
+function useTeamBranding(teamId?: string, enabled = false) {
+  const queryClient = useQueryClient();
+  const queryKey = teamBrandingQueryKey(teamId);
+  const query = useQuery({
+    queryKey,
+    enabled: enabled && Boolean(teamId),
+    queryFn: async () => readTeamBranding(await teamBrandingApi("/api/auth/team-branding")),
+    staleTime: 30_000,
+    refetchInterval: enabled ? 30_000 : false,
+    refetchOnWindowFocus: true,
+  });
+  const updateColor = useMutation({
+    mutationFn: async (primaryColor: string | null) => readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ primaryColor }),
+    })),
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  const uploadLogo = useMutation({
+    mutationFn: async (file: File) => {
+      const response = await teamBrandingApi("/api/auth/team-branding/logo", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+      if (!response.ok) throw new Error((await response.text()) || "Could not save the team logo.");
+      return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
+    },
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  const resetLogo = useMutation({
+    mutationFn: async () => {
+      const response = await teamBrandingApi("/api/auth/team-branding/logo", { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.text()) || "Could not reset the team logo.");
+      return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
+    },
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  return { ...query, updateColor, uploadLogo, resetLogo };
+}
+
+function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: string; alt: string; inline?: boolean; className?: string }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -1082,11 +1185,13 @@ function AuthenticatedChatImage({ src, alt, inline = false }: { src: string; alt
 
   if (failed) return inline
     ? <span className="inline-block h-5 w-5 align-[-0.25em] rounded bg-[#edf4f3] text-center text-[10px] text-[#8a999d]" role="img" aria-label={`${alt} unavailable`}>?</span>
+    : className
+      ? <span className={className} role="img" aria-label={`${alt} unavailable`} />
     : <span className="my-2 block text-xs text-[#8a999d]">Image unavailable.</span>;
   if (!objectUrl) return inline
     ? <span className="inline-block h-5 w-5 animate-pulse align-[-0.25em] rounded bg-[#edf4f3]" role="img" aria-label={`Loading ${alt}`} />
-    : <span className="my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]" aria-label="Loading image" />;
-  return <img src={objectUrl} alt={alt} loading="lazy" className={inline ? "mx-0.5 inline-block h-5 w-5 align-[-0.25em] rounded object-contain" : "my-2 block max-w-full rounded-xl border border-[#dce9e8]"} />;
+    : <span className={className ?? "my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]"} aria-label="Loading image" />;
+  return <img src={objectUrl} alt={alt} loading="lazy" className={inline ? "mx-0.5 inline-block h-5 w-5 align-[-0.25em] rounded object-contain" : className ?? "my-2 block max-w-full rounded-xl border border-[#dce9e8]"} />;
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
@@ -2783,6 +2888,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   };
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const teamBranding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
   const logout = useLogout();
   usePresenceHeartbeat(session.data?.authenticated === true, location);
   useRealtimeSync(session.data?.authenticated === true);
@@ -2943,7 +3049,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
+        <div className="px-3"><Logo dark teamName={activeTeamName} logoPath={teamBranding.data?.logoPath} primaryColor={teamBranding.data?.primaryColor} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace navigation">
           {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
@@ -2959,6 +3065,9 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
                 data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`}
                 onClick={() => setMobileNav(false)}
                 aria-current={active ? "page" : undefined}
+                style={active && kind === "workspace" && teamBranding.data?.primaryColor
+                  ? { backgroundColor: teamBranding.data.primaryColor, color: readableBrandForeground(teamBranding.data.primaryColor) }
+                  : undefined}
                 className={`flex items-center gap-3 text-sm font-medium transition ${
                   kind === "workspace"
                     ? "rounded-full px-4 py-2.5"
@@ -2966,7 +3075,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
                 } ${
                   active
                     ? kind === "workspace"
-                      ? "bg-[#f8c84a] text-[#1d2c36]"
+                      ? teamBranding.data?.primaryColor ? "" : "bg-[#f8c84a] text-[#1d2c36]"
                       : "bg-[#243d4d] text-white"
                     : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
                 }`}

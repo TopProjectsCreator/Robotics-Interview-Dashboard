@@ -952,6 +952,15 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
+    const teamBrandingParts = wildcardPath.replace(/^secondary\//, '').split('/');
+    if (
+      teamBrandingParts[0] === 'team-branding' &&
+      (teamBrandingParts.length !== 3 || teamBrandingParts[1] !== await requestTeamId(req))
+    ) {
+      res.status(404).json({ error: 'Object not found' });
+      return;
+    }
+
     if (wildcardPath.startsWith('chunk/')) {
       const chunkParts = wildcardPath.slice('chunk/'.length).split('/');
       const storageInstance = chunkParts[0] === 'secondary' ? 'secondary' : currentInstance();
@@ -1025,6 +1034,15 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+
+    const teamBrandingParts = wildcardPath.replace(/^secondary\//, '').split('/');
+    if (
+      teamBrandingParts[0] === 'team-branding' &&
+      (teamBrandingParts.length !== 3 || teamBrandingParts[1] !== await requestTeamId(req))
+    ) {
+      res.status(404).json({ error: 'Object not found' });
+      return;
+    }
 
     if (wildcardPath.startsWith('chunk/')) {
       const chunkParts = wildcardPath.slice('chunk/'.length).split('/');
