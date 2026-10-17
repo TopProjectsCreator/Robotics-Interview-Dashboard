@@ -33,6 +33,7 @@ const databaseTableNames = [
   "broadcastAcksTable",
   "broadcastsTable",
   "chatCustomEmojisTable",
+  "chatMessageReadsTable",
   "chatMessageReactionsTable",
   "chatPollsTable",
   "chatPollVotesTable",

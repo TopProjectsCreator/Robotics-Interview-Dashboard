@@ -63,6 +63,15 @@ import {
 } from "../lib/partsVendors";
 import { logger } from "../lib/logger";
 import {
+  PRODUCT_CRAWL_DEFAULT_BUDGET,
+  PRODUCT_CRAWL_DELAY_MS,
+  crawlDelay,
+  fetchProductPage,
+  fetchSitemapProductUrls,
+  productUrlSlug,
+  type SitemapCrawlTarget,
+} from "../lib/productSitemapCrawl";
+import {
   calculateLineTotal,
   isPriceSnapshotStale,
   isValidCurrencyCode,
@@ -1421,7 +1430,133 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
   });
 }
 
-async function collectPublicVendorCatalog(vendor: VendorConfig) {
+/**
+ * Suppliers currently mid-crawl. The scheduled sync and the background crawler
+ * can both reach a sitemap supplier, and overlapping runs would double-fetch
+ * every pending product page against a host that asks for a 10s delay.
+ */
+const sitemapCrawlInFlight = new Set<string>();
+
+/**
+ * Suppliers that publish a product sitemap but no machine-readable feed are
+ * crawled here instead of being shipped as a hand-collected seed.
+ *
+ * The sitemap is the change detector: one request enumerates every product URL,
+ * and one database read of the URLs already indexed isolates the ones never
+ * seen before. Only those are fetched, so the steady-state cost is a single
+ * request per run regardless of catalog size. The first pass is the only
+ * expensive one, and it is sliced by `budget` so the background crawler can
+ * work through it without holding a request open for hours.
+ */
+async function collectSitemapCrawledCatalog(
+  vendor: VendorConfig,
+  budget: number = PRODUCT_CRAWL_DEFAULT_BUDGET,
+) {
+  const sitemapUrl = vendor.productSitemapUrl as string;
+  const target: SitemapCrawlTarget = { domain: vendor.domain, sitemapUrl };
+  if (sitemapCrawlInFlight.has(vendor.key)) {
+    const states = await readPartsSupplierSyncStates();
+    const current = states.get(vendor.key);
+    return {
+      vendor,
+      status: current?.status ?? ("incomplete" as const),
+      source: sitemapUrl,
+      records: [] as CatalogFeedRecord[],
+      itemCount: current?.itemCount ?? 0,
+      message: "A crawl slice for this supplier was already running; the last persisted state is reported.",
+    };
+  }
+  sitemapCrawlInFlight.add(vendor.key);
+  try {
+    return await crawlSitemapSlice(vendor, sitemapUrl, target, budget);
+  } finally {
+    sitemapCrawlInFlight.delete(vendor.key);
+  }
+}
+
+async function crawlSitemapSlice(
+  vendor: VendorConfig,
+  sitemapUrl: string,
+  target: SitemapCrawlTarget,
+  budget: number,
+) {
+  const sitemapUrls = await fetchSitemapProductUrls(target);
+
+  const indexed = await pool.query(
+    `select "product_url" from "parts_catalog_items"
+     where "vendor_key" = $1 and "product_url" is not null`,
+    [vendor.key],
+  );
+  const known = new Set<string>(
+    (indexed.rows as { product_url: string }[]).map((row) => row.product_url),
+  );
+  const pending = sitemapUrls.filter((url) => !known.has(url));
+  const slice = pending.slice(0, Math.max(0, budget));
+
+  const records: CatalogFeedRecord[] = [];
+  let failed = 0;
+  for (const productUrl of slice) {
+    try {
+      const product = await fetchProductPage(productUrl, target);
+      if (product) {
+        records.push({
+          vendorKey: vendor.key,
+          // The supplier SKU is the stable identity; the slug covers pages that
+          // ship no JSON-LD so a part is still never fetched twice.
+          externalKey: (product.sku ?? productUrlSlug(productUrl) ?? productUrl)
+            .toLocaleLowerCase()
+            .slice(0, 500),
+          name: product.name,
+          sku: product.sku,
+          category: null,
+          description: product.description,
+          productUrl,
+          imageUrl: product.imageUrl,
+        });
+      } else {
+        failed += 1;
+      }
+    } catch (error) {
+      failed += 1;
+      logger.warn({ err: error, vendorKey: vendor.key, productUrl }, "Sitemap product page failed");
+    }
+    await crawlDelay(PRODUCT_CRAWL_DELAY_MS);
+  }
+
+  const remaining = pending.length - slice.length + failed;
+  const enumerated = `${sitemapUrls.length} sitemap URL(s)`;
+  // Report the supplier's whole indexed catalog, not just this slice, so the
+  // sync state answers "how much of goBILDA do we actually hold?".
+  const itemCount = known.size + records.length;
+  if (pending.length === 0) {
+    return {
+      vendor,
+      status: "synced" as const,
+      source: sitemapUrl,
+      records,
+      itemCount,
+      message: `Product sitemap enumerated (${enumerated}); all ${itemCount} listed product(s) are indexed. Incremental checks now cost one request per run.`,
+    };
+  }
+  return {
+    vendor,
+    status: "incomplete" as const,
+    source: sitemapUrl,
+    records,
+    itemCount,
+    message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.`,
+  };
+}
+
+async function collectPublicVendorCatalog(
+  vendor: VendorConfig,
+  sitemapBudget: number = PRODUCT_CRAWL_DEFAULT_BUDGET,
+) {
+  // Sitemap-crawled suppliers have no feed to paginate; the sitemap diff above
+  // supplies both the inventory and the incremental change signal.
+  if (vendor.productSitemapUrl) {
+    return collectSitemapCrawledCatalog(vendor, sitemapBudget);
+  }
   const feedUrl = defaultProductFeedUrl(vendor);
   const feedVendor = { ...vendor, publicProductFeedUrl: feedUrl };
   let firstPage: Record<string, unknown>[] | null = null;
@@ -1809,7 +1944,11 @@ export async function syncPublicPartsCatalogs() {
     const vendor = VENDORS[index];
     let collection: Awaited<ReturnType<typeof collectPublicVendorCatalog>>;
     try {
-      collection = await collectPublicVendorCatalog(vendor);
+      // Sitemap-backed suppliers are diffed but not crawled here: a slice at the
+      // host's 10s per-page delay would hold this request open for minutes. The
+      // diff still reports how much is left, and the background crawler does the
+      // fetching, so a manual sync stays fast and honest.
+      collection = await collectPublicVendorCatalog(vendor, 0);
     } catch (error) {
       logger.warn({ err: error, vendorKey: vendor.key }, "Public product feed sync failed");
       collection = {
@@ -1831,7 +1970,9 @@ export async function syncPublicPartsCatalogs() {
       vendorName: collection.vendor.name,
       status: collection.status,
       checkedAt: new Date(),
-      itemCount: collection.records.length,
+      // Sitemap crawls report their whole indexed catalog; feed and seed paths
+      // report the records collected in this run.
+      itemCount: "itemCount" in collection ? collection.itemCount : collection.records.length,
       created: counts.created,
       updated: counts.updated,
       source: collection.source,
@@ -1874,6 +2015,106 @@ export async function syncPublicPartsCatalogs() {
     created: vendorResults.reduce((sum, item) => sum + item.created, 0),
     updated: vendorResults.reduce((sum, item) => sum + item.updated, 0),
   });
+}
+
+/**
+ * Product pages fetched per slice. At the host's declared 10s delay this is
+ * about ten minutes of work, which comfortably fits the delay between slices
+ * and still seeds a full sitemap in a little over one night.
+ */
+const SITEMAP_CRAWL_PAGE_BUDGET = 60;
+
+/**
+ * Gap between slices while a supplier still has URLs to crawl. Kept short so the
+ * first pass finishes overnight; it is not a rate limit — the per-page delay
+ * inside the slice is what paces the crawl.
+ */
+const SITEMAP_CRAWL_BACKLOG_DELAY_MS = 60 * 1000;
+
+/**
+ * Once a supplier has converged, the crawler stops fetching product pages and
+ * only re-reads the sitemap this often to notice newly listed parts. An idle
+ * season therefore costs four sitemap requests a day instead of a full walk.
+ */
+const SITEMAP_RECHECK_MS = 6 * 60 * 60 * 1000;
+
+let sitemapCrawlTimer: ReturnType<typeof setTimeout> | null = null;
+let sitemapCrawlStopped = false;
+
+/**
+ * Runs one bounded crawl slice for every sitemap-backed supplier that needs one,
+ * and reports whether any of them still has a backlog.
+ *
+ * A first pass cannot live inside a request: goBILDA lists 2,387 products and
+ * asks for 10 seconds between page fetches, so a complete walk takes hours.
+ * Slicing lets the sitemap diff do the bookkeeping instead — a restart costs a
+ * single slice rather than the whole run, and no tick blocks the event loop.
+ */
+async function runSitemapCrawlSlices(): Promise<boolean> {
+  let backlogRemains = false;
+  const states = await readPartsSupplierSyncStates();
+  for (const vendor of VENDORS) {
+    if (!vendor.productSitemapUrl) continue;
+    const state = states.get(vendor.key);
+    const converged = state?.status === "synced";
+    if (converged && Date.now() - state.checkedAt.getTime() < SITEMAP_RECHECK_MS) continue;
+    try {
+      const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
+      const counts = collection.records.length > 0
+        ? await saveCatalogFeedRecords(collection.records)
+        : { created: 0, updated: 0 };
+      await savePartsSupplierSyncState(vendor.key, {
+        status: collection.status,
+        checkedAt: new Date(),
+        itemCount: collection.itemCount,
+        source: collection.source,
+        message: collection.message,
+      });
+      if (collection.status === "incomplete") backlogRemains = true;
+      logger.info(
+        {
+          vendorKey: vendor.key,
+          status: collection.status,
+          itemCount: collection.itemCount,
+          created: counts.created,
+          updated: counts.updated,
+        },
+        "Sitemap crawl slice processed",
+      );
+    } catch (error) {
+      backlogRemains = true;
+      logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
+    }
+  }
+  return backlogRemains;
+}
+
+/**
+ * Starts the background crawler. Idempotent, and unref'd so it never holds the
+ * process open on its own.
+ *
+ * Scheduling is a self-rescheduling timeout rather than an interval: a slice can
+ * run for ten minutes, and an interval would keep firing while the previous
+ * slice was still fetching. Waiting for completion also lets the delay adapt —
+ * a minute while a backlog exists, six hours once every sitemap has converged.
+ */
+export function startSitemapCatalogCrawler(): void {
+  if (sitemapCrawlTimer || sitemapCrawlStopped) return;
+  const schedule = (delayMs: number) => {
+    if (sitemapCrawlStopped) return;
+    sitemapCrawlTimer = setTimeout(() => {
+      void runSitemapCrawlSlices()
+        .then((backlogRemains) => {
+          schedule(backlogRemains ? SITEMAP_CRAWL_BACKLOG_DELAY_MS : SITEMAP_RECHECK_MS);
+        })
+        .catch((err) => {
+          logger.error({ err }, "Sitemap crawl failed");
+          schedule(SITEMAP_CRAWL_BACKLOG_DELAY_MS);
+        });
+    }, delayMs);
+    sitemapCrawlTimer.unref();
+  };
+  schedule(0);
 }
 
 router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void> => {

@@ -16,11 +16,18 @@ export type VendorConfig = {
   catalogSourceUrl: string;
   coverageState: PartsVendorCoverageState;
   publicProductFeedUrl?: string;
+  /**
+   * Suppliers that publish no machine-readable product feed but do publish a
+   * product sitemap are crawled incrementally instead of seeded by hand (see
+   * productSitemapCrawl.ts). The sitemap supplies change detection — one
+   * request per run — and each product page supplies the catalog fields.
+   */
+  productSitemapUrl?: string;
 };
 
 export const VENDORS: VendorConfig[] = [
   { key: "andymark", name: "Andymark", group: "General Parts", website: "https://www.andymark.com/", domain: "andymark.com", catalogMode: "products", catalogSourceUrl: "https://andymark.com/products.json", coverageState: "feed_sync_required", publicProductFeedUrl: "https://andymark.com/products.json" },
-  { key: "gobilda", name: "goBILDA", group: "General Parts", website: "https://www.gobilda.com/", domain: "gobilda.com", catalogMode: "products", catalogSourceUrl: "https://www.gobilda.com/", coverageState: "discovery_only" },
+  { key: "gobilda", name: "goBILDA", group: "General Parts", website: "https://www.gobilda.com/", domain: "gobilda.com", catalogMode: "products", catalogSourceUrl: "https://www.gobilda.com/xmlsitemap.php?type=products&page=1", coverageState: "discovery_only", productSitemapUrl: "https://www.gobilda.com/xmlsitemap.php?type=products&page=1" },
   { key: "grainger", name: "Grainger", group: "General Parts", website: "https://www.grainger.com/", domain: "grainger.com", catalogMode: "products", catalogSourceUrl: "https://www.grainger.com/", coverageState: "discovery_only" },
   { key: "rev-robotics", name: "REV Robotics", group: "General Parts", website: "https://www.revrobotics.com/", domain: "revrobotics.com", catalogMode: "products", catalogSourceUrl: "https://www.revrobotics.com/", coverageState: "discovery_only" },
   { key: "servocity", name: "ServoCity", group: "General Parts", website: "https://www.servocity.com/", domain: "servocity.com", catalogMode: "products", catalogSourceUrl: "https://www.servocity.com/", coverageState: "discovery_only" },

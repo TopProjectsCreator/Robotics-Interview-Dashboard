@@ -8,6 +8,7 @@
 import type { AssistantActivity } from './assistantActivity';
 import type { ChatPoll } from './chatPoll';
 import type { ChatReaction } from './chatReaction';
+import type { ChatReadReceipt } from './chatReadReceipt';
 import type { InterviewChatMessageScope } from './interviewChatMessageScope';
 
 export interface InterviewChatMessage {
@@ -27,5 +28,6 @@ export interface InterviewChatMessage {
      * @nullable
      */
   poll?: ChatPoll | null;
+  readBy: ChatReadReceipt[];
   createdAt: Date;
 }

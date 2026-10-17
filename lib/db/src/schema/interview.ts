@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const interviewQueueTable = pgTable("interview_queue", {
@@ -39,6 +39,19 @@ export const chatMessageReactionsTable = pgTable("chat_message_reactions", {
   author: text("author").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const chatMessageReadsTable = pgTable("chat_message_reads", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id"),
+  messageId: text("message_id")
+    .notNull()
+    .references(() => interviewChatMessagesTable.id, { onDelete: "cascade" }),
+  readerId: text("reader_id").notNull(),
+  readerName: text("reader_name").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("chat_message_reads_message_reader_unique").on(table.messageId, table.readerId),
+]);
 
 
 export const chatSettingsTable = pgTable("chat_settings", {

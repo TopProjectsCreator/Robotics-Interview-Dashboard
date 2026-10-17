@@ -1393,6 +1393,12 @@ export interface ChatPoll {
   createdBy: string;
 }
 
+export interface ChatReadReceipt {
+  readerId: string;
+  readerName: string;
+  readAt: string;
+}
+
 export interface InterviewChatMessage {
   id: string;
   author: string;
@@ -1410,7 +1416,31 @@ export interface InterviewChatMessage {
      * @nullable
      */
   poll?: ChatPoll | null;
+  readBy: ChatReadReceipt[];
   createdAt: string;
+}
+
+export type ChatMessagesReadInputScope = typeof ChatMessagesReadInputScope[keyof typeof ChatMessagesReadInputScope];
+
+
+export const ChatMessagesReadInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+} as const;
+
+export interface ChatMessagesReadInput {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     * @items.minLength 1
+     */
+  messageIds: string[];
+  scope: ChatMessagesReadInputScope;
+  peer?: string | null;
+}
+
+export interface ChatMessagesReadResult {
+  recorded: number;
 }
 
 export interface ChatPollInput {

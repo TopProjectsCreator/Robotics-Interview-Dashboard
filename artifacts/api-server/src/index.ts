@@ -7,7 +7,7 @@ import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
-import { syncPublicPartsCatalogs } from "./routes/parts";
+import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startScheduledChatDispatcher } from "./routes/robotics";
 
 initRealtime();
@@ -83,6 +83,7 @@ async function ensureSchema(): Promise<void> {
     "broadcasts",
     "chat_custom_emojis",
     "chat_message_reactions",
+    "chat_message_reads",
     "chat_polls",
     "chat_poll_votes",
     "scheduled_chat_messages",
@@ -104,6 +105,7 @@ async function ensureSchema(): Promise<void> {
     "page_visits",
     "parts_catalog_items",
     "parts_catalog_sync_state",
+    "parts_catalog_crawl_state",
     "parts_inventory",
     "parts_robots",
     "parts_robot_allocations",
@@ -149,6 +151,9 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "interview_chat_messages_conversation_created_idx" on "interview_chat_messages" ("conversation_scope", "conversation_peer", "created_at")`,
     `create table if not exists "chat_message_reactions" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "emoji" text not null, "author" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reactions_unique" on "chat_message_reactions" ("message_id", "emoji", "author")`,
+    `create table if not exists "chat_message_reads" ("id" text primary key, "team_id" text, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "reader_id" text not null, "reader_name" text not null, "read_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
+    `alter table "chat_message_reads" add column if not exists "team_id" text`,
     `create table if not exists "chat_settings" ("id" text primary key default '1', "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
     `create table if not exists "chunked_uploads" ("upload_id" text primary key, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "total_parts" integer not null, "part_size_bytes" integer not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
@@ -189,6 +194,12 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
     `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
     `insert into "parts_catalog_sync_state" ("id") values ('global') on conflict ("id") do nothing`,
+    // Lease row for the background sitemap crawler. Autoscaled deployments run
+    // several server instances, so an in-process flag is not enough to stop two
+    // of them crawling the same supplier and doubling the request rate against a
+    // host that asks for a delay between fetches.
+    `create table if not exists "parts_catalog_crawl_state" ("id" text primary key check ("id" = 'global'), "claimed_at" timestamptz)`,
+    `insert into "parts_catalog_crawl_state" ("id") values ('global') on conflict ("id") do nothing`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
@@ -506,6 +517,11 @@ server.listen(port, () => {
       // Server-side scheduled chat delivery: posts due messages even when no
       // browser is open.
       startScheduledChatDispatcher();
+      // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
+      // The scheduled sync above only runs once a day, which is far too slow to
+      // seed a 2,387-product catalog, so this loop owns the long first pass and
+      // then settles into a cheap "anything new?" check.
+      startSitemapCatalogCrawler();
     })
     .catch((err) => {
       logger.error({ err }, "Schema migration failed; exiting");

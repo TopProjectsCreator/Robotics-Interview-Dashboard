@@ -79,6 +79,10 @@ export function useRealtimeSync(authenticated: boolean) {
         void qc.invalidateQueries({ queryKey: getListScheduledChatsQueryKey() });
         return;
       }
+      if (table === "chat_message_reads") {
+        void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+        return;
+      }
 
       // applicants, interview_queue, display_settings, interview_chat_messages,
       // broadcasts, seating_settings, dashboard_charts, and anything unknown:

@@ -14,6 +14,7 @@ export const REALTIME_WATCHED_TABLES = [
   "interview_queue",
   "display_settings",
   "interview_chat_messages",
+  "chat_message_reads",
   "broadcasts",
   "seating_settings",
   "dashboard_charts",

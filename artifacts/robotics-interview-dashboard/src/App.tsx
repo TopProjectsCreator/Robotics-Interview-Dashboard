@@ -17,7 +17,7 @@ import {
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
-   useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
+   useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
@@ -4458,10 +4458,23 @@ function parseSpreadsheetChatMessage(message: string): { id: string; title: stri
   return { id: match[1], title: match[2]?.trim() || "Shared spreadsheet" };
 }
 
+function formatChatDateTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Unknown date";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
   const [location, setLocation] = useLocation();
+  const qc = useQueryClient();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
@@ -4572,6 +4585,44 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   }, [chatItems]);
   const chatItemsRef = useRef<InterviewChatMessage[]>([]);
   chatItemsRef.current = chatItems;
+  const markChatRead = useMarkInterviewChatRead().mutate;
+  const markedReadMessagesRef = useRef(new Set<string>());
+  useEffect(() => {
+    const root = chatScrollRef.current;
+    if (!root || !session.data?.authenticated || document.visibilityState !== "visible" || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      const visibleIds = entries
+        .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.2)
+        .map((entry) => (entry.target as HTMLElement).dataset.chatMessageId)
+        .filter((id): id is string => Boolean(id));
+      const unreadIds = [...new Set(visibleIds)].filter((id) => {
+        const message = chatItems.find((item) => item.id === id);
+        if (!message || message.author.toLowerCase() === activeInterviewer.toLowerCase()) return false;
+        if (message.readBy?.some((receipt) => receipt.readerName.toLowerCase() === activeInterviewer.toLowerCase())) return false;
+        const key = `${conversationId}:${id}`;
+        if (markedReadMessagesRef.current.has(key)) return false;
+        markedReadMessagesRef.current.add(key);
+        return true;
+      });
+      if (!unreadIds.length) return;
+      markChatRead({
+        data: {
+          messageIds: unreadIds,
+          scope: conversationScope,
+          ...(conversationPeer ? { peer: conversationPeer } : {}),
+        },
+      }, {
+        onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
+        onError: () => unreadIds.forEach((id) => markedReadMessagesRef.current.delete(`${conversationId}:${id}`)),
+      });
+    }, { root, threshold: 0.2 });
+    for (const item of chatItems) {
+      if (item.author.toLowerCase() === activeInterviewer.toLowerCase()) continue;
+      const node = document.getElementById(`chat-message-${item.id}`);
+      if (node) observer.observe(node);
+    }
+    return () => observer.disconnect();
+  }, [activeInterviewer, chatItems, chatParams, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
   const [pinnedPreviewIndex, setPinnedPreviewIndex] = useState(0);
   const pinnedChatMessages = useMemo(() => chatItems
     .filter(item => Boolean(item.pinnedAt))
@@ -4684,7 +4735,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     window.addEventListener("error", onError);
     return () => window.removeEventListener("error", onError);
   }, []);
-  const qc = useQueryClient();
   const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number; type: string; kind: ChatFileKind; inlineImage: boolean }[]>([]);
   const [fileStatus, setFileStatus] = useState<Record<string, string>>({});
   const chatFilesRef = useRef(chatFiles);
@@ -5799,7 +5849,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       || (item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant");
     const editing = editingMessageId === item.id;
     const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer, mentionPeople);
-    return <div key={item.id} id={`chat-message-${item.id}`} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
+    return <div key={item.id} id={`chat-message-${item.id}`} data-chat-message-id={item.id} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
       {!item.deletedAt && <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
@@ -5813,8 +5863,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </div>
       </div>}
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
-      <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2"><span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>{item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}{mentionedYou && <span className="chat-mentioned-you-badge" data-testid={`chat-mentioned-you-${item.id}`}><AtSign size={11} strokeWidth={3} /> Mentioned you</span>}{item.editedAt && !item.deletedAt && <span data-testid={`chat-message-edited-${item.id}`} className="text-[10px] italic text-[#8a999d] dark:text-[#a8bbc2]" title={`Edited ${new Date(item.editedAt).toLocaleString()}`}>Edited</span>}</div><span data-testid={`chat-message-timestamp-${item.id}`} className="text-[10px] text-[#8a999d] dark:text-[#a8bbc2]" title={new Date(item.createdAt).toLocaleString()}>{new Date(item.createdAt).toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span></div>
-        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm italic text-[#7c8c91] dark:text-[#a8bbc2]">This message was deleted.</p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-[#183a4b]">{item.author}</span>
+          {item.deletedAt && <span data-testid={`chat-message-deleted-badge-${item.id}`} className="rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>}
+          {item.pinnedAt && <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3cf] px-2 py-0.5 text-[10px] font-semibold text-[#8a6508]"><Pin size={10} className="fill-current" /> Pinned</span>}
+          {mentionedYou && <span className="chat-mentioned-you-badge" data-testid={`chat-mentioned-you-${item.id}`}><AtSign size={11} strokeWidth={3} /> Mentioned you</span>}
+          {item.editedAt && !item.deletedAt && <span data-testid={`chat-message-edited-${item.id}`} className="rounded-full bg-[#edf4f3] px-2 py-0.5 text-[10px] font-semibold text-[#527079] dark:bg-[#243b46] dark:text-[#c0d3db]" title={`Edited ${formatChatDateTime(item.editedAt)}`}>Edited</span>}
+        </div>
+        <time dateTime={item.createdAt} data-testid={`chat-message-timestamp-${item.id}`} aria-label={`Sent ${formatChatDateTime(item.createdAt)}`} className="shrink-0 text-right text-[10px] leading-4 text-[#697b82] dark:text-[#a8bbc2]" title={`Sent ${formatChatDateTime(item.createdAt)}`}>
+          <span className="block text-[9px] font-semibold uppercase tracking-[.08em] opacity-75">Sent</span>
+          {formatChatDateTime(item.createdAt)}
+        </time>
+      </div>
+        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm text-[#7c8c91] dark:text-[#a8bbc2]"><span className="mr-2 inline-flex rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>This message was deleted. <time dateTime={item.deletedAt}>Deleted {formatChatDateTime(item.deletedAt)}</time></p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
            const sharedBoard = parseBoardChatMessage(item.message);
@@ -5864,6 +5926,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         })}
         {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
       </div>
+      {item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.readBy?.length > 0 && <p className="mt-1.5 text-[10px] text-[#7c8c91] dark:text-[#a8bbc2]" data-testid={`chat-read-by-${item.id}`} aria-label={`Read by ${item.readBy.map((receipt) => receipt.readerName).join(", ")}`}>
+        Read by {item.readBy.map((receipt) => `${receipt.readerName} · ${new Date(receipt.readAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`).join(", ")}
+      </p>}
       {pickerFor === item.id && <div data-testid={`reaction-picker-${item.id}`}><InterviewerChatEmojiPicker
         dark={theme === "dark"}
         customEmojis={customEmojiItems}

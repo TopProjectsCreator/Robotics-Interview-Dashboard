@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
+import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -35,6 +35,8 @@ import {
   AssignSeatBody,
   AssignSeatResponse,
   GetInterviewChatResponse,
+  MarkInterviewChatReadBody,
+  MarkInterviewChatReadResponse,
   GetChatConversationsResponse,
   CreateChatPollBody,
   CreateChatPollResponse,
@@ -2803,6 +2805,7 @@ function chatResponse(
   conversation: ChatConversation,
   reactions?: ReactionGroup[],
   poll?: ChatPollPayload | null,
+  readBy: { readerId: string; readerName: string; readAt: Date }[] = [],
 ) {
   return {
     id: message.id,
@@ -2817,8 +2820,32 @@ function chatResponse(
     activities: parseStoredActivities(message.activities),
     reactions: reactions ?? [],
     poll: poll ?? null,
+    readBy: readBy.map((receipt) => ({
+      readerId: receipt.readerId,
+      readerName: receipt.readerName,
+      readAt: receipt.readAt.toISOString(),
+    })),
     createdAt: message.createdAt.toISOString(),
   };
+}
+
+async function readReceiptsForMessages(messageIds: string[], teamId: string) {
+  const receipts = new Map<string, { readerId: string; readerName: string; readAt: Date }[]>();
+  if (!messageIds.length) return receipts;
+  const rows = await db.select({
+    messageId: chatMessageReadsTable.messageId,
+    readerId: chatMessageReadsTable.readerId,
+    readerName: chatMessageReadsTable.readerName,
+    readAt: chatMessageReadsTable.readAt,
+  }).from(chatMessageReadsTable)
+    .where(and(inArray(chatMessageReadsTable.messageId, messageIds), teamFilter(chatMessageReadsTable.teamId, teamId)))
+    .orderBy(asc(chatMessageReadsTable.readAt));
+  for (const row of rows) {
+    const current = receipts.get(row.messageId) ?? [];
+    current.push({ readerId: row.readerId, readerName: row.readerName, readAt: row.readAt });
+    receipts.set(row.messageId, current);
+  }
+  return receipts;
 }
 
 async function reactionsForMessages(messageIds: string[], teamId?: string | null): Promise<Map<string, ReactionGroup[]>> {
@@ -3540,12 +3567,20 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
            select m2.id from interview_chat_messages m2
            where (m2.team_id = $1 or ($1 = 'default' and m2.team_id is null))
              and m2.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "m2.")}
-           order by m2.created_at desc limit 100)) as v`,
+            order by m2.created_at desc limit 100)) as v,
+         (select count(*)::int from chat_message_reads cr
+          join interview_chat_messages mr on mr.id = cr.message_id
+          where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
+            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")}) as rc,
+         (select max(cr.read_at) from chat_message_reads cr
+          join interview_chat_messages mr on mr.id = cr.message_id
+          where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
+            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")}) as rr`,
       [teamId, conversation.scope, ...peerParams],
     );
-     const row = rows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; r: Date | null; p: Date | null; v: Date | null };
+      const row = rows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; r: Date | null; p: Date | null; v: Date | null; rc: number; rr: Date | null };
     const t = (d: Date | null) => (d ? new Date(d).getTime() : 0);
-     return `c${row.n}|${t(row.m)}|${t(row.e)}|${t(row.d)}|${t(row.r)}|${t(row.p)}|${t(row.v)}`;
+      return `c${row.n}|${t(row.m)}|${t(row.e)}|${t(row.d)}|${t(row.r)}|${t(row.p)}|${t(row.v)}|${row.rc}|${t(row.rr)}`;
   });
   await sendVersioned(req, res, async () => chatVersion ? chatVersion() : null, async () => {
     const conversationFilters = [
@@ -3560,12 +3595,62 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
     const reactions = await reactionsForMessages(messages.map((message) => message.id), teamId);
     const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName, teamId);
+    const readReceipts = await readReceiptsForMessages(messages.map((message) => message.id), teamId);
     return GetInterviewChatResponse.parse({
-      items: messages.reverse().map((message) => chatResponse(message, conversation, reactions.get(message.id) ?? [], polls.get(message.id) ?? null)),
+      items: messages.reverse().map((message) => chatResponse(
+        message,
+        conversation,
+        reactions.get(message.id) ?? [],
+        polls.get(message.id) ?? null,
+        readReceipts.get(message.id) ?? [],
+      )),
       scope: conversation.scope,
       peer: conversation.peer,
     });
   });
+});
+
+router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsed = MarkInterviewChatReadBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Provide valid chat message ids and a conversation." }); return; }
+
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(
+    parsed.data.scope,
+    parsed.data.peer,
+    account.displayName,
+    teamId,
+  );
+  if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
+
+  const messageIds = [...new Set(parsed.data.messageIds)];
+  const conversationConditions = [
+    teamFilter(interviewChatMessagesTable.teamId, teamId),
+    eq(interviewChatMessagesTable.conversationScope, conversation.scope),
+    conversation.key === null
+      ? isNull(interviewChatMessagesTable.conversationPeer)
+      : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
+    inArray(interviewChatMessagesTable.id, messageIds),
+  ];
+  const messages = await db.select({
+    id: interviewChatMessagesTable.id,
+    author: interviewChatMessagesTable.author,
+  }).from(interviewChatMessagesTable).where(and(...conversationConditions));
+  const unreadMessages = messages.filter((message) => message.author.toLowerCase() !== account.displayName.toLowerCase());
+  const created = unreadMessages.length
+    ? await db.insert(chatMessageReadsTable).values(unreadMessages.map((message) => ({
+        id: randomUUID(),
+        teamId,
+        messageId: message.id,
+        readerId: account.id,
+        readerName: account.displayName,
+      }))).onConflictDoNothing().returning({ id: chatMessageReadsTable.id })
+    : [];
+  if (created.length) pushRealtimeHint("chat_message_reads", "INSERT");
+  res.json(MarkInterviewChatReadResponse.parse({ recorded: created.length }));
 });
 
 /** Chat message cap, in characters. Doubled from 1000. */
@@ -3736,7 +3821,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       return;
     }
     res.status(200).json(SendInterviewChatResponse.parse({
-      ...chatResponse(existing, conversation),
+      ...chatResponse(existing, conversation, undefined, null, (await readReceiptsForMessages([existing.id], teamId)).get(existing.id) ?? []),
     }));
     return;
   }
@@ -3981,7 +4066,8 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
     : { scope: "shared", peer: null, key: null };
   pushRealtimeHint("interview_chat_messages");
   const editedPolls = await pollsForMessages([updated.id], account.displayName, teamId);
-  res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation, undefined, editedPolls.get(updated.id) ?? null)));
+  const editedReceipts = await readReceiptsForMessages([updated.id], teamId);
+  res.json(UpdateChatMessageResponse.parse(chatResponse(updated, conversation, undefined, editedPolls.get(updated.id) ?? null, editedReceipts.get(updated.id) ?? [])));
 });
 
 router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
@@ -4024,6 +4110,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     }
   }
   await db.delete(chatMessageReactionsTable).where(and(eq(chatMessageReactionsTable.messageId, messageId), teamFilter(chatMessageReactionsTable.teamId, teamId)));
+  await db.delete(chatMessageReadsTable).where(and(eq(chatMessageReadsTable.messageId, messageId), teamFilter(chatMessageReadsTable.teamId, teamId)));
   await db.delete(chatPollVotesTable).where(and(eq(chatPollVotesTable.messageId, messageId), teamFilter(chatPollVotesTable.teamId, teamId)));
   await db.delete(chatPollsTable).where(and(eq(chatPollsTable.messageId, messageId), teamFilter(chatPollsTable.teamId, teamId)));
   await db.update(interviewChatMessagesTable)

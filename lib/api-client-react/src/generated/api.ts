@@ -62,6 +62,8 @@ import type {
   ChatCustomEmojiList,
   ChatMessagePin,
   ChatMessageUpdateInput,
+  ChatMessagesReadInput,
+  ChatMessagesReadResult,
   ChatPoll,
   ChatPollInput,
   ChatPollVoteInput,
@@ -4666,6 +4668,77 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getMarkInterviewChatReadUrl = () => {
+
+
+
+
+  return `/api/queue/chat/read`
+}
+
+/**
+ * @summary Record that the signed-in interviewer read chat messages
+ */
+export const markInterviewChatRead = async (chatMessagesReadInput: ChatMessagesReadInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatMessagesReadResult> => {
+
+  return customFetch<ChatMessagesReadResult>(getMarkInterviewChatReadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatMessagesReadInput)
+  }
+);}
+
+
+
+
+
+export const getMarkInterviewChatReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markInterviewChatRead>>, TError,{data: BodyType<ChatMessagesReadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markInterviewChatRead>>, TError,{data: BodyType<ChatMessagesReadInput>}, TContext> => {
+
+const mutationKey = ['markInterviewChatRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markInterviewChatRead>>, {data: BodyType<ChatMessagesReadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  markInterviewChatRead(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkInterviewChatReadMutationResult = NonNullable<Awaited<ReturnType<typeof markInterviewChatRead>>>
+    export type MarkInterviewChatReadMutationBody = BodyType<ChatMessagesReadInput>
+    export type MarkInterviewChatReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Record that the signed-in interviewer read chat messages
+ */
+export const useMarkInterviewChatRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markInterviewChatRead>>, TError,{data: BodyType<ChatMessagesReadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markInterviewChatRead>>,
+        TError,
+        {data: BodyType<ChatMessagesReadInput>},
+        TContext
+      > => {
+      return useMutation(getMarkInterviewChatReadMutationOptions(options));
     }
 
 export const getInterpretScheduledChatTimeUrl = () => {

@@ -1361,6 +1361,11 @@ export const GetInterviewChatResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
+  "readBy": zod.array(zod.object({
+  "readerId": zod.string(),
+  "readerName": zod.string(),
+  "readAt": zod.coerce.date()
+})),
   "createdAt": zod.coerce.date()
 })),
   "scope": zod.enum(['shared', 'direct']),
@@ -1419,7 +1424,31 @@ export const SendInterviewChatResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
+  "readBy": zod.array(zod.object({
+  "readerId": zod.string(),
+  "readerName": zod.string(),
+  "readAt": zod.coerce.date()
+})),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Record that the signed-in interviewer read chat messages
+ */
+
+export const markInterviewChatReadBodyMessageIdsMax = 100;
+
+
+
+export const MarkInterviewChatReadBody = zod.object({
+  "messageIds": zod.array(zod.string().min(1)).min(1).max(markInterviewChatReadBodyMessageIdsMax),
+  "scope": zod.enum(['shared', 'direct']),
+  "peer": zod.string().nullish()
+})
+
+export const MarkInterviewChatReadResponse = zod.object({
+  "recorded": zod.number().int()
 })
 
 
@@ -1755,6 +1784,11 @@ export const UpdateChatMessageResponse = zod.object({
   "yourVote": zod.number().int().nullish().describe('Option index you picked, null when you have not voted'),
   "createdBy": zod.string()
 }).nullish().describe('Poll attached to this message, null when there is none'),
+  "readBy": zod.array(zod.object({
+  "readerId": zod.string(),
+  "readerName": zod.string(),
+  "readAt": zod.coerce.date()
+})),
   "createdAt": zod.coerce.date()
 })
 

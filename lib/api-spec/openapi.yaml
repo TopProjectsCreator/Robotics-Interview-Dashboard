@@ -1196,6 +1196,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/read:
+    post:
+      operationId: markInterviewChatRead
+      tags: [queue]
+      summary: Record that the signed-in interviewer read chat messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessagesReadInput"
+      responses:
+        "200":
+          description: Read receipts recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessagesReadResult"
   /queue/chat/scheduled/interpret:
     post:
       operationId: interpretScheduledChatTime
@@ -5025,7 +5043,7 @@ components:
             $ref: "#/components/schemas/ScheduledChatMessage"
     InterviewChatMessage:
       type: object
-      required: [id, author, message, scope, peer, editedAt, deletedAt, createdAt]
+      required: [id, author, message, scope, peer, editedAt, deletedAt, createdAt, readBy]
       properties:
         id:
           type: string
@@ -5067,9 +5085,47 @@ components:
           description: Poll attached to this message, null when there is none
           allOf:
             - $ref: "#/components/schemas/ChatPoll"
+        readBy:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatReadReceipt"
         createdAt:
           type: string
           format: date-time
+    ChatReadReceipt:
+      type: object
+      required: [readerId, readerName, readAt]
+      properties:
+        readerId:
+          type: string
+        readerName:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+    ChatMessagesReadInput:
+      type: object
+      required: [messageIds, scope]
+      properties:
+        messageIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+        scope:
+          type: string
+          enum: [shared, direct]
+        peer:
+          type: string
+          nullable: true
+    ChatMessagesReadResult:
+      type: object
+      required: [recorded]
+      properties:
+        recorded:
+          type: integer
     ChatPollOption:
       type: object
       required: [index, text, votes]
