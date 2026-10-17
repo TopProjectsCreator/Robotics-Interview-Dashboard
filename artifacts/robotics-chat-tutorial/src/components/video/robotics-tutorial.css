@@ -1307,6 +1307,7 @@
 .voice-heading h1,
 .spreadsheet-heading h1 { font-size: 7.2vmin; }
 
+.upload-heading h1 { color: #183a4b; }
 .upload-heading h1 em { color: #16869a; }
 .upload-heading p { color: #5c737a; }
 
