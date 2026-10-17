@@ -131,7 +131,7 @@ describe("public parts discovery", () => {
 
     const { unmount } = renderWithRouter(<PartsLanding />);
 
-    expect(document.title).toBe("Robotics Parts & Inventory Workspace | Wolverines Team 23442");
+    expect(document.title).toBe("Robotics Parts & Inventory Workspace");
     expect(document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content).toMatch(
       /supplier part discovery.*robot-build reservations/i,
     );

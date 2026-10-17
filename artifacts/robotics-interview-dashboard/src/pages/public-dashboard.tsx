@@ -112,9 +112,9 @@ export default function PublicDashboard() {
               <CircleDot size={20} strokeWidth={2.5} />
             </span>
             <span>
-              <strong className="block text-[12px] tracking-[.18em]">WOLVERINES</strong>
+              <strong className="block text-[12px] tracking-[.18em]">ROBOTICS</strong>
               <small className="mt-1 block font-mono text-[8px] tracking-[.18em] text-[#70868b] dark:text-[#91aaa8]">
-                TEAM 23442 / ROBOTICS
+                TEAM WORKSPACE
               </small>
             </span>
           </Link>
@@ -170,7 +170,7 @@ export default function PublicDashboard() {
           <div className="max-w-[640px]">
             <p className="mb-5 flex items-center gap-2 font-mono text-[10px] font-medium uppercase tracking-[.15em] text-[#168b94] dark:text-[#7edbd0]">
               <span className="size-2 rounded-full bg-[#64ae8e] shadow-[0_0_0_5px_rgba(100,174,142,.15)]" />
-              A shared home for Wolverines robotics
+              A shared home for robotics teams
             </p>
             <h1
               id="public-dashboard-title"
@@ -198,6 +198,12 @@ export default function PublicDashboard() {
                 Team sign in <ArrowRight size={15} />
               </Link>
             </div>
+            <p
+              className="mt-5 inline-flex rounded-full border border-[#bed4ce] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62] dark:border-[#3b646b] dark:bg-[#122a32]/70 dark:text-[#a7d7cd]"
+              data-testid="public-dashboard-creator-credit"
+            >
+              Built by Team 23442 · Ishaan Bansal
+            </p>
           </div>
 
           <div className="relative min-w-0">
@@ -220,7 +226,7 @@ export default function PublicDashboard() {
               />
               <div className="relative flex items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-7">
                 <div>
-                  <p className="font-mono text-[9px] tracking-[.14em] text-[#8cb7b5]">WOLVERINES / TEAM 23442</p>
+                  <p className="font-mono text-[9px] tracking-[.14em] text-[#8cb7b5]">ROBOTICS TEAM WORKSPACE</p>
                   <h2 className="mt-2 text-xl font-semibold tracking-[-.04em] text-[#f1f8f4] sm:text-2xl">
                     Robotics workspace
                   </h2>
@@ -438,7 +444,7 @@ export default function PublicDashboard() {
         <section className="mb-12 overflow-hidden rounded-2xl bg-[#153642] px-6 py-8 text-[#eef8f3] dark:border dark:border-[#335963] sm:mb-16 sm:px-10 sm:py-10" data-testid="section-team-access">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="mb-3 font-mono text-[9px] uppercase tracking-[.16em] text-[#9dc7bf]">Wolverines / Team 23442</p>
+              <p className="mb-3 font-mono text-[9px] uppercase tracking-[.16em] text-[#9dc7bf]">Robotics team workspace</p>
               <h2 className="max-w-[650px] text-3xl font-medium leading-[1.02] tracking-[-.06em] sm:text-4xl">
                 Bring the team’s work together.
               </h2>
@@ -454,7 +460,7 @@ export default function PublicDashboard() {
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
-          <span>Wolverines Robotics · Team 23442</span>
+          <span>Robotics team workspace</span>
         </footer>
       </div>
     </main>

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { assistantConversationsTable, assistantMessagesTable, chatCustomEmojisTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
@@ -4433,20 +4433,25 @@ router.post("/queue/reorder", requireCoordinator, async (req, res): Promise<void
   res.json(ReorderQueueResponse.parse(await getQueueState(teamId)));
 });
 
+async function resolveDisplayTeamId(req: Request, res: ExpressResponse): Promise<string | null> {
+  const fallbackTeamId = await requestTeamId(req);
+  const displayCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword.trim() : "";
+  if (!displayCode) return fallbackTeamId;
+
+  const { findTeamByCode } = await import("../lib/teams");
+  const team = await findTeamByCode(displayCode);
+  if (!team) {
+    res.status(404).json({ error: "Invalid team access code." });
+    return null;
+  }
+  return team.id;
+}
+
 router.get("/display/state", async (req, res): Promise<void> => {
   // Public big screen: ?eventPassword scopes to that team, otherwise the
   // signed-in user's team, otherwise the default team (current team safe).
-  let teamId = await requestTeamId(req);
-  const displayCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
-  if (displayCode.trim()) {
-    try {
-      const { findTeamByCode } = await import("../lib/teams");
-      const team = await findTeamByCode(displayCode);
-      if (team) teamId = team.id;
-    } catch {
-      // fall back to session/default team
-    }
-  }
+  const teamId = await resolveDisplayTeamId(req, res);
+  if (!teamId) return;
   let stateTag: string | null = null;
   try {
     stateTag = `${await applicantVersion(teamId)}|${await queueVersion(teamId)}|${await displaySettingsVersion(teamId)}`;
@@ -4469,17 +4474,8 @@ router.get("/display/state", async (req, res): Promise<void> => {
 
 let announcementCache: { key: string; audio: Buffer } | null = null;
 router.get("/display/announcement", async (req, res): Promise<void> => {
-  let teamId = await requestTeamId(req);
-  const announcementCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
-  if (announcementCode.trim()) {
-    try {
-      const { findTeamByCode } = await import("../lib/teams");
-      const team = await findTeamByCode(announcementCode);
-      if (team) teamId = team.id;
-    } catch {
-      // fall back
-    }
-  }
+  const teamId = await resolveDisplayTeamId(req, res);
+  if (!teamId) return;
   const view = await getDisplayView(teamId);
   // ?test=1 speaks a fixed phrase so admins can check the big-screen
   // speakers. Only this exact phrase is allowed — no custom text, so the

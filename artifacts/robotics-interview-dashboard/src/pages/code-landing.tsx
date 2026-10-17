@@ -22,12 +22,12 @@ const pageMeta = [
     attribute: "name",
     key: "description",
     content:
-      "Explore how Wolverines Robotics writes FTC robot code together: BIOBUZZ SDK projects, Java editing, live collaboration, checkpoints, and hub deploys in a private team workspace.",
+      "Explore how robotics teams write FTC robot code together: SDK projects, Java editing, live collaboration, checkpoints, and hub deploys in a private team workspace.",
   },
   {
     attribute: "property",
     key: "og:title",
-    content: "Robotics Code Workspace | Wolverines Team 23442",
+    content: "Robotics Code Workspace",
   },
   {
     attribute: "property",
@@ -37,7 +37,7 @@ const pageMeta = [
   {
     attribute: "name",
     key: "twitter:title",
-    content: "Robotics Code Workspace | Wolverines Team 23442",
+    content: "Robotics Code Workspace",
   },
   {
     attribute: "name",
@@ -149,7 +149,7 @@ export default function CodeLanding() {
       meta.setAttribute("content", content);
       return { meta, previousContent, created: !existing };
     });
-    document.title = "Robotics Code Workspace | Wolverines Team 23442";
+    document.title = "Robotics Code Workspace";
     return () => {
       document.title = previousTitle;
       previousMeta.forEach(({ meta, previousContent, created }) => {
@@ -184,8 +184,8 @@ export default function CodeLanding() {
               <CircleDot size={20} strokeWidth={2.4} />
             </span>
             <span className="code-landing__brand-copy">
-              <strong>WOLVERINES</strong>
-              <small>TEAM 23442 / ROBOTICS</small>
+              <strong>ROBOTICS</strong>
+              <small>TEAM WORKSPACE</small>
             </span>
           </Link>
 
@@ -223,7 +223,7 @@ export default function CodeLanding() {
               Write the robot&apos;s code, <em>together.</em>
             </h1>
             <p className="code-landing__hero-intro">
-              Team 23442&apos;s shared home for FTC Java: TeamCode projects, a focused
+              Your team&apos;s shared home for FTC Java: TeamCode projects, a focused
               editor with Java 8 lint, live teammates in the file, checkpoints you can
               return to, and a path to the hub when the code is ready.
             </p>
@@ -245,7 +245,7 @@ export default function CodeLanding() {
             >
               <div className="code-landing__workspace-top">
                 <div>
-                  <p className="code-landing__workspace-kicker">Wolverines / TeamCode</p>
+                  <p className="code-landing__workspace-kicker">TeamCode workspace</p>
                   <h2>Code workspace</h2>
                 </div>
                 <span className="code-landing__preview-pill">STATIC VIEW</span>
@@ -423,7 +423,7 @@ export default function CodeLanding() {
 
         <section className="code-landing__cta" aria-labelledby="code-cta-title" data-testid="section-code-cta">
           <div>
-            <p className="code-landing__section-kicker">Wolverines / Team 23442</p>
+            <p className="code-landing__section-kicker">Your robotics team</p>
             <h2 id="code-cta-title">Put the next change in the robot.</h2>
             <p>Enter the private team workspace to work with your actual TeamCode projects and checkpoints.</p>
           </div>
@@ -433,7 +433,7 @@ export default function CodeLanding() {
         </section>
 
         <footer className="code-landing__footer">
-          <span>Wolverines Robotics · Team 23442</span>
+          <span>Robotics team workspace</span>
           <span><Link href="/" data-testid="link-code-back-platform">Back to the public platform</Link></span>
         </footer>
       </div>

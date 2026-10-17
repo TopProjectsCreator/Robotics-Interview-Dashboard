@@ -2,19 +2,6 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight, Check, ChevronRight, CircleDot, ClipboardCheck, Menu, Monitor, ShieldCheck } from "lucide-react";
 
-export const officialDisplayImages = [
-  "https://pinelakeroboticsteam.lovable.app/assets/team-photo-2025-DGc7DRd2.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/team-workspace-CNGT9Dwn.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/team-building-BVvSQr-U.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/maksim-BgBGtyX4.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/sim-mKNQ9QdF.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/janya-BMty1X_H.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/abhi-WpSQcuUd.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/ishaan-CBI5NMTe.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/arya-CgvuUuOT.jpg",
-  "https://pinelakeroboticsteam.lovable.app/assets/page-3-C4L_XZ_M.jpg",
-];
-
 export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
@@ -25,7 +12,7 @@ export default function Landing() {
     { number: "03", title: "Keep the room aligned", copy: "The public display turns the next instruction into a shared source of truth for applicants, families, and volunteers.", label: "Big screen", tone: "mint" },
   ];
   const faqs = [
-    { q: "Who is this built for?", a: "Wolverines / Team 23442 team admins who need a calm, shared operating view while interviews are moving." },
+    { q: "Who is this built for?", a: "Robotics team admins who need a calm, shared operating view while interviews are moving." },
     { q: "Does the public display expose applicant details?", a: "No. The display is intentionally limited to the current instruction and the names or lanes you choose to show." },
     { q: "Can two admins work at once?", a: "Yes. The admin workspace is designed for a front desk and a room lead to stay in step as the queue changes." },
   ];
@@ -52,20 +39,21 @@ export default function Landing() {
 
       <section className="landing-hero">
         <div className="landing-hero-copy fade-up">
-          <div className="landing-kicker"><span className="landing-live-dot" /> Live event operations <span className="landing-kicker-rule" /> Sammamish, WA</div>
+          <div className="landing-kicker"><span className="landing-live-dot" /> Live event operations <span className="landing-kicker-rule" /> Built for robotics teams</div>
           <h1>Make the room<br /><em>feel ready.</em></h1>
-          <p className="landing-lede">A precise control room for Wolverines tryouts — from the first arrival to the final interview, every handoff stays visible.</p>
+          <p className="landing-lede">A precise control room for robotics tryouts — from the first arrival to the final interview, every handoff stays visible.</p>
           <div className="landing-actions">
             <Link href="/auth" className="landing-primary-button" data-testid="link-hero-coordinator-login">Open admin workspace <ArrowRight size={17} /></Link>
             <a href="#control-room" className="landing-secondary-button" data-testid="link-see-control-room">See the operating view <ChevronRight size={16} /></a>
           </div>
+          <p className="mt-5 inline-flex rounded-full border border-[#cbded7] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62]" data-testid="landing-creator-credit">Created by Team 23442 · Ishaan Bansal</p>
           <div className="landing-hero-note"><ShieldCheck size={15} /><span>Private admin workspace</span><span className="landing-note-separator" /><span>No applicant data on the public display</span></div>
         </div>
         <div className="landing-hero-visual fade-up delay-2" aria-label="Illustration of the live interview control room">
           <div className="landing-visual-label mono"><span className="landing-live-dot" /> EVENT LINK / ACTIVE</div>
           <div className="landing-control-card">
             <div className="landing-control-top">
-              <div><p className="mono landing-micro-label">WOLVERINES / TEAM 23442</p><h2>Interview queue</h2></div>
+              <div><p className="mono landing-micro-label">ROBOTICS TEAM</p><h2>Interview queue</h2></div>
               <span className="landing-sync"><span /> Synced now</span>
             </div>
             <div className="landing-queue-summary">
@@ -82,13 +70,13 @@ export default function Landing() {
           <div className="landing-display-float">
             <div className="landing-display-bar"><span className="landing-display-dot" /><span className="mono">PUBLIC DISPLAY</span><span className="landing-display-bars">•••</span></div>
             <p>Please come to your<br /><strong>corresponding interviewer</strong></p>
-            <small>Your Wolverines interview team is ready for you.</small>
+            <small>Your interview team is ready for you.</small>
           </div>
         </div>
       </section>
 
       <section className="landing-signal-strip" aria-label="Event operating signals">
-        <div><span className="mono">07:45</span><p>doors open</p></div><i /><div><span className="mono">1 view</span><p>for every handoff</p></div><i /><div><span className="mono">0 guesswork</span><p>in the hallway</p></div><i /><div><span className="mono">23442</span><p>built for the team</p></div>
+        <div><span className="mono">07:45</span><p>doors open</p></div><i /><div><span className="mono">1 view</span><p>for every handoff</p></div><i /><div><span className="mono">0 guesswork</span><p>in the hallway</p></div><i /><div><span className="mono">1 team</span><p>built for your team</p></div>
       </section>
 
       <section id="how-it-works" className="landing-section landing-workflow">
@@ -109,16 +97,19 @@ export default function Landing() {
             <div className="landing-display-preview"><p className="mono">LIVE INTERVIEW QUEUE</p><strong>Now calling</strong><b>Jordan M.</b><small>Corresponding interviewer · Bay 02</small><div /></div>
           </div>
           <div className="landing-room-panel landing-room-panel-quote">
-            <span className="landing-quote-mark">“</span><blockquote>The best event tool is the one people stop talking about because the room simply works.</blockquote><div><span className="landing-quote-avatar">MC</span><span><b>Morgan C.</b><small>Tryout admin · Team 23442</small></span></div>
+            <span className="landing-quote-mark">“</span><blockquote>The best event tool is the one people stop talking about because the room simply works.</blockquote><div><span className="landing-quote-avatar">RT</span><span><b>Robotics team</b><small>Tryout operations</small></span></div>
           </div>
         </div>
       </section>
 
       <section className="landing-image-story">
         <div className="landing-image-collage">
-          <img src={officialDisplayImages[1]} alt="Wolverines teammates working together in their robotics workspace" className="landing-image-main" />
-          <img src={officialDisplayImages[2]} alt="Wolverines teammates building a robot" className="landing-image-small" />
-          <span className="landing-image-caption mono">BUILDING THE TEAM / 2025</span>
+          <div className="landing-image-main flex flex-col justify-between rounded-2xl border border-[#45636a] bg-[#153642] p-6 text-white">
+            <div className="flex items-center justify-between"><span className="mono text-[10px] uppercase tracking-[.18em] text-[#9dc7bf]">Team operations</span><span className="h-2 w-2 rounded-full bg-[#51d2ad]" /></div>
+            <div><p className="text-3xl font-semibold tracking-[-.04em]">One team.<br />One shared view.</p><div className="mt-5 flex gap-2"><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Queue</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Chat</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Parts</span></div></div>
+          </div>
+          <div className="landing-image-small flex items-end rounded-2xl border border-[#c5d9d3] bg-[linear-gradient(145deg,#dceee7,#b8d7d1)] p-4 text-[#153642]"><span className="mono text-[10px] uppercase tracking-[.16em]">Built for your robotics team</span></div>
+          <span className="landing-image-caption mono">TEAM WORKSPACE / LIVE</span>
         </div>
         <div className="landing-image-copy"><p className="landing-eyebrow mono">The point is the people</p><h2>More attention<br /><em>where it counts.</em></h2><p>When the queue is legible, admins get their eyes back. On the applicant who needs a second look. On the teammate who needs a hand. On making a good team.</p><div className="landing-proof-list"><div><Check size={16} /><span>Designed around real room handoffs</span></div><div><Check size={16} /><span>Shared state for admins and display</span></div><div><Check size={16} /><span>Focused on the next useful action</span></div></div></div>
       </section>
@@ -138,7 +129,7 @@ export default function Landing() {
         <div className="landing-final-actions"><p>Open the admin workspace or preview the public display. The operating view is ready when you are.</p><Link href="/auth" className="landing-primary-button" data-testid="link-final-coordinator-login">Enter admin workspace <ArrowRight size={17} /></Link><Link href="/display" target="_blank" className="landing-final-display-link" data-testid="link-final-public-display"><Monitor size={15} /> Preview public display</Link></div>
       </section>
 
-      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><span className="landing-brand-mark"><CircleDot size={19} strokeWidth={2.5} /><span /></span><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="mono landing-footer-meta">WOLVERINES / TEAM 23442 · PLMS · SAMMAMISH, WASHINGTON</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
+      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><span className="landing-brand-mark"><CircleDot size={19} strokeWidth={2.5} /><span /></span><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="mono landing-footer-meta">ROBOTICS TEAM OPERATIONS</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
     </main>
   );
 }

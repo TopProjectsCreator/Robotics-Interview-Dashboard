@@ -56,8 +56,8 @@ export default function ChatLanding() {
           <Link href="/" className="chat-landing__brand" onClick={closeMenu} data-testid="link-chat-brand">
             <span className="chat-landing__brand-mark" aria-hidden="true"><CircleDot size={20} strokeWidth={2.4} /></span>
             <span className="chat-landing__brand-copy">
-              <strong>WOLVERINES</strong>
-              <small>TEAM 23442 / ROBOTICS</small>
+              <strong>ROBOTICS</strong>
+              <small>TEAM WORKSPACE</small>
             </span>
           </Link>
 
@@ -93,7 +93,7 @@ export default function ChatLanding() {
             <p className="chat-landing__eyebrow">A clearer team channel</p>
             <h1 id="chat-landing-title">Talk through the work, <em>together.</em></h1>
             <p className="chat-landing__hero-intro">
-              Wolverines Chat gives Team 23442 a focused place for build conversations, direct questions, and the files that make each decision useful.
+              Team Chat gives your robotics team a focused place for build conversations, direct questions, and the files that make each decision useful.
             </p>
             <div className="chat-landing__hero-actions">
               <Link href="/auth" className="chat-landing__primary-cta" data-testid="link-chat-hero-sign-in">
@@ -109,7 +109,7 @@ export default function ChatLanding() {
             <figure className="chat-landing__workspace" aria-labelledby="chat-preview-caption" data-testid="card-chat-workspace-preview">
               <div className="chat-landing__workspace-top">
                 <div>
-                  <p className="chat-landing__workspace-kicker">Wolverines / Team 23442</p>
+                  <p className="chat-landing__workspace-kicker">Your robotics team</p>
                   <h2>Team chat</h2>
                 </div>
               </div>
@@ -266,7 +266,7 @@ export default function ChatLanding() {
         <section className="chat-landing__cta" aria-labelledby="chat-cta-title" data-testid="section-chat-cta">
           <div className="chat-landing__cta-content">
             <div>
-              <p className="chat-landing__section-kicker">Wolverines / Team 23442</p>
+              <p className="chat-landing__section-kicker">Your robotics team</p>
               <h2 id="chat-cta-title">Make the next conversation part of the build.</h2>
               <p>Sign in to the private team workspace to find your channels, direct conversations, linked files, and shared tools.</p>
             </div>
@@ -277,7 +277,7 @@ export default function ChatLanding() {
         </section>
 
         <footer className="chat-landing__footer">
-          <span>Wolverines Robotics · Team 23442</span>
+          <span>Robotics team workspace</span>
           <span><Link href="/" data-testid="link-chat-back-platform">Back to the public platform</Link></span>
         </footer>
       </div>

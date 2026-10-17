@@ -28,12 +28,12 @@ const pageMeta = [
     attribute: "name",
     key: "description",
     content:
-      "Explore how Wolverines Robotics organizes supplier part discovery, owned and available inventory, and robot-build reservations in a private team workspace.",
+      "Explore how robotics teams organize supplier part discovery, owned and available inventory, and robot-build reservations in a private team workspace.",
   },
   {
     attribute: "property",
     key: "og:title",
-    content: "Robotics Parts & Inventory Workspace | Wolverines Team 23442",
+    content: "Robotics Parts & Inventory Workspace",
   },
   {
     attribute: "property",
@@ -44,7 +44,7 @@ const pageMeta = [
   {
     attribute: "name",
     key: "twitter:title",
-    content: "Robotics Parts & Inventory Workspace | Wolverines Team 23442",
+    content: "Robotics Parts & Inventory Workspace",
   },
   {
     attribute: "name",
@@ -139,7 +139,7 @@ export default function PartsLanding() {
 
       return { meta, previousContent, created: !existing };
     });
-    document.title = "Robotics Parts & Inventory Workspace | Wolverines Team 23442";
+    document.title = "Robotics Parts & Inventory Workspace";
 
     return () => {
       document.title = previousTitle;
@@ -189,8 +189,8 @@ export default function PartsLanding() {
               <i />
             </span>
             <span className="parts-landing__brand-copy">
-              <strong>WOLVERINES</strong>
-              <small>TEAM 23442 / ROBOTICS</small>
+              <strong>ROBOTICS</strong>
+              <small>TEAM WORKSPACE</small>
             </span>
           </Link>
 
@@ -239,7 +239,7 @@ export default function PartsLanding() {
               <em>Keep the build moving.</em>
             </h1>
             <p className="parts-landing__hero-intro">
-              A practical companion for Team 23442: discover a part across configured
+              A practical companion for your team: discover a part across configured
               vendors, see what the team owns, and reserve the pieces your robot needs next.
             </p>
             <div className="parts-landing__hero-actions">
@@ -270,7 +270,7 @@ export default function PartsLanding() {
             >
               <div className="parts-console__header">
                 <div>
-                  <p className="parts-console__kicker">WOLVERINES / PARTS DESK</p>
+                  <p className="parts-console__kicker">TEAM PARTS DESK</p>
                   <h2 id="parts-console-title">Find a part</h2>
                 </div>
               </div>
@@ -497,7 +497,7 @@ export default function PartsLanding() {
 
         <section className="parts-landing__cta" aria-labelledby="parts-cta-title" data-testid="section-parts-cta">
           <div>
-            <p className="parts-landing__section-kicker">Wolverines / Team 23442</p>
+            <p className="parts-landing__section-kicker">Your robotics team</p>
             <h2 id="parts-cta-title">Put the right part in the right build.</h2>
             <p>Enter the private team workspace to work with your actual inventory and reservations.</p>
           </div>
@@ -507,7 +507,7 @@ export default function PartsLanding() {
         </section>
 
         <footer className="parts-landing__footer">
-          <span>Wolverines Robotics · Team 23442</span>
+          <span>Robotics team workspace</span>
         </footer>
       </div>
     </main>

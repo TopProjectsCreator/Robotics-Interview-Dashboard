@@ -6551,7 +6551,7 @@ export const getGetDisplayStateQueryKey = (params?: GetDisplayStateParams,) => {
     }
 
 
-export const getGetDisplayStateQueryOptions = <TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<unknown>>(params?: GetDisplayStateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetDisplayStateQueryOptions = <TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<ErrorResponse>>(params?: GetDisplayStateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -6570,14 +6570,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetDisplayStateQueryResult = NonNullable<Awaited<ReturnType<typeof getDisplayState>>>
-export type GetDisplayStateQueryError = ErrorType<unknown>
+export type GetDisplayStateQueryError = ErrorType<ErrorResponse>
 
 
 /**
  * @summary Get sanitized big-screen state
  */
 
-export function useGetDisplayState<TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<unknown>>(
+export function useGetDisplayState<TData = Awaited<ReturnType<typeof getDisplayState>>, TError = ErrorType<ErrorResponse>>(
  params?: GetDisplayStateParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDisplayState>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {

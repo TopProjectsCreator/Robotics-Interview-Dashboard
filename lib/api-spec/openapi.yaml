@@ -1713,6 +1713,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DisplayState"
+        "404":
+          description: The supplied team access code is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /display/settings:
     get:
       operationId: getDisplaySettings

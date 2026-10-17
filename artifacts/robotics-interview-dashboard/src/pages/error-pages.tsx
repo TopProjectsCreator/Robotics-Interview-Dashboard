@@ -88,8 +88,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "Your request didn’t match the rules. Check the required fields and retransmit — the robot is still warmed up.",
     footerLine:
-      "Wolverines / Team 23442 · Garbled packet dropped · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — re-run the play, nothing was lost",
+      "Robotics team workspace · Garbled packet dropped",
+    lightFooter: "Team workspace — re-run the play, nothing was lost",
   },
   401: {
     code: 401,
@@ -108,8 +108,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "This bay needs a pit pass. Head to the control room, sign in, and the route will open right up.",
     footerLine:
-      "Wolverines / Team 23442 · Badge not scanned · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — scan in and rejoin the field",
+      "Robotics team workspace · Badge not scanned",
+    lightFooter: "Team workspace — scan in and rejoin the field",
   },
   403: {
     code: 403,
@@ -128,8 +128,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "Even signed in, this zone is restricted. Grab an admin to open it up for you.",
     footerLine:
-      "Wolverines / Team 23442 · Restricted bay · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — restricted zone, get an admin",
+      "Robotics team workspace · Restricted bay",
+    lightFooter: "Team workspace — restricted zone, get an admin",
   },
   404: {
     code: 404,
@@ -148,8 +148,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "There’s nothing staged at {{path}}. Check the path, or hop back to where the event is live.",
     footerLine:
-      "Wolverines / Team 23442 · All claws on deck! · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — nothing lost, rejoin the pit",
+      "Robotics team workspace · All systems ready",
+    lightFooter: "Team workspace — nothing lost, rejoin the workspace",
   },
   429: {
     code: 429,
@@ -168,8 +168,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "You’re pinging faster than the controller can answer. Back off briefly, then retry the same route.",
     footerLine:
-      "Wolverines / Team 23442 · Request queue full · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — breathe, then re-queue",
+      "Robotics team workspace · Request queue full",
+    lightFooter: "Team workspace — breathe, then re-queue",
   },
   500: {
     code: 500,
@@ -188,8 +188,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "Something inside the control loop broke. Hit retry, or head back to the control room while we clear the fault.",
     footerLine:
-      "Wolverines / Team 23442 · Fault codes pulled · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — pit crew on it, back shortly",
+      "Robotics team workspace · Fault codes pulled",
+    lightFooter: "Team workspace — support is on it, back shortly",
   },
   502: {
     code: 502,
@@ -208,8 +208,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "The relay between you and the control system is down. Give it a second and retry the same packet.",
     footerLine:
-      "Wolverines / Team 23442 · Network relay resetting · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — relay back up soon, hold position",
+      "Robotics team workspace · Network relay resetting",
+    lightFooter: "Team workspace — relay back up soon, hold position",
   },
   503: {
     code: 503,
@@ -228,8 +228,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "The service is intentionally offline for a pit stop. It should be back on the next match poll.",
     footerLine:
-      "Wolverines / Team 23442 · Returning after maintenance · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — pit stop, back on deck shortly",
+      "Robotics team workspace · Returning after maintenance",
+    lightFooter: "Team workspace — maintenance break, back shortly",
   },
   504: {
     code: 504,
@@ -248,8 +248,8 @@ export const ERROR_PAGES: Record<number, ErrorPageConfig> = {
     panelBody:
       "The relay answered but the robot didn’t. Try again — sometimes the bot just needs a tap.",
     footerLine:
-      "Wolverines / Team 23442 · Ping timed out · PLMS · Sammamish, WA",
-    lightFooter: "Wolverines · Team 23442 — nudge the bot and retry",
+      "Robotics team workspace · Ping timed out",
+    lightFooter: "Team workspace — nudge the bot and retry",
   },
 };
 

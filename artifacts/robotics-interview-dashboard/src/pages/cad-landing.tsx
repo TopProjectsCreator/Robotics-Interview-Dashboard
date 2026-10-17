@@ -24,12 +24,12 @@ const pageMeta = [
     attribute: "name",
     key: "description",
     content:
-      "Explore how Wolverines Robotics organizes CAD for every robot: bots, folders, 3D model uploads, format-aware previews, and shared design context in a private team workspace.",
+      "Explore how robotics teams organize CAD for every robot: bots, folders, 3D model uploads, format-aware previews, and shared design context in a private team workspace.",
   },
   {
     attribute: "property",
     key: "og:title",
-    content: "Robotics CAD Workspace | Wolverines Team 23442",
+    content: "Robotics CAD Workspace",
   },
   {
     attribute: "property",
@@ -39,7 +39,7 @@ const pageMeta = [
   {
     attribute: "name",
     key: "twitter:title",
-    content: "Robotics CAD Workspace | Wolverines Team 23442",
+    content: "Robotics CAD Workspace",
   },
   {
     attribute: "name",
@@ -169,7 +169,7 @@ export default function CadLanding() {
       meta.setAttribute("content", content);
       return { meta, previousContent, created: !existing };
     });
-    document.title = "Robotics CAD Workspace | Wolverines Team 23442";
+    document.title = "Robotics CAD Workspace";
     return () => {
       document.title = previousTitle;
       previousMeta.forEach(({ meta, previousContent, created }) => {
@@ -204,8 +204,8 @@ export default function CadLanding() {
               <CircleDot size={20} strokeWidth={2.4} />
             </span>
             <span className="cad-landing__brand-copy">
-              <strong>WOLVERINES</strong>
-              <small>TEAM 23442 / ROBOTICS</small>
+              <strong>ROBOTICS</strong>
+              <small>TEAM WORKSPACE</small>
             </span>
           </Link>
 
@@ -243,7 +243,7 @@ export default function CadLanding() {
               Every model has <em>a home.</em>
             </h1>
             <p className="cad-landing__hero-intro">
-              Team 23442 keeps FTC designs out of scattered drives: one library of bots
+              Keep FTC designs out of scattered drives: one library of bots
               and folders, uploads with real context, and a rotatable preview before
               anyone cuts material.
             </p>
@@ -265,7 +265,7 @@ export default function CadLanding() {
             >
               <div className="cad-landing__workspace-top">
                 <div>
-                  <p className="cad-landing__workspace-kicker">Wolverines / CAD library</p>
+                  <p className="cad-landing__workspace-kicker">Team CAD library</p>
                   <h2>Design library</h2>
                 </div>
                 <span className="cad-landing__preview-pill">STATIC VIEW</span>
@@ -452,7 +452,7 @@ export default function CadLanding() {
 
         <section className="cad-landing__cta" aria-labelledby="cad-cta-title" data-testid="section-cad-cta">
           <div>
-            <p className="cad-landing__section-kicker">Wolverines / Team 23442</p>
+            <p className="cad-landing__section-kicker">Your robotics team</p>
             <h2 id="cad-cta-title">Keep the design where the team can find it.</h2>
             <p>Enter the private team workspace to work with your actual bots, folders, and models.</p>
           </div>
@@ -462,7 +462,7 @@ export default function CadLanding() {
         </section>
 
         <footer className="cad-landing__footer">
-          <span>Wolverines Robotics · Team 23442</span>
+          <span>Robotics team workspace</span>
           <span><Link href="/" data-testid="link-cad-back-platform">Back to the public platform</Link></span>
         </footer>
       </div>
