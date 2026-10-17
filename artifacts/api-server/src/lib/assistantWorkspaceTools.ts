@@ -75,6 +75,15 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
     {},
   ),
   tool(
+    "create_code_project",
+    "Create a new code project in the current team's Code workspace so you can build an app from scratch. Use only when the user asks you to create a new project or custom app.",
+    {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      sdkVersion: { type: "string", maxLength: 32 },
+    },
+    ["name"],
+  ),
+  tool(
     "list_code_project_files",
     "List source file paths and ids for one Code workspace project before reading or editing. Results are paged; use offset to continue.",
     {
@@ -330,6 +339,34 @@ export async function runAssistantWorkspaceTool(
       [context.teamId],
     );
     return { content: JSON.stringify(projects.rows), detail: `listed ${projects.rowCount ?? 0} code projects` };
+  }
+
+  if (name === "create_code_project") {
+    const projectName = textArg(args, "name", 120).replace(/\s+/g, " ");
+    if (!projectName) {
+      return { content: "Give the new code project a name.", detail: "invalid code project name" };
+    }
+    const sdkVersion = textArg(args, "sdkVersion", 32) || "v12.0";
+    const id = randomUUID();
+    try {
+      const created = await pool.query(
+        `insert into "code_projects" ("id", "team_id", "name", "sdk_version", "created_by")
+         values ($1, $2, $3, $4, $5)
+         returning "id", "name", "sdk_version" as "sdkVersion",
+                   "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+        [id, context.teamId, projectName, sdkVersion, context.authorName || "AI assistant"],
+      );
+      pushRealtimeHint("code_projects", "INSERT");
+      return {
+        content: JSON.stringify(created.rows[0]),
+        detail: `created code project ${projectName}`,
+      };
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+        return { content: "A code project with that name already exists in this team.", detail: "code project name already exists" };
+      }
+      throw error;
+    }
   }
 
   if (name === "list_code_project_files") {
