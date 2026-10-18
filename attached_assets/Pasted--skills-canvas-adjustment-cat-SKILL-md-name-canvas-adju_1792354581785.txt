@@ -1,0 +1,241 @@
+~/.../skills/canvas-adjustment$ cat SKILL.md
+---
+name: canvas-adjustment
+description: "How to change the Scribe canvas board — add, move, update, reorder, and delete shapes; place artifact frames, mockup previews, and freehand drawings. There are NO canvas callback tools in this environment, so this skill is entirely about editing the SQLite store at .local/state/scribe/scribe.db correctly. Read this before any canvas edit and before writing any SQL against the scribe database."
+---
+
+# Canvas Adjustment
+
+## The one thing to know first
+
+**There are no canvas callback tools here.** `getCanvasState`,
+`applyCanvasActions`, `focusCanvasShapes`, `presentArtifact`, `createArtifact`,
+`listArtifacts` — none of them exist. They are described in prose under
+`.local/skills/`, but nothing in this repo implements them and they are not
+exposed as tools. The `canvas`, `artifacts`, and `mockup-sandbox` skills describe
+an agent runtime that is not this one.
+
+Do not plan around those callbacks. Do not write code that calls them. **Editing
+`.local/state/scribe/scribe.db` with `sqlite3` is the only way to change the
+board.** That is not an escape hatch — it is the job.
+
+Also: there is no `presentArtifact`. When you finish, tell the user what you added
+and roughly where it landed. They look at the canvas themselves.
+
+## The store
+
+`~/.local/state/scribe/scribe.db` (here: `/home/runner/workspace/.local/state/scribe/scribe.db`).
+
+WAL mode. The main file is often a few KB while `scribe.db-wal` holds the real
+data. Read all three together or you will see a stale, apparently-empty database.
+
+```sql
+CREATE TABLE documents  (id TEXT PRIMARY KEY, state BLOB NOT NULL, lastChangedClock INTEGER NOT NULL);
+CREATE TABLE tombstones (id TEXT PRIMARY KEY, clock INTEGER NOT NULL);
+CREATE TABLE metadata   (migrationVersion INTEGER, documentClock INTEGER,
+                         tombstoneHistoryStartsAtClock INTEGER, schema TEXT);
+```
+
+`state` is a UTF-8 JSON blob — one tldraw record. `metadata.schema` is JSON:
+`{"schemaVersion":2,"sequences":{"com.tldraw.shape.draw":9, ...}}`.
+
+## The clock — get this wrong and you break the board
+
+Three values must move together or the change is invisible or replayed:
+
+| Value | Role |
+|---|---|
+| `metadata.documentClock` | High-water mark. The app's sync cursor. |
+| `documents.lastChangedClock` | Clock at which that row last changed. |
+| `metadata.tombstoneHistoryStartsAtClock` | Oldest clock with complete tombstone history. |
+
+A client catches up with `getChangesSince(n)` and receives rows where
+`lastChangedClock > n` plus tombstones where `clock > n`. Write a row at a clock
+the client already passed and it never sees it.
+
+**One clock increment per transaction.** tldraw's `getNextClock()` caches per
+transaction, so every record written in one transaction shares the same clock.
+Inventing a distinct clock per row is not the protocol — even though it happens to
+diff without visible harm.
+
+**Sequences are monotonic.** Bump the matching `com.tldraw.shape.<type>` key when
+you add records. Never decrement on delete. Observed values do not correspond to
+row counts — treat them as opaque counters.
+
+**Deletes must be tombstoned.** Remove the row *and* insert the id into
+`tombstones`, or a reconnecting client resurrects the shape.
+
+**A put clears any prior tombstone** for that id, or the delete wins the next merge
+and your shape disappears.
+
+## Do it
+
+```python
+import sys
+sys.path.insert(0, "/home/runner/workspace/.opencode/skills/canvas-adjustment/scripts")
+import scribe_store as S
+import canvas_ops as C
+
+conn = S.connect("~/.local/state/scribe/scribe.db", read_only=False)
+
+# read first — always
+print(S.verify(conn))
+print(S.shapes_by_index(conn))
+print(S.free_space(conn))     # empty band below everything; put new work there
+```
+
+### Back up before writing
+
+```sh
+sqlite3 scribe.db "VACUUM INTO '/tmp/scribe-backup.db';"
+```
+
+The only safe backup method against a live database — it folds the WAL in and
+produces one consistent file. Do this **before** every write batch.
+
+### Add an artifact frame
+
+```python
+frame = C.artifact_frame(conn, "artifacts/my-app", "My App", kind="web")
+C.add_shapes(conn, [frame])
+```
+
+Critical details, learned from the real records on this board:
+
+- The shape id **must** be `shape:artifact:v3:<artifactId>`. The app matches frames
+  to artifacts by that convention.
+- **`url` is empty.** The app resolves the preview URL from `artifactId`. Writing a
+  guessed URL gives a stale or broken frame.
+- `ownerId` is `"v3"`.
+- `artifactKind` observed values: `"web"`, `"video"`.
+- Do **not** fabricate `meta.canvasSnapshot` (`capturedAt`/`ref`/`sourceVersion`/
+  `thumbhash`). The app owns it; leave `meta` as `{}`.
+
+Legacy `v2` frames exist on this board (`ownerId: "v2:5753:<uuid>"`, a real
+`picard.replit.dev` URL). Do not create new ones.
+
+### Add a mockup preview frame
+
+```python
+frame = C.mockup_frame(conn, "Card",
+                       url="https://<domain>.replit.dev/__mockup/preview/pkg/Card",
+                       component_path="artifacts/mockup-sandbox/src/components/mockups/Card.tsx")
+C.add_shapes(conn, [frame])
+```
+
+Unlike artifact frames these carry a real URL and `componentPath`. Build the
+actual component and get the real URL from the sandbox dev server — do not invent
+a URL, an empty iframe just renders blank.
+
+### Draw a freehand squiggle
+
+```python
+C.add_shapes(conn, [C.draw_shape(conn, C.sine_stroke(seed=1), color="blue")])
+```
+
+Presets: `sine_stroke`, `spiral_stroke`, `zigzag_stroke`, `loop_stroke`. Pass any
+iterable of `(x, y)` for your own. Details and the binary path format:
+`references/draw-codec.md`.
+
+Two traps: **Float16 drift** on sharp turns (the builder snaps to the grid for
+you), and **`x`/`y` is the first point, not the bounds corner** — the builder
+offsets it so bounds land where you asked.
+
+### Add a geo shape or note
+
+```python
+C.add_shapes(conn, [
+    C.geo_shape(conn, geo="rectangle", text="Approval"),
+    C.note_shape(conn, "check this"),
+])
+```
+
+### Batch everything
+
+One transaction, one clock, distinct z-order keys, sequences bumped once:
+
+```python
+C.add_shapes(conn, [frame_a, frame_b, squiggle, note])   # -> returns the clock used
+```
+
+### Move, update, reorder, delete
+
+```python
+S.delete(conn, ["shape:i_ABC"])          # tombstones, one clock for the batch
+```
+
+For an update, read the record, change the field, and put it back under the same
+id with `lastChangedClock` set to a fresh clock — a put also clears any tombstone:
+
+```python
+rec = next(s for s in S.shapes_by_index(conn) if s["id"] == target)
+rec["state"]["x"] += 200
+rec["state"]["props"]["state"] = "live"
+rec["state"]["index"] = C.next_index(conn)[0]     # bring to front
+S.put(conn, [rec], seq_bump=None)
+```
+
+## Verify every write
+
+```python
+print(S.verify(conn))
+# {'documentClock': N, 'documents': N, 'tombstones': N,
+#  'invalid_json': 0, 'orphans': 0, 'in_both_tables': 0, 'ok': True}
+```
+
+Then confirm, in order:
+
+1. `ok: True` — no invalid JSON, no orphans, nothing in both `documents` and
+   `tombstones`.
+2. `PRAGMA integrity_check` returns `ok`.
+3. **Reopen the database fresh** and read the rows back. A connection can read its
+   own uncommitted state; a new connection proves it is on disk.
+4. Every `lastChangedClock` you wrote is `>=` the old `documentClock`.
+5. Row count changed by exactly what you intended.
+6. Decode any path you wrote: `decode(encode(pts)) == pts`.
+
+## The app is live — warn the user
+
+The Scribe app holds this file **open read-write** and caches `documentClock` in
+memory. It does not know about your writes.
+
+- Your rows are invisible in the UI until the store re-reads from SQLite. **Tell
+  the user to reload the canvas.**
+- If they keep drawing, the app's next edit may take a clock you already used, and
+  one change gets dropped. Say so before writing.
+- The app can overwrite rows it holds in memory.
+
+```sh
+lsof scribe.db     # who has it open
+```
+
+If something goes wrong, restore the `VACUUM INTO` backup.
+
+## Failure modes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Nothing appears | App has stale in-memory state | User reloads the canvas |
+| Shape vanishes | Put left a stale tombstone | Delete the tombstone row |
+| Shape returns after delete | No tombstone written | Insert into `tombstones` |
+| Change replays | Two writes shared a clock | One clock per transaction |
+| New shapes render underneath | `index` sorts low | Allocate above the current max |
+| Shapes flicker / order is wrong | Duplicate `index` keys | Allocate the whole batch at once |
+| Artifact frame blank | You guessed the `url` | Leave `url` empty on v3 frames |
+| Mockup frame blank | URL not real | Get it from the sandbox dev server |
+| Squiggle wrong or missing | Wrong `dim` or bad stride | Check `dim`, verify round trip |
+| Squiggle melts on corners | Float16 drift | Snap to grid before encoding |
+| `database is locked` | App writing concurrently | `busy_timeout=5000`, retry |
+
+## Files
+
+- `scripts/canvas_ops.py` — builders: `artifact_frame`, `mockup_frame`,
+  `draw_shape`, `geo_shape`, `note_shape`, `next_index`, `add_shapes`, stroke presets
+- `scripts/scribe_store.py` — clock-correct `put`/`delete`, `verify`, `free_space`,
+  `shapes_by_index`, `bounds`
+- `scripts/b64vecs.py` — tested path codec, `snap()`, `normalize()`, `bounds()`
+- `references/store-schema.md` — schema, clock and merge semantics, sequences, WAL
+- `references/draw-codec.md` — byte layout, Float16 data, worked examples
+
+Verified against the live board: `b64vecs.py` round-trips an existing stroke
+byte-for-byte, and every builder above was exercised on a copy of the real database.~/.../skills/canvas-adjustment$ 
