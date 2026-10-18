@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CodeWorkspacePage } from "./CodeWorkspacePage";
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listRevisions: vi.fn(),
   askAssistant: vi.fn(),
   getSession: vi.fn(),
+  updateCodeFile: vi.fn(),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -36,7 +37,7 @@ vi.mock("@workspace/api-client-react", () => ({
   updateCodeProject: vi.fn(),
   deleteCodeProject: vi.fn(),
   createCodeFile: vi.fn(),
-  updateCodeFile: vi.fn(),
+  updateCodeFile: mocks.updateCodeFile,
   deleteCodeFile: vi.fn(),
   createCodeRevision: vi.fn(),
   deployCodeProject: vi.fn(),
@@ -147,5 +148,42 @@ describe("code workspace", () => {
     renderPage(project);
     expect(screen.getByTestId("code-statusbar")).toHaveTextContent("JDK 21");
     expect(screen.getByTestId("code-statusbar")).toHaveTextContent("Java 8");
+  });
+
+  it("lets mobile users open every panel, return to the editor, and save an edit", async () => {
+    mocks.updateCodeFile.mockResolvedValue({});
+    renderPage(project);
+
+    const fileRow = screen.getByTestId(`code-file-${file.path}`);
+    fireEvent.click(fileRow.querySelector("button")!);
+    expect(screen.getByTestId("code-textarea")).toHaveValue(file.content);
+    expect(screen.getByTestId("code-mobile-panel-close")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("code-textarea"), {
+      target: { value: `${file.content}\n// mobile edit` },
+    });
+    fireEvent.click(screen.getByTestId("code-save"));
+    await waitFor(() => expect(mocks.updateCodeFile).toHaveBeenCalledWith(file.id, {
+      content: `${file.content}\n// mobile edit`,
+    }));
+
+    for (const [tab, panelControl] of [
+      ["explorer", "code-search"],
+      ["git", "code-git-url"],
+      ["ai", "code-ai-prompt"],
+      ["deploy", "code-deploy-zip"],
+    ]) {
+      const navButton = screen.getByTestId(`code-side-${tab}`);
+      fireEvent.click(navButton);
+      expect(navButton).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByTestId(panelControl)).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("code-mobile-panel-close"));
+      expect(screen.getByTestId("code-side-panel")).toHaveAttribute("aria-label", `${{
+        explorer: "Explorer",
+        git: "Git",
+        ai: "AI assistant",
+        deploy: "Deploy",
+      }[tab as "explorer" | "git" | "ai" | "deploy"]} panel`);
+    }
   });
 });

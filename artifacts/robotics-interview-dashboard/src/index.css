@@ -669,3 +669,72 @@ button { cursor: pointer; }
 .reduce-motion .chat-message-mentioned { animation: none; }
 .reduce-motion .chat-pinned-flash { animation: none; }
 @media (prefers-reduced-motion: reduce) { .chat-message-mentioned { animation: none; } .chat-pinned-flash { animation: none; } }
+
+/* The code IDE keeps its desktop split-pane layout; phones use the same
+   activity controls as a labeled, touch-sized strip above the editor. */
+.code-side-label { display: none; }
+@media (max-width: 639px) {
+  .code-onbot-export-button { max-width: 100%; overflow-wrap: anywhere; white-space: normal; text-align: left; }
+  .code-project-actions { width: 100%; min-width: 0; }
+  .code-project-select { flex: 1 1 150px; }
+  .code-project-actions > [data-testid="code-new-project"],
+  .code-project-actions > [data-testid="code-delete-project"] { min-height: 40px; }
+  .code-project-actions > [data-testid="code-delete-project"] { min-width: 40px; }
+  .code-ide { width: 100%; min-width: 0; }
+  .code-ide-toolbar { padding-inline: 8px; }
+  .code-toolbar-status { gap: 6px; font-size: 10px; }
+  .code-activity-bar {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 2px;
+    border-right: 0;
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+    padding: 4px;
+  }
+  .code-side-button {
+    min-width: 0;
+    min-height: 48px;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px 1px;
+  }
+  .code-side-label { display: block; font-size: 9px; line-height: 1; }
+  .code-dir-toggle { min-height: 44px; }
+  .code-file-row { min-height: 44px; }
+  .code-file-open { min-height: 44px; }
+  .code-file-delete {
+    display: grid;
+    min-width: 40px;
+    min-height: 40px;
+    place-items: center;
+    opacity: 1;
+  }
+  .code-ide-body { min-width: 0; flex-direction: column; }
+  .code-side-panel {
+    width: 100%;
+    height: min(260px, 36vh);
+    max-height: min(260px, 36vh);
+    flex: 0 0 auto;
+    border-right: 0;
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+  }
+  .code-mobile-panel-open { display: flex !important; }
+  .code-mobile-panel-heading { display: flex; flex: 0 0 auto; }
+  .code-editor-column { min-width: 0; }
+  .code-editor-stage { min-height: 280px; }
+  .code-tabs-row { padding-inline: 4px; }
+  .code-editor-actions { gap: 2px; }
+  .code-editor-actions [data-testid="code-save"] { min-width: 56px; min-height: 40px; padding-inline: 8px; }
+  .code-statusbar { gap: 8px; padding-inline: 8px; }
+  .code-status-branch, .code-status-roster { display: none; }
+}
+
+@media (max-width: 360px) {
+  .code-toolbar-status { gap: 4px; }
+  .code-collab-status { max-width: 64px; overflow: hidden; }
+  .code-editor-stage { min-height: 250px; }
+  .code-statusbar { gap: 6px; font-size: 10px; }
+  .code-bottom-panel { max-height: 9rem; }
+}

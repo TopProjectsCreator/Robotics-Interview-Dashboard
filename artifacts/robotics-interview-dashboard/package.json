@@ -11,6 +11,7 @@
     "test": "vitest run --config vitest.config.ts",
     "test:mobile-chat-composer": "node browser-tests/mobile-chat-composer.browser.mjs",
     "test:media-browser": "node browser-tests/chat-attachment-preview.browser.mjs",
+    "test:code-workspace-mobile": "node browser-tests/code-workspace-mobile.browser.mjs",
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
     "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",
     "test:passkey-browser": "node browser-tests/passkey.browser.mjs",
