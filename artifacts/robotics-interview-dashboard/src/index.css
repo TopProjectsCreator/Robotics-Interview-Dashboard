@@ -473,6 +473,28 @@ button { cursor: pointer; }
 .chat-composer-send {
   grid-area: send;
 }
+.chat-composer-dropzone {
+  position: relative;
+}
+.chat-composer-dropzone.is-dragging-files::after {
+  content: "Drop files to attach";
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px dashed #16869a;
+  border-radius: 1rem;
+  background: rgba(247, 250, 249, .94);
+  color: #126b78;
+  font-size: .875rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+.dark .chat-composer-dropzone.is-dragging-files::after {
+  background: rgba(16, 35, 45, .96);
+  color: #8ad2d8;
+}
 @media (max-width: 640px) {
   .chat-panel {
     padding: 1rem;
