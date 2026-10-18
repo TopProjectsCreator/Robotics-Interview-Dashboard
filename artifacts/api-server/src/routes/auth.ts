@@ -50,6 +50,7 @@ import {
   clearAdminCookie,
   createInterviewerSession,
   interviewerIdFromSession,
+  isRevokedAdminSession,
   isValidAdminSession,
   requestAdminSession,
   requireAdmin,
@@ -61,6 +62,7 @@ import {
 import { deletePresenceHeartbeat } from "./presence";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
+import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
 import { ObjectStorageService } from "../lib/objectStorage";
@@ -373,22 +375,40 @@ function publicAccount(account: { id: string; displayName: string; passwordHash:
 }
 
 router.get("/auth/interviewers", async (req, res): Promise<void> => {
-  // Team-scoped: when the login screen already verified a team code it passes
-  // it as ?eventPassword so only that team's accounts are listed. Without it
-  // we fall back to the default team so pre-migration clients keep working and
-  // the current team's accounts stay visible. Teams never see each other.
-  const eventPassword = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
-  let teamId = DEFAULT_TEAM_ID;
-  if (eventPassword.trim()) {
-    const team = await resolveEventTeam(eventPassword);
+  // Private roster: signed-in callers get their own team, the login screen
+  // gets one team by presenting its access code, and everyone else is turned
+  // away. See interviewerRosterAccess for why there is no default-team
+  // fallback.
+  const session = requestAdminSession(req);
+  const access = interviewerRosterAccess({
+    hasSession: isValidAdminSession(session) && !(await isRevokedAdminSession(session)),
+    eventPassword: typeof req.query.eventPassword === "string" ? req.query.eventPassword : "",
+  });
+  if (access.kind === "denied") {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  let teamId: string;
+  if (access.kind === "session") {
+    // attachAdminSession already pinned this request to the session's
+    // database instance, so the account lookup reads the right cluster.
+    const [account] = await db.select({ teamId: interviewerAccountsTable.teamId })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerIdFromSession(session) ?? ""))
+      .limit(1);
+    if (!account) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    teamId = account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
+  } else {
+    const team = await resolveEventTeam(access.eventPassword);
     if (!team) {
       res.status(401).json({ error: "The team access code is incorrect." });
       return;
     }
     teamId = team.id;
     enterInstance(team.instance);
-  } else {
-    await ensureDefaultTeam();
   }
   const accounts = await syncInterviewerAccounts(await getInterviewSettings(teamId), teamId);
   // One query for all credential counts so the login screen can offer a

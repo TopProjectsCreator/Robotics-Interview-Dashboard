@@ -2873,7 +2873,7 @@ export type ChatLimitParameter = number;
 
 export type ListInterviewersParams = {
 /**
- * Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
+ * Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.
  */
 eventPassword?: string;
 };

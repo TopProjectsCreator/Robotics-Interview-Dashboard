@@ -1238,6 +1238,7 @@ export const getListInterviewersUrl = (params?: ListInterviewersParams,) => {
 }
 
 /**
+ * Private roster. Requires a signed-in session, or the team access code as ?eventPassword for the login screen before anyone has signed in. Requests with neither are rejected. Teams never see each other's accounts.
  * @summary List interviewer accounts and password setup state
  */
 export const listInterviewers = async (params?: ListInterviewersParams, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccountList> => {
@@ -1262,7 +1263,7 @@ export const getListInterviewersQueryKey = (params?: ListInterviewersParams,) =>
     }
 
 
-export const getListInterviewersQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>(params?: ListInterviewersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListInterviewersQueryOptions = <TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<ErrorResponse>>(params?: ListInterviewersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1281,14 +1282,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListInterviewersQueryResult = NonNullable<Awaited<ReturnType<typeof listInterviewers>>>
-export type ListInterviewersQueryError = ErrorType<unknown>
+export type ListInterviewersQueryError = ErrorType<ErrorResponse>
 
 
 /**
  * @summary List interviewer accounts and password setup state
  */
 
-export function useListInterviewers<TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<unknown>>(
+export function useListInterviewers<TData = Awaited<ReturnType<typeof listInterviewers>>, TError = ErrorType<ErrorResponse>>(
  params?: ListInterviewersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInterviewers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {

@@ -15,7 +15,6 @@ describe("workspace navigation", () => {
       ["Parts", "workspace"],
       ["CAD", "workspace"],
       ["Code", "workspace"],
-      ["Custom apps", "section"],
     ]);
   });
 
@@ -84,7 +83,6 @@ describe("workspace navigation", () => {
       "Parts",
       "CAD",
       "Code",
-      "Custom apps",
     ]);
   });
 
@@ -93,7 +91,6 @@ describe("workspace navigation", () => {
     expect(getWorkspaceNavigation("overview", visible).map(({ label }) => label)).toEqual([
       "Chat",
       "Parts",
-      "Custom apps",
     ]);
     expect(getWorkspaceNavigation("chat", visible).map(({ label }) => label)).toEqual([
       "Chat",

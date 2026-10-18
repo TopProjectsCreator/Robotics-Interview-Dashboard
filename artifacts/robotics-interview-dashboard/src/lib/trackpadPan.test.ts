@@ -7,8 +7,8 @@ import { panScreenSpace, trackpadWheelAction } from "./trackpadPan";
  * viewers set up, so right = +X and up = +Y. Column-major, as three.js stores
  * matrices.
  */
-function camera(overrides: Record<string, number> = {}) {
-  const position = { x: 0, y: 0, z: 100, ...overrides.position };
+function camera() {
+  const position = { x: 0, y: 0, z: 100 };
   return {
     position,
     fov: 40,

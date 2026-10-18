@@ -1,3 +1,6 @@
+// Matches hubAdb.ts: the ADB layer uses stream-extra's ReadableStream, which
+// is a distinct class from the DOM global of the same name.
+import { ReadableStream } from "@yume-chan/stream-extra";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -30,7 +33,11 @@ describe("usb adb credential store", () => {
     const second = await store.generateKey();
     expect(first.buffer).toEqual(second.buffer);
     const names: string[] = [];
-    for (const key of store.iterateKeys()) names.push(key.name ?? "");
+    // AdbKeyIterable is `Iterable | AsyncIterable`; our store implements it as a
+    // sync generator, so narrow to the sync half that `for...of` can consume.
+    for (const key of store.iterateKeys() as Iterable<{ name?: string }>) {
+      names.push(key.name ?? "");
+    }
     expect(names).toEqual(["dashboard"]);
   });
 });

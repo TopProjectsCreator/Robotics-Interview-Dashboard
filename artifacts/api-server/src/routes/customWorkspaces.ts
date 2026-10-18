@@ -2,8 +2,44 @@ import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { pool } from "@workspace/db";
-import { authenticatedInterviewerId, requestTeamId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import type { NextFunction } from "express";
+import {
+  authenticatedInterviewerId,
+  requestTeamId,
+  requireAdmin,
+  requireCoordinator,
+} from "../middlewares/adminAuth";
+import { accountById } from "../lib/interviewerAccounts";
 import { teamSqlCondition } from "../lib/teams";
+
+/**
+ * Admins only. Custom apps is an unfinished experiment with no settled purpose,
+ * so it is hidden from the sidebar and closed to every role except admin.
+ * The stored admin role is "coordinator" (Settings labels it "Admin"); the
+ * legacy "admin" value is accepted too so no account is locked out by a stale
+ * role string. Everyone else — team members and treasurers — gets 403.
+ */
+function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = authenticatedInterviewerId(req);
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    void accountById(interviewerId)
+      .then((account) => {
+        if (account?.role !== "coordinator" && account?.role !== "admin") {
+          res.status(403).json({ error: "Admins only" });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        req.log?.error?.({ err: error }, "Custom workspace admin check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+  });
+}
 
 const router = Router();
 const CAPABILITIES = new Set(["data", "llm"]);
@@ -135,7 +171,7 @@ async function workspaceForVersionHistory(
   return true;
 }
 
-router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> => {
+router.get("/custom-workspaces", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   const accountId = authenticatedInterviewerId(req);
   const result = await pool.query(
@@ -231,7 +267,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
   }
 });
 
-router.get("/custom-workspaces/:id", requireAdmin, async (req, res): Promise<void> => {
+router.get("/custom-workspaces/:id", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const row = await accessibleWorkspace(req, res, String(req.params.id ?? ""), true);
   if (row) res.json({ workspace: row });
 });
@@ -458,7 +494,7 @@ router.patch("/custom-workspaces/:id/access", requireCoordinator, async (req, re
   res.json({ workspace: result.rows[0] });
 });
 
-router.get("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promise<void> => {
+router.get("/custom-workspaces/:id/data", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
   if (!workspace) return;
   if (!workspace.capabilities.includes("data")) {
@@ -476,7 +512,7 @@ router.get("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promis
   res.json({ records: result.rows });
 });
 
-router.post("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promise<void> => {
+router.post("/custom-workspaces/:id/data", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
   if (!workspace) return;
   if (workspace.status !== "published" || !workspace.capabilities.includes("data")) {
@@ -500,7 +536,7 @@ router.post("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promi
   res.status(201).json({ record: saved.rows[0] });
 });
 
-router.patch("/custom-workspaces/:id/data/:recordId", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/custom-workspaces/:id/data/:recordId", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
   if (!workspace) return;
   if (workspace.status !== "published" || !workspace.capabilities.includes("data")) {
@@ -528,7 +564,7 @@ router.patch("/custom-workspaces/:id/data/:recordId", requireAdmin, async (req, 
   res.json({ record: result.rows[0] });
 });
 
-router.delete("/custom-workspaces/:id/data/:recordId", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/custom-workspaces/:id/data/:recordId", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
   if (!workspace) return;
   if (workspace.status !== "published" || !workspace.capabilities.includes("data")) {
@@ -550,7 +586,7 @@ router.delete("/custom-workspaces/:id/data/:recordId", requireAdmin, async (req,
   res.json({ deleted: true });
 });
 
-router.post("/custom-workspaces/:id/llm", requireAdmin, async (req, res): Promise<void> => {
+router.post("/custom-workspaces/:id/llm", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
   if (!workspace) return;
   if (!workspace.capabilities.includes("llm")) {

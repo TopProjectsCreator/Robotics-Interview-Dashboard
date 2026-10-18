@@ -210,10 +210,11 @@ export const ResetTeamLogoResponse = zod.void()
 
 
 /**
+ * Private roster. Requires a signed-in session, or the team access code as ?eventPassword for the login screen before anyone has signed in. Requests with neither are rejected. Teams never see each other's accounts.
  * @summary List interviewer accounts and password setup state
  */
 export const ListInterviewersQueryParams = zod.object({
-  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.')
+  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.')
 })
 
 export const ListInterviewersResponse = zod.object({

@@ -554,6 +554,15 @@ export function FeatureRequestSection() {
   </div>;
 }
 
+/** Renders children only for admins (role "coordinator"); everyone else is
+ * sent to their home workspace. Used for pages that stay out of the sidebar. */
+function AdminOnlyRoute({ children }: { children: ReactNode }) {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  if (session.data?.authenticated !== true) return null;
+  if (session.data.role !== "coordinator") return <Redirect to="/dashboard" />;
+  return <>{children}</>;
+}
+
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
@@ -7712,7 +7721,8 @@ function Router() {
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
         <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
         <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
-        <Route path="/custom-workspaces"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></Shell></Route>
+        {/* Admins only: hidden from the sidebar and blocked for any other role. */}
+        <Route path="/custom-workspaces"><Shell><AdminOnlyRoute><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></AdminOnlyRoute></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>
