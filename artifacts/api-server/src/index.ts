@@ -28,26 +28,45 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner', 'DiagRunner',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson',
+    'EgressRunner', 'DiagRunner', 'QuotaCheck', 'MemCheck', 'FinalCheck', 'GateMember',
+    'GateAdmin', 'NewHostProbe', 'BotCheck', 'BotCase', 'BotTrial', 'TestTeam',
     'test', 'test2', 'test3',
   ];
-  // test-style names anywhere: check / probe / verify / temp / test / bot
-  const TEST_NAME_PATTERNS = ['%check%', '%probe%', '%verify%', '%temp%', '%test%', '%bot%'];
+  // Test-style names are matched as WHOLE WORDS only. Substring matching here is
+  // destructive: "%bot%" also matches real accounts like "Shriyash Incredibots"
+  // (incredi-BOT-s), "%temp%" matches "Tempest", "%test%" matches "Contestant".
+  // A loose pattern silently deletes a real teammate's account on every boot.
+  const TEST_NAME_REGEX = '^(.*[\\s._-])?(check|probe|verify|temp|test|bot)([\\s._-].*)?$';
+  // Probe accounts I create carry this prefix so they always clean up without
+  // relying on substring guesses.
+  const PROBE_NAME_PREFIX = 'zxprobe';
   try {
-    const params = [TEST_NAMES.map((name) => name.toLowerCase()), TEST_NAME_PATTERNS];
+    // [exact names, word-boundary regex, probe prefix]
+    const params = [
+      TEST_NAMES.map((name) => name.toLowerCase()),
+      TEST_NAME_REGEX,
+      `${PROBE_NAME_PREFIX}%`,
+    ];
     await pool.query(
       `delete from interview_chat_messages
-        where lower(author) = any($1::text[]) or lower(author) like any($2::text[])`,
+        where lower(author) = any($1::text[])
+           or lower(author) ~ $2::text
+           or lower(author) like $3::text`,
       params,
     );
     await pool.query(
       `delete from interviewer_accounts
-        where lower(normalized_name) = any($1::text[]) or lower(normalized_name) like any($2::text[])`,
+        where lower(normalized_name) = any($1::text[])
+           or lower(normalized_name) ~ $2::text
+           or lower(normalized_name) like $3::text`,
       params,
     );
     await pool.query(
       `delete from feature_requests
-        where lower(author_name) = any($1::text[]) or lower(author_name) like any($2::text[])`,
+        where lower(author_name) = any($1::text[])
+           or lower(author_name) ~ $2::text
+           or lower(author_name) like $3::text`,
       params,
     );
     await pool.query(
@@ -57,7 +76,11 @@ async function removeTestAccounts(): Promise<void> {
       `update interview_queue set interviewer_labels = (
          select coalesce(jsonb_agg(elem), '[]'::jsonb)::text
            from jsonb_array_elements_text(interviewer_labels::jsonb) as elem
-          where not (lower(elem) = any($1::text[]) or lower(elem) like any($2::text[]))
+          where not (
+            lower(elem) = any($1::text[])
+            or lower(elem) ~ $2::text
+            or lower(elem) like $3::text
+          )
        ) where id = 1`,
       params,
     );
