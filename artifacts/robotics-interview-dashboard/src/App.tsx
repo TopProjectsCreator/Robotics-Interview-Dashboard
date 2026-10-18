@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
@@ -73,6 +73,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import NotFound from "@/pages/not-found";
 const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
 const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
+const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").then((m) => ({ default: m.CustomWorkspacesPage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -314,7 +315,7 @@ function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const dark = mounted && theme === "dark";
-  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c]" />}</button>;
+  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
 }
 
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
@@ -358,13 +359,13 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
   const isCoordinatorMenu = session.data?.role === "coordinator";
   return <div ref={ref} className="relative">
-    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95">{avatarInitials(settings)}</button>
-    {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-2xl">
-      <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
+    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
+    {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl">
+      <div className="border-b border-border px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">Interviewer account</p></div>
       <div className="p-2">
-        {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><Settings size={16} /> Settings</button>}
-        <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#385762] transition hover:bg-[#f1f6f5]"><FileText size={16} /> Notepad</button>
-        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[#a34d46] transition hover:bg-[#f6f9f8]"><LogOut size={16} /> End session</button>
+        {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><Settings size={16} /> Settings</button>}
+        <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><FileText size={16} /> Notepad</button>
+        <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive transition hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover dark:text-[#f1aaa4] dark:hover:bg-[#40221f] dark:focus-visible:bg-[#40221f] dark:focus-visible:text-[#f1aaa4]"><LogOut size={16} /> End session</button>
       </div>
     </div>}
     {notepadOpen && <PersonalNotepad accountKey={session.data?.interviewerId || session.data?.label || "current"} onClose={() => setNotepadOpen(false)} />}
@@ -551,6 +552,15 @@ export function FeatureRequestSection() {
       </div>
     </div>}
   </div>;
+}
+
+/** Renders children only for admins (role "coordinator"); everyone else is
+ * sent to their home workspace. Used for pages that stay out of the sidebar. */
+function AdminOnlyRoute({ children }: { children: ReactNode }) {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  if (session.data?.authenticated !== true) return null;
+  if (session.data.role !== "coordinator") return <Redirect to="/dashboard" />;
+  return <>{children}</>;
 }
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
@@ -2233,7 +2243,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
 }
 
 function FullscreenButton({ active, onClick, dark = false }: { active: boolean; onClick: () => void; dark?: boolean }) {
-  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a]"}`}>
+  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a] dark:border-[#31495a] dark:bg-[#16262f] dark:text-[#c3d3db] dark:hover:border-[#6fc3cf] dark:hover:text-[#6fc3cf]"}`}>
     {active ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     <span className="hidden sm:inline">{active ? "Exit fullscreen" : "Fullscreen"}</span>
   </button>;
@@ -2877,6 +2887,7 @@ function Login() {
 function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { settings } = useWorkspaceSettings();
   const [displayPromoVisible, setDisplayPromoVisible] = useState(() => {
@@ -2908,6 +2919,30 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     enabled: session.data?.authenticated === true,
   });
   const qc = useQueryClient();
+  useEffect(() => {
+    if (!mobileNav) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileNav(false);
+        mobileMenuButtonRef.current?.focus();
+      }
+    };
+    const closeOnDesktop = () => {
+      if (window.matchMedia("(min-width: 1024px)").matches) setMobileNav(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnDesktop);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnDesktop);
+    };
+  }, [mobileNav]);
+  useEffect(() => {
+    setMobileNav(false);
+  }, [location]);
   useEffect(() => listenForAuthSessionEnd(() => {
     forgetCurrentSessionQueryAuthentication();
     markAuthSessionEndedByAnotherTab();
@@ -3008,6 +3043,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   const isTreasurerRosterPath =
     shellPath === "/applicants" || shellPath.startsWith("/applicants/");
   const restrictedAllowed =
+    location.split(/[?#]/, 1)[0].startsWith("/custom-workspaces") ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
     isDashboardPath ||
@@ -3056,10 +3092,11 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
-      <aside className={`fixed inset-y-0 left-0 z-30 flex w-[248px] flex-col bg-[#172a3a] px-4 py-5 text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0" : "-translate-x-full"}`}>
+      {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-20 bg-black/45 backdrop-blur-[1px] lg:hidden" data-testid="button-close-mobile-navigation" />}
+      <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
-        <nav className="space-y-1" aria-label="Workspace navigation">
+        <nav className="space-y-1" aria-label="Workspace links">
           {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
             const active = kind === "workspace"
               ? workspaceArea === workspace
@@ -3078,8 +3115,8 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
                   : undefined}
                 className={`flex items-center gap-3 text-sm font-medium transition ${
                   kind === "workspace"
-                    ? "rounded-full px-4 py-2.5"
-                    : "ml-2 rounded-xl px-3 py-2.5"
+                    ? "min-h-11 rounded-full px-4 py-3"
+                    : "ml-2 min-h-11 rounded-xl px-3 py-3"
                 } ${
                   active
                     ? kind === "workspace"
@@ -3106,18 +3143,18 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/90 px-5 backdrop-blur-md lg:px-9">
-          <button onClick={() => setMobileNav(!mobileNav)} data-testid="button-mobile-menu" className="mr-3 text-[#365965] lg:hidden"><Menu /></button>
-          <div><p className="mono max-w-[45vw] truncate text-[10px] uppercase tracking-[.2em] text-[#7c8c91]">{activeTeamName}</p><p className="text-sm font-semibold">Team workspace</p></div>
-          <div className="flex items-center gap-2">
-            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button>
+        <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9">
+          <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] dark:text-[#9db2bd] dark:hover:bg-[#1e3340] lg:hidden"><Menu size={21} /></button>
+          <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold dark:text-[#e8eef2]">Team workspace</p></div>
+          <div className="ml-1 flex shrink-0 items-center gap-0.5 sm:ml-2 sm:gap-2">
+            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>
             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
             <ThemeToggle />
-            <div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div>
+            <div className="hidden items-center gap-2 text-xs text-[#60757c] dark:text-[#9db2bd] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f] dark:bg-[#6fce8f]" /> Synced moments ago</div>
             <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] p-5 lg:p-9">
+        <main className="mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9">
           {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           {children}
         </main>
@@ -4499,6 +4536,30 @@ function chatFileType(file: File): string {
   const extension = file.name.split(".").pop()?.toLowerCase();
   return CHAT_EXTENSION_TYPES[extension ?? ""] ?? "";
 }
+function nameClipboardChatFile(file: File, index: number): File {
+  if (file.name.trim()) return file;
+  const type = normalizeChatFileType(file.type);
+  const kind = type.startsWith("video/") ? "video" : "image";
+  const extensionByType: Record<string, string> = {
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+    "video/x-matroska": "mkv",
+    "video/x-msvideo": "avi",
+  };
+  const extension = extensionByType[type] ?? kind;
+  return new File([file], `clipboard-${kind}-${index + 1}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+}
 function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
@@ -4853,6 +4914,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     return () => window.removeEventListener("error", onError);
   }, []);
   const [chatFiles, setChatFiles] = useState<{ id: string; file: File; previewUrl: string; name: string; size: number; type: string; kind: ChatFileKind; inlineImage: boolean }[]>([]);
+  const [chatFileDragActive, setChatFileDragActive] = useState(false);
   const [fileStatus, setFileStatus] = useState<Record<string, string>>({});
   const chatFilesRef = useRef(chatFiles);
   chatFilesRef.current = chatFiles;
@@ -5402,6 +5464,60 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     } catch (error) {
       reportDiag("attach threw", error instanceof Error ? error.message : String(error));
       setChatImageError("Couldn't read the selected files. Try again.");
+    }
+  };
+  const isChatFileDrag = (dataTransfer: DataTransfer) =>
+    Array.from(dataTransfer.types).includes("Files");
+  const handleChatDragEnter = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (isChatFileDrag(event.dataTransfer)) setChatFileDragActive(true);
+  };
+  const handleChatDragOver = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (!isChatFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setChatFileDragActive(true);
+  };
+  const handleChatDragLeave = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (!isChatFileDrag(event.dataTransfer)) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setChatFileDragActive(false);
+  };
+  const handleChatDrop = (event: ReactDragEvent<HTMLFormElement>) => {
+    const files = Array.from(event.dataTransfer.files);
+    if (!isChatFileDrag(event.dataTransfer) && files.length === 0) return;
+    event.preventDefault();
+    setChatFileDragActive(false);
+    if (files.length) attachChatFiles(files);
+  };
+  const handleChatPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboard = event.clipboardData;
+    let pastedFiles = Array.from(clipboard.files);
+    if (!pastedFiles.length) {
+      pastedFiles = Array.from(clipboard.items)
+        .filter(item => item.kind === "file")
+        .map(item => item.getAsFile())
+        .filter((file): file is File => file !== null);
+    }
+    if (!pastedFiles.length) return;
+
+    const namedFiles = pastedFiles.map(nameClipboardChatFile);
+    const mediaFiles = namedFiles.filter(file => {
+      const type = chatFileType(file);
+      return type.startsWith("image/") || type.startsWith("video/");
+    });
+    if (mediaFiles.length) {
+      event.preventDefault();
+      attachChatFiles(mediaFiles);
+      return;
+    }
+
+    // Leave normal text paste alone. A file-only paste of another format
+    // should explain how to attach it instead of silently changing the draft.
+    if (!clipboard.getData("text/plain")) {
+      event.preventDefault();
+      const name = pastedFiles[0].name.trim() || "Clipboard file";
+      setChatImageError(`"${name}" isn't a supported pasted media file. Paste an image or video, or use Attach files.`);
     }
   };
   const removeChatFile = (id: string) => {    setFileStatus(current => {
@@ -6056,7 +6172,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     </div>;
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
-   return <section className="rounded-3xl border border-[#dce5e5] bg-white p-5">
+   return <section className="chat-panel rounded-3xl border border-[#dce5e5] bg-white p-5">
       <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
       {mentionAttention && <button
         type="button"
@@ -6086,8 +6202,16 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        </div>
        <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
      </div>
-      <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
-      <form onSubmit={submitChat} className="mt-3 space-y-2">
+       <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`chat-message-feed mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+      <form
+        onSubmit={submitChat}
+        onDragEnter={handleChatDragEnter}
+        onDragOver={handleChatDragOver}
+        onDragLeave={handleChatDragLeave}
+        onDrop={handleChatDrop}
+        data-testid="chat-composer-dropzone"
+        className={`chat-composer-dropzone mt-3 space-y-2 ${chatFileDragActive ? "is-dragging-files" : ""}`}
+      >
        {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
@@ -6169,13 +6293,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               </div>}
             </div>}
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
-           <div className="flex items-end gap-1.5">
-              <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
-             <div className="min-w-0 flex-1">
-                 <textarea
+            <div className="chat-composer-layout">
+              <div className="chat-composer-input min-w-0">
+                <textarea
                    ref={chatMessageInputRef}
                    value={message}
                    onChange={event => updateMentionState(event.target.value)}
+                   onPaste={handleChatPaste}
                    onKeyDown={handleChatInputKeyDown}
                    aria-autocomplete="list"
                    aria-controls={mentionOpen ? "chat-mention-listbox" : undefined}
@@ -6187,8 +6311,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
-             </div>
-              <div className="flex shrink-0 items-center gap-0.5 pb-0.5">
+              </div>
+              <div className="chat-composer-actions" data-testid="chat-composer-actions">
+                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
                  <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
                  <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
                  <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
@@ -6196,7 +6321,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                  <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                 <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
               </div>
-              <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
@@ -6777,6 +6902,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [onshapeError, setOnshapeError] = useState("");
   const [customMcpEndpoint, setCustomMcpEndpoint] = useState("");
   const [customMcpConnected, setCustomMcpConnected] = useState(false);
+  const [customMcpApiKeyRequired, setCustomMcpApiKeyRequired] = useState(false);
+  const [customMcpApiKey, setCustomMcpApiKey] = useState("");
+  const [customMcpApiKeyHeader, setCustomMcpApiKeyHeader] = useState("X-API-Key");
+  const [customMcpApiKeyPrefix, setCustomMcpApiKeyPrefix] = useState("");
   const [customMcpBusy, setCustomMcpBusy] = useState(false);
   const [customMcpError, setCustomMcpError] = useState("");
   const attachmentUpload = useRequestUploadUrl();
@@ -6890,8 +7019,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const connectCustomMcp = async () => {
     setCustomMcpBusy(true);
     setCustomMcpError("");
-    const popup = window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
-    if (!popup) {
+    const popup = customMcpApiKeyRequired
+      ? null
+      : window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
+    if (!customMcpApiKeyRequired && !popup) {
       setCustomMcpError("Allow pop-ups to sign in to this MCP server.");
       setCustomMcpBusy(false);
       return;
@@ -6902,18 +7033,41 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-        body: JSON.stringify({ endpointUrl: customMcpEndpoint }),
+        body: JSON.stringify({
+          endpointUrl: customMcpEndpoint,
+          ...(customMcpApiKeyRequired ? {
+            apiKey: customMcpApiKey,
+            apiKeyHeader: customMcpApiKeyHeader,
+            apiKeyPrefix: customMcpApiKeyPrefix,
+          } : {}),
+        }),
       });
-      const result = await response.json() as { connected?: boolean; endpointUrl?: string; authorizationUrl?: string; error?: string };
+      const result = await response.json() as {
+        connected?: boolean; endpointUrl?: string; authorizationUrl?: string; error?: string;
+        apiKeyRequired?: boolean; apiKeyHeader?: string; apiKeyPrefix?: string;
+      };
       if (!response.ok) throw new Error(result.error || "Could not connect to the MCP server.");
       if (result.connected) {
         setCustomMcpConnected(true);
+        setCustomMcpApiKeyRequired(false);
+        setCustomMcpApiKey("");
         setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
-        popup.close();
+        popup?.close();
+        setCustomMcpBusy(false);
+        return;
+      }
+      if (result.apiKeyRequired) {
+        setCustomMcpApiKeyRequired(true);
+        setCustomMcpApiKey("");
+        setCustomMcpApiKeyHeader(result.apiKeyHeader ?? "X-API-Key");
+        setCustomMcpApiKeyPrefix(result.apiKeyPrefix ?? "");
+        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        popup?.close();
         setCustomMcpBusy(false);
         return;
       }
       if (!result.authorizationUrl) throw new Error("The MCP server did not return an authorization URL.");
+      if (!popup) throw new Error("Allow pop-ups to sign in to this MCP server.");
       popup.location.href = result.authorizationUrl;
       let checks = 0;
       const poll = window.setInterval(async () => {
@@ -6954,7 +7108,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         } catch { /* wait for OAuth callback */ }
       }, 1500);
     } catch (error) {
-      popup.close();
+      popup?.close();
       setCustomMcpError(error instanceof Error ? error.message : "Could not connect to this MCP server.");
       setCustomMcpBusy(false);
     }
@@ -6973,9 +7127,17 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       if (!response.ok) throw new Error("Could not disconnect this MCP server.");
       setCustomMcpConnected(false);
       setCustomMcpEndpoint("");
+      setCustomMcpApiKeyRequired(false);
+      setCustomMcpApiKey("");
     } catch (error) {
       setCustomMcpError(error instanceof Error ? error.message : "Could not disconnect this MCP server.");
     } finally { setCustomMcpBusy(false); }
+  };
+
+  const updateCustomMcpEndpoint = (value: string) => {
+    setCustomMcpEndpoint(value);
+    setCustomMcpApiKeyRequired(false);
+    setCustomMcpApiKey("");
   };
 
   const updateOnshapeStatus = (connected: boolean, detectExpired = false) => {
@@ -7309,7 +7471,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} customMcpEndpoint={customMcpEndpoint} onCustomMcpEndpointChange={setCustomMcpEndpoint} customMcpConnected={customMcpConnected} customMcpBusy={customMcpBusy} customMcpError={customMcpError} onConnectCustomMcp={connectCustomMcp} onDisconnectCustomMcp={disconnectCustomMcp} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} customMcpEndpoint={customMcpEndpoint} onCustomMcpEndpointChange={updateCustomMcpEndpoint} customMcpConnected={customMcpConnected} customMcpApiKeyRequired={customMcpApiKeyRequired} customMcpApiKey={customMcpApiKey} customMcpApiKeyHeader={customMcpApiKeyHeader} customMcpApiKeyPrefix={customMcpApiKeyPrefix} onCustomMcpApiKeyChange={setCustomMcpApiKey} onCustomMcpApiKeyHeaderChange={setCustomMcpApiKeyHeader} onCustomMcpApiKeyPrefixChange={setCustomMcpApiKeyPrefix} customMcpBusy={customMcpBusy} customMcpError={customMcpError} onConnectCustomMcp={connectCustomMcp} onDisconnectCustomMcp={disconnectCustomMcp} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>
@@ -7648,6 +7810,8 @@ function Router() {
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
         <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
         <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
+        {/* Admins only: hidden from the sidebar and blocked for any other role. */}
+        <Route path="/custom-workspaces"><Shell><AdminOnlyRoute><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></AdminOnlyRoute></Shell></Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

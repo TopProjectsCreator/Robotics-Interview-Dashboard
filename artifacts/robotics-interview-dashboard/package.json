@@ -9,6 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "test:mobile-chat-composer": "node browser-tests/mobile-chat-composer.browser.mjs",
     "test:media-browser": "node browser-tests/chat-attachment-preview.browser.mjs",
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
     "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",

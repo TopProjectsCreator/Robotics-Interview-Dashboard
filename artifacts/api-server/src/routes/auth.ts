@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
@@ -50,6 +50,7 @@ import {
   clearAdminCookie,
   createInterviewerSession,
   interviewerIdFromSession,
+  isRevokedAdminSession,
   isValidAdminSession,
   requestAdminSession,
   requireAdmin,
@@ -61,6 +62,7 @@ import {
 import { deletePresenceHeartbeat } from "./presence";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
+import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
 import { ObjectStorageService } from "../lib/objectStorage";
@@ -69,10 +71,62 @@ import {
   GetTeamBrandingResponse,
   UpdateTeamBrandingBody,
   UploadTeamLogoResponse,
+  GetPersonalNotepadResponse,
+  UpdatePersonalNotepadBody,
+  UpdatePersonalNotepadResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+router.get("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = interviewerIdFromSession(requestAdminSession(req));
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [note] = await db.select({
+    content: personalNotepadTable.content,
+    updatedAt: personalNotepadTable.updatedAt,
+  }).from(personalNotepadTable).where(and(
+    eq(personalNotepadTable.accountId, accountId),
+    eq(personalNotepadTable.teamId, teamId),
+  )).limit(1);
+  res.json(GetPersonalNotepadResponse.parse({
+    content: note?.content ?? "",
+    updatedAt: note?.updatedAt.toISOString() ?? null,
+  }));
+});
+
+router.put("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = interviewerIdFromSession(requestAdminSession(req));
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const body = UpdatePersonalNotepadBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Notepad content must be text and no longer than 200,000 characters." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [note] = await db.insert(personalNotepadTable).values({
+    accountId,
+    teamId,
+    content: body.data.content,
+  }).onConflictDoUpdate({
+    target: personalNotepadTable.accountId,
+    set: { teamId, content: body.data.content, updatedAt: new Date() },
+  }).returning({
+    content: personalNotepadTable.content,
+    updatedAt: personalNotepadTable.updatedAt,
+  });
+  res.json(UpdatePersonalNotepadResponse.parse({
+    content: note.content,
+    updatedAt: note.updatedAt.toISOString(),
+  }));
+});
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
@@ -321,22 +375,40 @@ function publicAccount(account: { id: string; displayName: string; passwordHash:
 }
 
 router.get("/auth/interviewers", async (req, res): Promise<void> => {
-  // Team-scoped: when the login screen already verified a team code it passes
-  // it as ?eventPassword so only that team's accounts are listed. Without it
-  // we fall back to the default team so pre-migration clients keep working and
-  // the current team's accounts stay visible. Teams never see each other.
-  const eventPassword = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
-  let teamId = DEFAULT_TEAM_ID;
-  if (eventPassword.trim()) {
-    const team = await resolveEventTeam(eventPassword);
+  // Private roster: signed-in callers get their own team, the login screen
+  // gets one team by presenting its access code, and everyone else is turned
+  // away. See interviewerRosterAccess for why there is no default-team
+  // fallback.
+  const session = requestAdminSession(req);
+  const access = interviewerRosterAccess({
+    hasSession: isValidAdminSession(session) && !(await isRevokedAdminSession(session)),
+    eventPassword: typeof req.query.eventPassword === "string" ? req.query.eventPassword : "",
+  });
+  if (access.kind === "denied") {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  let teamId: string;
+  if (access.kind === "session") {
+    // attachAdminSession already pinned this request to the session's
+    // database instance, so the account lookup reads the right cluster.
+    const [account] = await db.select({ teamId: interviewerAccountsTable.teamId })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerIdFromSession(session) ?? ""))
+      .limit(1);
+    if (!account) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    teamId = account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
+  } else {
+    const team = await resolveEventTeam(access.eventPassword);
     if (!team) {
       res.status(401).json({ error: "The team access code is incorrect." });
       return;
     }
     teamId = team.id;
     enterInstance(team.instance);
-  } else {
-    await ensureDefaultTeam();
   }
   const accounts = await syncInterviewerAccounts(await getInterviewSettings(teamId), teamId);
   // One query for all credential counts so the login screen can offer a

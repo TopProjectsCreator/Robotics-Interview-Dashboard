@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AssistantSkillManager } from "./AssistantSkillManager";
 import {
   ALL_ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOL_GROUPS,
@@ -43,9 +44,16 @@ type AssistantModelPickerProps = {
   onDisconnectOnshape?: () => void;
   customMcpEndpoint?: string;
   customMcpConnected?: boolean;
+  customMcpApiKeyRequired?: boolean;
+  customMcpApiKey?: string;
+  customMcpApiKeyHeader?: string;
+  customMcpApiKeyPrefix?: string;
   customMcpBusy?: boolean;
   customMcpError?: string;
   onCustomMcpEndpointChange?: (value: string) => void;
+  onCustomMcpApiKeyChange?: (value: string) => void;
+  onCustomMcpApiKeyHeaderChange?: (value: string) => void;
+  onCustomMcpApiKeyPrefixChange?: (value: string) => void;
   onConnectCustomMcp?: () => void;
   onDisconnectCustomMcp?: () => void;
 };
@@ -67,9 +75,16 @@ export function AssistantModelPicker({
   onDisconnectOnshape,
   customMcpEndpoint = "",
   customMcpConnected = false,
+  customMcpApiKeyRequired = false,
+  customMcpApiKey = "",
+  customMcpApiKeyHeader = "X-API-Key",
+  customMcpApiKeyPrefix = "",
   customMcpBusy = false,
   customMcpError = "",
   onCustomMcpEndpointChange,
+  onCustomMcpApiKeyChange,
+  onCustomMcpApiKeyHeaderChange,
+  onCustomMcpApiKeyPrefixChange,
   onConnectCustomMcp,
   onDisconnectCustomMcp,
 }: AssistantModelPickerProps) {
@@ -245,14 +260,14 @@ export function AssistantModelPicker({
               <div className="assistant-onshape-setting-copy">
                 <p className="assistant-onshape-setting-title">Custom MCP server</p>
                 <p className="assistant-onshape-setting-status" role="status">
-                  {customMcpBusy ? "Connecting…" : customMcpConnected ? "Connected" : "Enter an HTTPS endpoint"}
+                  {customMcpBusy ? "Connecting…" : customMcpConnected ? "Connected" : customMcpApiKeyRequired ? "API key required" : "Enter an HTTPS endpoint"}
                 </p>
               </div>
               <button
                 type="button"
                 className="assistant-onshape-setting-action"
                 onClick={customMcpConnected ? onDisconnectCustomMcp : onConnectCustomMcp}
-                disabled={customMcpBusy || (!customMcpConnected && !customMcpEndpoint.trim())}
+                disabled={customMcpBusy || (!customMcpConnected && (!customMcpEndpoint.trim() || (customMcpApiKeyRequired && !customMcpApiKey.trim())))}
                 data-testid="assistant-custom-mcp-toggle"
               >
                 {customMcpBusy ? "Connecting…" : customMcpConnected ? "Disconnect" : "Connect"}
@@ -268,8 +283,48 @@ export function AssistantModelPicker({
                   className="assistant-mcp-endpoint"
                 />
               )}
+              {!customMcpConnected && customMcpApiKeyRequired && (
+                <div className="assistant-mcp-api-key-fields">
+                  <label>
+                    API key
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={customMcpApiKey}
+                      onChange={(event) => onCustomMcpApiKeyChange?.(event.target.value)}
+                      aria-label="MCP API key"
+                      data-testid="assistant-custom-mcp-api-key"
+                      className="assistant-mcp-endpoint"
+                    />
+                  </label>
+                  <label>
+                    Header name
+                    <input
+                      type="text"
+                      value={customMcpApiKeyHeader}
+                      onChange={(event) => onCustomMcpApiKeyHeaderChange?.(event.target.value)}
+                      aria-label="MCP API key header name"
+                      data-testid="assistant-custom-mcp-api-key-header"
+                      className="assistant-mcp-endpoint"
+                    />
+                  </label>
+                  <label>
+                    Header prefix
+                    <input
+                      type="text"
+                      value={customMcpApiKeyPrefix}
+                      onChange={(event) => onCustomMcpApiKeyPrefixChange?.(event.target.value)}
+                      placeholder="Optional, e.g. Bearer"
+                      aria-label="MCP API key header prefix"
+                      data-testid="assistant-custom-mcp-api-key-prefix"
+                      className="assistant-mcp-endpoint"
+                    />
+                  </label>
+                </div>
+              )}
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
+            <AssistantSkillManager />
             <div className="assistant-tools-groups">
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);

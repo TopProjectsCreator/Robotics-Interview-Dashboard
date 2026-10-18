@@ -411,6 +411,63 @@ export interface CreatePartsCatalogItemInput {
   quantityOwned?: number;
 }
 
+export type PartsImageIdentificationInputContentType = typeof PartsImageIdentificationInputContentType[keyof typeof PartsImageIdentificationInputContentType];
+
+
+export const PartsImageIdentificationInputContentType = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+} as const;
+
+export interface PartsImageIdentificationInput {
+  contentType: PartsImageIdentificationInputContentType;
+  /**
+     * Base64-encoded image bytes, limited to 3 MiB after decoding.
+     * @minLength 4
+     * @maxLength 4194304
+     */
+  imageBase64: string;
+}
+
+export type PartsImageIdentificationUncertainty = typeof PartsImageIdentificationUncertainty[keyof typeof PartsImageIdentificationUncertainty];
+
+
+export const PartsImageIdentificationUncertainty = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface PartsImageIdentification {
+  /** False when the image does not clearly show an identifiable part. */
+  identified: boolean;
+  /** @maxLength 250 */
+  name: string;
+  /**
+     * @maxLength 200
+     * @nullable
+     */
+  category: string | null;
+  /**
+     * @maxLength 1200
+     * @nullable
+     */
+  description: string | null;
+  /**
+     * Only populated when the code is clearly legible in the image.
+     * @maxLength 200
+     * @nullable
+     */
+  sku: string | null;
+  uncertainty: PartsImageIdentificationUncertainty;
+  /**
+     * @maxLength 300
+     * @nullable
+     */
+  uncertaintyReason: string | null;
+}
+
 export interface PartsCatalogImportItem {
   vendorKey: string;
   name: string;
@@ -2269,6 +2326,63 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export interface AssistantSkill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  actions: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssistantSkillList {
+  items: AssistantSkill[];
+}
+
+export interface AssistantSkillInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  description: string;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  instructions: string;
+  /** @maxItems 100 */
+  actions: string[];
+  enabled?: boolean;
+}
+
+export interface AssistantSkillUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  description?: string;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  instructions?: string;
+  /** @maxItems 100 */
+  actions?: string[];
+  enabled?: boolean;
+}
+
 export interface AssistantResponse {
   answer: string;
   /** Model id used to produce the answer. */
@@ -2672,6 +2786,178 @@ export interface CodeDeployResult {
   log?: string;
 }
 
+export interface PersonalNotepad {
+  /** @maxLength 200000 */
+  content: string;
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface PersonalNotepadInput {
+  /** @maxLength 200000 */
+  content: string;
+}
+
+export type CustomWorkspaceCapabilitiesItem = typeof CustomWorkspaceCapabilitiesItem[keyof typeof CustomWorkspaceCapabilitiesItem];
+
+
+export const CustomWorkspaceCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export type CustomWorkspaceStatus = typeof CustomWorkspaceStatus[keyof typeof CustomWorkspaceStatus];
+
+
+export const CustomWorkspaceStatus = {
+  draft: 'draft',
+  published: 'published',
+} as const;
+
+export type CustomWorkspaceAccessMode = typeof CustomWorkspaceAccessMode[keyof typeof CustomWorkspaceAccessMode];
+
+
+export const CustomWorkspaceAccessMode = {
+  team: 'team',
+  owner: 'owner',
+  selected: 'selected',
+} as const;
+
+export interface CustomWorkspace {
+  id: string;
+  title: string;
+  description: string;
+  html?: string;
+  capabilities: CustomWorkspaceCapabilitiesItem[];
+  status: CustomWorkspaceStatus;
+  accessMode: CustomWorkspaceAccessMode;
+  /** Interviewer account IDs allowed when accessMode is selected */
+  allowedInterviewerIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomWorkspaceEnvelope {
+  workspace: CustomWorkspace;
+}
+
+export interface CustomWorkspaceList {
+  workspaces: CustomWorkspace[];
+}
+
+export interface CustomWorkspaceTeamMember {
+  id: string;
+  displayName: string;
+}
+
+export interface CustomWorkspaceTeamMemberList {
+  members: CustomWorkspaceTeamMember[];
+}
+
+export type CustomWorkspaceGenerationInputCapabilitiesItem = typeof CustomWorkspaceGenerationInputCapabilitiesItem[keyof typeof CustomWorkspaceGenerationInputCapabilitiesItem];
+
+
+export const CustomWorkspaceGenerationInputCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export interface CustomWorkspaceGenerationInput {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  prompt: string;
+  capabilities: CustomWorkspaceGenerationInputCapabilitiesItem[];
+}
+
+export interface CustomWorkspaceRevisionInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  prompt: string;
+}
+
+export type CustomWorkspaceAccessInputAccessMode = typeof CustomWorkspaceAccessInputAccessMode[keyof typeof CustomWorkspaceAccessInputAccessMode];
+
+
+export const CustomWorkspaceAccessInputAccessMode = {
+  team: 'team',
+  owner: 'owner',
+  selected: 'selected',
+} as const;
+
+export interface CustomWorkspaceAccessInput {
+  accessMode: CustomWorkspaceAccessInputAccessMode;
+  /**
+     * Required for selected access; account IDs from the current team
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  allowedInterviewerIds?: string[];
+}
+
+export interface CustomWorkspaceVersion {
+  id: string;
+  message: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export type CustomWorkspaceVersionPreviewCapabilitiesItem = typeof CustomWorkspaceVersionPreviewCapabilitiesItem[keyof typeof CustomWorkspaceVersionPreviewCapabilitiesItem];
+
+
+export const CustomWorkspaceVersionPreviewCapabilitiesItem = {
+  data: 'data',
+  llm: 'llm',
+} as const;
+
+export type CustomWorkspaceVersionPreview = CustomWorkspaceVersion & {
+  /** @maxLength 120000 */
+  html: string;
+  capabilities: CustomWorkspaceVersionPreviewCapabilitiesItem[];
+};
+
+export interface CustomWorkspaceVersionEnvelope {
+  version: CustomWorkspaceVersionPreview;
+}
+
+export interface CustomWorkspaceVersionList {
+  versions: CustomWorkspaceVersion[];
+}
+
+export type CustomWorkspaceDataRecordValue = { [key: string]: unknown };
+
+export interface CustomWorkspaceDataRecord {
+  id: string;
+  value: CustomWorkspaceDataRecordValue;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomWorkspaceDataList {
+  records: CustomWorkspaceDataRecord[];
+}
+
+export interface CustomWorkspaceRecordEnvelope {
+  record: CustomWorkspaceDataRecord;
+}
+
+export type CustomWorkspaceDataInputRecord = { [key: string]: unknown };
+
+export interface CustomWorkspaceDataInput {
+  record: CustomWorkspaceDataInputRecord;
+}
+
+export interface CustomWorkspaceLlmInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  prompt: string;
+}
+
 /**
  * GitHub-style applicant search. Supports name:, age:, gender:, grade:, skill:, recommendation:, category:, status:, and invalid:true qualifiers, plus AND, OR, NOT, parentheses, IF...THEN, and free text.
  */
@@ -2701,7 +2987,7 @@ export type ChatLimitParameter = number;
 
 export type ListInterviewersParams = {
 /**
- * Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
+ * Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.
  */
 eventPassword?: string;
 };
@@ -2910,5 +3196,13 @@ botId: string;
 export type ListCadModelsParams = {
 botId?: string;
 folderId?: string;
+};
+
+export type DeleteCustomWorkspaceRecord200 = {
+  deleted: boolean;
+};
+
+export type AskCustomWorkspaceLlm200 = {
+  answer: string;
 };
 

@@ -53,7 +53,7 @@ try {
     args: ["--no-sandbox"],
   });
 
-  const runFailureCase = async ({ failCleanup, expectedStoredObjects }) => {
+  const runFailureCase = async ({ failCleanup, expectedStoredObjects, useDrop = false }) => {
     const page = await browser.newPage();
     const uploadedObjects = new Map();
     const uploads = [];
@@ -122,18 +122,37 @@ try {
     });
 
     await page.goto(`${serverUrl}/browser-tests/chat-upload-failure.html`);
-    await page.getByTestId("input-chat-image").setInputFiles([
-      {
-        name: "brief.pdf",
-        mimeType: "application/pdf",
-        buffer: Buffer.from("%PDF-1.4\nRobotics interview brief"),
-      },
-      {
-        name: "interview.mp3",
-        mimeType: "audio/mpeg",
-        buffer: Buffer.from("ID3 robotics audio fixture"),
-      },
-    ]);
+    const files = [
+      { name: "brief.pdf", mimeType: "application/pdf", content: "%PDF-1.4\nRobotics interview brief" },
+      { name: "interview.mp3", mimeType: "audio/mpeg", content: "ID3 robotics audio fixture" },
+    ];
+    if (useDrop) {
+      const pageUrl = page.url();
+      const dragResult = await page.getByTestId("chat-composer-dropzone").evaluate((form, droppedFiles) => {
+        const dataTransfer = new DataTransfer();
+        for (const droppedFile of droppedFiles) {
+          dataTransfer.items.add(new File([droppedFile.content], droppedFile.name, { type: droppedFile.mimeType }));
+        }
+        form.dispatchEvent(new DragEvent("dragenter", { dataTransfer, bubbles: true, cancelable: true }));
+        const dragOver = new DragEvent("dragover", { dataTransfer, bubbles: true, cancelable: true });
+        form.dispatchEvent(dragOver);
+        const drop = new DragEvent("drop", { dataTransfer, bubbles: true, cancelable: true });
+        form.dispatchEvent(drop);
+        return { dragOverPrevented: dragOver.defaultPrevented, dropPrevented: drop.defaultPrevented };
+      }, files);
+      assert.deepEqual(
+        dragResult,
+        { dragOverPrevented: true, dropPrevented: true },
+        "file dragging over and dropping on chat should prevent browser navigation",
+      );
+      assert.equal(page.url(), pageUrl, "dropping files must keep the browser on chat");
+    } else {
+      await page.getByTestId("input-chat-image").setInputFiles(files.map(file => ({
+        name: file.name,
+        mimeType: file.mimeType,
+        buffer: Buffer.from(file.content),
+      })));
+    }
     await page.getByTestId("input-interviewer-chat").fill("Please review these interview materials.");
     await page.getByText("brief.pdf").waitFor();
     await page.getByText("interview.mp3").waitFor();
@@ -157,7 +176,7 @@ try {
   };
 
   await runFailureCase({ failCleanup: false, expectedStoredObjects: 0 });
-  await runFailureCase({ failCleanup: true, expectedStoredObjects: 2 });
+  await runFailureCase({ failCleanup: true, expectedStoredObjects: 2, useDrop: true });
 
   console.log("Chat save failures showed the original error, did not add a message, and attempted cleanup for both uploaded files.");
 } finally {

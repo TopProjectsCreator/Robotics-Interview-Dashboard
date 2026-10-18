@@ -123,7 +123,8 @@ describe("scanObjFaces", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.faceCount).toBe(1);
-    expect(result.cornerCount).toBe(4, "an n-gon face contributes four corners");
+    // An n-gon face contributes four corners.
+    expect(result.cornerCount).toBe(4);
   });
 
   it("counts several faces", () => {

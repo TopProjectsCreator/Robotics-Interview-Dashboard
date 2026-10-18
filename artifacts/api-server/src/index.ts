@@ -28,26 +28,45 @@ async function removeTestAccounts(): Promise<void> {
     'PollA', 'PollB', 'PollC', 'PollD', 'NotifyCheck', 'NotifyProbe',
     'BigFile', 'CadCheck', 'StepCheck', 'Probe', 'TestBot', 'MonitorCheck',
     'BotProbe', 'LimitCheck', 'RenameProbe', 'RenameTry', 'Renamed Person',
-    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson', 'EgressRunner', 'DiagRunner',
+    'Label Prop Test', 'CtxCheck', 'SlowUser', 'LoopRunner', 'FeatureFan', 'IdeaPerson',
+    'EgressRunner', 'DiagRunner', 'QuotaCheck', 'MemCheck', 'FinalCheck', 'GateMember',
+    'GateAdmin', 'NewHostProbe', 'BotCheck', 'BotCase', 'BotTrial', 'TestTeam',
     'test', 'test2', 'test3',
   ];
-  // test-style names anywhere: check / probe / verify / temp / test / bot
-  const TEST_NAME_PATTERNS = ['%check%', '%probe%', '%verify%', '%temp%', '%test%', '%bot%'];
+  // Test-style names are matched as WHOLE WORDS only. Substring matching here is
+  // destructive: "%bot%" also matches real accounts like "Shriyash Incredibots"
+  // (incredi-BOT-s), "%temp%" matches "Tempest", "%test%" matches "Contestant".
+  // A loose pattern silently deletes a real teammate's account on every boot.
+  const TEST_NAME_REGEX = '^(.*[\\s._-])?(check|probe|verify|temp|test|bot)([\\s._-].*)?$';
+  // Probe accounts I create carry this prefix so they always clean up without
+  // relying on substring guesses.
+  const PROBE_NAME_PREFIX = 'zxprobe';
   try {
-    const params = [TEST_NAMES.map((name) => name.toLowerCase()), TEST_NAME_PATTERNS];
+    // [exact names, word-boundary regex, probe prefix]
+    const params = [
+      TEST_NAMES.map((name) => name.toLowerCase()),
+      TEST_NAME_REGEX,
+      `${PROBE_NAME_PREFIX}%`,
+    ];
     await pool.query(
       `delete from interview_chat_messages
-        where lower(author) = any($1::text[]) or lower(author) like any($2::text[])`,
+        where lower(author) = any($1::text[])
+           or lower(author) ~ $2::text
+           or lower(author) like $3::text`,
       params,
     );
     await pool.query(
       `delete from interviewer_accounts
-        where lower(normalized_name) = any($1::text[]) or lower(normalized_name) like any($2::text[])`,
+        where lower(normalized_name) = any($1::text[])
+           or lower(normalized_name) ~ $2::text
+           or lower(normalized_name) like $3::text`,
       params,
     );
     await pool.query(
       `delete from feature_requests
-        where lower(author_name) = any($1::text[]) or lower(author_name) like any($2::text[])`,
+        where lower(author_name) = any($1::text[])
+           or lower(author_name) ~ $2::text
+           or lower(author_name) like $3::text`,
       params,
     );
     await pool.query(
@@ -57,7 +76,11 @@ async function removeTestAccounts(): Promise<void> {
       `update interview_queue set interviewer_labels = (
          select coalesce(jsonb_agg(elem), '[]'::jsonb)::text
            from jsonb_array_elements_text(interviewer_labels::jsonb) as elem
-          where not (lower(elem) = any($1::text[]) or lower(elem) like any($2::text[]))
+          where not (
+            lower(elem) = any($1::text[])
+            or lower(elem) ~ $2::text
+            or lower(elem) like $3::text
+          )
        ) where id = 1`,
       params,
     );
@@ -78,6 +101,7 @@ async function ensureSchema(): Promise<void> {
     "application_imports",
     "assistant_conversations",
     "assistant_messages",
+    "assistant_skills",
     "audit_logs",
     "broadcast_acks",
     "broadcasts",
@@ -94,6 +118,9 @@ async function ensureSchema(): Promise<void> {
     "code_files",
     "code_revisions",
     "code_presence",
+    "custom_workspaces",
+    "custom_workspace_versions",
+    "custom_workspace_data",
     "workspace_settings",
     "dashboard_charts",
     "data_snapshots",
@@ -102,6 +129,7 @@ async function ensureSchema(): Promise<void> {
     "interview_queue",
     "interview_whiteboards",
     "interviewer_accounts",
+    "personal_notepad",
     "onshape_mcp_connections",
     "onshape_mcp_oauth_states",
     "custom_mcp_connections",
@@ -140,10 +168,100 @@ async function ensureSchema(): Promise<void> {
         END IF;
       END IF;
     END
-    $rls$
-  `);
+    $rls$`)
+    // Catch-all: RLS is enabled on EVERY table in the public schema, including
+    // any table a later migration adds. A hardcoded list silently leaves new
+    // tables exposed to PostgREST, which is how teams/webauthn_credentials/
+    // chunked_uploads were found unguarded on the second instance.
+    .concat(`
+    DO $rls_all$
+    DECLARE
+      target text;
+    BEGIN
+      FOR target IN
+        SELECT tablename FROM pg_tables
+         WHERE schemaname = 'public'
+           AND NOT rowsecurity
+      LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target);
+      END LOOP;
+
+      FOR target IN
+        SELECT c.relname
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relkind = 'r'
+      LOOP
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+           WHERE schemaname = 'public'
+             AND tablename = target
+             AND policyname = 'deny_supabase_client_access'
+        ) THEN
+          BEGIN
+            EXECUTE format('CREATE POLICY deny_supabase_client_access ON public.%I AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)', target);
+          EXCEPTION
+            WHEN duplicate_object THEN NULL;
+          END;
+        END IF;
+      END LOOP;
+    END
+    $rls_all$`
+    );
 
   const statements = [
+    `create table if not exists "custom_workspaces" (
+       "id" text primary key,
+       "team_id" text,
+       "title" text not null check (length("title") between 1 and 120),
+       "description" text not null default '',
+       "prompt" text not null,
+       "html" text not null check (octet_length("html") <= 120000),
+       "capabilities" jsonb not null default '[]'::jsonb,
+       "status" text not null default 'draft' check ("status" in ('draft', 'published')),
+       "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner', 'selected')),
+       "allowed_interviewer_ids" jsonb not null default '[]'::jsonb,
+       "created_by" text not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `alter table "custom_workspaces" add column if not exists "access_mode" text not null default 'team'`,
+    `alter table "custom_workspaces" add column if not exists "allowed_interviewer_ids" jsonb not null default '[]'::jsonb`,
+    `do $custom_access$
+       begin
+         if not exists (
+           select 1 from pg_constraint
+            where conrelid = '"custom_workspaces"'::regclass
+              and conname = 'custom_workspaces_access_mode_check'
+              and pg_get_constraintdef(oid) like '%selected%'
+         ) then
+           alter table "custom_workspaces" drop constraint if exists "custom_workspaces_access_mode_check";
+           alter table "custom_workspaces" add constraint "custom_workspaces_access_mode_check"
+             check ("access_mode" in ('team', 'owner', 'selected'));
+         end if;
+       end;
+     $custom_access$`,
+    `create index if not exists "custom_workspaces_team_updated_idx" on "custom_workspaces" ("team_id", "updated_at" desc)`,
+    `create table if not exists "custom_workspace_versions" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "html" text not null check (octet_length("html") <= 120000),
+       "capabilities" jsonb not null default '[]'::jsonb,
+       "created_by" text not null,
+       "message" text not null default '',
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
+    `create table if not exists "custom_workspace_data" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "value" jsonb not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "custom_workspace_data_scope_idx" on "custom_workspace_data" ("team_id", "workspace_id", "updated_at" desc)`,
     `alter table "applicants" add column if not exists "flagged" boolean not null default false`,
     `alter table "dashboard_charts" add column if not exists "x_axis" text`,
     `alter table "dashboard_charts" add column if not exists "y_axis" text`,
@@ -378,9 +496,23 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "applicants" ("id" text primary key, "team_id" text, "name" text not null, "grade" text not null default 'Unknown', "age" integer, "gender" text, "email" text, "photo_url" text, "photo_thumb_url" text, "transcript" text, "attachments" text, "ai_score" integer not null default -1, "ai_recommendation" text not null default 'Review', "ai_summary" text not null default '', "ai_strengths" text not null default '', "ai_concerns" text not null default '', "robotics_experience" text not null default '', "commit_10_hours" text not null default 'Unclear', "parent_volunteer" text not null default 'Unclear', "interview_status" text not null default 'queued', "interviewer" text not null default '', "interview_decision" text not null default 'Undecided', "callback_requested" boolean not null default false, "flagged" boolean not null default false, "attendance" text not null default 'unmarked', "late_arrival_time" text, "makeup_date" text, "attendance_excused" boolean, "seat_row" integer, "seat_col" integer, "category" text not null default 'Unsorted', "rank" integer not null default 0, "notes" text not null default '', "queue_position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "interview_queue" ("id" integer primary key default 1, "team_id" text, "interviewer_labels" text not null default '["Interviewer 1","Interviewer 2"]', "updated_at" timestamptz not null default now())`,
     `create table if not exists "interview_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "message" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "activities" text not null default '[]', "parent_message_id" text, "pinned_at" timestamptz, "edited_at" timestamptz, "deleted_at" timestamptz, "created_at" timestamptz not null default now())`,
+    `create table if not exists "personal_notepad" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "content" text not null default '<p></p>', "updated_at" timestamptz not null default now())`,
     `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,
     `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_skills" (
+       "id" text primary key,
+       "team_id" text not null,
+       "name" text not null check (length("name") between 1 and 80),
+       "description" text not null check (length("description") between 1 and 500),
+       "instructions" text not null check (length("instructions") between 1 and 8000),
+       "actions" jsonb not null default '[]'::jsonb check (jsonb_typeof("actions") = 'array'),
+       "enabled" boolean not null default true,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "assistant_skills_team_name_unique" on "assistant_skills" ("team_id", lower("name"))`,
+    `create index if not exists "assistant_skills_team_enabled_idx" on "assistant_skills" ("team_id", "enabled")`,
     `create table if not exists "onshape_mcp_connections" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "access_token" jsonb not null, "refresh_token" jsonb, "expires_at" timestamptz not null, "scopes" text not null default '', "updated_at" timestamptz not null default now())`,
     `create table if not exists "onshape_mcp_oauth_states" ("id" text primary key, "state_hash" text not null unique, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "redirect_uri" text not null, "code_verifier" jsonb not null, "return_origin" text not null, "created_at" timestamptz not null default now())`,
     `create index if not exists "onshape_mcp_oauth_states_created_idx" on "onshape_mcp_oauth_states" ("created_at")`,
@@ -389,6 +521,9 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_mcp_connections" add column if not exists "client_id" text`,
     `alter table "custom_mcp_connections" add column if not exists "token_endpoint" text`,
     `alter table "custom_mcp_connections" add column if not exists "expires_at" timestamptz`,
+    `alter table "custom_mcp_connections" add column if not exists "api_key" jsonb`,
+    `alter table "custom_mcp_connections" add column if not exists "api_key_header" text`,
+    `alter table "custom_mcp_connections" add column if not exists "api_key_prefix" text`,
     `create table if not exists "custom_mcp_oauth_states" ("id" text primary key, "state_hash" text not null unique, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "endpoint_url" text not null, "resource_uri" text not null, "client_id" text not null, "token_endpoint" text not null, "authorization_endpoint" text not null, "redirect_uri" text not null, "code_verifier" jsonb not null, "created_at" timestamptz not null default now())`,
     `alter table "custom_mcp_oauth_states" add column if not exists "resource_uri" text not null default ''`,
     `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,

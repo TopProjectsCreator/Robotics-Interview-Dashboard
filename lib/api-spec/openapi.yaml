@@ -8,6 +8,8 @@ servers:
   - url: /api
     description: Base API path
 tags:
+  - name: customWorkspaces
+    description: AI-generated team workspaces and scoped capabilities
   - name: health
     description: Health operations
   - name: auth
@@ -177,6 +179,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/personal-notepad:
+    get:
+      operationId: getPersonalNotepad
+      tags: [auth]
+      summary: Get the signed-in account's private cloud notepad
+      responses:
+        "200":
+          description: Notepad content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalNotepad"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updatePersonalNotepad
+      tags: [auth]
+      summary: Save the signed-in account's private cloud notepad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonalNotepadInput"
+      responses:
+        "200":
+          description: Saved notepad content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalNotepad"
+        "400":
+          description: Invalid note content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/team-branding:
     get:
       operationId: getTeamBranding
@@ -281,13 +330,18 @@ paths:
       operationId: listInterviewers
       tags: [auth]
       summary: List interviewer accounts and password setup state
+      description: >-
+        Private roster. Requires a signed-in session, or the team access code as
+        ?eventPassword for the login screen before anyone has signed in.
+        Requests with neither are rejected. Teams never see each other's
+        accounts.
       parameters:
         - name: eventPassword
           in: query
           required: false
           schema:
             type: string
-          description: Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.
+          description: Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.
       responses:
         "200":
           description: Interviewer accounts
@@ -295,6 +349,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewerAccountList"
+        "401":
+          description: No session and no valid team access code was supplied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       operationId: createInterviewer
       tags: [auth]
@@ -1930,6 +1990,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/skills:
+    get:
+      operationId: listAssistantSkills
+      tags: [assistant]
+      summary: List team-shared assistant skills
+      responses:
+        "200":
+          description: Team assistant skills
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkillList"
+    post:
+      operationId: createAssistantSkill
+      tags: [assistant]
+      summary: Create a team-shared assistant skill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantSkillInput"
+      responses:
+        "201":
+          description: Skill created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkill"
+        "400":
+          description: Invalid skill or action references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A skill with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/skills/{skillId}:
+    patch:
+      operationId: updateAssistantSkill
+      tags: [assistant]
+      summary: Update a team-shared assistant skill
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantSkillUpdate"
+      responses:
+        "200":
+          description: Skill updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkill"
+        "400":
+          description: Invalid skill or action references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Skill not found in this team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A skill with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAssistantSkill
+      tags: [assistant]
+      summary: Delete a team-shared assistant skill
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Skill deleted
+        "404":
+          description: Skill not found in this team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/custom-mcp/connection:
     get:
       operationId: getCustomMcpConnection
@@ -2314,6 +2476,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PartsCatalogItem"
+  /parts/catalog/identify-image:
+    post:
+      operationId: identifyPartsImage
+      tags: [parts]
+      summary: Suggest part details from a temporary image upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsImageIdentificationInput"
+      responses:
+        "200":
+          description: Suggested visual identification; supplier and product identity are not verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsImageIdentification"
+        "400":
+          description: Unsupported or invalid image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Image request exceeds the request-body limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: The vision model returned an invalid result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Image identification is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog/search:
     get:
       operationId: searchPartsCatalog
@@ -3387,6 +3597,368 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces:
+    get:
+      operationId: listCustomWorkspaces
+      tags: [customWorkspaces]
+      summary: List custom workspaces available to the current team
+      responses:
+        "200":
+          description: Custom workspaces
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceList"
+  /custom-workspaces/team-members:
+    get:
+      operationId: listCustomWorkspaceTeamMembers
+      tags: [customWorkspaces]
+      summary: List current team members for custom-app access settings
+      responses:
+        "200":
+          description: Current team members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceTeamMemberList"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/generate:
+    post:
+      operationId: generateCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Generate a custom workspace draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceGenerationInput"
+      responses:
+        "201":
+          description: Generated draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Generation rate limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}:
+    get:
+      operationId: getCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Get a published workspace or owned draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "404":
+          description: Not found or not accessible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/publish:
+    post:
+      operationId: publishCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Publish a custom workspace draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceAccessInput"
+      responses:
+        "200":
+          description: Published workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/access:
+    patch:
+      operationId: updateCustomWorkspaceAccess
+      tags: [customWorkspaces]
+      summary: Set a published workspace's access mode
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceAccessInput"
+      responses:
+        "200":
+          description: Updated workspace access
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "400":
+          description: Invalid access mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/revise:
+    post:
+      operationId: reviseCustomWorkspace
+      tags: [customWorkspaces]
+      summary: Revise a workspace draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceRevisionInput"
+      responses:
+        "200":
+          description: Revised workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+  /custom-workspaces/{workspaceId}/versions:
+    get:
+      operationId: listCustomWorkspaceVersions
+      tags: [customWorkspaces]
+      summary: List workspace versions
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceVersionList"
+  /custom-workspaces/{workspaceId}/versions/{versionId}:
+    get:
+      operationId: getCustomWorkspaceVersion
+      tags: [customWorkspaces]
+      summary: Get a saved workspace version for preview
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Saved workspace version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceVersionEnvelope"
+        "404":
+          description: Not found or not accessible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/versions/{versionId}/restore:
+    post:
+      operationId: restoreCustomWorkspaceVersion
+      tags: [customWorkspaces]
+      summary: Restore a previous draft or published version
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restored workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+  /custom-workspaces/{workspaceId}/data:
+    get:
+      operationId: listCustomWorkspaceData
+      tags: [customWorkspaces]
+      summary: List records in a workspace's isolated data namespace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workspace records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceDataList"
+    post:
+      operationId: createCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Create a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceDataInput"
+      responses:
+        "201":
+          description: Created record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceRecordEnvelope"
+  /custom-workspaces/{workspaceId}/data/{recordId}:
+    patch:
+      operationId: updateCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Update a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceDataInput"
+      responses:
+        "200":
+          description: Updated record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceRecordEnvelope"
+    delete:
+      operationId: deleteCustomWorkspaceRecord
+      tags: [customWorkspaces]
+      summary: Delete a record in a published workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted record status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+  /custom-workspaces/{workspaceId}/llm:
+    post:
+      operationId: askCustomWorkspaceLlm
+      tags: [customWorkspaces]
+      summary: Run a server-managed LLM request for a workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceLlmInput"
+      responses:
+        "200":
+          description: LLM response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer]
+                properties:
+                  answer:
+                    type: string
 components:
   parameters:
     ApplicantId:
@@ -3963,6 +4535,44 @@ components:
           type: integer
           minimum: 0
           default: 0
+    PartsImageIdentificationInput:
+      type: object
+      required: [contentType, imageBase64]
+      properties:
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        imageBase64:
+          type: string
+          minLength: 4
+          maxLength: 4194304
+          description: Base64-encoded image bytes, limited to 3 MiB after decoding.
+    PartsImageIdentification:
+      type: object
+      required: [identified, name, category, description, sku, uncertainty, uncertaintyReason]
+      properties:
+        identified:
+          type: boolean
+          description: False when the image does not clearly show an identifiable part.
+        name:
+          type: string
+          maxLength: 250
+        category:
+          type: ["string", "null"]
+          maxLength: 200
+        description:
+          type: ["string", "null"]
+          maxLength: 1200
+        sku:
+          type: ["string", "null"]
+          maxLength: 200
+          description: Only populated when the code is clearly legible in the image.
+        uncertainty:
+          type: string
+          enum: [low, medium, high]
+        uncertaintyReason:
+          type: ["string", "null"]
+          maxLength: 300
     PartsCatalogImportItem:
       type: object
       required: [vendorKey, name]
@@ -6284,6 +6894,86 @@ components:
                 type: string
               message:
                 type: string
+    AssistantSkill:
+      type: object
+      required: [id, name, description, instructions, actions, enabled, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        instructions:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AssistantSkillList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantSkill"
+    AssistantSkillInput:
+      type: object
+      required: [name, description, instructions, actions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        actions:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+        enabled:
+          type: boolean
+    AssistantSkillUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        actions:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+        enabled:
+          type: boolean
     AssistantResponse:
       type: object
       required: [answer]
@@ -6830,3 +7520,206 @@ components:
           type: ["boolean", "null"]
         log:
           type: string
+    PersonalNotepad:
+      type: object
+      required: [content, updatedAt]
+      properties:
+        content:
+          type: string
+          maxLength: 200000
+        updatedAt:
+          type: ["string", "null"]
+    PersonalNotepadInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 200000
+    CustomWorkspace:
+      type: object
+      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        html:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [data, llm]
+        status:
+          type: string
+          enum: [draft, published]
+        accessMode:
+          type: string
+          enum: [team, owner, selected]
+        allowedInterviewerIds:
+          type: array
+          items:
+            type: string
+          description: Interviewer account IDs allowed when accessMode is selected
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomWorkspaceEnvelope:
+      type: object
+      required: [workspace]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/CustomWorkspace"
+    CustomWorkspaceList:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspace"
+    CustomWorkspaceTeamMember:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+    CustomWorkspaceTeamMemberList:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTeamMember"
+    CustomWorkspaceGenerationInput:
+      type: object
+      required: [prompt, capabilities]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [data, llm]
+    CustomWorkspaceRevisionInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    CustomWorkspaceAccessInput:
+      type: object
+      required: [accessMode]
+      properties:
+        accessMode:
+          type: string
+          enum: [team, owner, selected]
+        allowedInterviewerIds:
+          type: array
+          uniqueItems: true
+          maxItems: 500
+          items:
+            type: string
+            minLength: 1
+          description: Required for selected access; account IDs from the current team
+    CustomWorkspaceVersion:
+      type: object
+      required: [id, message, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    CustomWorkspaceVersionPreview:
+      allOf:
+        - $ref: "#/components/schemas/CustomWorkspaceVersion"
+        - type: object
+          required: [html, capabilities]
+          properties:
+            html:
+              type: string
+              maxLength: 120000
+            capabilities:
+              type: array
+              items:
+                type: string
+                enum: [data, llm]
+    CustomWorkspaceVersionEnvelope:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: "#/components/schemas/CustomWorkspaceVersionPreview"
+    CustomWorkspaceVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceVersion"
+    CustomWorkspaceDataRecord:
+      type: object
+      required: [id, value, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CustomWorkspaceDataList:
+      type: object
+      required: [records]
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceDataRecord"
+    CustomWorkspaceRecordEnvelope:
+      type: object
+      required: [record]
+      properties:
+        record:
+          $ref: "#/components/schemas/CustomWorkspaceDataRecord"
+    CustomWorkspaceDataInput:
+      type: object
+      required: [record]
+      properties:
+        record:
+          type: object
+          minProperties: 1
+          additionalProperties: true
+    CustomWorkspaceLlmInput:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000

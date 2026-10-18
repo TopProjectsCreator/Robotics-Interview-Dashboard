@@ -131,6 +131,40 @@ export const GetSessionResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in account's private cloud notepad
+ */
+export const getPersonalNotepadResponseContentMax = 200000;
+
+
+
+export const GetPersonalNotepadResponse = zod.object({
+  "content": zod.string().max(getPersonalNotepadResponseContentMax),
+  "updatedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Save the signed-in account's private cloud notepad
+ */
+export const updatePersonalNotepadBodyContentMax = 200000;
+
+
+
+export const UpdatePersonalNotepadBody = zod.object({
+  "content": zod.string().max(updatePersonalNotepadBodyContentMax)
+})
+
+export const updatePersonalNotepadResponseContentMax = 200000;
+
+
+
+export const UpdatePersonalNotepadResponse = zod.object({
+  "content": zod.string().max(updatePersonalNotepadResponseContentMax),
+  "updatedAt": zod.string().nullable()
+})
+
+
+/**
  * @summary Get branding for the signed-in team
  */
 export const getTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
@@ -176,10 +210,11 @@ export const ResetTeamLogoResponse = zod.void()
 
 
 /**
+ * Private roster. Requires a signed-in session, or the team access code as ?eventPassword for the login screen before anyone has signed in. Requests with neither are rejected. Teams never see each other's accounts.
  * @summary List interviewer accounts and password setup state
  */
 export const ListInterviewersQueryParams = zod.object({
-  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team. When omitted, the default team is listed so pre-migration clients keep working.')
+  "eventPassword": zod.coerce.string().optional().describe('Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.')
 })
 
 export const ListInterviewersResponse = zod.object({
@@ -2730,6 +2765,103 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * @summary List team-shared assistant skills
+ */
+export const ListAssistantSkillsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a team-shared assistant skill
+ */
+export const createAssistantSkillBodyNameMax = 80;
+
+export const createAssistantSkillBodyDescriptionMax = 500;
+
+export const createAssistantSkillBodyInstructionsMax = 8000;
+
+export const createAssistantSkillBodyActionsMax = 100;
+
+
+
+export const CreateAssistantSkillBody = zod.object({
+  "name": zod.string().min(1).max(createAssistantSkillBodyNameMax),
+  "description": zod.string().min(1).max(createAssistantSkillBodyDescriptionMax),
+  "instructions": zod.string().min(1).max(createAssistantSkillBodyInstructionsMax),
+  "actions": zod.array(zod.string()).max(createAssistantSkillBodyActionsMax),
+  "enabled": zod.boolean().optional()
+})
+
+export const CreateAssistantSkillResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a team-shared assistant skill
+ */
+export const UpdateAssistantSkillParams = zod.object({
+  "skillId": zod.coerce.string()
+})
+
+export const updateAssistantSkillBodyNameMax = 80;
+
+export const updateAssistantSkillBodyDescriptionMax = 500;
+
+export const updateAssistantSkillBodyInstructionsMax = 8000;
+
+export const updateAssistantSkillBodyActionsMax = 100;
+
+
+
+export const UpdateAssistantSkillBody = zod.object({
+  "name": zod.string().min(1).max(updateAssistantSkillBodyNameMax).optional(),
+  "description": zod.string().min(1).max(updateAssistantSkillBodyDescriptionMax).optional(),
+  "instructions": zod.string().min(1).max(updateAssistantSkillBodyInstructionsMax).optional(),
+  "actions": zod.array(zod.string()).max(updateAssistantSkillBodyActionsMax).optional(),
+  "enabled": zod.boolean().optional()
+})
+
+export const UpdateAssistantSkillResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a team-shared assistant skill
+ */
+export const DeleteAssistantSkillParams = zod.object({
+  "skillId": zod.coerce.string()
+})
+
+export const DeleteAssistantSkillResponse = zod.void()
+
+
+/**
  * @summary Get the signed-in interviewer's custom MCP connection
  */
 export const GetCustomMcpConnectionResponse = zod.object({
@@ -3207,6 +3339,42 @@ export const CreatePartsCatalogItemResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Suggest part details from a temporary image upload
+ */
+export const identifyPartsImageBodyImageBase64Min = 4;
+export const identifyPartsImageBodyImageBase64Max = 4194304;
+
+
+
+export const IdentifyPartsImageBody = zod.object({
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp']),
+  "imageBase64": zod.string().min(identifyPartsImageBodyImageBase64Min).max(identifyPartsImageBodyImageBase64Max).describe('Base64-encoded image bytes, limited to 3 MiB after decoding.')
+})
+
+export const identifyPartsImageResponseNameMax = 250;
+
+export const identifyPartsImageResponseCategoryMax = 200;
+
+export const identifyPartsImageResponseDescriptionMax = 1200;
+
+export const identifyPartsImageResponseSkuMax = 200;
+
+export const identifyPartsImageResponseUncertaintyReasonMax = 300;
+
+
+
+export const IdentifyPartsImageResponse = zod.object({
+  "identified": zod.boolean().describe('False when the image does not clearly show an identifiable part.'),
+  "name": zod.string().max(identifyPartsImageResponseNameMax),
+  "category": zod.string().max(identifyPartsImageResponseCategoryMax).nullable(),
+  "description": zod.string().max(identifyPartsImageResponseDescriptionMax).nullable(),
+  "sku": zod.string().max(identifyPartsImageResponseSkuMax).nullable().describe('Only populated when the code is clearly legible in the image.'),
+  "uncertainty": zod.enum(['low', 'medium', 'high']),
+  "uncertaintyReason": zod.string().max(identifyPartsImageResponseUncertaintyReasonMax).nullable()
 })
 
 
@@ -4398,6 +4566,343 @@ export const SetPartsRobotAllocationResponse = zod.object({
   "robotName": zod.string(),
   "partId": zod.string(),
   "quantity": zod.number().int().min(setPartsRobotAllocationResponseQuantityMin)
+})
+
+
+/**
+ * @summary List custom workspaces available to the current team
+ */
+export const ListCustomWorkspacesResponse = zod.object({
+  "workspaces": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary List current team members for custom-app access settings
+ */
+export const ListCustomWorkspaceTeamMembersResponse = zod.object({
+  "members": zod.array(zod.object({
+  "id": zod.string(),
+  "displayName": zod.string()
+}))
+})
+
+
+/**
+ * @summary Generate a custom workspace draft
+ */
+export const generateCustomWorkspaceBodyPromptMax = 8000;
+
+
+
+export const GenerateCustomWorkspaceBody = zod.object({
+  "prompt": zod.string().min(1).max(generateCustomWorkspaceBodyPromptMax),
+  "capabilities": zod.array(zod.enum(['data', 'llm']))
+})
+
+export const GenerateCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Get a published workspace or owned draft
+ */
+export const GetCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const GetCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Publish a custom workspace draft
+ */
+export const PublishCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+
+export const publishCustomWorkspaceBodyAllowedInterviewerIdsMax = 500;
+
+
+
+export const PublishCustomWorkspaceBody = zod.object({
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string().min(1)).max(publishCustomWorkspaceBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
+})
+
+export const PublishCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Set a published workspace's access mode
+ */
+export const UpdateCustomWorkspaceAccessParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+
+export const updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax = 500;
+
+
+
+export const UpdateCustomWorkspaceAccessBody = zod.object({
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string().min(1)).max(updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
+})
+
+export const UpdateCustomWorkspaceAccessResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Revise a workspace draft
+ */
+export const ReviseCustomWorkspaceParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const reviseCustomWorkspaceBodyPromptMax = 4000;
+
+
+
+export const ReviseCustomWorkspaceBody = zod.object({
+  "prompt": zod.string().min(1).max(reviseCustomWorkspaceBodyPromptMax)
+})
+
+export const ReviseCustomWorkspaceResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary List workspace versions
+ */
+export const ListCustomWorkspaceVersionsParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const ListCustomWorkspaceVersionsResponse = zod.object({
+  "versions": zod.array(zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get a saved workspace version for preview
+ */
+export const GetCustomWorkspaceVersionParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "versionId": zod.coerce.string()
+})
+
+export const getCustomWorkspaceVersionResponseVersionTwoHtmlMax = 120000;
+
+
+
+export const GetCustomWorkspaceVersionResponse = zod.object({
+  "version": zod.object({
+  "id": zod.string(),
+  "message": zod.string(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "html": zod.string().max(getCustomWorkspaceVersionResponseVersionTwoHtmlMax),
+  "capabilities": zod.array(zod.enum(['data', 'llm']))
+}))
+})
+
+
+/**
+ * @summary Restore a previous draft or published version
+ */
+export const RestoreCustomWorkspaceVersionParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "versionId": zod.coerce.string()
+})
+
+export const RestoreCustomWorkspaceVersionResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary List records in a workspace's isolated data namespace
+ */
+export const ListCustomWorkspaceDataParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const ListCustomWorkspaceDataResponse = zod.object({
+  "records": zod.array(zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a record in a published workspace
+ */
+export const CreateCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const CreateCustomWorkspaceRecordBody = zod.object({
+  "record": zod.record(zod.string(), zod.unknown())
+})
+
+export const CreateCustomWorkspaceRecordResponse = zod.object({
+  "record": zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Update a record in a published workspace
+ */
+export const UpdateCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "recordId": zod.coerce.string()
+})
+
+export const UpdateCustomWorkspaceRecordBody = zod.object({
+  "record": zod.record(zod.string(), zod.unknown())
+})
+
+export const UpdateCustomWorkspaceRecordResponse = zod.object({
+  "record": zod.object({
+  "id": zod.string(),
+  "value": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Delete a record in a published workspace
+ */
+export const DeleteCustomWorkspaceRecordParams = zod.object({
+  "workspaceId": zod.coerce.string(),
+  "recordId": zod.coerce.string()
+})
+
+export const DeleteCustomWorkspaceRecordResponse = zod.object({
+  "deleted": zod.boolean()
+})
+
+
+/**
+ * @summary Run a server-managed LLM request for a workspace
+ */
+export const AskCustomWorkspaceLlmParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const askCustomWorkspaceLlmBodyPromptMax = 2000;
+
+
+
+export const AskCustomWorkspaceLlmBody = zod.object({
+  "prompt": zod.string().min(1).max(askCustomWorkspaceLlmBodyPromptMax)
+})
+
+export const AskCustomWorkspaceLlmResponse = zod.object({
+  "answer": zod.string()
 })
 
 

@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const assistantConversationsTable = pgTable("assistant_conversations", {
@@ -21,6 +21,18 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantSkillsTable = pgTable("assistant_skills", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  instructions: text("instructions").notNull(),
+  actions: jsonb("actions").$type<string[]>().notNull().default([]),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertAssistantMessageSchema = createInsertSchema(assistantMessagesTable).omit({
   createdAt: true,
 });
@@ -34,3 +46,4 @@ export type AssistantMessage = typeof assistantMessagesTable.$inferSelect;
 export type InsertAssistantMessage = z.infer<typeof insertAssistantMessageSchema>;
 export type AssistantConversation = typeof assistantConversationsTable.$inferSelect;
 export type InsertAssistantConversation = z.infer<typeof insertAssistantConversationSchema>;
+export type AssistantSkill = typeof assistantSkillsTable.$inferSelect;

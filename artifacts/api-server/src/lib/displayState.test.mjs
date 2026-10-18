@@ -24,6 +24,7 @@ const tableNames = [
   "applicantsTable",
   "assistantConversationsTable",
   "assistantMessagesTable",
+  "assistantSkillsTable",
   "broadcastAcksTable",
   "broadcastsTable",
   "chatCustomEmojisTable",

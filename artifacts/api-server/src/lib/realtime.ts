@@ -84,7 +84,20 @@ export function initRealtime(): void {
   }
 }
 
-function startRelay(url: string | undefined, key: string | undefined, channelName: string, label: string): void {
+// A relay that cannot connect (most often because that Supabase project is
+// over its egress quota) must not spin in a reconnect storm or spam the log.
+// We tear the client down, run in a quiet degraded mode where local write
+// hints + gated polling carry live updates, and retry on a slow interval so
+// the relay heals by itself once the quota resets.
+const RELAY_RETRY_INTERVAL_MS = 10 * 60 * 1000;
+const degradedRelays = new Map<string, { retryTimer: NodeJS.Timeout }>();
+
+function startRelay(
+  url: string | undefined,
+  key: string | undefined,
+  channelName: string,
+  label: string,
+): void {
   if (!url || !key) {
     logger.warn(
       `Supabase realtime relay (${label}) disabled: URL or key missing. Live pages fall back to local hints and polling.`,
@@ -95,7 +108,6 @@ function startRelay(url: string | undefined, key: string | undefined, channelNam
     const relay = createClient(url, key, {
       realtime: { params: { eventsPerSecond: 20 } },
     });
-    if (!supabase) supabase = relay;
     const channel = relay.channel(channelName);
     for (const table of REALTIME_WATCHED_TABLES) {
       channel.on(
@@ -105,11 +117,31 @@ function startRelay(url: string | undefined, key: string | undefined, channelNam
       );
     }
     channel.subscribe((status, error) => {
-      if (error) {
-        logger.error({ err: error }, `Supabase realtime subscription error (${label})`);
+      if (status === "SUBSCRIBED") {
+        degradedRelays.delete(label);
+        if (!supabase) supabase = relay;
+        logger.info({ status, relay: label }, "Supabase realtime status");
         return;
       }
-      logger.info({ status, relay: label }, "Supabase realtime status");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        // Drop the socket so phoenix stops retrying, then schedule one
+        // quiet retry. Local write hints keep pages live meanwhile.
+        degradedRelays.get(label)?.retryTimer.unref?.();
+        degradedRelays.set(label, {
+          retryTimer: setTimeout(() => {
+            logger.info({ relay: label }, "Retrying Supabase realtime relay");
+            startRelay(url, key, channelName, label);
+          }, RELAY_RETRY_INTERVAL_MS),
+        });
+        logger.warn(
+          { relay: label, status, reason: error instanceof Error ? error.message : String(error ?? "unknown") },
+          "Supabase realtime relay unavailable (project may be over quota). Live pages use local hints; retrying in 10 minutes.",
+        );
+        // Do NOT unsubscribe here: the realtime client re-enters this same
+        // callback while tearing down, which overflows the stack and kills the
+        // process. The client's own reconnect backoff plus the 10-minute gate
+        // above already bound the retries.
+      }
     });
   } catch (error) {
     logger.error({ err: error }, `Failed to start Supabase realtime relay (${label})`);

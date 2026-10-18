@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Bot,
   Boxes,
+  Camera,
   Check,
   ExternalLink,
   Loader2,
@@ -49,6 +50,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PartsRobotDetailsDialog } from "@/components/PartsRobotDetailsDialog";
+import {
+  PartsImageIdentifyDialog,
+  type PartsImageReviewedPart,
+} from "@/components/PartsImageIdentifyDialog";
 
 type PageTab = "inventory" | "search";
 type Notice = { kind: "success" | "error"; text: string };
@@ -59,6 +64,7 @@ type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "
 type PartsOrderLine = { product: PricedPartsCatalogSearchResult; quantity: number };
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
+const PARTS_REFRESH_INTERVAL_MS = 5_000;
 
 const VENDOR_GROUPS: PartsVendor["group"][] = [
   "General Parts",
@@ -488,7 +494,14 @@ function PartCard({
 
 export default function PartsPage() {
   const queryClient = useQueryClient();
-  const dashboardQuery = useGetPartsDashboard();
+  const dashboardQuery = useGetPartsDashboard({
+    query: {
+      queryKey: getGetPartsDashboardQueryKey(),
+      refetchInterval: PARTS_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
+  });
   const [tab, setTab] = useState<PageTab>("inventory");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryVendor, setInventoryVendor] = useState("");
@@ -517,6 +530,7 @@ export default function PartsPage() {
   const [customImageUrl, setCustomImageUrl] = useState("");
   const [customQuantity, setCustomQuantity] = useState("0");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
 
   const catalogQuery = useListPartsCatalog({
@@ -525,6 +539,19 @@ export default function PartsPage() {
     manualOnly: true,
     limit: pageSize,
     offset: 0,
+  }, {
+    query: {
+      queryKey: getListPartsCatalogQueryKey({
+        search: inventorySearch.trim() || undefined,
+        vendorKey: inventoryVendor || undefined,
+        manualOnly: true,
+        limit: pageSize,
+        offset: 0,
+      }),
+      refetchInterval: PARTS_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
   });
   const savedSearchParams = {
     search: lastSearch.trim() || undefined,
@@ -796,6 +823,32 @@ export default function PartsPage() {
       await refreshParts();
     } catch (error) {
       setNotice({ kind: "error", text: errorMessage(error, "Unable to add this part.") });
+    }
+  };
+
+  const savePhotoIdentifiedPart = async (part: PartsImageReviewedPart) => {
+    if (!vendors.some((vendor) => vendor.key === part.vendorKey)) {
+      throw new Error("Choose a supported supplier before saving.");
+    }
+    try {
+      await createItemMutation.mutateAsync({
+        data: {
+          vendorKey: part.vendorKey,
+          name: part.name,
+          sku: part.sku || null,
+          category: part.category || null,
+          description: part.description || null,
+          productUrl: null,
+          imageUrl: null,
+          quantityOwned: part.quantityOwned,
+        },
+      });
+      setNotice({ kind: "success", text: `${part.name} added to inventory.` });
+      await refreshParts();
+    } catch (error) {
+      const message = errorMessage(error, "Unable to add this part.");
+      setNotice({ kind: "error", text: message });
+      throw new Error(message);
     }
   };
 
@@ -1566,6 +1619,13 @@ export default function PartsPage() {
                     </form>
                   </DialogContent>
                 </Dialog>
+                <PartsImageIdentifyDialog
+                  open={photoDialogOpen}
+                  onOpenChange={setPhotoDialogOpen}
+                  vendors={vendors}
+                  saving={createItemMutation.isPending}
+                  onSave={savePhotoIdentifiedPart}
+                />
                 <Card className="border-border bg-card">
                   <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
                     <div className="grid flex-1 gap-3 sm:grid-cols-2">
@@ -1614,9 +1674,14 @@ export default function PartsPage() {
                       ? "Loading catalog…"
                       : `${formatQuantity(catalogItems.length)} shown of ${formatQuantity(catalogQuery.data?.total ?? 0)} saved item(s)`}
                   </span>
-                  <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
-                    <Plus size={14} aria-hidden="true" /> Add custom part
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)}>
+                      <Camera size={14} aria-hidden="true" /> Identify from photo
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
+                      <Plus size={14} aria-hidden="true" /> Add custom part
+                    </Button>
+                  </div>
                   {catalogQuery.isError && <span role="alert" className="text-destructive">Could not load saved catalog items.</span>}
                 </div>
 

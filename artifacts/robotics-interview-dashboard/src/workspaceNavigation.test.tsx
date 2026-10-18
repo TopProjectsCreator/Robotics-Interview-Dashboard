@@ -61,6 +61,7 @@ describe("workspace navigation", () => {
     expect(workspaceAreaForPath("/cad/")).toBe("cad");
     expect(workspaceAreaForPath("/code")).toBe("code");
     expect(workspaceAreaForPath("/code/")).toBe("code");
+    expect(workspaceAreaForPath("/custom-workspaces")).toBe("overview");
     expect(workspaceAreaForPath("/parts")).toBe("parts");
     expect(getWorkspaceNavigation("parts").map(({ label }) => label)).toEqual([
       "Interview",

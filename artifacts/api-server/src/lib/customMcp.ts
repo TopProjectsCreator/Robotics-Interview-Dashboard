@@ -14,12 +14,65 @@ const MAX_RESULT_CHARS = 18_000;
 const PROTOCOL_VERSION = "2025-03-26";
 type EncryptedValue = { ciphertext: string; iv: string; tag: string };
 type OAuthMetadata = {
+  issuer?: string;
   authorization_endpoint: string;
   token_endpoint: string;
   registration_endpoint?: string;
 };
+class McpAuthenticationRequiredError extends Error {
+  constructor(readonly resourceMetadataUrl?: string, readonly challenge = "") {
+    super("This MCP endpoint requires sign-in.");
+  }
+}
+type RpcResult = { response: Response; payload: McpPayload };
 type McpTool = { name?: unknown; description?: unknown; inputSchema?: unknown };
 type McpPayload = Record<string, unknown>;
+
+export function quotedParameter(header: string | null, name: string): string | undefined {
+  if (!header) return undefined;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = header.match(new RegExp(`(?:^|,)\\s*${escaped}="([^"]+)"`, "i"));
+  return match?.[1];
+}
+
+export function parseRpcPayload(raw: string, expectedId?: string | number): McpPayload {
+  try {
+    return JSON.parse(raw) as McpPayload;
+  } catch {
+    const events = raw.split(/\r?\n\r?\n/);
+    const payloads: McpPayload[] = [];
+    for (const event of events) {
+      const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim()).join("\n");
+      if (!data || data === "[DONE]") continue;
+      try {
+        const value = JSON.parse(data) as McpPayload;
+        if (value && typeof value === "object") payloads.push(value);
+      } catch { /* Ignore SSE comments and non-JSON events. */ }
+    }
+    const matching = expectedId === undefined ? undefined : payloads.find((value) => value.id === expectedId);
+    return matching ?? payloads.find((value) => value.result !== undefined || value.error !== undefined) ?? {};
+  }
+}
+
+export function resourceMetadataCandidates(endpoint: string, challengeUrl?: string): string[] {
+  if (challengeUrl) return [new URL(challengeUrl, endpoint).toString()];
+  const parsed = new URL(endpoint);
+  return [
+    new URL("/.well-known/oauth-protected-resource", parsed.origin).toString(),
+    new URL(`${parsed.pathname.replace(/\/$/, "")}/.well-known/oauth-protected-resource`, parsed.origin).toString(),
+  ];
+}
+
+export function authorizationMetadataCandidates(issuer: string): string[] {
+  const parsed = new URL(issuer);
+  const issuerPath = parsed.pathname.replace(/\/$/, "");
+  return [
+    new URL(`/.well-known/oauth-authorization-server${issuerPath}`, parsed.origin).toString(),
+    new URL(`${issuerPath}/.well-known/oauth-authorization-server`, parsed.origin).toString(),
+    new URL("/.well-known/oauth-authorization-server", parsed.origin).toString(),
+  ];
+}
 
 export type CustomMcpTool = {
   type: "function";
@@ -84,7 +137,14 @@ export async function validateCustomMcpEndpoint(value: string): Promise<string> 
   return url.toString();
 }
 
-async function request(endpoint: string, token: string | undefined, session: string | undefined, body: McpPayload) {
+async function request(
+  endpoint: string,
+  token: string | undefined,
+  session: string | undefined,
+  body: McpPayload,
+  protocolVersion = PROTOCOL_VERSION,
+  extraHeaders?: Record<string, string>,
+): Promise<RpcResult> {
   const response = await fetch(endpoint, {
     method: "POST",
     redirect: "error",
@@ -93,55 +153,196 @@ async function request(endpoint: string, token: string | undefined, session: str
       Accept: "application/json, text/event-stream",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(session ? { "Mcp-Session-Id": session } : {}),
+      ...(body.method === "initialize" ? {} : { "MCP-Protocol-Version": protocolVersion }),
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const raw = await response.text();
-  let payload: McpPayload = {};
-  try {
-    payload = JSON.parse(raw) as McpPayload;
-  } catch {
-    const dataLine = raw.split(/\r?\n/).find((line) => line.startsWith("data:"));
-    if (dataLine) {
-      try { payload = JSON.parse(dataLine.slice(5).trim()) as McpPayload; } catch { /* handled by caller */ }
-    }
-  }
+  const payload = parseRpcPayload(raw, typeof body.id === "string" || typeof body.id === "number" ? body.id : undefined);
   return { response, payload };
 }
 
-async function session<T>(endpoint: string, token: string | undefined, action: (sessionId?: string) => Promise<T>): Promise<T> {
+type McpRequest = (body: McpPayload) => Promise<RpcResult>;
+
+function parseSseEvent(raw: string): { event: string; data: string } {
+  let event = "message";
+  const data: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  }
+  return { event, data: data.join("\n") };
+}
+
+class LegacySseReader {
+  private buffer = "";
+  private readonly decoder = new TextDecoder();
+  constructor(private readonly reader: ReadableStreamDefaultReader<Uint8Array>) {}
+
+  async nextEvent(): Promise<{ event: string; data: string }> {
+    while (true) {
+      const boundary = this.buffer.match(/\r?\n\r?\n/);
+      if (boundary && boundary.index !== undefined) {
+        const raw = this.buffer.slice(0, boundary.index);
+        this.buffer = this.buffer.slice(boundary.index + boundary[0].length);
+        const event = parseSseEvent(raw);
+        if (event.data || event.event !== "message") return event;
+        continue;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("MCP SSE response timed out.")), FETCH_TIMEOUT_MS);
+      });
+      let chunk;
+      try {
+        chunk = await Promise.race([this.reader.read(), timeout]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (chunk.done) throw new Error("The MCP SSE connection closed unexpectedly.");
+      this.buffer += this.decoder.decode(chunk.value, { stream: true });
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.reader.cancel().catch(() => undefined);
+  }
+}
+
+async function legacySseSession<T>(
+  endpoint: string,
+  token: string | undefined,
+  extraHeaders: Record<string, string> | undefined,
+  action: (send: McpRequest) => Promise<T>,
+): Promise<T | null> {
+  const controller = new AbortController();
+  const connectTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "GET",
+      redirect: "error",
+      headers: { Accept: "text/event-stream", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(connectTimer);
+  }
+  if (response.status === 401) {
+    throw new McpAuthenticationRequiredError(
+      quotedParameter(response.headers.get("www-authenticate"), "resource_metadata"),
+      response.headers.get("www-authenticate") ?? "",
+    );
+  }
+  if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const stream = new LegacySseReader(response.body.getReader());
+  try {
+    const endpointEvent = await stream.nextEvent();
+    if (endpointEvent.event !== "endpoint" || !endpointEvent.data) return null;
+    const postUrl = new URL(endpointEvent.data, endpoint);
+    if (postUrl.origin !== new URL(endpoint).origin) {
+      throw new Error("The MCP SSE message endpoint must use the same origin.");
+    }
+    const sessionId = response.headers.get("mcp-session-id");
+    const send: McpRequest = async (body) => {
+      const posted = await fetch(postUrl, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(sessionId ? { "Mcp-Session-Id": sessionId } : {}),
+          ...extraHeaders,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!posted.ok) return { response: posted, payload: {} };
+      const raw = await posted.text();
+      if (raw.trim()) {
+        const directPayload = parseRpcPayload(raw, body.id as string | number | undefined);
+        if (directPayload.id !== undefined || body.id === undefined) return { response: posted, payload: directPayload };
+      }
+      if (body.id === undefined) return { response: posted, payload: {} };
+      const event = await stream.nextEvent();
+      return { response: posted, payload: parseRpcPayload(`data: ${event.data}`, body.id as string | number | undefined) };
+    };
+    const initialized = await send({
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "robotics-assistant", version: "1.0.0" } },
+    });
+    if (!initialized.response.ok) {
+      if (initialized.response.status === 401) {
+        throw new McpAuthenticationRequiredError(
+          quotedParameter(initialized.response.headers.get("www-authenticate"), "resource_metadata"),
+          initialized.response.headers.get("www-authenticate") ?? "",
+        );
+      }
+      return null;
+    }
+    if (initialized.payload.error) throw new Error("The MCP endpoint rejected initialization.");
+    await send({ jsonrpc: "2.0", method: "notifications/initialized" }).catch(() => undefined);
+    return await action(send);
+  } finally {
+    await stream.close();
+  }
+}
+
+export async function session<T>(
+  endpoint: string, token: string | undefined, action: (send: McpRequest) => Promise<T>,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
   const { response, payload } = await request(endpoint, token, undefined, {
     jsonrpc: "2.0",
     id: 1,
     method: "initialize",
     params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "robotics-assistant", version: "1.0.0" } },
-  });
+  }, PROTOCOL_VERSION, extraHeaders);
   if (!response.ok) {
-    if (response.status === 401) throw new Error("This MCP endpoint requires sign-in.");
+    if (response.status === 401) {
+      throw new McpAuthenticationRequiredError(
+        quotedParameter(response.headers.get("www-authenticate"), "resource_metadata"),
+        response.headers.get("www-authenticate") ?? "",
+      );
+    }
+    if ([400, 404, 405, 406].includes(response.status)) {
+      const legacy = await legacySseSession(endpoint, token, extraHeaders, action);
+      if (legacy !== null) return legacy;
+    }
     throw new Error(`MCP initialization returned ${response.status}.`);
   }
   if (payload.error) throw new Error("The MCP endpoint rejected initialization.");
   const sessionId = response.headers.get("mcp-session-id") ?? undefined;
-  await request(endpoint, token, sessionId, { jsonrpc: "2.0", method: "notifications/initialized" }).catch(() => undefined);
-  return action(sessionId);
+  const result = payload.result as { protocolVersion?: unknown } | undefined;
+  const protocolVersion = typeof result?.protocolVersion === "string" ? result.protocolVersion : PROTOCOL_VERSION;
+  await request(endpoint, token, sessionId, { jsonrpc: "2.0", method: "notifications/initialized" }, protocolVersion, extraHeaders).catch(() => undefined);
+  return action((body) => request(endpoint, token, sessionId, body, protocolVersion, extraHeaders));
 }
 
-async function listAt(endpoint: string, token: string | undefined) {
-  return session(endpoint, token, async (sessionId) => {
-    const { response, payload } = await request(endpoint, token, sessionId, {
+async function listAt(endpoint: string, token: string | undefined, extraHeaders?: Record<string, string>) {
+  return session(endpoint, token, async (send) => {
+    const { response, payload } = await send({
       jsonrpc: "2.0", id: 2, method: "tools/list", params: {},
     });
     if (!response.ok) throw new Error(`MCP tools/list returned ${response.status}.`);
     const result = payload.result as { tools?: McpTool[] } | undefined;
     if (!result || !Array.isArray(result.tools)) throw new Error("The endpoint did not return an MCP tools list.");
     return result.tools;
-  });
+  }, extraHeaders);
 }
 
 type ConnectionRow = {
   endpoint_url: string;
   access_token: EncryptedValue | string | null;
+  api_key: EncryptedValue | string | null;
+  api_key_header: string | null;
+  api_key_prefix: string | null;
   refresh_token: EncryptedValue | string | null;
   client_id: string | null;
   token_endpoint: string | null;
@@ -149,7 +350,7 @@ type ConnectionRow = {
 };
 async function connection(accountId: string, teamId: string): Promise<ConnectionRow | undefined> {
   const result = await pool.query(
-    `select endpoint_url, access_token, refresh_token, client_id, token_endpoint, expires_at
+    `select endpoint_url, access_token, api_key, api_key_header, api_key_prefix, refresh_token, client_id, token_endpoint, expires_at
        from custom_mcp_connections where account_id = $1 and team_id = $2`,
     [accountId, teamId],
   );
@@ -198,37 +399,80 @@ export async function customMcpStatus(accountId: string, teamId: string) {
 
 export async function startCustomMcpConnection(input: {
   accountId: string; teamId: string; endpointUrl: string; redirectUri: string;
+  apiKey?: string; apiKeyHeader?: string; apiKeyPrefix?: string;
 }) {
   const endpointUrl = await validateCustomMcpEndpoint(input.endpointUrl.trim());
+  const apiKeyHeader = input.apiKeyHeader?.trim() || "X-API-Key";
+  const apiKeyPrefix = input.apiKeyPrefix?.trim() || "";
+  if (input.apiKey !== undefined && (!input.apiKey.trim() || input.apiKey.length > 8192 ||
+      !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(apiKeyHeader) ||
+      /[\r\n]/.test(input.apiKey) || /[\r\n]/.test(apiKeyPrefix))) {
+    throw new Error("Enter a valid API key and HTTP header.");
+  }
+  const apiKeyHeaders = input.apiKey ? {
+    [apiKeyHeader]: apiKeyPrefix ? `${apiKeyPrefix} ${input.apiKey}` : input.apiKey,
+  } : undefined;
+  let requiredMetadataUrl: string | undefined;
+  let authChallenge = "";
   try {
-    const tools = await listAt(endpointUrl, undefined);
+    const tools = await listAt(endpointUrl, undefined, apiKeyHeaders);
     await pool.query(
-      `insert into custom_mcp_connections (account_id, team_id, endpoint_url, access_token, updated_at)
-       values ($1, $2, $3, null, now())
+      `insert into custom_mcp_connections (account_id, team_id, endpoint_url, access_token, api_key, api_key_header, api_key_prefix, updated_at)
+       values ($1, $2, $3, null, $4::jsonb, $5, $6, now())
        on conflict (account_id) do update set team_id = excluded.team_id, endpoint_url = excluded.endpoint_url,
-         access_token = null, refresh_token = null, client_id = null, token_endpoint = null, expires_at = null,
+         access_token = null, api_key = excluded.api_key, api_key_header = excluded.api_key_header,
+         api_key_prefix = excluded.api_key_prefix, refresh_token = null, client_id = null, token_endpoint = null, expires_at = null,
          updated_at = now()`,
-      [input.accountId, input.teamId, endpointUrl],
+      [input.accountId, input.teamId, endpointUrl, input.apiKey ? JSON.stringify(encrypt(input.apiKey)) : null,
+        input.apiKey ? apiKeyHeader : null, input.apiKey ? apiKeyPrefix : null],
     );
     return { connected: true as const, endpointUrl, toolCount: tools.length };
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("requires sign-in")) throw error;
+    if (!(error instanceof McpAuthenticationRequiredError)) throw error;
+    if (input.apiKey) throw new Error("The API key was rejected. Check the key, header name, and prefix.");
+    requiredMetadataUrl = error.resourceMetadataUrl;
+    authChallenge = error.challenge;
   }
 
-  const origin = new URL(endpointUrl).origin;
-  const resourceMetadataUrl = new URL("/.well-known/oauth-protected-resource", origin);
-  const resourceResponse = await fetch(resourceMetadataUrl, { redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!resourceResponse.ok) throw new Error("This endpoint requires sign-in but does not publish MCP OAuth metadata.");
-  const resource = await resourceResponse.json() as { authorization_servers?: unknown; resource?: unknown };
+  let resource: { authorization_servers?: unknown; resource?: unknown } | undefined;
+  for (const candidate of resourceMetadataCandidates(endpointUrl, requiredMetadataUrl)) {
+    const metadataUrl = await validateCustomMcpEndpoint(candidate);
+    const resourceResponse = await fetch(metadataUrl, {
+      redirect: "error",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!resourceResponse.ok) continue;
+    resource = await resourceResponse.json() as { authorization_servers?: unknown; resource?: unknown };
+    break;
+  }
+  if (!resource) {
+    const bearer = /^Bearer\b/i.test(authChallenge);
+    return {
+      connected: false as const,
+      apiKeyRequired: true as const,
+      endpointUrl,
+      apiKeyHeader: bearer ? "Authorization" : "X-API-Key",
+      apiKeyPrefix: bearer ? "Bearer" : "",
+    };
+  }
   const authorizationServer = Array.isArray(resource.authorization_servers) ? resource.authorization_servers[0] : undefined;
   if (typeof authorizationServer !== "string") throw new Error("MCP OAuth metadata did not identify an authorization server.");
-  const authUrl = new URL(await validateCustomMcpEndpoint(authorizationServer));
-  if (authUrl.protocol !== "https:") throw new Error("The MCP authorization server must use HTTPS.");
-  const metadataResponse = await fetch(new URL("/.well-known/oauth-authorization-server", authUrl), {
-    redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!metadataResponse.ok) throw new Error("Could not load MCP authorization server metadata.");
-  const metadata = await metadataResponse.json() as OAuthMetadata;
+  const authUrl = await validateCustomMcpEndpoint(authorizationServer);
+  let metadata: OAuthMetadata | undefined;
+  for (const candidate of authorizationMetadataCandidates(authUrl)) {
+    const metadataUrl = await validateCustomMcpEndpoint(candidate);
+    const metadataResponse = await fetch(metadataUrl, {
+      redirect: "error",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!metadataResponse.ok) continue;
+    const discovered = await metadataResponse.json() as OAuthMetadata;
+    if (discovered.authorization_endpoint && discovered.token_endpoint) {
+      metadata = discovered;
+      break;
+    }
+  }
+  if (!metadata) throw new Error("Could not load MCP authorization server metadata.");
   if (!metadata.authorization_endpoint || !metadata.token_endpoint || !metadata.registration_endpoint) {
     throw new Error("MCP authorization metadata does not support dynamic client registration.");
   }
@@ -306,7 +550,8 @@ export async function finishCustomMcpAuthorization(input: { state: string; code:
      values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, now() + ($8 * interval '1 second'), now())
      on conflict (account_id) do update set team_id = excluded.team_id, endpoint_url = excluded.endpoint_url,
        access_token = excluded.access_token, refresh_token = excluded.refresh_token, client_id = excluded.client_id,
-       token_endpoint = excluded.token_endpoint, expires_at = excluded.expires_at, updated_at = now()`,
+        token_endpoint = excluded.token_endpoint, expires_at = excluded.expires_at,
+        api_key = null, api_key_header = null, api_key_prefix = null, updated_at = now()`,
     [row.account_id, row.team_id, row.endpoint_url, JSON.stringify(encrypt(token.access_token)),
       typeof token.refresh_token === "string" ? JSON.stringify(encrypt(token.refresh_token)) : null,
       row.client_id, row.token_endpoint, typeof token.expires_in === "number" ? Math.max(60, token.expires_in) : 3600],
@@ -325,7 +570,11 @@ export async function listCustomMcpTools(accountId: string, teamId: string): Pro
   if (!row) return { tools: [], bindings: new Map() };
   const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
   const accessToken = await tokenFor(accountId, teamId, row);
-  const serverTools = await listAt(endpoint, accessToken);
+  const apiKey = row.api_key ? decryptValue(row.api_key) : undefined;
+  const apiKeyHeaders = apiKey ? {
+    [row.api_key_header || "X-API-Key"]: row.api_key_prefix ? `${row.api_key_prefix} ${apiKey}` : apiKey,
+  } : undefined;
+  const serverTools = await listAt(endpoint, accessToken, apiKeyHeaders);
   const tools: CustomMcpTool[] = [];
   const bindings = new Map<string, CustomMcpToolBinding>();
   for (const tool of serverTools) {
@@ -352,8 +601,12 @@ export async function callCustomMcpTool(
   if (!row) throw new Error("Custom MCP is not connected.");
   const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
   const accessToken = await tokenFor(accountId, teamId, row);
-  return session(endpoint, accessToken, async (sessionId) => {
-    const { response, payload } = await request(endpoint, accessToken, sessionId, {
+  const apiKey = row.api_key ? decryptValue(row.api_key) : undefined;
+  const apiKeyHeaders = apiKey ? {
+    [row.api_key_header || "X-API-Key"]: row.api_key_prefix ? `${row.api_key_prefix} ${apiKey}` : apiKey,
+  } : undefined;
+  return session(endpoint, accessToken, async (send) => {
+    const { response, payload } = await send({
       jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: toolName, arguments: args },
     });
     if (!response.ok) throw new Error(`MCP tool call returned ${response.status}.`);
@@ -362,5 +615,5 @@ export async function callCustomMcpTool(
     const text = (result.content ?? []).map((entry) => entry.text ?? "").filter(Boolean).join("\n");
     if (result.isError) throw new Error(text.slice(0, MAX_RESULT_CHARS) || "MCP tool call failed.");
     return text.slice(0, MAX_RESULT_CHARS);
-  });
+  }, apiKeyHeaders);
 }
