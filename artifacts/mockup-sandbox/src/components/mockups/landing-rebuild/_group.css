@@ -1,0 +1,54 @@
+/* Landing rebuild set — six structurally different landing page concepts.
+   Each concept picks its own type pairing; all faces are already preloaded
+   by the sandbox index.html bundle, the imports below just guarantee them
+   when a preview is opened on its own. */
+
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+/* 1 — Command Deck */
+.d1-sans { font-family: "Space Grotesk", system-ui, sans-serif; }
+.d1-mono { font-family: "DM Mono", ui-monospace, monospace; }
+
+/* 2 — Broadsheet */
+.d2-serif { font-family: "Libre Baskerville", Georgia, serif; }
+.d2-text { font-family: "Source Serif 4", Georgia, serif; }
+.d2-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* 3 — Bento Ops */
+.d3-sans { font-family: "Outfit", system-ui, sans-serif; }
+.d3-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* 4 — Swiss Spec */
+.d4-sans { font-family: "Inter", system-ui, sans-serif; }
+.d4-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* 5 — Phosphor Console */
+.d5-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* 6 — Warm Grid */
+.d6-sans { font-family: "Outfit", system-ui, sans-serif; }
+.d6-body { font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+
+/* shared micro-rules */
+.d-grid-lines {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, .05) 1px, transparent 1px);
+  background-size: 80px 100%;
+}
+.d-paper-grain {
+  background-image: radial-gradient(rgba(22, 19, 15, .07) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+.d-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 43, 31, .16) 0 2px,
+    transparent 2px 7px
+  );
+}
+.d-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(51, 255, 153, .05) 0 1px,
+    transparent 1px 3px
+  );
+}
