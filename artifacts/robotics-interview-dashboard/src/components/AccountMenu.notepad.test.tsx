@@ -84,10 +84,10 @@ describe("AccountMenu notepad overlay", () => {
     const menu = screen.getByRole("menu");
     const notepad = screen.getByRole("menuitem", { name: "Notepad" });
     const endSession = screen.getByRole("menuitem", { name: "End session" });
-    expect(menu).toHaveClass("border-border", "bg-popover", "text-popover-foreground");
+    expect(menu).toHaveClass("border-border", "bg-[hsl(var(--popover))]", "text-[hsl(var(--popover-foreground))]");
     expect(menu.querySelector(".border-b")).toHaveClass("border-border");
     expect(menu.querySelector(".text-muted-foreground")).toHaveTextContent("Interviewer account");
-    expect(notepad).toHaveClass("text-popover-foreground", "hover:bg-accent", "focus-visible:ring-2");
+    expect(notepad).toHaveClass("text-[hsl(var(--popover-foreground))]", "hover:bg-accent", "focus-visible:ring-2");
     expect(endSession).toHaveClass("text-destructive", "hover:bg-destructive/10", "focus-visible:ring-2");
     if (theme === "dark") {
       expect(endSession).toHaveClass("dark:text-[#f1aaa4]", "dark:hover:bg-[#40221f]", "dark:focus-visible:bg-[#40221f]");
