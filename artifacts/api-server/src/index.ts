@@ -144,8 +144,46 @@ async function ensureSchema(): Promise<void> {
         END IF;
       END IF;
     END
-    $rls$
-  `);
+    $rls$`)
+    // Catch-all: RLS is enabled on EVERY table in the public schema, including
+    // any table a later migration adds. A hardcoded list silently leaves new
+    // tables exposed to PostgREST, which is how teams/webauthn_credentials/
+    // chunked_uploads were found unguarded on the second instance.
+    .concat(`
+    DO $rls_all$
+    DECLARE
+      target text;
+    BEGIN
+      FOR target IN
+        SELECT tablename FROM pg_tables
+         WHERE schemaname = 'public'
+           AND NOT rowsecurity
+      LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target);
+      END LOOP;
+
+      FOR target IN
+        SELECT c.relname
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relkind = 'r'
+      LOOP
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies
+           WHERE schemaname = 'public'
+             AND tablename = target
+             AND policyname = 'deny_supabase_client_access'
+        ) THEN
+          BEGIN
+            EXECUTE format('CREATE POLICY deny_supabase_client_access ON public.%I AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)', target);
+          EXCEPTION
+            WHEN duplicate_object THEN NULL;
+          END;
+        END IF;
+      END LOOP;
+    END
+    $rls_all$`
+    );
 
   const statements = [
     `create table if not exists "custom_workspaces" (

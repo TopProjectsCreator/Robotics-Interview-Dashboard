@@ -137,12 +137,10 @@ function startRelay(
           { relay: label, status, reason: error instanceof Error ? error.message : String(error ?? "unknown") },
           "Supabase realtime relay unavailable (project may be over quota). Live pages use local hints; retrying in 10 minutes.",
         );
-        try {
-          void relay.removeChannel(channel);
-          void relay.removeAllChannels();
-        } catch {
-          // Already torn down; nothing to do.
-        }
+        // Do NOT unsubscribe here: the realtime client re-enters this same
+        // callback while tearing down, which overflows the stack and kills the
+        // process. The client's own reconnect backoff plus the 10-minute gate
+        // above already bound the retries.
       }
     });
   } catch (error) {
