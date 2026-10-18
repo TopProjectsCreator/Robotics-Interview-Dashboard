@@ -4536,6 +4536,30 @@ function chatFileType(file: File): string {
   const extension = file.name.split(".").pop()?.toLowerCase();
   return CHAT_EXTENSION_TYPES[extension ?? ""] ?? "";
 }
+function nameClipboardChatFile(file: File, index: number): File {
+  if (file.name.trim()) return file;
+  const type = normalizeChatFileType(file.type);
+  const kind = type.startsWith("video/") ? "video" : "image";
+  const extensionByType: Record<string, string> = {
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+    "video/x-matroska": "mkv",
+    "video/x-msvideo": "avi",
+  };
+  const extension = extensionByType[type] ?? kind;
+  return new File([file], `clipboard-${kind}-${index + 1}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+}
 function chatFileKind(type: string): ChatFileKind {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
@@ -5441,6 +5465,36 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatImageError("Couldn't read the selected files. Try again.");
     }
   };
+  const handleChatPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboard = event.clipboardData;
+    let pastedFiles = Array.from(clipboard.files);
+    if (!pastedFiles.length) {
+      pastedFiles = Array.from(clipboard.items)
+        .filter(item => item.kind === "file")
+        .map(item => item.getAsFile())
+        .filter((file): file is File => file !== null);
+    }
+    if (!pastedFiles.length) return;
+
+    const namedFiles = pastedFiles.map(nameClipboardChatFile);
+    const mediaFiles = namedFiles.filter(file => {
+      const type = chatFileType(file);
+      return type.startsWith("image/") || type.startsWith("video/");
+    });
+    if (mediaFiles.length) {
+      event.preventDefault();
+      attachChatFiles(mediaFiles);
+      return;
+    }
+
+    // Leave normal text paste alone. A file-only paste of another format
+    // should explain how to attach it instead of silently changing the draft.
+    if (!clipboard.getData("text/plain")) {
+      event.preventDefault();
+      const name = pastedFiles[0].name.trim() || "Clipboard file";
+      setChatImageError(`"${name}" isn't a supported pasted media file. Paste an image or video, or use Attach files.`);
+    }
+  };
   const removeChatFile = (id: string) => {    setFileStatus(current => {
       const next = { ...current };
       delete next[id];
@@ -6212,6 +6266,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    ref={chatMessageInputRef}
                    value={message}
                    onChange={event => updateMentionState(event.target.value)}
+                   onPaste={handleChatPaste}
                    onKeyDown={handleChatInputKeyDown}
                    aria-autocomplete="list"
                    aria-controls={mentionOpen ? "chat-mention-listbox" : undefined}
