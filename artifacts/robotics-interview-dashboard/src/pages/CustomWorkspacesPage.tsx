@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "lucide-react";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
+import { getStoredAuthToken } from "../authSession";
 
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
@@ -48,7 +49,11 @@ function sandboxDocument(html: string): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const token = getStoredAuthToken();
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(path, { ...init, credentials: "include", headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The request failed.");
   return body as T;

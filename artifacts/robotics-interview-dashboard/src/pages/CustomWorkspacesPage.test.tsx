@@ -5,11 +5,15 @@ import { CustomWorkspacesPage } from "./CustomWorkspacesPage";
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
+  getStoredAuthToken: vi.fn(() => "test-session-token"),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
   getGetSessionQueryKey: () => ["/api/auth/session"],
   useGetSession: mocks.getSession,
+}));
+vi.mock("../authSession", () => ({
+  getStoredAuthToken: mocks.getStoredAuthToken,
 }));
 
 const workspace = {
@@ -83,6 +87,11 @@ describe("custom workspace access settings", () => {
       "/api/custom-workspaces/team-members",
       expect.any(Object),
     ));
+    const teamMembersRequest = fetchMock.mock.calls.find(
+      ([input]) => String(input) === "/api/custom-workspaces/team-members",
+    );
+    expect(new Headers(teamMembersRequest?.[1]?.headers).get("Authorization"))
+      .toBe("Bearer test-session-token");
     expect(await screen.findByText("Choose teammates", { selector: "legend" })).toBeInTheDocument();
     expect(await screen.findByText("Ada")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("checkbox-workspace-member-ben-id"));
