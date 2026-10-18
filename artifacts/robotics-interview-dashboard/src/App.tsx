@@ -6804,6 +6804,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [onshapeError, setOnshapeError] = useState("");
   const [customMcpEndpoint, setCustomMcpEndpoint] = useState("");
   const [customMcpConnected, setCustomMcpConnected] = useState(false);
+  const [customMcpApiKeyRequired, setCustomMcpApiKeyRequired] = useState(false);
+  const [customMcpApiKey, setCustomMcpApiKey] = useState("");
+  const [customMcpApiKeyHeader, setCustomMcpApiKeyHeader] = useState("X-API-Key");
+  const [customMcpApiKeyPrefix, setCustomMcpApiKeyPrefix] = useState("");
   const [customMcpBusy, setCustomMcpBusy] = useState(false);
   const [customMcpError, setCustomMcpError] = useState("");
   const attachmentUpload = useRequestUploadUrl();
@@ -6917,8 +6921,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const connectCustomMcp = async () => {
     setCustomMcpBusy(true);
     setCustomMcpError("");
-    const popup = window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
-    if (!popup) {
+    const popup = customMcpApiKeyRequired
+      ? null
+      : window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
+    if (!customMcpApiKeyRequired && !popup) {
       setCustomMcpError("Allow pop-ups to sign in to this MCP server.");
       setCustomMcpBusy(false);
       return;
@@ -6929,18 +6935,41 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-        body: JSON.stringify({ endpointUrl: customMcpEndpoint }),
+        body: JSON.stringify({
+          endpointUrl: customMcpEndpoint,
+          ...(customMcpApiKeyRequired ? {
+            apiKey: customMcpApiKey,
+            apiKeyHeader: customMcpApiKeyHeader,
+            apiKeyPrefix: customMcpApiKeyPrefix,
+          } : {}),
+        }),
       });
-      const result = await response.json() as { connected?: boolean; endpointUrl?: string; authorizationUrl?: string; error?: string };
+      const result = await response.json() as {
+        connected?: boolean; endpointUrl?: string; authorizationUrl?: string; error?: string;
+        apiKeyRequired?: boolean; apiKeyHeader?: string; apiKeyPrefix?: string;
+      };
       if (!response.ok) throw new Error(result.error || "Could not connect to the MCP server.");
       if (result.connected) {
         setCustomMcpConnected(true);
+        setCustomMcpApiKeyRequired(false);
+        setCustomMcpApiKey("");
         setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
-        popup.close();
+        popup?.close();
+        setCustomMcpBusy(false);
+        return;
+      }
+      if (result.apiKeyRequired) {
+        setCustomMcpApiKeyRequired(true);
+        setCustomMcpApiKey("");
+        setCustomMcpApiKeyHeader(result.apiKeyHeader ?? "X-API-Key");
+        setCustomMcpApiKeyPrefix(result.apiKeyPrefix ?? "");
+        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        popup?.close();
         setCustomMcpBusy(false);
         return;
       }
       if (!result.authorizationUrl) throw new Error("The MCP server did not return an authorization URL.");
+      if (!popup) throw new Error("Allow pop-ups to sign in to this MCP server.");
       popup.location.href = result.authorizationUrl;
       let checks = 0;
       const poll = window.setInterval(async () => {
@@ -6981,7 +7010,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         } catch { /* wait for OAuth callback */ }
       }, 1500);
     } catch (error) {
-      popup.close();
+      popup?.close();
       setCustomMcpError(error instanceof Error ? error.message : "Could not connect to this MCP server.");
       setCustomMcpBusy(false);
     }
@@ -7000,9 +7029,17 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       if (!response.ok) throw new Error("Could not disconnect this MCP server.");
       setCustomMcpConnected(false);
       setCustomMcpEndpoint("");
+      setCustomMcpApiKeyRequired(false);
+      setCustomMcpApiKey("");
     } catch (error) {
       setCustomMcpError(error instanceof Error ? error.message : "Could not disconnect this MCP server.");
     } finally { setCustomMcpBusy(false); }
+  };
+
+  const updateCustomMcpEndpoint = (value: string) => {
+    setCustomMcpEndpoint(value);
+    setCustomMcpApiKeyRequired(false);
+    setCustomMcpApiKey("");
   };
 
   const updateOnshapeStatus = (connected: boolean, detectExpired = false) => {
@@ -7336,7 +7373,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} customMcpEndpoint={customMcpEndpoint} onCustomMcpEndpointChange={setCustomMcpEndpoint} customMcpConnected={customMcpConnected} customMcpBusy={customMcpBusy} customMcpError={customMcpError} onConnectCustomMcp={connectCustomMcp} onDisconnectCustomMcp={disconnectCustomMcp} /></div>} />
+    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} customMcpEndpoint={customMcpEndpoint} onCustomMcpEndpointChange={updateCustomMcpEndpoint} customMcpConnected={customMcpConnected} customMcpApiKeyRequired={customMcpApiKeyRequired} customMcpApiKey={customMcpApiKey} customMcpApiKeyHeader={customMcpApiKeyHeader} customMcpApiKeyPrefix={customMcpApiKeyPrefix} onCustomMcpApiKeyChange={setCustomMcpApiKey} onCustomMcpApiKeyHeaderChange={setCustomMcpApiKeyHeader} onCustomMcpApiKeyPrefixChange={setCustomMcpApiKeyPrefix} customMcpBusy={customMcpBusy} customMcpError={customMcpError} onConnectCustomMcp={connectCustomMcp} onDisconnectCustomMcp={disconnectCustomMcp} /></div>} />
     <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>

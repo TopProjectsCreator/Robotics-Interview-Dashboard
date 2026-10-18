@@ -188,6 +188,8 @@ button { cursor: pointer; }
 .assistant-onshape-setting-error { grid-column: 1 / -1; color: hsl(var(--destructive)); font-size: 11px; line-height: 1.4; }
 .assistant-mcp-endpoint { grid-column: 1 / -1; width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 7px; background: hsl(var(--background)); padding: 7px 9px; color: hsl(var(--foreground)); font-size: 12px; }
 .assistant-mcp-endpoint:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.assistant-mcp-api-key-fields { grid-column: 1 / -1; display: grid; gap: 8px; }
+.assistant-mcp-api-key-fields label { display: grid; gap: 4px; color: hsl(var(--muted-foreground)); font-size: 11px; }
 @media (max-width: 640px) {
   .assistant-model-trigger { width: min(360px, calc(100vw - 242px)); min-width: min(180px, calc(100vw - 242px)); }
 }

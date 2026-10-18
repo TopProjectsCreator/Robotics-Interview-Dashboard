@@ -154,6 +154,24 @@ describe("AssistantModelPicker", () => {
     expect(onConnectCustomMcp).toHaveBeenCalledOnce();
   });
 
+  it("shows MCP API-key fields only after the server requires an API key", async () => {
+    const props = {
+      model: "openrouter/free",
+      models: [{ id: "openrouter/free" }],
+      loading: false,
+      error: false,
+      onChange: vi.fn(),
+      customMcpEndpoint: "https://tools.example/mcp",
+      onConnectCustomMcp: vi.fn(),
+    };
+    const { rerender } = render(<AssistantModelPicker {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(screen.queryByLabelText("MCP API key")).not.toBeInTheDocument();
+    rerender(<AssistantModelPicker {...props} customMcpApiKeyRequired />);
+    expect(screen.getByLabelText("MCP API key")).toBeInTheDocument();
+    expect(screen.getByLabelText("MCP API key header name")).toHaveValue("X-API-Key");
+  });
+
   it("reflects controlled disabled tools with a count and read-only shortcut", async () => {
     const onDisabledToolsChange = vi.fn();
     render(

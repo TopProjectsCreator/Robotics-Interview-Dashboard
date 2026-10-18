@@ -66,6 +66,29 @@ data: {"jsonrpc":"2.0","id":7,"result":{"tools":[]}}
   assert.deepEqual(payload, { jsonrpc: "2.0", id: 7, result: { tools: [] } });
 });
 
+test("sends configured API-key headers on MCP initialize and tool requests", async () => {
+  const originalFetch = globalThis.fetch;
+  const seenHeaders = [];
+  globalThis.fetch = async (_input, init = {}) => {
+    seenHeaders.push(new Headers(init.headers).get("x-api-key"));
+    const message = JSON.parse(String(init.body));
+    return Response.json({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: message.method === "initialize" ? { protocolVersion: "2025-03-26" } : { tools: [] },
+    });
+  };
+  try {
+    await session("https://mcp.example/mcp", undefined, async (send) => {
+      const { response } = await send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+      assert.equal(response.ok, true);
+    }, { "X-API-Key": "test-value" });
+    assert.deepEqual(seenHeaders, ["test-value", "test-value", "test-value"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("falls back to the legacy GET-SSE and POST-message transport", async () => {
   const originalFetch = globalThis.fetch;
   let streamController;
@@ -76,6 +99,7 @@ test("falls back to the legacy GET-SSE and POST-message transport", async () => 
       return new Response("unsupported", { status: 405 });
     }
     if (url.pathname === "/sse" && method === "GET") {
+      assert.equal(new Headers(init.headers).get("x-api-key"), "test-value");
       const body = new ReadableStream({
         start(controller) {
           streamController = controller;
@@ -86,6 +110,7 @@ test("falls back to the legacy GET-SSE and POST-message transport", async () => 
       return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
     }
     if (url.pathname === "/messages" && method === "POST") {
+      assert.equal(new Headers(init.headers).get("x-api-key"), "test-value");
       const message = JSON.parse(String(init.body));
       if (message.id !== undefined) {
         streamController.enqueue(new TextEncoder().encode(
@@ -101,7 +126,7 @@ test("falls back to the legacy GET-SSE and POST-message transport", async () => 
       const { response, payload } = await send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
       assert.equal(response.status, 202);
       return payload.result.tools;
-    });
+    }, { "X-API-Key": "test-value" });
     assert.deepEqual(tools, [{ name: "sample" }]);
   } finally {
     globalThis.fetch = originalFetch;

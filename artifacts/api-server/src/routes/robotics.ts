@@ -5759,6 +5759,9 @@ router.post("/assistant/custom-mcp/connection", requireCoordinator, async (req, 
       teamId: await requestTeamId(req),
       endpointUrl,
       redirectUri: `${origin}/api/assistant/custom-mcp/callback`,
+      ...(typeof req.body?.apiKey === "string" ? { apiKey: req.body.apiKey } : {}),
+      ...(typeof req.body?.apiKeyHeader === "string" ? { apiKeyHeader: req.body.apiKeyHeader } : {}),
+      ...(typeof req.body?.apiKeyPrefix === "string" ? { apiKeyPrefix: req.body.apiKeyPrefix } : {}),
     });
     res.json(result);
   } catch (error) {
