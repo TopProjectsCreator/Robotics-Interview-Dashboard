@@ -82,9 +82,11 @@ import {
 import { partsPreviewKind } from "../lib/partsRobotPreview";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
+import partsImageRecognitionRouter from "./partsImageRecognition";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+router.use(partsImageRecognitionRouter);
 type PoolClient = {
   query: (
     statement: string,

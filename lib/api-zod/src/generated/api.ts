@@ -3246,6 +3246,42 @@ export const CreatePartsCatalogItemResponse = zod.object({
 
 
 /**
+ * @summary Suggest part details from a temporary image upload
+ */
+export const identifyPartsImageBodyImageBase64Min = 4;
+export const identifyPartsImageBodyImageBase64Max = 4194304;
+
+
+
+export const IdentifyPartsImageBody = zod.object({
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp']),
+  "imageBase64": zod.string().min(identifyPartsImageBodyImageBase64Min).max(identifyPartsImageBodyImageBase64Max).describe('Base64-encoded image bytes, limited to 3 MiB after decoding.')
+})
+
+export const identifyPartsImageResponseNameMax = 250;
+
+export const identifyPartsImageResponseCategoryMax = 200;
+
+export const identifyPartsImageResponseDescriptionMax = 1200;
+
+export const identifyPartsImageResponseSkuMax = 200;
+
+export const identifyPartsImageResponseUncertaintyReasonMax = 300;
+
+
+
+export const IdentifyPartsImageResponse = zod.object({
+  "identified": zod.boolean().describe('False when the image does not clearly show an identifiable part.'),
+  "name": zod.string().max(identifyPartsImageResponseNameMax),
+  "category": zod.string().max(identifyPartsImageResponseCategoryMax).nullable(),
+  "description": zod.string().max(identifyPartsImageResponseDescriptionMax).nullable(),
+  "sku": zod.string().max(identifyPartsImageResponseSkuMax).nullable().describe('Only populated when the code is clearly legible in the image.'),
+  "uncertainty": zod.enum(['low', 'medium', 'high']),
+  "uncertaintyReason": zod.string().max(identifyPartsImageResponseUncertaintyReasonMax).nullable()
+})
+
+
+/**
  * @summary Search public supplier catalogs
  */
 export const searchPartsCatalogQueryQMin = 2;

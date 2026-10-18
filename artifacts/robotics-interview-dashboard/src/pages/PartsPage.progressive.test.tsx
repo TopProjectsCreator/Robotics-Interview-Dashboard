@@ -6,17 +6,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   consumeSearch: vi.fn(),
   createItem: vi.fn(),
+  identifyImage: vi.fn(),
 }));
+
+const testVendor = {
+  key: "andymark",
+  name: "AndyMark",
+  group: "General Parts",
+  website: "https://www.andymark.com",
+  catalogMode: "products",
+  catalogSourceUrl: "https://www.andymark.com",
+  coverageState: "discovery_only",
+  lastSync: null,
+};
 
 vi.mock("@workspace/api-client-react", () => ({
   consumePartsCatalogSearchStream: mocks.consumeSearch,
   getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
   getListPartsCatalogQueryKey: () => ["/parts/catalog"],
+  useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
   useCreatePartsCatalogItem: () => ({ mutateAsync: mocks.createItem, isPending: false }),
   useCreatePartsRobot: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useGetPartsDashboard: () => ({
     data: {
-      vendors: [],
+      vendors: [testVendor],
       robots: [],
       summary: {
         vendorCount: 0,
@@ -72,6 +85,7 @@ function renderPartsPage() {
     </QueryClientProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Find parts" }));
+  return queryClient;
 }
 
 function startSearch(query = "early result") {
@@ -91,6 +105,15 @@ afterEach(() => {
 describe("progressive Parts search", () => {
   beforeEach(() => {
     mocks.createItem.mockResolvedValue({});
+    mocks.identifyImage.mockResolvedValue({
+      identified: true,
+      name: "Photo suggested bracket",
+      category: "Structure",
+      description: "A visible robotics bracket.",
+      sku: null,
+      uncertainty: "medium",
+      uncertaintyReason: "The exact bracket version is unclear.",
+    });
   });
 
   it("lets a user save a verified result before the stream completes", async () => {
@@ -255,5 +278,39 @@ describe("progressive Parts search", () => {
     });
     expect(screen.queryByText("Stale result")).not.toBeInTheDocument();
     expect(screen.getByText("Current result")).toBeInTheDocument();
+  });
+
+  it("saves reviewed photo details through the Parts catalog path and refreshes inventory totals", async () => {
+    const queryClient = renderPartsPage();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Identify from photo" }));
+
+    const file = new File([new Uint8Array([1, 2, 3])], "bracket.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
+    await screen.findByDisplayValue("Photo suggested bracket");
+    expect(mocks.createItem).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Reviewed bracket" } });
+    fireEvent.change(screen.getByLabelText("Supplier *"), { target: { value: "andymark" } });
+    fireEvent.change(screen.getByLabelText("Owned quantity *"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save reviewed part" }));
+
+    await waitFor(() => expect(mocks.createItem).toHaveBeenCalledWith({
+      data: {
+        vendorKey: "andymark",
+        name: "Reviewed bracket",
+        sku: null,
+        category: "Structure",
+        description: "A visible robotics bracket.",
+        productUrl: null,
+        imageUrl: null,
+        quantityOwned: 3,
+      },
+    }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/parts/dashboard"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/parts/catalog"] });
+    expect(await screen.findByText("Reviewed bracket added to inventory.")).toBeInTheDocument();
   });
 });

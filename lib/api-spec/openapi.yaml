@@ -2374,6 +2374,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PartsCatalogItem"
+  /parts/catalog/identify-image:
+    post:
+      operationId: identifyPartsImage
+      tags: [parts]
+      summary: Suggest part details from a temporary image upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsImageIdentificationInput"
+      responses:
+        "200":
+          description: Suggested visual identification; supplier and product identity are not verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsImageIdentification"
+        "400":
+          description: Unsupported or invalid image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Image request exceeds the request-body limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: The vision model returned an invalid result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Image identification is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog/search:
     get:
       operationId: searchPartsCatalog
@@ -4385,6 +4433,44 @@ components:
           type: integer
           minimum: 0
           default: 0
+    PartsImageIdentificationInput:
+      type: object
+      required: [contentType, imageBase64]
+      properties:
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        imageBase64:
+          type: string
+          minLength: 4
+          maxLength: 4194304
+          description: Base64-encoded image bytes, limited to 3 MiB after decoding.
+    PartsImageIdentification:
+      type: object
+      required: [identified, name, category, description, sku, uncertainty, uncertaintyReason]
+      properties:
+        identified:
+          type: boolean
+          description: False when the image does not clearly show an identifiable part.
+        name:
+          type: string
+          maxLength: 250
+        category:
+          type: ["string", "null"]
+          maxLength: 200
+        description:
+          type: ["string", "null"]
+          maxLength: 1200
+        sku:
+          type: ["string", "null"]
+          maxLength: 200
+          description: Only populated when the code is clearly legible in the image.
+        uncertainty:
+          type: string
+          enum: [low, medium, high]
+        uncertaintyReason:
+          type: ["string", "null"]
+          maxLength: 300
     PartsCatalogImportItem:
       type: object
       required: [vendorKey, name]

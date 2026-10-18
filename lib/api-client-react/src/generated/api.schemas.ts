@@ -411,6 +411,63 @@ export interface CreatePartsCatalogItemInput {
   quantityOwned?: number;
 }
 
+export type PartsImageIdentificationInputContentType = typeof PartsImageIdentificationInputContentType[keyof typeof PartsImageIdentificationInputContentType];
+
+
+export const PartsImageIdentificationInputContentType = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+} as const;
+
+export interface PartsImageIdentificationInput {
+  contentType: PartsImageIdentificationInputContentType;
+  /**
+     * Base64-encoded image bytes, limited to 3 MiB after decoding.
+     * @minLength 4
+     * @maxLength 4194304
+     */
+  imageBase64: string;
+}
+
+export type PartsImageIdentificationUncertainty = typeof PartsImageIdentificationUncertainty[keyof typeof PartsImageIdentificationUncertainty];
+
+
+export const PartsImageIdentificationUncertainty = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface PartsImageIdentification {
+  /** False when the image does not clearly show an identifiable part. */
+  identified: boolean;
+  /** @maxLength 250 */
+  name: string;
+  /**
+     * @maxLength 200
+     * @nullable
+     */
+  category: string | null;
+  /**
+     * @maxLength 1200
+     * @nullable
+     */
+  description: string | null;
+  /**
+     * Only populated when the code is clearly legible in the image.
+     * @maxLength 200
+     * @nullable
+     */
+  sku: string | null;
+  uncertainty: PartsImageIdentificationUncertainty;
+  /**
+     * @maxLength 300
+     * @nullable
+     */
+  uncertaintyReason: string | null;
+}
+
 export interface PartsCatalogImportItem {
   vendorKey: string;
   name: string;
