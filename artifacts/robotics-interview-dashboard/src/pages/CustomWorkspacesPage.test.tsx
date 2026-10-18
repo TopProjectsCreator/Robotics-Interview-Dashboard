@@ -158,3 +158,45 @@ describe("custom workspace version history", () => {
     );
   });
 });
+
+describe("custom workspace visual publish review", () => {
+  it("shows live agent actions and the screenshot reviewed before publishing", async () => {
+    let published = false;
+    const draft = { ...workspace, status: "draft" };
+    const publishedWorkspace = { ...workspace, status: "published" };
+    const frames = [
+      { type: "tool_start", id: "screenshot-1", tool: "Capture preview screenshot", detail: "Rendering attempt 1." },
+      { type: "screenshot", id: "screenshot-1", image: "data:image/png;base64,c2NyZWVuc2hvdA==" },
+      { type: "tool_start", id: "review-1", tool: "Review rendered screenshot", detail: "Checking layout." },
+      { type: "review", id: "review-1", passed: true, issues: [] },
+      { type: "complete", workspace: publishedWorkspace },
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [published ? publishedWorkspace : draft] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/publish") {
+        published = true;
+        return new Response(`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+    expect(await screen.findByText("Builder agent activity")).toBeInTheDocument();
+    expect(await screen.findByText("Capture preview screenshot")).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Latest screenshot reviewed by the builder agent" }))
+      .toHaveAttribute("src", "data:image/png;base64,c2NyZWVuc2hvdA==");
+    expect(await screen.findByText("Publish workspace")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/publish", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+    }));
+  });
+});

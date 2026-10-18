@@ -10,6 +10,18 @@ type VersionPreview = Version & { html: string; capabilities: Capability[] };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
+type PublishAgentEvent = {
+  type: "tool_start" | "tool_done" | "screenshot" | "review" | "complete" | "failed";
+  id?: string;
+  tool?: string;
+  detail?: string;
+  image?: string;
+  passed?: boolean;
+  issues?: string[];
+  message?: string;
+  workspace?: Workspace;
+};
+type PublishAgentStep = { id: string; label: string; detail?: string; status: "running" | "done" | "failed" };
 
 const API = "/api/custom-workspaces";
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
@@ -75,6 +87,8 @@ export function CustomWorkspacesPage() {
   const [teamMembersLoading, setTeamMembersLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
+  const [publishScreenshot, setPublishScreenshot] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
   const active = useMemo(() => selected ?? items[0] ?? null, [items, selected]);
 
@@ -152,6 +166,8 @@ export function CustomWorkspacesPage() {
   const generate = async () => {
     setError("");
     setBusy(true);
+    setPublishScreenshot("");
+    setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "Sending the brief to the AI builder.", status: "running" }]);
     try {
       const result = await request<{ workspace: Workspace }>(`${API}/generate`, {
         method: "POST", body: JSON.stringify({ prompt, capabilities }),
@@ -159,7 +175,9 @@ export function CustomWorkspacesPage() {
       await refresh();
       setSelected(result.workspace);
       setPrompt("");
+      setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "Draft created and saved.", status: "done" }]);
     } catch (err) {
+      setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "The build request failed.", status: "failed" }]);
       setError(err instanceof Error ? err.message : "Could not build the workspace.");
     } finally {
       setBusy(false);
@@ -169,12 +187,67 @@ export function CustomWorkspacesPage() {
     if (!active) return;
     setBusy(true);
     setError("");
+    setPublishAgentSteps([]);
+    setPublishScreenshot("");
     try {
-      const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/publish`, {
+      const response = await fetch(`${API}/${active.id}/publish`, {
         method: "POST", body: JSON.stringify({ accessMode, allowedInterviewerIds }),
+        credentials: "include",
+        headers: (() => {
+          const headers = new Headers({ "Content-Type": "application/json" });
+          const token = getStoredAuthToken();
+          if (token) headers.set("Authorization", `Bearer ${token}`);
+          return headers;
+        })(),
       });
-      setSelected(result.workspace);
-      await refresh();
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(typeof body.error === "string" ? body.error : "Could not publish the workspace.");
+      }
+      if (!response.body) throw new Error("The visual review stream is unavailable.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let completed = false;
+      let streamFailed = false;
+      const handleEvent = (event: PublishAgentEvent) => {
+        if (event.type === "tool_start" && event.id) {
+          setPublishAgentSteps((current) => [...current, { id: event.id!, label: event.tool ?? "Agent step", detail: event.detail, status: "running" }]);
+        } else if (event.type === "tool_done" && event.id) {
+          setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
+        } else if (event.type === "screenshot" && event.image) {
+          setPublishScreenshot(event.image);
+          setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
+        } else if (event.type === "review" && event.id) {
+          setPublishAgentSteps((current) => current.map((step) => step.id === event.id
+            ? { ...step, status: event.passed ? "done" : "failed", detail: event.issues?.join(" · ") || (event.passed ? "No visible issues found." : "Visual issues found.") }
+            : step));
+        } else if (event.type === "complete" && event.workspace) {
+          completed = true;
+          setSelected(event.workspace);
+          setPublishAgentSteps((current) => [...current, { id: "published", label: "Publish workspace", detail: "Visual check passed.", status: "done" }]);
+          void refresh();
+        } else if (event.type === "failed") {
+          streamFailed = true;
+          setError(event.message ?? "Visual review failed; the workspace remains a draft.");
+          setPublishAgentSteps((current) => current.map((step) => step.status === "running" ? { ...step, status: "failed" } : step));
+        }
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try { handleEvent(JSON.parse(line) as PublishAgentEvent); } catch { /* Ignore malformed progress frames. */ }
+        }
+        if (done) break;
+      }
+      if (buffer.trim()) {
+        try { handleEvent(JSON.parse(buffer) as PublishAgentEvent); } catch { /* Ignore malformed final frame. */ }
+      }
+      if (!completed && !streamFailed) setError("The agent did not finish the visual review.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish the workspace.");
     } finally {
@@ -202,6 +275,8 @@ export function CustomWorkspacesPage() {
     if (!active || !revisionPrompt.trim()) return;
     setBusy(true);
     setError("");
+    setPublishScreenshot("");
+    setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "Sending the requested changes to the AI builder.", status: "running" }]);
     try {
       const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/revise`, {
         method: "POST", body: JSON.stringify({ prompt: revisionPrompt }),
@@ -209,7 +284,9 @@ export function CustomWorkspacesPage() {
       setSelected(result.workspace);
       setRevisionPrompt("");
       await refresh();
+      setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "Changes generated and saved.", status: "done" }]);
     } catch (err) {
+      setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "The revision request failed.", status: "failed" }]);
       setError(err instanceof Error ? err.message : "Could not revise the workspace.");
     } finally {
       setBusy(false);
@@ -308,6 +385,20 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
+        {publishAgentSteps.length > 0 && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
+          <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks one desktop screenshot against the written requirements, repairs visible issues, and blocks publishing if they remain." : "Shows the current build or revision request while the AI builder is working."}</p>
+          <ol className="mt-2 space-y-2">
+            {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
+              <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
+              <span><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}</span>
+            </li>)}
+          </ol>
+          {publishScreenshot && <figure className="mt-3 max-w-xl">
+            <img src={publishScreenshot} alt="Latest screenshot reviewed by the builder agent" className="max-h-72 w-full rounded-lg border border-[hsl(var(--border))] object-contain object-left-top" />
+            <figcaption className="mt-1 text-[11px] text-[#60757c] dark:text-[#b3c3cb]">Latest 1280 × 900 render reviewed by the agent before publishing.</figcaption>
+          </figure>}
+        </section>}
         {active && canManage && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
           <fieldset disabled={busy}>
             <legend className="text-sm font-semibold text-[hsl(var(--foreground))]">Choose teammates</legend>

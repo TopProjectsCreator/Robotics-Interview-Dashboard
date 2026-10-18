@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { pool } from "@workspace/db";
@@ -46,6 +51,111 @@ const CAPABILITIES = new Set(["data", "llm"]);
 const MAX_HTML_BYTES = 120_000;
 const MAX_RECORD_BYTES = 16_000;
 const requestWindows = new Map<string, { startedAt: number; count: number }>();
+const execFileAsync = promisify(execFile);
+const VISUAL_REPAIR_LIMIT = 2;
+
+async function retryAiCall<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const retryable = status === undefined || status === 429 || status >= 500;
+      if (!retryable || attempt >= 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+function visualSandboxDocument(html: string): string {
+  const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
+  const document = /<head\b[^>]*>/i.test(html)
+    ? html.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}`)
+    : `<!doctype html><html><head>${policy}</head><body>${html}</body></html>`;
+  return `<!doctype html><html><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:#f3f6f5"><iframe sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
+}
+
+async function captureWorkspaceScreenshot(html: string): Promise<string> {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-visual-qa-"));
+  const source = path.join(directory, "preview.html");
+  const screenshot = path.join(directory, "preview.png");
+  try {
+    await writeFile(source, visualSandboxDocument(html), "utf8");
+    await execFileAsync(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
+      "--headless", "--disable-gpu", "--disable-dev-shm-usage",
+      "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
+      "--hide-scrollbars", "--window-size=1280,900", "--virtual-time-budget=2500",
+      `--screenshot=${screenshot}`, `file://${source}`,
+    ], { timeout: 20000, maxBuffer: 1024 * 1024 });
+    return (await readFile(screenshot)).toString("base64");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function inspectWorkspaceScreenshot(
+  requirements: string,
+  screenshotBase64: string,
+): Promise<{ passed: boolean; issues: string[]; repair: string }> {
+  const completion = await retryAiCall(() => openai.chat.completions.create({
+    model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+    max_completion_tokens: 8192,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Act as the visual QA agent for an internal web app. Review the rendered 1280x900 screenshot against the requirements. Check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when the screenshot is coherent and satisfies the brief. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: `Requirements:\n${requirements}\n\nReview this rendered screenshot.` },
+          { type: "image_url", image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
+        ],
+      },
+    ],
+  }));
+  const raw = completion.choices[0]?.message.content ?? "";
+  const result = JSON.parse(raw) as { passed?: unknown; issues?: unknown; repair?: unknown };
+  return {
+    passed: result.passed === true,
+    issues: Array.isArray(result.issues) ? result.issues.filter((item): item is string => typeof item === "string").slice(0, 8) : [],
+    repair: typeof result.repair === "string" ? result.repair.slice(0, 4000) : "",
+  };
+}
+
+async function repairWorkspaceHtml(
+  requirements: string,
+  html: string,
+  repair: string,
+): Promise<{ title: string; description: string; html: string }> {
+  const completion = await retryAiCall(() => openai.chat.completions.create({
+    model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+    max_completion_tokens: 8192,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Repair the standalone internal app using the visual QA findings. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}.",
+      },
+      {
+        role: "user",
+        content: JSON.stringify({ requirements, visualFindings: repair, html }),
+      },
+    ],
+  }));
+  const result = JSON.parse(completion.choices[0]?.message.content ?? "") as Record<string, unknown>;
+  const repairedHtml = typeof result.html === "string" ? result.html : "";
+  const title = clipped(result.title, 120);
+  if (!repairedHtml || !title || Buffer.byteLength(repairedHtml, "utf8") > MAX_HTML_BYTES) {
+    throw new Error("The visual QA repair did not produce a valid app.");
+  }
+  return { title, description: clipped(result.description, 1000), html: repairedHtml };
+}
 
 type WorkspaceRow = {
   id: string;
@@ -450,25 +560,109 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
 
 router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
+  const workspaceId = String(req.params.id ?? "");
+  if (limited(`visual-publish:${authenticatedInterviewerId(req)}`, 5)) {
+    res.status(429).json({ error: "Visual publish checks are temporarily rate limited." });
+    return;
+  }
   const accessSettings = await saveableAccessSettings(req.body, teamId);
   if (!accessSettings) {
     res.status(400).json({ error: "Choose a valid access mode and current team members." });
     return;
   }
-  const result = await pool.query(
-    `update "custom_workspaces" set "status" = 'published', "access_mode" = $3,
-              "allowed_interviewer_ids" = $4::jsonb, "updated_at" = now()
-      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-      returning "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
-                "allowed_interviewer_ids" as "allowedInterviewerIds",
-                "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-    [String(req.params.id ?? ""), teamId, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
+  const currentResult = await pool.query<WorkspaceRow & { prompt: string }>(
+    `select "id", "title", "description", "html", "capabilities", "status", "prompt",
+            "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds"
+       from "custom_workspaces"
+      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'
+      limit 1`,
+    [workspaceId, teamId],
   );
-  if (!result.rowCount) {
+  const current = currentResult.rows[0];
+  if (!current) {
     res.status(404).json({ error: "Workspace not found." });
     return;
   }
-  res.json({ workspace: result.rows[0] });
+  const accountId = authenticatedInterviewerId(req) ?? "";
+  res.status(200);
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const emit = (event: Record<string, unknown>) => {
+    res.write(`${JSON.stringify(event)}\n`);
+    (res as Response & { flush?: () => void }).flush?.();
+  };
+
+  try {
+    let html = current.html;
+    let finalScreenshot = "";
+    let finalReview: Awaited<ReturnType<typeof inspectWorkspaceScreenshot>> | null = null;
+    for (let attempt = 0; attempt <= VISUAL_REPAIR_LIMIT; attempt += 1) {
+      emit({ type: "tool_start", id: `screenshot-${attempt + 1}`, tool: "Capture preview screenshot", detail: `Rendering attempt ${attempt + 1} at 1280 × 900.` });
+      finalScreenshot = await captureWorkspaceScreenshot(html);
+      emit({ type: "screenshot", id: `screenshot-${attempt + 1}`, image: `data:image/png;base64,${finalScreenshot}` });
+      emit({ type: "tool_start", id: `review-${attempt + 1}`, tool: "Review rendered screenshot", detail: "Checking layout and visible requirements." });
+      finalReview = await inspectWorkspaceScreenshot(current.prompt, finalScreenshot);
+      emit({ type: "review", id: `review-${attempt + 1}`, passed: finalReview.passed, issues: finalReview.issues });
+      if (finalReview.passed) break;
+      if (attempt === VISUAL_REPAIR_LIMIT) {
+        emit({ type: "failed", message: "Visual review still found issues. The workspace remains a draft.", issues: finalReview.issues });
+        return;
+      }
+      emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair visual issues", detail: finalReview.issues.join(" · ") || finalReview.repair });
+      const repaired = await repairWorkspaceHtml(current.prompt, html, finalReview.repair || finalReview.issues.join("\n"));
+      html = repaired.html;
+      emit({ type: "tool_done", id: `repair-${attempt + 1}` });
+    }
+
+    if (!finalReview?.passed) {
+      emit({ type: "failed", message: "Visual review could not confirm this workspace." });
+      return;
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await client.query<{ html: string; status: string }>(
+        `select "html", "status" from "custom_workspaces"
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} limit 1 for update`,
+        [workspaceId, teamId],
+      );
+      if (locked.rows[0]?.status !== "draft" || locked.rows[0].html !== current.html) {
+        await client.query("ROLLBACK");
+        emit({ type: "failed", message: "This draft changed while it was being reviewed. Reload it and try again." });
+        return;
+      }
+      if (html !== current.html) {
+        await client.query(
+          `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
+           values ($1, $2, $3, $4, $5::jsonb, $6, 'Before visual QA repair')`,
+          [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), accountId],
+        );
+      }
+      const result = await client.query(
+        `update "custom_workspaces" set "html" = $3, "status" = 'published', "access_mode" = $4,
+                  "allowed_interviewer_ids" = $5::jsonb, "updated_at" = now()
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                    "allowed_interviewer_ids" as "allowedInterviewerIds",
+                    "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+        [workspaceId, teamId, html, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
+      );
+      await client.query("COMMIT");
+      emit({ type: "complete", workspace: result.rows[0], image: `data:image/png;base64,${finalScreenshot}` });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    req.log.error({ err: error, workspaceId }, "Custom workspace visual publish failed");
+    emit({ type: "failed", message: "Visual review failed, so this workspace was not published." });
+  } finally {
+    res.end();
+  }
 });
 
 router.patch("/custom-workspaces/:id/access", requireCoordinator, async (req, res): Promise<void> => {
