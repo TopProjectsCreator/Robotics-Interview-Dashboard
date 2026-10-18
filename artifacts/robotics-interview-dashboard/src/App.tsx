@@ -3347,9 +3347,21 @@ function WorkspaceOverview() {
             <h1 className="text-3xl font-semibold tracking-[-.05em] sm:text-[2.6rem]">Choose a workspace</h1>
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
-          <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {isCoordinator && (
+              <Link
+                href="/custom-workspaces"
+                data-testid="link-create-workspace"
+                className="inline-flex items-center gap-2 rounded-full border border-[#16869a] bg-[#16869a] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#116f80] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:border-[#73c9c0] dark:bg-[#73c9c0] dark:text-[#10232b] dark:hover:bg-[#8bd8cf] dark:focus-visible:ring-offset-[#101b23]"
+              >
+                <Plus size={14} aria-hidden="true" />
+                Create workspace
+              </Link>
+            )}
+            <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
+              {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
+            </span>
+          </div>
         </header>
         {visibleList.length === 0 && (
           <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
