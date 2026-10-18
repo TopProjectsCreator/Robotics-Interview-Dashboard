@@ -370,6 +370,13 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
        values ($1, $2, $3, $4, $5::jsonb, $6, 'Initial AI draft')`,
       [randomUUID(), teamId, id, html, JSON.stringify(capabilities), accountId],
     );
+    await pool.query(
+      `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+       values ($1, $2, $3, 'index.html', $4, $5)
+       on conflict ("workspace_id", "path") do update
+         set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+      [randomUUID(), teamId, id, html, accountId],
+    );
     res.status(201).json({ workspace: saved.rows[0] });
   } catch (error) {
     req.log.error({ err: error }, "Custom workspace generation failed");
@@ -380,6 +387,30 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
 router.get("/custom-workspaces/:id", requireCustomWorkspaceAdmin, async (req, res): Promise<void> => {
   const row = await accessibleWorkspace(req, res, String(req.params.id ?? ""), true);
   if (row) res.json({ workspace: row });
+});
+
+router.get("/custom-workspaces/:id/files", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const workspaceId = String(req.params.id ?? "");
+  const workspace = await pool.query(
+    `select "id" from "custom_workspaces"
+      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        and ("status" = 'published' or ("status" = 'draft' and "created_by" = $3))
+      limit 1`,
+    [workspaceId, teamId, authenticatedInterviewerId(req)],
+  );
+  if (!workspace.rowCount) {
+    res.status(404).json({ error: "Workspace not found." });
+    return;
+  }
+  const files = await pool.query(
+    `select "path", "content", "updated_at" as "updatedAt"
+       from "custom_workspace_files"
+      where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+      order by "path"`,
+    [workspaceId, teamId],
+  );
+  res.json({ files: files.rows });
 });
 
 router.get("/custom-workspaces/:id/versions", requireCoordinator, async (req, res): Promise<void> => {
@@ -478,6 +509,13 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
                   "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [workspaceId, teamId, title, description, html],
     );
+    await pool.query(
+      `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+       values ($1, $2, $3, 'index.html', $4, $5)
+       on conflict ("workspace_id", "path") do update
+         set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+      [randomUUID(), teamId, workspaceId, html, accountId],
+    );
     res.json({ workspace: updated.rows[0] });
   } catch (error) {
     req.log.error({ err: error, workspaceId }, "Custom workspace revision failed");
@@ -546,6 +584,13 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
                   "allowed_interviewer_ids" as "allowedInterviewerIds",
                   "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [workspaceId, teamId, previousVersion.html, JSON.stringify(previousVersion.capabilities)],
+    );
+    await client.query(
+      `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+       values ($1, $2, $3, 'index.html', $4, $5)
+       on conflict ("workspace_id", "path") do update
+         set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+      [randomUUID(), teamId, workspaceId, previousVersion.html, accountId],
     );
     await client.query("COMMIT");
     res.json({ workspace: restored.rows[0] });
@@ -648,6 +693,13 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
                     "allowed_interviewer_ids" as "allowedInterviewerIds",
                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
         [workspaceId, teamId, html, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
+      );
+      await client.query(
+        `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+         values ($1, $2, $3, 'index.html', $4, $5)
+         on conflict ("workspace_id", "path") do update
+           set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+        [randomUUID(), teamId, workspaceId, html, accountId],
       );
       await client.query("COMMIT");
       emit({ type: "complete", workspace: result.rows[0], image: `data:image/png;base64,${finalScreenshot}` });

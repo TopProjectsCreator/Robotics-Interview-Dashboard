@@ -85,7 +85,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace from scratch, independent of built-in workspaces or the Code workspace. Use it for explicit requests to build a new app; create an interactive standalone HTML/CSS/JavaScript app, not a plan. Save a draft for coordinator preview and approval; never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
+    "Create a new custom app workspace draft. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -98,6 +98,30 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
       },
     },
     ["title", "prompt", "html", "capabilities"],
+  ),
+  tool(
+    "list_custom_workspace_files",
+    "List source files in a custom workspace draft owned by the signed-in coordinator's team.",
+    { workspaceId: { type: "string" } },
+    ["workspaceId"],
+  ),
+  tool(
+    "read_custom_workspace_file",
+    "Read one source file from a custom workspace draft.",
+    { workspaceId: { type: "string" }, path: { type: "string", maxLength: 255 } },
+    ["workspaceId", "path"],
+  ),
+  tool(
+    "create_custom_workspace_file",
+    "Create a new source file in a custom workspace draft. Existing paths are never overwritten.",
+    { workspaceId: { type: "string" }, path: { type: "string", minLength: 1, maxLength: 255 }, content: { type: "string", maxLength: 120000 } },
+    ["workspaceId", "path", "content"],
+  ),
+  tool(
+    "write_custom_workspace_file",
+    "Replace an existing source file in a custom workspace draft.",
+    { workspaceId: { type: "string" }, path: { type: "string", minLength: 1, maxLength: 255 }, content: { type: "string", maxLength: 120000 } },
+    ["workspaceId", "path", "content"],
   ),
   tool(
     "list_code_project_files",
@@ -169,6 +193,26 @@ function cleanCodePath(path: string): string | null {
   return cleaned;
 }
 
+async function compileCustomWorkspace(workspaceId: string, teamId: string): Promise<string | null> {
+  const result = await pool.query<{ path: string; content: string }>(
+    `select "path", "content" from "custom_workspace_files"
+      where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+    [workspaceId, teamId],
+  );
+  const files = new Map(result.rows.map((file) => [file.path, file.content]));
+  let html = files.get("index.html");
+  if (html === undefined) return null;
+  html = html.replace(/<link\b([^>]*?)href=(["'])([^"']+)\2([^>]*)>/gi, (tag, before: string, _quote: string, href: string, after: string) => {
+    const css = files.get(href.replace(/^\.\//, ""));
+    return css === undefined || !/stylesheet/i.test(`${before}${after}`) ? tag : `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+  });
+  html = html.replace(/<script\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>\s*<\/script>/gi, (tag, before: string, _quote: string, src: string, after: string) => {
+    const js = files.get(src.replace(/^\.\//, ""));
+    return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
+  });
+  return html;
+}
+
 async function projectExists(projectId: string, teamId: string): Promise<boolean> {
   const result = await pool.query(
     `select "id" from "code_projects" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} limit 1`,
@@ -188,7 +232,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace") {
+  if (name === "create_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
     const account = context.accountId ? await accountById(context.accountId) : undefined;
     if (account?.role !== "coordinator") {
       return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
@@ -418,14 +462,91 @@ export async function runAssistantWorkspaceTool(
          values ($1, $2, $3, $4, $5::jsonb, $6, 'Created by assistant')`,
         [randomUUID(), context.teamId, id, html, serializedCapabilities, context.accountId],
       );
+      await pool.query(
+        `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+         values ($1, $2, $3, 'index.html', $4, $5)`,
+        [randomUUID(), context.teamId, id, html, context.authorName || "AI assistant"],
+      );
       pushRealtimeHint("custom_workspaces", "INSERT");
       return {
-        content: JSON.stringify(created.rows[0]),
+        content: `${JSON.stringify(created.rows[0])}\n\nThe draft is saved. Continue by listing its files, reading index.html, and using the custom workspace file tools to refine the persistent app source before reporting completion.`,
         detail: `created custom workspace draft ${title}`,
       };
     } catch (error) {
       throw error;
     }
+  }
+
+  if (name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
+    const account = context.accountId ? await accountById(context.accountId) : undefined;
+    const workspaceId = textArg(args, "workspaceId", 128);
+    if (account?.role !== "coordinator" || !workspaceId) {
+      return { content: "Only coordinators can edit a custom workspace draft.", detail: "access denied" };
+    }
+    const workspace = await pool.query<{ id: string }>(
+      `select "id" from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id', "$2")}
+          and "created_by" = $3 and "status" = 'draft'
+        limit 1`,
+      [workspaceId, context.teamId, context.accountId],
+    );
+    if (!workspace.rowCount) return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
+    if (name === "list_custom_workspace_files") {
+      const files = await pool.query(
+        `select "path", octet_length("content") as "sizeBytes", "updated_at" as "updatedAt"
+           from "custom_workspace_files"
+          where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          order by "path"`,
+        [workspaceId, context.teamId],
+      );
+      return { content: JSON.stringify(files.rows), detail: `listed ${files.rowCount ?? 0} custom workspace files` };
+    }
+    const path = cleanCodePath(textArg(args, "path", 255));
+    if (!path) return { content: "Use a valid relative source path.", detail: "invalid file path" };
+    if (name === "read_custom_workspace_file") {
+      const file = await pool.query<{ content: string }>(
+        `select "content" from "custom_workspace_files"
+          where "workspace_id" = $1 and "path" = $2 and ${teamSqlCondition('"team_id"', "$3")}
+          limit 1`,
+        [workspaceId, path, context.teamId],
+      );
+      return file.rows[0]
+        ? { content: JSON.stringify({ path, content: file.rows[0].content }), detail: `read ${path}` }
+        : { content: `No file exists at ${path}.`, detail: "custom workspace file not found" };
+    }
+    const content = typeof args.content === "string" ? args.content : "";
+    if (Buffer.byteLength(content, "utf8") > 120_000) return { content: "File exceeds 120 KB.", detail: "file too large" };
+    if (name === "create_custom_workspace_file") {
+      try {
+        await pool.query(
+          `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+           values ($1, $2, $3, $4, $5, $6)`,
+          [randomUUID(), context.teamId, workspaceId, path, content, context.authorName || "AI assistant"],
+        );
+      } catch (error) {
+        if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+          return { content: `A file already exists at ${path}; use write_custom_workspace_file to change it.`, detail: "file already exists" };
+        }
+        throw error;
+      }
+    } else {
+      const updated = await pool.query(
+        `update "custom_workspace_files" set "content" = $4, "updated_by" = $5, "updated_at" = now()
+          where "workspace_id" = $1 and "path" = $2 and ${teamSqlCondition('"team_id"', "$3")}
+          returning "path"`,
+        [workspaceId, path, context.teamId, content, context.authorName || "AI assistant"],
+      );
+      if (!updated.rowCount) return { content: `No file exists at ${path}.`, detail: "custom workspace file not found" };
+    }
+    const compiledHtml = await compileCustomWorkspace(workspaceId, context.teamId);
+    if (compiledHtml !== null) {
+      await pool.query(
+        `update "custom_workspaces" set "html" = $3, "updated_at" = now()
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'`,
+        [workspaceId, context.teamId, compiledHtml],
+      );
+    }
+    return { content: `${name === "create_custom_workspace_file" ? "Created" : "Updated"} ${path}.`, detail: `${name === "create_custom_workspace_file" ? "created" : "updated"} ${path}` };
   }
 
   if (name === "list_code_project_files") {

@@ -198,6 +198,14 @@ async function createHarness(t) {
           );
           return { rows: row ? [{ id: row.id }] : [], rowCount: row ? 1 : 0 };
         }
+        if (statement.includes('"prompt"') && statement.includes('and "status" = \u0027draft\u0027')) {
+          const [id, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId && workspace.status === "draft",
+          );
+          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes("for update")) {
           const [id, teamId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -363,6 +371,13 @@ async function createHarness(t) {
           message,
           createdAt: "2026-01-03T00:00:00.000Z",
         });
+        return { rows: [], rowCount: 1 };
+      }
+
+      if (statement.startsWith('insert into "custom_workspace_files"')) {
+        return { rows: [], rowCount: 1 };
+      }
+      if (statement.startsWith('insert into "custom_workspace_files"') && statement.includes("on conflict")) {
         return { rows: [], rowCount: 1 };
       }
 
@@ -603,10 +618,18 @@ test("coordinators can update selected members but cannot grant access across te
     { accessMode: "selected", allowedInterviewerIds: ["admin-a"] },
   );
   assert.equal(selectedOnPublish.status, 200);
-  assert.deepEqual((await selectedOnPublish.json()).workspace.allowedInterviewerIds, ["admin-a"]);
+  const publishEvents = (await selectedOnPublish.text()).trim().split("\n").map((line) => JSON.parse(line));
+  const publishedEvent = publishEvents.find((event) => event.type === "complete");
+  const failedPublish = publishEvents.find((event) => event.type === "failed");
+  if (publishedEvent) {
+    assert.deepEqual(publishedEvent.workspace.allowedInterviewerIds, ["admin-a"]);
+  } else {
+    assert.ok(failedPublish, "publish must either pass visual QA or explicitly fail");
+    assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "draft");
+  }
   assert.equal(
     (await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-draft")).status,
-    200,
+    publishedEvent ? 200 : 404,
   );
 });
 

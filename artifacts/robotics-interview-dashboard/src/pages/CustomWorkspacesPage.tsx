@@ -7,6 +7,7 @@ type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
 type Version = CustomWorkspaceVersion;
 type VersionPreview = Version & { html: string; capabilities: Capability[] };
+type WorkspaceFile = { path: string; content: string; updatedAt: string };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
@@ -80,6 +81,8 @@ export function CustomWorkspacesPage() {
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [revisionPrompt, setRevisionPrompt] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
+  const [sourceFiles, setSourceFiles] = useState<WorkspaceFile[]>([]);
+  const [selectedSourcePath, setSelectedSourcePath] = useState("index.html");
   const [previewVersion, setPreviewVersion] = useState<VersionPreview | null>(null);
   const [accessMode, setAccessMode] = useState<AccessMode>("team");
   const [allowedInterviewerIds, setAllowedInterviewerIds] = useState<string[]>([]);
@@ -119,6 +122,18 @@ export function CustomWorkspacesPage() {
     void request<{ versions: Version[] }>(`${API}/${active.id}/versions`)
       .then((result) => setVersions(result.versions))
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load version history."));
+  }, [active?.id, active?.status, canManage]);
+  useEffect(() => {
+    if (!active || !canManage) {
+      setSourceFiles([]);
+      return;
+    }
+    void request<{ files: WorkspaceFile[] }>(`${API}/${active.id}/files`)
+      .then(({ files }) => {
+        setSourceFiles(files);
+        setSelectedSourcePath((current) => files.some((file) => file.path === current) ? current : files[0]?.path ?? "");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load the source files."));
   }, [active?.id, active?.status, canManage]);
 
   useEffect(() => {
@@ -163,21 +178,80 @@ export function CustomWorkspacesPage() {
     return () => window.removeEventListener("message", onMessage);
   }, [active]);
 
+  const runBuilderAgent = async (question: string, beforeIds: Set<string>) => {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const token = getStoredAuthToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch("/api/assistant/ask/stream", {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({ question }),
+    });
+    if (!response.ok || !response.body) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(typeof body.error === "string" ? body.error : "The builder agent could not start.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let done = false;
+    const acceptEvent = (raw: string) => {
+      for (const line of raw.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        let event: Record<string, unknown>;
+        try { event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>; } catch { continue; }
+        if (event.activity && typeof event.activity === "object") {
+          const activity = event.activity as { tool?: unknown; detail?: unknown };
+          const tool = typeof activity.tool === "string" ? activity.tool : "Assistant tool";
+          const detail = typeof activity.detail === "string" ? activity.detail : "";
+          setPublishAgentSteps((steps) => [...steps, {
+            id: `agent-${steps.length}-${tool}`,
+            label: tool.replaceAll("_", " "),
+            detail,
+            status: "done",
+          }]);
+        }
+        if (typeof event.error === "string") throw new Error(event.error);
+        if (event.done === true) done = true;
+      }
+    };
+    while (true) {
+      const { value, done: ended } = await reader.read();
+      buffer += decoder.decode(value, { stream: !ended });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      frames.forEach(acceptEvent);
+      if (ended) break;
+    }
+    if (buffer.trim()) acceptEvent(buffer);
+    if (!done) throw new Error("The builder agent ended without completing its response.");
+    const result = await request<{ workspaces: Workspace[] }>(API);
+    setItems(result.workspaces);
+    const created = result.workspaces.find((workspace) => !beforeIds.has(workspace.id));
+    if (created) setSelected(created);
+    else if (active) setSelected(result.workspaces.find((workspace) => workspace.id === active.id) ?? active);
+    const files = created ?? active;
+    if (files) {
+      const fileResult = await request<{ files: WorkspaceFile[] }>(`${API}/${files.id}/files`);
+      setSourceFiles(fileResult.files);
+      setSelectedSourcePath(fileResult.files[0]?.path ?? "");
+    }
+  };
+
   const generate = async () => {
     setError("");
     setBusy(true);
     setPublishScreenshot("");
-    setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "Sending the brief to the AI builder.", status: "running" }]);
+    setPublishAgentSteps([{ id: "generate", label: "Start workspace agent", detail: "The assistant will build the app through multiple tool rounds.", status: "running" }]);
     try {
-      const result = await request<{ workspace: Workspace }>(`${API}/generate`, {
-        method: "POST", body: JSON.stringify({ prompt, capabilities }),
-      });
-      await refresh();
-      setSelected(result.workspace);
+      const beforeIds = new Set(items.map((item) => item.id));
+      const capabilityText = capabilities.length ? capabilities.join(", ") : "none";
+      await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nOnly grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
       setPrompt("");
-      setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "Draft created and saved.", status: "done" }]);
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Agent turn complete." } : step));
     } catch (err) {
-      setPublishAgentSteps([{ id: "generate", label: "Generate workspace draft", detail: "The build request failed.", status: "failed" }]);
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" as const } : step));
       setError(err instanceof Error ? err.message : "Could not build the workspace.");
     } finally {
       setBusy(false);
@@ -276,17 +350,13 @@ export function CustomWorkspacesPage() {
     setBusy(true);
     setError("");
     setPublishScreenshot("");
-    setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "Sending the requested changes to the AI builder.", status: "running" }]);
+    setPublishAgentSteps([{ id: "revise", label: "Start workspace revision agent", detail: "The assistant will inspect and edit the saved source tree.", status: "running" }]);
     try {
-      const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/revise`, {
-        method: "POST", body: JSON.stringify({ prompt: revisionPrompt }),
-      });
-      setSelected(result.workspace);
+      await runBuilderAgent(`Revise custom workspace draft ${active.id}. Requested changes: ${revisionPrompt}\n\nUse list_custom_workspace_files and read_custom_workspace_file before editing. Keep the changes in this draft's persistent source tree and do not publish.`, new Set(items.map((item) => item.id)));
       setRevisionPrompt("");
-      await refresh();
-      setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "Changes generated and saved.", status: "done" }]);
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Agent turn complete." } : step));
     } catch (err) {
-      setPublishAgentSteps([{ id: "revise", label: "Revise workspace draft", detail: "The revision request failed.", status: "failed" }]);
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" } : step));
       setError(err instanceof Error ? err.message : "Could not revise the workspace.");
     } finally {
       setBusy(false);
@@ -398,6 +468,19 @@ export function CustomWorkspacesPage() {
             <img src={publishScreenshot} alt="Latest screenshot reviewed by the builder agent" className="max-h-72 w-full rounded-lg border border-[hsl(var(--border))] object-contain object-left-top" />
             <figcaption className="mt-1 text-[11px] text-[#60757c] dark:text-[#b3c3cb]">Latest 1280 × 900 render reviewed by the agent before publishing.</figcaption>
           </figure>}
+        </section>}
+        {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
+          <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
+          {!sourceFiles.length
+            ? <p className="mt-2 text-xs text-[#60757c] dark:text-[#b3c3cb]">No source files have been saved for this workspace yet.</p>
+            : <div className="mt-2 grid gap-3 md:grid-cols-[minmax(160px,240px)_minmax(0,1fr)]">
+              <ul className="max-h-48 space-y-1 overflow-auto" aria-label="Source files">
+                {sourceFiles.map((file) => <li key={file.path}>
+                  <button type="button" aria-pressed={selectedSourcePath === file.path} onClick={() => setSelectedSourcePath(file.path)} className={`w-full truncate rounded-md px-2 py-1 text-left font-mono text-xs ${selectedSourcePath === file.path ? "bg-[#e9f5f4] text-[#145d6c] dark:bg-[#15353d] dark:text-[#a5e4df]" : "text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"}`}>{file.path}</button>
+                </li>)}
+              </ul>
+              <pre className="max-h-64 overflow-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 font-mono text-[11px] leading-relaxed text-[hsl(var(--foreground))]"><code>{sourceFiles.find((file) => file.path === selectedSourcePath)?.content ?? ""}</code></pre>
+            </div>}
         </section>}
         {active && canManage && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
           <fieldset disabled={busy}>

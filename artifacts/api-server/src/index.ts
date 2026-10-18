@@ -120,6 +120,7 @@ async function ensureSchema(): Promise<void> {
     "code_presence",
     "custom_workspaces",
     "custom_workspace_versions",
+    "custom_workspace_files",
     "custom_workspace_data",
     "workspace_settings",
     "dashboard_charts",
@@ -253,6 +254,25 @@ async function ensureSchema(): Promise<void> {
        "created_at" timestamptz not null default now()
      )`,
     `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
+    `create table if not exists "custom_workspace_files" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "path" text not null,
+       "content" text not null check (octet_length("content") <= 120000),
+       "updated_by" text not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now(),
+       unique ("workspace_id", "path")
+     )`,
+    `create index if not exists "custom_workspace_files_scope_idx" on "custom_workspace_files" ("team_id", "workspace_id", "path")`,
+    `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+     select gen_random_uuid()::text, w."team_id", w."id", 'index.html', w."html", w."created_by"
+       from "custom_workspaces" w
+      where not exists (
+        select 1 from "custom_workspace_files" f
+         where f."workspace_id" = w."id" and f."path" = 'index.html'
+      )`,
     `create table if not exists "custom_workspace_data" (
        "id" text primary key,
        "team_id" text,

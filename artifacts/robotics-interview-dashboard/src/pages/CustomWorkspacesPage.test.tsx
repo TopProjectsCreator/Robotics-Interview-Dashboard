@@ -46,6 +46,7 @@ describe("custom workspace access settings", () => {
       if (path === "/api/custom-workspaces/team-members") {
         return Response.json({ members: [{ id: "ada-id", displayName: "Ada" }, { id: "ben-id", displayName: "Ben" }] });
       }
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") {
         return Response.json({ versions: [{
           id: "version-1",
@@ -113,6 +114,7 @@ describe("custom workspace version history", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [workspace] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") {
         return Response.json({ versions: [{
@@ -174,6 +176,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [published ? publishedWorkspace : draft] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1/publish") {
@@ -198,5 +201,37 @@ describe("custom workspace visual publish review", () => {
       method: "POST",
       credentials: "include",
     }));
+  });
+
+  it("builds through the streamed assistant tool loop and displays the saved file tree", async () => {
+    const draft = { ...workspace, id: "new-workspace", title: "Parts tracker", status: "draft" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({
+        workspaces: [draft],
+      });
+      if (path === "/api/custom-workspaces/new-workspace/files") {
+        return Response.json({ files: [{ path: "index.html", content: "<main>Parts tracker</main>", updatedAt: "2026-10-01T00:00:00.000Z" }] });
+      }
+      if (path === "/api/assistant/ask/stream") {
+        expect(JSON.parse(String(init?.body)).question).toContain("Build a custom workspace app");
+        return new Response([
+          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace", detail: "created custom workspace draft" } })}\n\n`,
+          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace_file", detail: "created index.html" } })}\n\n`,
+          `data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`,
+        ].join(""), { headers: { "Content-Type": "text/event-stream" } });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomWorkspacesPage />);
+    fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+      target: { value: "Track parts and stock" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByRole("heading", { name: "Parts tracker" })).toBeInTheDocument();
+    expect(await screen.findByTestId("workspace-source-tree")).toHaveTextContent("index.html");
+    expect(await screen.findByText("create custom workspace file")).toBeInTheDocument();
   });
 });
