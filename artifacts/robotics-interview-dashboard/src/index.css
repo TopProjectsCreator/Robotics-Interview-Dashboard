@@ -317,6 +317,24 @@ button { cursor: pointer; }
 .dark [class~="text-[#a14b43]"] { color: #e89890; }
 .dark [class~="border-[#486b77]"] { border-color: #41606d; }
 .dark [class~="border-[#e8d9b0]"], .dark [class~="border-[#e1e9e8]"], .dark [class~="border-[#e5c4c0]"], .dark [class~="border-[#bfe3d8]"], .dark [class~="border-[#d7b0ad]"], .dark [class~="border-[#b8cbcc]"], .dark [class~="border-[#edf1f1]"], .dark [class~="border-[#d7e4e3]"] { border-color: #2a3f52; }
+/* Round 3: remaining authenticated dashboard utilities with light-only colors. */
+.dark [class~="bg-[#16869a]"] { background-color: #126b78; }
+.dark [class~="bg-[#28a47f]"] { background-color: #176a53; }
+.dark [class~="bg-[#b34a42]"] { background-color: #87352f; }
+.dark [class~="bg-[#c99a1f]"] { background-color: #78580d; }
+.dark [class~="bg-[#eaf2f1]"], .dark [class~="bg-[#f5f7f1]"], .dark [class~="bg-[#f4f9f8]"], .dark [class~="bg-[#f2faf8]"], .dark [class~="bg-[#eef8f7]"], .dark [class~="bg-[#edf2f2]"] { background-color: #13222c; }
+.dark [class~="bg-[#dff1ec]"], .dark [class~="bg-[#dff2ee]"] { background-color: #17332a; }
+.dark [class~="bg-[#d0dcda]"] { background-color: #22374a; }
+.dark [class~="bg-[#fff8df]"], .dark [class~="bg-[#fff8e1]"] { background-color: #39310f; }
+.dark [class~="bg-[#fff8e1]/95"] { background-color: hsl(var(--card) / 95%); }
+.dark [class~="bg-[#fff8f7]"] { background-color: #40221f; }
+.dark [class~="bg-[#eef5ff]"] { background-color: #10232d; }
+.dark [class~="text-[#526d75]"], .dark [class~="text-[#6b7f8a]"], .dark [class~="text-[#72848d]"], .dark [class~="text-[#46646b]"], .dark [class~="text-[#55747a]"], .dark [class~="text-[#48656b]"], .dark [class~="text-[#697b82]"] { color: #b9c9d1; }
+.dark [class~="text-[#8a6508]"], .dark [class~="text-[#665214]"], .dark [class~="text-[#5c4a08]"], .dark [class~="text-[#94701f]"], .dark [class~="text-[#625733]"], .dark [class~="text-[#75683e]"] { color: #e8c85a; }
+.dark [class~="text-[#247d63]"], .dark [class~="text-[#16806f]"] { color: #6fce8f; }
+.dark [class~="text-[#8b3d36]"] { color: #e89890; }
+.dark [class~="border-[#cbd7da]"], .dark [class~="border-[#c4dcda]"], .dark [class~="border-[#b9d9d7]"], .dark [class~="border-[#d7e0e0]"], .dark [class~="border-[#d0dcda]"], .dark [class~="border-[#eef3f2]"], .dark [class~="border-[#c8dedf]"], .dark [class~="border-[#cbe5e2]"] { border-color: #2a3f52; }
+.dark [class~="border-[#e0b8b4]"], .dark [class~="border-[#e8c4c0]"], .dark [class~="border-[#e5c4bf]"], .dark [class~="border-[#f0d4d1]"] { border-color: #61383a; }
 .dark .chat-composer-shell {
   background-color: #10232d;
   border-color: #355663;
