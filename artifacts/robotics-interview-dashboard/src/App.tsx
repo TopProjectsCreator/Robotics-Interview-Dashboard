@@ -315,7 +315,7 @@ function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const dark = mounted && theme === "dark";
-  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c]" />}</button>;
+  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
 }
 
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
@@ -359,7 +359,7 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
   const isCoordinatorMenu = session.data?.role === "coordinator";
   return <div ref={ref} className="relative">
-    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95">{avatarInitials(settings)}</button>
+    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-[#dce5e5] bg-white shadow-2xl">
       <div className="border-b border-[#e5ecec] px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-[#7c8c91]">Interviewer account</p></div>
       <div className="p-2">
@@ -2234,7 +2234,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
 }
 
 function FullscreenButton({ active, onClick, dark = false }: { active: boolean; onClick: () => void; dark?: boolean }) {
-  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a]"}`}>
+  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a] dark:border-[#31495a] dark:bg-[#16262f] dark:text-[#c3d3db] dark:hover:border-[#6fc3cf] dark:hover:text-[#6fc3cf]"}`}>
     {active ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     <span className="hidden sm:inline">{active ? "Exit fullscreen" : "Fullscreen"}</span>
   </button>;
@@ -3134,14 +3134,14 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md sm:h-16 sm:px-5 lg:h-[72px] lg:px-9">
-          <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] lg:hidden"><Menu size={21} /></button>
-          <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold">Team workspace</p></div>
+        <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9">
+          <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] dark:text-[#9db2bd] dark:hover:bg-[#1e3340] lg:hidden"><Menu size={21} /></button>
+          <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold dark:text-[#e8eef2]">Team workspace</p></div>
           <div className="ml-1 flex shrink-0 items-center gap-0.5 sm:ml-2 sm:gap-2">
-            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42]" /> : <Bell size={17} className="text-[#60757c]" />}</button>
+            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>
             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
             <ThemeToggle />
-            <div className="hidden items-center gap-2 text-xs text-[#60757c] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f]" /> Synced moments ago</div>
+            <div className="hidden items-center gap-2 text-xs text-[#60757c] dark:text-[#9db2bd] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f] dark:bg-[#6fce8f]" /> Synced moments ago</div>
             <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
