@@ -42,7 +42,7 @@ export function Daylight() {
   ];
 
   return (
-    <div className="d6-sans min-h-[1500px] bg-[#fbf8f2] text-[#201a12]">
+    <div className="d6-sans min-h-[1500px] overflow-x-hidden bg-[#fbf8f2] text-[#201a12]">
       {/* nav */}
       <header className="px-7 py-5">
         <div className="mx-auto flex max-w-[74rem] flex-wrap items-center justify-between gap-5">

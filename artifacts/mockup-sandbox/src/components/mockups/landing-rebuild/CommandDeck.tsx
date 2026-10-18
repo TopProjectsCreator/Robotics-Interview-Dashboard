@@ -56,7 +56,7 @@ export function CommandDeck() {
   return (
     <div className="d1-sans flex min-h-[1400px] bg-[#0c1219] text-[#e8eef3]">
       {/* vertical rail */}
-      <aside className="sticky top-0 flex h-[1400px] w-[104px] shrink-0 flex-col items-center justify-between border-r border-white/10 bg-[#080d13] py-7">
+      <aside className="sticky top-0 flex h-dvh w-[104px] shrink-0 flex-col items-center justify-between self-start border-r border-white/10 bg-[#080d13] py-7">
         <div className="flex flex-col items-center gap-10">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#f8c84a] text-[#0c1219]">
             <Activity size={22} strokeWidth={2.4} />

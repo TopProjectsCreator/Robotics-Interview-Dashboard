@@ -61,7 +61,7 @@ export function Runbook() {
   return (
     <div className="d5-mono flex min-h-[1450px] bg-[#050806] text-[#e6f7ec]">
       {/* sticky index rail */}
-      <aside className="sticky top-0 hidden h-[1450px] w-[16rem] shrink-0 flex-col border-r border-[#33ff99]/20 bg-[#040705] px-6 py-8 lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-[16rem] shrink-0 self-start flex-col border-r border-[#33ff99]/20 bg-[#040705] px-6 py-8 lg:flex">
         <div className="mb-9">
           <p className="text-[11px] tracking-[.26em] text-[#33ff99] uppercase">
             tryout-day
