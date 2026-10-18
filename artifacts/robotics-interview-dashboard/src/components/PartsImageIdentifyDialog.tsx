@@ -19,6 +19,14 @@ import { Input } from "@/components/ui/input";
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+const HEIC_IMAGE_TYPES = new Set([
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
+const HEIC_CONVERSION_ERROR =
+  "This HEIC/HEIF photo could not be converted. Try again, choose another photo, or continue with manual entry.";
 
 type ReviewedPart = {
   name: string;
@@ -42,15 +50,39 @@ function errorMessage(error: unknown): string {
   return "Could not identify this image. Try again or add the part manually.";
 }
 
-async function encodeImage(file: File): Promise<PartsImageIdentificationInput> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+function isHeicPhoto(file: File): boolean {
+  return HEIC_IMAGE_TYPES.has(file.type.toLowerCase()) || /\.(heic|heif)$/i.test(file.name);
+}
+
+async function prepareImage(file: File): Promise<Blob> {
+  if (!isHeicPhoto(file)) return file;
+
+  try {
+    const { default: heic2any } = await import("heic2any");
+    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+    const jpeg = Array.isArray(converted) ? converted[0] : converted;
+    if (!(jpeg instanceof Blob) || jpeg.size === 0) throw new Error("No converted image was returned");
+    if (jpeg.size > MAX_IMAGE_BYTES) {
+      throw new Error("The converted JPEG is larger than 3 MiB. Choose a smaller photo.");
+    }
+    return new Blob([jpeg], { type: "image/jpeg" });
+  } catch (conversionError) {
+    if (conversionError instanceof Error && conversionError.message.includes("larger than 3 MiB")) {
+      throw conversionError;
+    }
+    throw new Error(HEIC_CONVERSION_ERROR);
+  }
+}
+
+async function encodeImage(image: Blob): Promise<PartsImageIdentificationInput> {
+  const bytes = new Uint8Array(await image.arrayBuffer());
   let binary = "";
   const chunkSize = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return {
-    contentType: file.type as PartsImageIdentificationInput["contentType"],
+    contentType: image.type as PartsImageIdentificationInput["contentType"],
     imageBase64: window.btoa(binary),
   };
 }
@@ -64,7 +96,10 @@ export function PartsImageIdentifyDialog({
 }: Props) {
   const cameraInput = useRef<HTMLInputElement>(null);
   const uploadInput = useRef<HTMLInputElement>(null);
+  const photoSelection = useRef(0);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [preparedPhoto, setPreparedPhoto] = useState<Blob | null>(null);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [result, setResult] = useState<PartsImageIdentification | null>(null);
   const [error, setError] = useState("");
@@ -82,8 +117,15 @@ export function PartsImageIdentifyDialog({
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
+  useEffect(() => () => {
+    photoSelection.current += 1;
+  }, []);
+
   const reset = () => {
+    photoSelection.current += 1;
     setPhoto(null);
+    setPreparedPhoto(null);
+    setPreparingPhoto(false);
     setPreviewUrl("");
     setResult(null);
     setError("");
@@ -102,18 +144,22 @@ export function PartsImageIdentifyDialog({
     onOpenChange(nextOpen);
   };
 
-  const choosePhoto = (file: File | undefined) => {
+  const choosePhoto = async (file: File | undefined) => {
     if (!file) return;
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type as (typeof ACCEPTED_IMAGE_TYPES)[number])) {
-      setError("Choose a JPEG, PNG, or WebP image. Other formats are not supported.");
+    const isHeic = isHeicPhoto(file);
+    if (!isHeic && !ACCEPTED_IMAGE_TYPES.includes(file.type as (typeof ACCEPTED_IMAGE_TYPES)[number])) {
+      setError("Choose a JPEG, PNG, WebP, HEIC, or HEIF image. Other formats are not supported.");
       return;
     }
     if (file.size === 0 || file.size > MAX_IMAGE_BYTES) {
       setError("Choose an image that is smaller than 3 MiB.");
       return;
     }
+    const selectionId = ++photoSelection.current;
     setPhoto(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    setPreparedPhoto(null);
+    setPreviewUrl("");
+    setPreparingPhoto(isHeic);
     setResult(null);
     setError("");
     setSaveError("");
@@ -124,15 +170,44 @@ export function PartsImageIdentifyDialog({
     setDescription("");
     setQuantity("0");
     setManualMode(false);
+    if (!isHeic) {
+      setPreparedPhoto(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      return;
+    }
+
+    try {
+      const prepared = await prepareImage(file);
+      if (photoSelection.current !== selectionId) return;
+      setPreparedPhoto(prepared);
+      setPreviewUrl(URL.createObjectURL(prepared));
+    } catch (preparationError) {
+      if (photoSelection.current === selectionId) {
+        setError(errorMessage(preparationError));
+      }
+    } finally {
+      if (photoSelection.current === selectionId) setPreparingPhoto(false);
+    }
   };
 
   const analyzePhoto = async () => {
-    if (!photo || identifyMutation.isPending) return;
+    if (!photo || preparingPhoto || identifyMutation.isPending) return;
+    const selectionId = photoSelection.current;
     setError("");
     setSaveError("");
     try {
-      const data = await encodeImage(photo);
+      let image = preparedPhoto;
+      if (!image) {
+        setPreparingPhoto(true);
+        image = await prepareImage(photo);
+        if (photoSelection.current !== selectionId) return;
+        setPreparedPhoto(image);
+        setPreviewUrl(URL.createObjectURL(image));
+      }
+      const data = await encodeImage(image);
+      if (photoSelection.current !== selectionId) return;
       const identified = await identifyMutation.mutateAsync({ data });
+      if (photoSelection.current !== selectionId) return;
       setResult(identified);
       setName(identified.name);
       setSku(identified.sku ?? "");
@@ -140,7 +215,9 @@ export function PartsImageIdentifyDialog({
       setDescription(identified.description ?? "");
       setVendorKey("");
     } catch (identifyError) {
-      setError(errorMessage(identifyError));
+      if (photoSelection.current === selectionId) setError(errorMessage(identifyError));
+    } finally {
+      if (photoSelection.current === selectionId) setPreparingPhoto(false);
     }
   };
 
@@ -201,7 +278,7 @@ export function PartsImageIdentifyDialog({
             <input
               ref={cameraInput}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/heic-sequence,image/heif-sequence,.heic,.heif"
               capture="environment"
               className="sr-only"
               aria-label="Capture a part photo"
@@ -214,7 +291,7 @@ export function PartsImageIdentifyDialog({
             <input
               ref={uploadInput}
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/heic-sequence,image/heif-sequence,.heic,.heif"
               className="sr-only"
               aria-label="Upload a part photo"
               disabled={identifyMutation.isPending}
@@ -241,7 +318,7 @@ export function PartsImageIdentifyDialog({
                 <Upload size={16} aria-hidden="true" /> Upload photo
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP; maximum 3 MiB. The photo is analyzed temporarily and is not saved to inventory.</p>
+            <p className="text-xs text-muted-foreground">JPEG, PNG, WebP, HEIC, or HEIF; maximum 3 MiB. HEIC/HEIF photos are converted to JPEG for analysis. Photos are temporary and are not saved to inventory.</p>
             {previewUrl ? (
               <img
                 src={previewUrl}
@@ -259,13 +336,18 @@ export function PartsImageIdentifyDialog({
             <Button
               type="button"
               onClick={analyzePhoto}
-              disabled={!photo || identifyMutation.isPending}
+              disabled={!photo || preparingPhoto || identifyMutation.isPending}
               className="w-full"
             >
-              {identifyMutation.isPending
+              {preparingPhoto
+                ? <><Loader2 size={16} className="animate-spin" /> Preparing photo…</>
+                : identifyMutation.isPending
                 ? <><Loader2 size={16} className="animate-spin" /> Analyzing image…</>
                 : <><ScanLine size={16} /> {error ? "Retry identification" : "Identify part"}</>}
             </Button>
+            {preparingPhoto && (
+              <p role="status" className="text-sm text-muted-foreground">Preparing a temporary JPEG preview. The original photo is not saved.</p>
+            )}
             {identifyMutation.isPending && (
               <p role="status" className="text-sm text-muted-foreground">Analyzing the selected photo. No inventory changes are being made.</p>
             )}
@@ -286,7 +368,11 @@ export function PartsImageIdentifyDialog({
             {manualMode && !result?.identified && (
               <div role="status" className="rounded-md border border-border bg-muted/50 p-3 text-sm text-foreground">
                 <p className="font-medium">Manual part details</p>
-                <p className="mt-1 text-muted-foreground">Your selected photo stays here for reference and will not be saved to inventory.</p>
+                <p className="mt-1 text-muted-foreground">
+                  {previewUrl
+                    ? "Your selected photo stays here for reference and will not be saved to inventory."
+                    : "The selected photo could not be previewed; it will not be saved to inventory."}
+                </p>
               </div>
             )}
             {(result?.identified || manualMode) && (
