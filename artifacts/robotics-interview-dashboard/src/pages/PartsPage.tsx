@@ -64,6 +64,7 @@ type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "
 type PartsOrderLine = { product: PricedPartsCatalogSearchResult; quantity: number };
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
+const PARTS_REFRESH_INTERVAL_MS = 5_000;
 
 const VENDOR_GROUPS: PartsVendor["group"][] = [
   "General Parts",
@@ -493,7 +494,14 @@ function PartCard({
 
 export default function PartsPage() {
   const queryClient = useQueryClient();
-  const dashboardQuery = useGetPartsDashboard();
+  const dashboardQuery = useGetPartsDashboard({
+    query: {
+      queryKey: getGetPartsDashboardQueryKey(),
+      refetchInterval: PARTS_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
+  });
   const [tab, setTab] = useState<PageTab>("inventory");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryVendor, setInventoryVendor] = useState("");
@@ -531,6 +539,19 @@ export default function PartsPage() {
     manualOnly: true,
     limit: pageSize,
     offset: 0,
+  }, {
+    query: {
+      queryKey: getListPartsCatalogQueryKey({
+        search: inventorySearch.trim() || undefined,
+        vendorKey: inventoryVendor || undefined,
+        manualOnly: true,
+        limit: pageSize,
+        offset: 0,
+      }),
+      refetchInterval: PARTS_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
   });
   const savedSearchParams = {
     search: lastSearch.trim() || undefined,
