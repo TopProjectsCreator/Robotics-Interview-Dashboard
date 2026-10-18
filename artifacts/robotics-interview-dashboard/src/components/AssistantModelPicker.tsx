@@ -91,6 +91,7 @@ export function AssistantModelPicker({
   const options = models.length ? models : model ? [{ id: model }] : [];
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
   const disabledTools = useMemo(
     () => normalizeDisabledTools(controlledDisabled ?? internalDisabled),
     [controlledDisabled, internalDisabled],
@@ -121,6 +122,10 @@ export function AssistantModelPicker({
       else next.add(name);
     }
     updateDisabled([...next]);
+  };
+
+  const collapseSkillsForToolInteraction = () => {
+    if (skillsExpanded) setSkillsExpanded(false);
   };
 
   return (
@@ -211,7 +216,7 @@ export function AssistantModelPicker({
                   {enabledCount} of {ALL_ASSISTANT_TOOL_NAMES.length} enabled
                 </p>
               </div>
-              <div className="assistant-tools-head-actions">
+              <div className="assistant-tools-head-actions" onClickCapture={collapseSkillsForToolInteraction}>
                 <button
                   type="button"
                   className="assistant-tools-link"
@@ -324,8 +329,8 @@ export function AssistantModelPicker({
               )}
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
-            <AssistantSkillManager />
-            <div className="assistant-tools-groups">
+            <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />
+            <div className="assistant-tools-groups" onClickCapture={collapseSkillsForToolInteraction}>
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);
                 const enabledInGroup = names.filter((name) => !disabledSet.has(name)).length;

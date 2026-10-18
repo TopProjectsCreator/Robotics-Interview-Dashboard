@@ -64,8 +64,25 @@ afterEach(() => {
 });
 
 describe("AssistantSkillManager", () => {
+  it("starts collapsed and can be expanded and collapsed manually", async () => {
+    renderManager();
+    const toggle = screen.getByTestId("toggle-assistant-skills");
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("No team skills yet")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByText("No team skills yet")).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("No team skills yet")).not.toBeInTheDocument();
+  });
+
   it("creates, edits, and enables or disables a team skill", async () => {
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     await screen.findByText("No team skills yet");
     fireEvent.click(screen.getByRole("button", { name: "Create skill" }));
     fireEvent.change(screen.getByTestId("input-skill-name"), { target: { value: "Interview intake" } });
@@ -100,6 +117,7 @@ describe("AssistantSkillManager", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
     }];
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     fireEvent.click(await screen.findByRole("button", { name: "Debrief" }));
     expect(screen.getByText("Use only confirmed interview notes.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Delete Debrief" }));
@@ -111,6 +129,7 @@ describe("AssistantSkillManager", () => {
 
   it("shows validation and server errors without losing the draft", async () => {
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     await screen.findByText("No team skills yet");
     fireEvent.click(screen.getByRole("button", { name: "Create skill" }));
     fireEvent.click(screen.getByRole("button", { name: "Save skill" }));

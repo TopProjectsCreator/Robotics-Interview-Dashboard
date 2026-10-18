@@ -108,7 +108,32 @@ describe("AssistantModelPicker", () => {
     fireEvent.click(gear);
     expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
     expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("44 of 44 enabled");
+    expect(screen.getByTestId("toggle-assistant-skills")).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
+  });
+
+  it("collapses expanded team skills and still applies a tool selection", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const skillsToggle = await screen.findByTestId("toggle-assistant-skills");
+    fireEvent.click(skillsToggle);
+    expect(skillsToggle).toHaveAttribute("aria-expanded", "true");
+
+    const webSearchTool = screen.getByRole("checkbox", { name: "Web search tool" });
+    fireEvent.click(webSearchTool);
+
+    expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(webSearchTool).not.toBeChecked();
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("43 of 44 enabled");
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -204,7 +229,11 @@ describe("AssistantModelPicker", () => {
     expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("43 of 44 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
+    const skillsToggle = screen.getByTestId("toggle-assistant-skills");
+    fireEvent.click(skillsToggle);
+    expect(skillsToggle).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(screen.getByRole("button", { name: "Enable all" }));
+    expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
     expect(onDisabledToolsChange).toHaveBeenCalledWith([]);
   });
 

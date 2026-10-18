@@ -24,17 +24,27 @@ const ACTIONS = ASSISTANT_TOOL_GROUPS.flatMap((group) =>
   group.tools.map((tool) => ({ ...tool, group: group.label })),
 );
 
+type AssistantSkillManagerProps = {
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+};
+
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-export function AssistantSkillManager() {
+export function AssistantSkillManager({ expanded: controlledExpanded, onExpandedChange }: AssistantSkillManagerProps = {}) {
   const queryClient = useQueryClient();
   const skillsQuery = useListAssistantSkills();
   const createSkill = useCreateAssistantSkill();
   const updateSkill = useUpdateAssistantSkill();
   const deleteSkill = useDeleteAssistantSkill();
-  const [expanded, setExpanded] = useState(true);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const setExpanded = (value: boolean) => {
+    if (controlledExpanded === undefined) setInternalExpanded(value);
+    onExpandedChange?.(value);
+  };
   const [draft, setDraft] = useState<SkillDraft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -125,7 +135,7 @@ export function AssistantSkillManager() {
           type="button"
           className="assistant-skill-heading-toggle"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpanded(!expanded)}
           data-testid="toggle-assistant-skills"
         >
           {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
