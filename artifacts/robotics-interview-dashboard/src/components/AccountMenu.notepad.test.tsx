@@ -25,6 +25,7 @@ describe("AccountMenu notepad overlay", () => {
   afterEach(() => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: originalViewport.height });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: originalViewport.width });
+    document.documentElement.classList.remove("dark");
   });
 
   beforeEach(() => {
@@ -64,5 +65,54 @@ describe("AccountMenu notepad overlay", () => {
     expect(dialog.style.maxHeight).toContain("1.5rem");
     expect(editorScroll).toHaveClass("min-h-0", "overflow-y-auto");
     expect(screen.getByRole("button", { name: "Close notepad" })).toBeVisible();
+  });
+
+  it.each(["light", "dark"] as const)("uses theme-aware menu surfaces and visible action states in %s mode", (theme) => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AccountMenu onOpenSettings={vi.fn()} />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+
+    const menu = screen.getByRole("menu");
+    const notepad = screen.getByRole("menuitem", { name: "Notepad" });
+    const endSession = screen.getByRole("menuitem", { name: "End session" });
+    expect(menu).toHaveClass("border-border", "bg-popover", "text-popover-foreground");
+    expect(menu.querySelector(".border-b")).toHaveClass("border-border");
+    expect(menu.querySelector(".text-muted-foreground")).toHaveTextContent("Interviewer account");
+    expect(notepad).toHaveClass("text-popover-foreground", "hover:bg-accent", "focus-visible:ring-2");
+    expect(endSession).toHaveClass("text-destructive", "hover:bg-destructive/10", "focus-visible:ring-2");
+    if (theme === "dark") {
+      expect(endSession).toHaveClass("dark:text-[#f1aaa4]", "dark:hover:bg-[#40221f]", "dark:focus-visible:bg-[#40221f]");
+    }
+  });
+
+  it("closes when Escape is pressed and when a pointer lands outside", () => {
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AccountMenu onOpenSettings={vi.fn()} />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });
