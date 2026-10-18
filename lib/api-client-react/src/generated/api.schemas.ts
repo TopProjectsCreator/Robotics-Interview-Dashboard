@@ -2326,6 +2326,63 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export interface AssistantSkill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  actions: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssistantSkillList {
+  items: AssistantSkill[];
+}
+
+export interface AssistantSkillInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  description: string;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  instructions: string;
+  /** @maxItems 100 */
+  actions: string[];
+  enabled?: boolean;
+}
+
+export interface AssistantSkillUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  description?: string;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  instructions?: string;
+  /** @maxItems 100 */
+  actions?: string[];
+  enabled?: boolean;
+}
+
 export interface AssistantResponse {
   answer: string;
   /** Model id used to produce the answer. */

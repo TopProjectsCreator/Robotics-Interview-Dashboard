@@ -190,6 +190,92 @@ button { cursor: pointer; }
 .assistant-mcp-endpoint:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .assistant-mcp-api-key-fields { grid-column: 1 / -1; display: grid; gap: 8px; }
 .assistant-mcp-api-key-fields label { display: grid; gap: 4px; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.assistant-skill-manager { flex: 0 0 auto; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--primary) / .035); }
+.assistant-skill-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 13px 8px; }
+.assistant-skill-heading-toggle { display: flex; flex: 1; min-width: 0; align-items: center; gap: 7px; border: 0; background: transparent; padding: 0; color: hsl(var(--foreground)); text-align: left; }
+.assistant-skill-heading-toggle:focus-visible, .assistant-skill-icon-button:focus-visible, .assistant-skill-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 5px; }
+.assistant-skill-heading-toggle > svg:first-child { color: hsl(var(--muted-foreground)); }
+.assistant-skill-heading-icon { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid hsl(var(--primary) / .2); border-radius: 8px; background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.assistant-skill-heading-copy { display: grid; gap: 1px; }
+.assistant-skill-heading-copy strong { font-size: 12px; line-height: 1.2; }
+.assistant-skill-heading-copy small { color: hsl(var(--muted-foreground)); font-size: 10px; }
+.assistant-skill-total { display: grid; min-width: 21px; height: 21px; place-items: center; margin-left: auto; border-radius: 6px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); font: 500 10px/1 var(--app-font-mono); }
+.assistant-skill-add { display: inline-flex; align-items: center; gap: 4px; border: 1px solid hsl(var(--primary) / .25); border-radius: 7px; background: hsl(var(--primary) / .08); padding: 5px 8px; color: hsl(var(--primary)); font-size: 10px; font-weight: 700; }
+.assistant-skill-add:hover { background: hsl(var(--primary) / .14); }
+.assistant-skill-content { max-height: 270px; overflow-y: auto; padding: 0 10px 10px; }
+.assistant-skill-note { margin: 0 3px 8px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.35; }
+.assistant-skill-feedback { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 7px; border: 1px solid; border-radius: 7px; padding: 6px 7px; font-size: 10px; line-height: 1.35; }
+.assistant-skill-feedback svg { flex: 0 0 auto; margin-top: 1px; }
+.assistant-skill-feedback span { flex: 1; }
+.assistant-skill-feedback button { display: inline-flex; border: 0; background: transparent; padding: 0; color: inherit; }
+.assistant-skill-feedback-success { border-color: hsl(151 42% 72%); background: hsl(151 48% 95%); color: hsl(151 43% 29%); }
+.assistant-skill-feedback-error { border-color: hsl(var(--destructive) / .25); background: hsl(var(--destructive) / .08); color: hsl(var(--destructive)); }
+.dark .assistant-skill-feedback-success { border-color: hsl(151 35% 35%); background: hsl(151 35% 15%); color: hsl(151 55% 72%); }
+.assistant-skill-skeleton { display: grid; gap: 6px; padding: 2px 0; }
+.assistant-skill-skeleton span { display: block; height: 38px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--muted)); animation: assistant-skill-pulse 1.3s ease-in-out infinite alternate; }
+.assistant-skill-skeleton span:nth-child(2) { animation-delay: .14s; }
+.assistant-skill-skeleton span:nth-child(3) { animation-delay: .28s; }
+@keyframes assistant-skill-pulse { from { opacity: .48; } to { opacity: .9; } }
+.assistant-skill-load-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid hsl(var(--destructive) / .25); border-radius: 8px; background: hsl(var(--destructive) / .06); padding: 8px; color: hsl(var(--destructive)); font-size: 10px; }
+.assistant-skill-load-error button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: inherit; font-size: 10px; font-weight: 700; }
+.assistant-skill-empty { display: grid; justify-items: center; border: 1px dashed hsl(var(--border)); border-radius: 9px; background: hsl(var(--card) / .55); padding: 12px 14px; text-align: center; }
+.assistant-skill-empty-mark { display: grid; width: 29px; height: 29px; place-items: center; margin-bottom: 6px; border-radius: 9px; background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.assistant-skill-empty strong { font-size: 11px; }
+.assistant-skill-empty > span { max-width: 235px; margin-top: 3px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; }
+.assistant-skill-empty button { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; border: 0; background: transparent; color: hsl(var(--primary)); font-size: 10px; font-weight: 700; }
+.assistant-skill-list { display: grid; gap: 6px; }
+.assistant-skill-card { overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--card)); }
+.assistant-skill-card-top { display: flex; align-items: center; gap: 6px; padding: 7px 7px 0 9px; }
+.assistant-skill-name-button { display: inline-flex; min-width: 0; flex: 1; align-items: center; gap: 7px; border: 0; background: transparent; padding: 1px 0; color: hsl(var(--foreground)); text-align: left; font-size: 11px; font-weight: 700; }
+.assistant-skill-name-button > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-skill-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: hsl(var(--muted-foreground) / .45); }
+.assistant-skill-status-dot.is-on { background: hsl(151 48% 42%); box-shadow: 0 0 0 3px hsl(151 48% 42% / .12); }
+.assistant-skill-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
+.assistant-skill-enable { display: inline-flex; width: 26px; height: 16px; align-items: center; border: 1px solid hsl(var(--border)); border-radius: 99px; background: hsl(var(--muted)); padding: 2px; }
+.assistant-skill-enable span { width: 10px; height: 10px; border-radius: 50%; background: hsl(var(--muted-foreground)); transition: transform .16s ease, background-color .16s ease; }
+.assistant-skill-enable.is-on { justify-content: flex-end; border-color: hsl(151 42% 48% / .5); background: hsl(151 42% 48% / .15); }
+.assistant-skill-enable.is-on span { background: hsl(151 48% 42%); }
+.assistant-skill-icon-button { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-icon-button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+.assistant-skill-delete-button:hover { background: hsl(var(--destructive) / .1); color: hsl(var(--destructive)); }
+.assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; }
+.assistant-skill-card.is-disabled .assistant-skill-description { opacity: .68; }
+.assistant-skill-detail { margin: 0 8px 8px; border-top: 1px solid hsl(var(--border)); padding-top: 7px; }
+.assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 9px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 10px; line-height: 1.45; white-space: pre-wrap; }
+.assistant-skill-action-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.assistant-skill-action-chips span { border: 1px solid hsl(var(--primary) / .18); border-radius: 5px; background: hsl(var(--primary) / .07); padding: 2px 5px; color: hsl(var(--primary)); font-size: 9px; line-height: 1.3; }
+.assistant-skill-action-chips .assistant-skill-no-actions { border-color: hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-updated { margin: 7px 0 0; color: hsl(var(--muted-foreground)); font-size: 9px; }
+.assistant-skill-delete-confirm { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px; border-radius: 6px; background: hsl(var(--destructive) / .08); padding: 5px 6px; color: hsl(var(--destructive)); font-size: 9px; }
+.assistant-skill-delete-confirm span { flex: 1; }
+.assistant-skill-delete-confirm button { border: 0; border-radius: 4px; background: transparent; padding: 3px 5px; color: inherit; font-size: 9px; font-weight: 700; }
+.assistant-skill-delete-confirm button:last-child { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
+.assistant-skill-editor { margin-bottom: 7px; border: 1px solid hsl(var(--primary) / .28); border-radius: 9px; background: hsl(var(--card)); padding: 9px; box-shadow: 0 5px 16px rgba(24,58,75,.06); }
+.assistant-skill-editor-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: hsl(var(--foreground)); font-size: 11px; }
+.assistant-skill-editor-title button { display: inline-grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-field { display: grid; gap: 3px; margin-bottom: 7px; color: hsl(var(--muted-foreground)); font-size: 9px; font-weight: 600; }
+.assistant-skill-field input, .assistant-skill-field textarea { width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: hsl(var(--background)); padding: 6px 7px; color: hsl(var(--foreground)); font-size: 10px; font-weight: 400; }
+.assistant-skill-field textarea { min-height: 72px; resize: vertical; line-height: 1.4; }
+.assistant-skill-field input:focus-visible, .assistant-skill-field textarea:focus-visible { outline: 2px solid hsl(var(--ring) / .55); outline-offset: 1px; }
+.assistant-skill-action-picker { margin: 0 0 7px; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px; }
+.assistant-skill-action-picker legend { padding: 0 3px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 700; }
+.assistant-skill-action-picker legend span { margin-left: 5px; color: hsl(var(--muted-foreground)); font: 400 8px/1 var(--app-font-mono); }
+.assistant-skill-action-list { display: grid; max-height: 118px; overflow: auto; gap: 1px; }
+.assistant-skill-action-option { display: flex; align-items: flex-start; gap: 6px; border-radius: 5px; padding: 4px 3px; cursor: pointer; }
+.assistant-skill-action-option:hover { background: hsl(var(--accent)); }
+.assistant-skill-action-option input, .assistant-skill-enabled-check input { width: 13px; height: 13px; flex: 0 0 auto; margin: 1px 0 0; accent-color: hsl(var(--primary)); }
+.assistant-skill-action-option span { display: grid; min-width: 0; gap: 1px; }
+.assistant-skill-action-option strong { color: hsl(var(--foreground)); font-size: 9px; line-height: 1.25; }
+.assistant-skill-action-option small { color: hsl(var(--muted-foreground)); font-size: 8px; line-height: 1.25; }
+.assistant-skill-enabled-check { display: flex; align-items: center; gap: 6px; margin: 1px 0 8px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 600; cursor: pointer; }
+.assistant-skill-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.assistant-skill-editor-actions button { display: inline-flex; min-height: 27px; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; padding: 5px 8px; font-size: 9px; font-weight: 700; }
+.assistant-skill-cancel { border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--muted-foreground)); }
+.assistant-skill-save { border: 1px solid hsl(var(--primary)); background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.assistant-skill-editor-actions button:disabled { cursor: wait; opacity: .6; }
+.assistant-skill-spin { animation: assistant-skill-rotate .8s linear infinite; }
+@keyframes assistant-skill-rotate { to { transform: rotate(360deg); } }
 @media (max-width: 640px) {
   .assistant-model-trigger { width: min(360px, calc(100vw - 242px)); min-width: min(180px, calc(100vw - 242px)); }
 }

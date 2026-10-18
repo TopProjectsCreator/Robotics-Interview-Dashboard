@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AssistantSkillManager } from "./AssistantSkillManager";
 import {
   ALL_ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOL_GROUPS,
@@ -323,6 +324,7 @@ export function AssistantModelPicker({
               )}
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
+            <AssistantSkillManager />
             <div className="assistant-tools-groups">
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);

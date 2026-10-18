@@ -2765,6 +2765,103 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * @summary List team-shared assistant skills
+ */
+export const ListAssistantSkillsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Create a team-shared assistant skill
+ */
+export const createAssistantSkillBodyNameMax = 80;
+
+export const createAssistantSkillBodyDescriptionMax = 500;
+
+export const createAssistantSkillBodyInstructionsMax = 8000;
+
+export const createAssistantSkillBodyActionsMax = 100;
+
+
+
+export const CreateAssistantSkillBody = zod.object({
+  "name": zod.string().min(1).max(createAssistantSkillBodyNameMax),
+  "description": zod.string().min(1).max(createAssistantSkillBodyDescriptionMax),
+  "instructions": zod.string().min(1).max(createAssistantSkillBodyInstructionsMax),
+  "actions": zod.array(zod.string()).max(createAssistantSkillBodyActionsMax),
+  "enabled": zod.boolean().optional()
+})
+
+export const CreateAssistantSkillResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a team-shared assistant skill
+ */
+export const UpdateAssistantSkillParams = zod.object({
+  "skillId": zod.coerce.string()
+})
+
+export const updateAssistantSkillBodyNameMax = 80;
+
+export const updateAssistantSkillBodyDescriptionMax = 500;
+
+export const updateAssistantSkillBodyInstructionsMax = 8000;
+
+export const updateAssistantSkillBodyActionsMax = 100;
+
+
+
+export const UpdateAssistantSkillBody = zod.object({
+  "name": zod.string().min(1).max(updateAssistantSkillBodyNameMax).optional(),
+  "description": zod.string().min(1).max(updateAssistantSkillBodyDescriptionMax).optional(),
+  "instructions": zod.string().min(1).max(updateAssistantSkillBodyInstructionsMax).optional(),
+  "actions": zod.array(zod.string()).max(updateAssistantSkillBodyActionsMax).optional(),
+  "enabled": zod.boolean().optional()
+})
+
+export const UpdateAssistantSkillResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "instructions": zod.string(),
+  "actions": zod.array(zod.string()),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a team-shared assistant skill
+ */
+export const DeleteAssistantSkillParams = zod.object({
+  "skillId": zod.coerce.string()
+})
+
+export const DeleteAssistantSkillResponse = zod.void()
+
+
+/**
  * @summary Get the signed-in interviewer's custom MCP connection
  */
 export const GetCustomMcpConnectionResponse = zod.object({

@@ -6,6 +6,7 @@ import { UpdateBoardResponse } from "../../../../lib/api-zod/src/generated/api.t
 import { interviewerAccountsTable } from "../../../../lib/db/src/schema/interviewerAccounts.ts";
 import { revokedSessionsTable } from "../../../../lib/db/src/schema/sessions.ts";
 import { interviewWhiteboardsTable } from "../../../../lib/db/src/schema/whiteboards.ts";
+import { assistantSkillsTable } from "../../../../lib/db/src/schema/assistant.ts";
 import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations.ts";
 
@@ -30,6 +31,7 @@ const databaseTableNames = [
   "applicantsTable",
   "assistantConversationsTable",
   "assistantMessagesTable",
+  "assistantSkillsTable",
   "broadcastAcksTable",
   "broadcastsTable",
   "chatCustomEmojisTable",
@@ -210,14 +212,32 @@ test("older boards get a default description and updated responses match the gen
   assert.equal(response.data.description, "The plan for interview day");
 });
 
-test("an authenticated board task remains present after a fresh GET", async (t) => {
+test("coordinator board and assistant skill operations remain persisted and team-scoped", async (t) => {
   const account = {
     id: "board-persistence-interviewer",
     displayName: "Alex",
     normalizedName: "alex",
     passwordHash: "configured",
     role: "coordinator",
+    teamId: "team-a",
   };
+  const otherCoordinator = {
+    id: "skill-coordinator-b",
+    displayName: "Taylor",
+    normalizedName: "taylor",
+    passwordHash: "configured",
+    role: "coordinator",
+    teamId: "team-b",
+  };
+  const interviewer = {
+    id: "skill-interviewer",
+    displayName: "Jordan",
+    normalizedName: "jordan",
+    passwordHash: "configured",
+    role: "interviewer",
+    teamId: "team-a",
+  };
+  const accounts = [account, otherCoordinator, interviewer];
   const board = {
     id: "board-persistence-fixture",
     title: "Persistence check",
@@ -228,6 +248,30 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
+  const skillRows = [
+    {
+      id: "skill-a",
+      teamId: "team-a",
+      name: "Team A skill",
+      description: "A team-specific workflow",
+      instructions: "Use the approved actions.",
+      actions: ["search_applicants"],
+      enabled: true,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+    {
+      id: "skill-b",
+      teamId: "team-b",
+      name: "Team B skill",
+      description: "Another team-specific workflow",
+      instructions: "Use the approved actions.",
+      actions: ["get_applicant"],
+      enabled: true,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  ];
   // Collect every bound Param value, recursing into nested chunks: team
   // scoping wraps id lookups in and(...), so the id is no longer always the
   // first top-level chunk.
@@ -248,10 +292,13 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
     const params = paramValues(clause);
     if (table === revokedSessionsTable) return [];
     if (table === interviewerAccountsTable) {
-      return params.includes(account.id) ? [account] : [];
+      return accounts.filter((candidate) => params.includes(candidate.id));
     }
     if (table === interviewWhiteboardsTable) {
       return params.includes(board.id) ? [board] : [];
+    }
+    if (table === assistantSkillsTable) {
+      return skillRows.filter((skill) => params.includes(skill.teamId));
     }
     return [];
   };
@@ -266,6 +313,9 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
         },
         where(clause) {
           this.clause = clause;
+          return this;
+        },
+        orderBy() {
           return this;
         },
         limit() {
@@ -293,6 +343,13 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
           return this;
         },
         returning() {
+          if (table === assistantSkillsTable) {
+            const params = paramValues(clause);
+            const skill = skillRows.find((row) => params.includes(row.id) && params.includes(row.teamId));
+            if (!skill) return Promise.resolve([]);
+            Object.assign(skill, values);
+            return Promise.resolve([skill]);
+          }
           assert.equal(table, interviewWhiteboardsTable);
           assert.ok(paramValues(clause).includes(board.id));
           Object.assign(board, values);
@@ -300,6 +357,42 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
         },
       };
       return updateQuery;
+    },
+    insert(table) {
+      let values;
+      return {
+        values(nextValues) {
+          values = nextValues;
+          return this;
+        },
+        returning() {
+          assert.equal(table, assistantSkillsTable);
+          const duplicate = skillRows.some((row) =>
+            row.teamId === values.teamId && row.name.toLowerCase() === values.name.toLowerCase());
+          if (duplicate) return Promise.reject(Object.assign(new Error("duplicate skill"), { code: "23505" }));
+          const now = new Date();
+          const created = { createdAt: now, updatedAt: now, ...values };
+          skillRows.push(created);
+          return Promise.resolve([created]);
+        },
+      };
+    },
+    delete(table) {
+      let clause;
+      return {
+        where(nextClause) {
+          clause = nextClause;
+          return this;
+        },
+        returning() {
+          assert.equal(table, assistantSkillsTable);
+          const params = paramValues(clause);
+          const index = skillRows.findIndex((row) => params.includes(row.id) && params.includes(row.teamId));
+          if (index < 0) return Promise.resolve([]);
+          const [removed] = skillRows.splice(index, 1);
+          return Promise.resolve([{ id: removed.id }]);
+        },
+      };
     },
     async transaction(callback) {
       return callback(this);
@@ -317,6 +410,7 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
       interviewerAccountsTable,
       revokedSessionsTable,
       interviewWhiteboardsTable,
+      assistantSkillsTable,
       teamsTable,
       DEFAULT_TEAM_ID,
       normalizeTeamName,
@@ -376,6 +470,70 @@ test("an authenticated board task remains present after a fresh GET", async (t) 
       "a fresh authenticated GET must return the task written by PATCH",
     );
     assert.equal(parseBoardData(board.data)?.cards.some((card) => card.title === "Confirm saved task"), true);
+
+    const request = (session, method, path, body) => fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        ...(session ? { authorization: `Bearer ${session}` } : {}),
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    assert.equal((await request(undefined, "GET", "/assistant/skills")).status, 401);
+    const coordinatorSession = session;
+    const interviewerSession = createInterviewerSession(interviewer.id);
+    const otherCoordinatorSession = createInterviewerSession(otherCoordinator.id);
+    assert.equal((await request(interviewerSession, "GET", "/assistant/skills")).status, 403);
+
+    const listA = await request(coordinatorSession, "GET", "/assistant/skills");
+    assert.deepEqual((await listA.json()).items.map((skill) => skill.id), ["skill-a"]);
+    const listB = await request(otherCoordinatorSession, "GET", "/assistant/skills");
+    assert.deepEqual((await listB.json()).items.map((skill) => skill.id), ["skill-b"]);
+
+    const invalidAction = await request(coordinatorSession, "POST", "/assistant/skills", {
+      name: "Invalid tool",
+      description: "Do not allow unapproved tools",
+      instructions: "Try a shell.",
+      actions: ["shell_exec"],
+      enabled: true,
+    });
+    assert.equal(invalidAction.status, 400);
+
+    const skillInput = {
+      name: "Interview summary",
+      description: "Summarize applicant evidence after an interview",
+      instructions: "Use only confirmed records.",
+      actions: ["search_applicants"],
+      enabled: true,
+    };
+    const created = await request(coordinatorSession, "POST", "/assistant/skills", skillInput);
+    assert.equal(created.status, 201);
+    const createdSkill = await created.json();
+    assert.equal(createdSkill.teamId, undefined);
+    assert.equal(createdSkill.name, skillInput.name);
+    const duplicate = await request(coordinatorSession, "POST", "/assistant/skills", {
+      ...skillInput,
+      name: "INTERVIEW SUMMARY",
+    });
+    assert.equal(duplicate.status, 409);
+    const sameNameOtherTeam = await request(otherCoordinatorSession, "POST", "/assistant/skills", skillInput);
+    assert.equal(sameNameOtherTeam.status, 201);
+
+    const emptyPatch = await request(coordinatorSession, "PATCH", "/assistant/skills/skill-a", {});
+    assert.equal(emptyPatch.status, 400);
+    const invalidUpdateAction = await request(coordinatorSession, "PATCH", "/assistant/skills/skill-a", {
+      actions: ["shell_exec"],
+    });
+    assert.equal(invalidUpdateAction.status, 400);
+    const crossTeamPatch = await request(coordinatorSession, "PATCH", "/assistant/skills/skill-b", { enabled: false });
+    assert.equal(crossTeamPatch.status, 404);
+    const crossTeamDelete = await request(coordinatorSession, "DELETE", "/assistant/skills/skill-b");
+    assert.equal(crossTeamDelete.status, 404);
+    const updated = await request(coordinatorSession, "PATCH", `/assistant/skills/${createdSkill.id}`, { enabled: false });
+    assert.equal(updated.status, 200);
+    assert.equal((await updated.json()).enabled, false);
+    const deleted = await request(coordinatorSession, "DELETE", `/assistant/skills/${createdSkill.id}`);
+    assert.equal(deleted.status, 204);
   } finally {
     if (server.listening) await new Promise((resolve) => server.close(resolve));
   }

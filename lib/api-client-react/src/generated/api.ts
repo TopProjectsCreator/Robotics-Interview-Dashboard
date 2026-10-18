@@ -36,6 +36,10 @@ import type {
   AssistantInput,
   AssistantModelList,
   AssistantResponse,
+  AssistantSkill,
+  AssistantSkillInput,
+  AssistantSkillList,
+  AssistantSkillUpdate,
   AuthSession,
   Board,
   BoardCreateInput,
@@ -7568,6 +7572,297 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
+    }
+
+export const getListAssistantSkillsUrl = () => {
+
+
+
+
+  return `/api/assistant/skills`
+}
+
+/**
+ * @summary List team-shared assistant skills
+ */
+export const listAssistantSkills = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantSkillList> => {
+
+  return customFetch<AssistantSkillList>(getListAssistantSkillsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAssistantSkillsQueryKey = () => {
+    return [
+    `/api/assistant/skills`
+    ] as const;
+    }
+
+
+export const getListAssistantSkillsQueryOptions = <TData = Awaited<ReturnType<typeof listAssistantSkills>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAssistantSkillsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssistantSkills>>> = ({ signal }) => listAssistantSkills({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssistantSkills>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAssistantSkillsQueryResult = NonNullable<Awaited<ReturnType<typeof listAssistantSkills>>>
+export type ListAssistantSkillsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List team-shared assistant skills
+ */
+
+export function useListAssistantSkills<TData = Awaited<ReturnType<typeof listAssistantSkills>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantSkills>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAssistantSkillsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAssistantSkillUrl = () => {
+
+
+
+
+  return `/api/assistant/skills`
+}
+
+/**
+ * @summary Create a team-shared assistant skill
+ */
+export const createAssistantSkill = async (assistantSkillInput: AssistantSkillInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSkill> => {
+
+  return customFetch<AssistantSkill>(getCreateAssistantSkillUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantSkillInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAssistantSkillMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantSkill>>, TError,{data: BodyType<AssistantSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAssistantSkill>>, TError,{data: BodyType<AssistantSkillInput>}, TContext> => {
+
+const mutationKey = ['createAssistantSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAssistantSkill>>, {data: BodyType<AssistantSkillInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAssistantSkill(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAssistantSkillMutationResult = NonNullable<Awaited<ReturnType<typeof createAssistantSkill>>>
+    export type CreateAssistantSkillMutationBody = BodyType<AssistantSkillInput>
+    export type CreateAssistantSkillMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a team-shared assistant skill
+ */
+export const useCreateAssistantSkill = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantSkill>>, TError,{data: BodyType<AssistantSkillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAssistantSkill>>,
+        TError,
+        {data: BodyType<AssistantSkillInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAssistantSkillMutationOptions(options));
+    }
+
+export const getUpdateAssistantSkillUrl = (skillId: string,) => {
+
+
+
+
+  return `/api/assistant/skills/${skillId}`
+}
+
+/**
+ * @summary Update a team-shared assistant skill
+ */
+export const updateAssistantSkill = async (skillId: string,
+    assistantSkillUpdate: AssistantSkillUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSkill> => {
+
+  return customFetch<AssistantSkill>(getUpdateAssistantSkillUrl(skillId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantSkillUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantSkillMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSkill>>, TError,{skillId: string;data: BodyType<AssistantSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSkill>>, TError,{skillId: string;data: BodyType<AssistantSkillUpdate>}, TContext> => {
+
+const mutationKey = ['updateAssistantSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantSkill>>, {skillId: string;data: BodyType<AssistantSkillUpdate>}> = (props) => {
+          const {skillId,data} = props ?? {};
+
+          return  updateAssistantSkill(skillId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantSkillMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantSkill>>>
+    export type UpdateAssistantSkillMutationBody = BodyType<AssistantSkillUpdate>
+    export type UpdateAssistantSkillMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update a team-shared assistant skill
+ */
+export const useUpdateAssistantSkill = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSkill>>, TError,{skillId: string;data: BodyType<AssistantSkillUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantSkill>>,
+        TError,
+        {skillId: string;data: BodyType<AssistantSkillUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantSkillMutationOptions(options));
+    }
+
+export const getDeleteAssistantSkillUrl = (skillId: string,) => {
+
+
+
+
+  return `/api/assistant/skills/${skillId}`
+}
+
+/**
+ * @summary Delete a team-shared assistant skill
+ */
+export const deleteAssistantSkill = async (skillId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteAssistantSkillUrl(skillId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteAssistantSkillMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssistantSkill>>, TError,{skillId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAssistantSkill>>, TError,{skillId: string}, TContext> => {
+
+const mutationKey = ['deleteAssistantSkill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAssistantSkill>>, {skillId: string}> = (props) => {
+          const {skillId} = props ?? {};
+
+          return  deleteAssistantSkill(skillId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAssistantSkillMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAssistantSkill>>>
+
+    export type DeleteAssistantSkillMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a team-shared assistant skill
+ */
+export const useDeleteAssistantSkill = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAssistantSkill>>, TError,{skillId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAssistantSkill>>,
+        TError,
+        {skillId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteAssistantSkillMutationOptions(options));
     }
 
 export const getGetCustomMcpConnectionUrl = () => {

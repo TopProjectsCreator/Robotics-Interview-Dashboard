@@ -1990,6 +1990,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/skills:
+    get:
+      operationId: listAssistantSkills
+      tags: [assistant]
+      summary: List team-shared assistant skills
+      responses:
+        "200":
+          description: Team assistant skills
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkillList"
+    post:
+      operationId: createAssistantSkill
+      tags: [assistant]
+      summary: Create a team-shared assistant skill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantSkillInput"
+      responses:
+        "201":
+          description: Skill created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkill"
+        "400":
+          description: Invalid skill or action references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A skill with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/skills/{skillId}:
+    patch:
+      operationId: updateAssistantSkill
+      tags: [assistant]
+      summary: Update a team-shared assistant skill
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantSkillUpdate"
+      responses:
+        "200":
+          description: Skill updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSkill"
+        "400":
+          description: Invalid skill or action references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Skill not found in this team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A skill with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAssistantSkill
+      tags: [assistant]
+      summary: Delete a team-shared assistant skill
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Skill deleted
+        "404":
+          description: Skill not found in this team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/custom-mcp/connection:
     get:
       operationId: getCustomMcpConnection
@@ -6792,6 +6894,86 @@ components:
                 type: string
               message:
                 type: string
+    AssistantSkill:
+      type: object
+      required: [id, name, description, instructions, actions, enabled, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        instructions:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AssistantSkillList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantSkill"
+    AssistantSkillInput:
+      type: object
+      required: [name, description, instructions, actions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        actions:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+        enabled:
+          type: boolean
+    AssistantSkillUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        actions:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+        enabled:
+          type: boolean
     AssistantResponse:
       type: object
       required: [answer]

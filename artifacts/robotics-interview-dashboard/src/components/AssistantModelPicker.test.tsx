@@ -1,12 +1,23 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AssistantModelPicker } from "./AssistantModelPicker";
 
+function renderWithQuery(ui: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(ui, {
+    wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+  });
+}
+
 describe("AssistantModelPicker", () => {
   it("shows provider models and reports the selected id", async () => {
     const onChange = vi.fn();
-    render(
+    renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[
@@ -29,7 +40,7 @@ describe("AssistantModelPicker", () => {
   });
 
   it("keeps the current model visible and disables selection while loading", () => {
-    render(
+    renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[]}
@@ -46,7 +57,7 @@ describe("AssistantModelPicker", () => {
 
   it("offers thinking levels only for models whose provider metadata advertises reasoning", async () => {
     const onThinkingLevelChange = vi.fn();
-    const { rerender } = render(
+    const { rerender } = renderWithQuery(
       <AssistantModelPicker
         model="plain-model"
         models={[{ id: "plain-model", thinkingLevels: [] }]}
@@ -78,7 +89,7 @@ describe("AssistantModelPicker", () => {
   });
 
   it("shows a gear inline with the model dropdown that opens the tools menu", async () => {
-    render(
+    renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[{ id: "openrouter/free" }]}
@@ -102,7 +113,7 @@ describe("AssistantModelPicker", () => {
 
   it("reports disabled tools when a tool is toggled off", async () => {
     const onDisabledToolsChange = vi.fn();
-    render(
+    renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[{ id: "openrouter/free" }]}
@@ -122,7 +133,7 @@ describe("AssistantModelPicker", () => {
   it("accepts a custom MCP endpoint and starts its connection flow", async () => {
     const onConnectCustomMcp = vi.fn();
     const onCustomMcpEndpointChange = vi.fn();
-    const { rerender } = render(
+    const { rerender } = renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[{ id: "openrouter/free" }]}
@@ -164,7 +175,7 @@ describe("AssistantModelPicker", () => {
       customMcpEndpoint: "https://tools.example/mcp",
       onConnectCustomMcp: vi.fn(),
     };
-    const { rerender } = render(<AssistantModelPicker {...props} />);
+    const { rerender } = renderWithQuery(<AssistantModelPicker {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     expect(screen.queryByLabelText("MCP API key")).not.toBeInTheDocument();
     rerender(<AssistantModelPicker {...props} customMcpApiKeyRequired />);
@@ -174,7 +185,7 @@ describe("AssistantModelPicker", () => {
 
   it("reflects controlled disabled tools with a count and read-only shortcut", async () => {
     const onDisabledToolsChange = vi.fn();
-    render(
+    renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[{ id: "openrouter/free" }]}
@@ -200,7 +211,7 @@ describe("AssistantModelPicker", () => {
   it("shows Onshape connection controls inside assistant settings", async () => {
     const onConnectOnshape = vi.fn();
     const onDisconnectOnshape = vi.fn();
-    const { rerender } = render(
+    const { rerender } = renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
         models={[{ id: "openrouter/free" }]}
