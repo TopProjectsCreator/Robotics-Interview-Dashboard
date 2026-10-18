@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
 }));
 
+let mediaDevicesDescriptor: PropertyDescriptor | undefined;
+
 const testVendor = {
   key: "andymark",
   name: "AndyMark",
@@ -172,17 +174,46 @@ function startSearch(query = "early result") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  if (mediaDevicesDescriptor) {
+    Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });
 
 describe("progressive Parts search", () => {
   beforeEach(() => {
+    mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+    const track = {
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaStreamTrack;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [track],
+          getVideoTracks: () => [track],
+        }),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D & GPUCanvasContext);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+      callback(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0x42])], { type: "image/jpeg" }));
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, value: 640 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, value: 480 });
     mocks.teamInventory.clear();
     mocks.teamInventory.set("team-a", []);
     mocks.teamInventory.set("team-b", []);
     mocks.createItem.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
-      name: "Photo suggested bracket",
+      name: "Camera suggested bracket",
       category: "Structure",
       description: "A visible robotics bracket.",
       sku: null,
@@ -355,16 +386,14 @@ describe("progressive Parts search", () => {
     expect(screen.getByText("Current result")).toBeInTheDocument();
   });
 
-  it("saves reviewed photo details through the Parts catalog path and refreshes inventory totals", async () => {
+  it("saves reviewed camera details through the Parts catalog path and refreshes inventory totals", async () => {
     const { queryClient } = await renderPartsPage();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Identify from photo" }));
-
-    const file = new File([new Uint8Array([1, 2, 3])], "bracket.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Photo suggested bracket");
+    fireEvent.click(await screen.findByRole("button", { name: "Scan with camera" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
+    await screen.findByDisplayValue("Camera suggested bracket");
     expect(mocks.createItem).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Reviewed bracket" } });
@@ -389,7 +418,7 @@ describe("progressive Parts search", () => {
     expect(await screen.findByText("Reviewed bracket added to inventory.")).toBeInTheDocument();
   });
 
-  it("shows a photo-added part and updated totals to a teammate without reloading, while keeping other teams separate", async () => {
+  it("shows a camera-added part and updated totals to a teammate without reloading, while keeping other teams separate", async () => {
     mocks.teamInventory.set("team-b", [{
       id: "team-b-private-part",
       vendorKey: "andymark",
@@ -419,13 +448,10 @@ describe("progressive Parts search", () => {
     expect(within(writer.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
     expect(within(teammate.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
 
-    fireEvent.click(within(writer.container).getByRole("button", { name: "Identify from photo" }));
-    const file = new File([new Uint8Array([1, 2, 3])], "bracket.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), {
-      target: { files: [file] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Photo suggested bracket");
+    fireEvent.click(within(writer.container).getByRole("button", { name: "Scan with camera" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
+    await screen.findByDisplayValue("Camera suggested bracket");
     fireEvent.change(screen.getByLabelText("Part name *"), {
       target: { value: "Photo-added team bracket" },
     });

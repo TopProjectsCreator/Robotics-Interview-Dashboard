@@ -1676,7 +1676,7 @@ export default function PartsPage() {
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)}>
-                      <Camera size={14} aria-hidden="true" /> Identify from photo
+                      <Camera size={14} aria-hidden="true" /> Scan with camera
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
                       <Plus size={14} aria-hidden="true" /> Add custom part
