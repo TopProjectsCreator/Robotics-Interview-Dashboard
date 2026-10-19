@@ -519,6 +519,7 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "personal_notepad" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "content" text not null default '<p></p>', "updated_at" timestamptz not null default now())`,
     `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,
     `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "assistant_conversations" add column if not exists "owner_id" text`,
     `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
     `create table if not exists "assistant_skills" (
        "id" text primary key,

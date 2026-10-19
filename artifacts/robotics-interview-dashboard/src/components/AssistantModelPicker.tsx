@@ -33,6 +33,7 @@ type AssistantModelPickerProps = {
   loading: boolean;
   error: boolean;
   onChange: (model: string) => void;
+  canManageAssistantTools?: boolean;
   thinkingLevel?: AssistantThinkingLevel;
   onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
   disabledTools?: string[];
@@ -64,6 +65,7 @@ export function AssistantModelPicker({
   loading,
   error,
   onChange,
+  canManageAssistantTools = true,
   thinkingLevel = "auto",
   onThinkingLevelChange,
   disabledTools: controlledDisabled,
@@ -198,12 +200,14 @@ export function AssistantModelPicker({
             <button
               type="button"
               aria-label="Assistant settings"
-              title={disabledTools.length ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled` : "Assistant settings"}
+              title={!canManageAssistantTools
+                ? "Manage your MCP connections"
+                : disabledTools.length ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled` : "Assistant settings"}
               data-testid="assistant-tools-gear"
               className="assistant-tools-gear"
             >
               <Settings size={15} />
-              {disabledTools.length > 0 && (
+              {canManageAssistantTools && disabledTools.length > 0 && (
                 <span className="assistant-tools-gear-dot" aria-hidden="true" />
               )}
             </button>
@@ -211,12 +215,14 @@ export function AssistantModelPicker({
           <PopoverContent align="end" sideOffset={8} className="assistant-tools-popover">
             <div className="assistant-tools-head">
               <div>
-                <p className="assistant-tools-title">Assistant settings</p>
+                <p className="assistant-tools-title">{canManageAssistantTools ? "Assistant settings" : "Your assistant connections"}</p>
                 <p className="assistant-tools-subtitle" data-testid="assistant-tools-count">
-                  {enabledCount} of {ALL_ASSISTANT_TOOL_NAMES.length} enabled
+                  {canManageAssistantTools
+                    ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} enabled`
+                    : "Private to your account"}
                 </p>
               </div>
-              <div className="assistant-tools-head-actions" onClickCapture={collapseSkillsForToolInteraction}>
+              {canManageAssistantTools && <div className="assistant-tools-head-actions" onClickCapture={collapseSkillsForToolInteraction}>
                 <button
                   type="button"
                   className="assistant-tools-link"
@@ -233,8 +239,11 @@ export function AssistantModelPicker({
                 >
                   Read-only
                 </button>
-              </div>
+              </div>}
             </div>
+            {!canManageAssistantTools && (
+              <p className="assistant-tools-subtitle">Only you can use these connections. Provider credentials are not shared with your team.</p>
+            )}
             {(onConnectOnshape || onDisconnectOnshape) && (
               <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">
                 <div className="assistant-onshape-setting-copy">
@@ -329,8 +338,8 @@ export function AssistantModelPicker({
               )}
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
-            <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />
-            <div className="assistant-tools-groups" onClickCapture={collapseSkillsForToolInteraction}>
+            {canManageAssistantTools && <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />}
+            {canManageAssistantTools && <div className="assistant-tools-groups" onClickCapture={collapseSkillsForToolInteraction}>
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);
                 const enabledInGroup = names.filter((name) => !disabledSet.has(name)).length;
@@ -374,10 +383,10 @@ export function AssistantModelPicker({
                   </fieldset>
                 );
               })}
-            </div>
-            <p className="assistant-tools-foot">
+            </div>}
+            {canManageAssistantTools && <p className="assistant-tools-foot">
               Disabled tools are hidden from the model and blocked if called.
-            </p>
+            </p>}
           </PopoverContent>
         </Popover>
       </div>

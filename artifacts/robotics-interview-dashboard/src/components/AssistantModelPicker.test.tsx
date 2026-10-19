@@ -112,6 +112,30 @@ describe("AssistantModelPicker", () => {
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
   });
 
+  it("shows only private MCP connection controls to non-coordinators", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        canManageAssistantTools={false}
+        onConnectOnshape={vi.fn()}
+        onDisconnectOnshape={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByText("Your assistant connections")).toBeInTheDocument();
+    expect(screen.getByText("Only you can use these connections. Provider credentials are not shared with your team.")).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-onshape-setting")).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-custom-mcp-setting")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Web search tool" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Enable all")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assistant skills")).not.toBeInTheDocument();
+  });
+
   it("collapses expanded team skills and still applies a tool selection", async () => {
     renderWithQuery(
       <AssistantModelPicker

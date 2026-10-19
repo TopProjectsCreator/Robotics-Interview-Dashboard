@@ -40,7 +40,7 @@
 - [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
-- [App-level MCP connections](app-level-mcp-connections.md) — a product's MCP client is separate from Replit Agent's own integration catalog; use the provider's hosted endpoint and OAuth.
+- [App-level MCP connections](app-level-mcp-connections.md) — keep provider credentials and MCP tools scoped to the signed-in account and active team; don't widen unrelated assistant permissions.
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
 - [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
