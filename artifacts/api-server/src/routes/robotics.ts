@@ -217,6 +217,12 @@ import {
   runGitHubRepositoryTool,
   type GitHubRepositoryAccessState,
 } from "../lib/assistantGitHub";
+import {
+  ASSISTANT_MCP_CONNECTION_REQUEST_TOOL,
+  assistantMcpConnectionRequestEnabled,
+  parseAssistantMcpConnectionRequest,
+  type AssistantMcpConnectionRequest,
+} from "../lib/assistantMcpConnectionRequest";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -902,6 +908,7 @@ const ASSISTANT_SET_MODEL_TOOL = {
 
 const ASSISTANT_TOOLS = [
   ASSISTANT_SET_MODEL_TOOL,
+  ASSISTANT_MCP_CONNECTION_REQUEST_TOOL,
   ASSISTANT_IMAGE_TOOL,
   ASSISTANT_CHAT_MINI_TOOL,
   ASSISTANT_SEARCH_TOOL,
@@ -976,12 +983,21 @@ function isAssistantToolDisabled(name: string | undefined, disabled: Set<string>
   return false;
 }
 
-function assistantToolsForRequest(disabled: Set<string>, onshapeTools: OnshapeMcpTool[] = [], enableChatMiniTools = false, customMcpTools: CustomMcpTool[] = []) {
+function assistantToolsForRequest(
+  disabled: Set<string>,
+  onshapeTools: OnshapeMcpTool[] = [],
+  enableChatMiniTools = false,
+  customMcpTools: CustomMcpTool[] = [],
+  enableMcpConnectionRequest = false,
+) {
   const enabled = disabled.size === 0
     ? ASSISTANT_TOOLS
     : ASSISTANT_TOOLS.filter((tool) => !disabled.has(tool.function.name));
   return [
-    ...enabled.filter((tool) => enableChatMiniTools || tool.function.name !== ASSISTANT_CHAT_MINI_TOOL.function.name),
+    ...enabled.filter((tool) =>
+      (enableChatMiniTools || tool.function.name !== ASSISTANT_CHAT_MINI_TOOL.function.name) &&
+      (enableMcpConnectionRequest || tool.function.name !== ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name),
+    ),
     ...(onshapeTools as unknown as typeof ASSISTANT_TOOLS),
     ...(customMcpTools as unknown as typeof ASSISTANT_TOOLS),
   ];
@@ -1213,6 +1229,7 @@ async function runAssistantTools(
   githubRepositoryBindings: Map<string, string> = new Map(),
   githubRepositoryAccessState: GitHubRepositoryAccessState = createGitHubRepositoryAccessState(),
   mcpOnly = false,
+  allowMcpConnectionRequest = false,
 ): Promise<{
   toolMessages: { role: "tool"; content: string; tool_call_id: string }[];
   outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[];
@@ -1220,6 +1237,7 @@ async function runAssistantTools(
   images: GeneratedImage[];
   activities: AssistantActivity[];
   miniTools: ChatMiniTool[];
+  connectionRequests: AssistantMcpConnectionRequest[];
   model?: string;
 }> {
   const toolMessages: { role: "tool"; content: string; tool_call_id: string }[] = [];
@@ -1227,6 +1245,7 @@ async function runAssistantTools(
   const imageMarkdowns: string[] = [];
   const images: GeneratedImage[] = [];
   const activities: AssistantActivity[] = [];
+  const connectionRequests: AssistantMcpConnectionRequest[] = [];
   const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
   // No per-answer caps: the agent keeps calling tools until the model stops
   // asking (the loops in /assistant/ask and /assistant/ask/stream run until
@@ -1279,6 +1298,7 @@ async function runAssistantTools(
       name !== "presence_stats" &&
       name !== "kick_presence" &&
       name !== "set_assistant_model" &&
+      name !== ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name &&
       name !== ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME &&
        !onshapeBindings.has(name ?? "") &&
        !customMcpBindings.has(name ?? "") &&
@@ -1300,6 +1320,37 @@ async function runAssistantTools(
     try {
       args = JSON.parse(call.function.arguments || "{}") as typeof args;
     } catch {
+      if (name === ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name) {
+        outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+        toolMessages.push({
+          role: "tool",
+          content: "The MCP connection request arguments were malformed. Provide a single HTTPS endpointUrl string.",
+          tool_call_id: call.id,
+        });
+      }
+      continue;
+    }
+    if (name === ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name) {
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      if (!allowMcpConnectionRequest || mcpOnly || connectionRequests.length > 0) {
+        toolMessages.push({
+          role: "tool",
+          content: "This assistant cannot request another MCP connection in the current conversation.",
+          tool_call_id: call.id,
+        });
+        continue;
+      }
+      const parsedRequest = parseAssistantMcpConnectionRequest(call.function.arguments || "{}");
+      if (!parsedRequest.ok) {
+        toolMessages.push({ role: "tool", content: parsedRequest.error, tool_call_id: call.id });
+        continue;
+      }
+      connectionRequests.push(parsedRequest.request);
+      toolMessages.push({
+        role: "tool",
+        content: "A confirmation prompt is ready for the coordinator. Do not connect or probe the endpoint; wait for the coordinator to choose Connect.",
+        tool_call_id: call.id,
+      });
       continue;
     }
     const onshapeBinding = name ? onshapeBindings.get(name) : undefined;
@@ -2075,7 +2126,16 @@ async function runAssistantTools(
       });
     }
   }
-  return { toolMessages, outgoingCalls, imageMarkdown: imageMarkdowns.join("\n\n"), images, activities, miniTools, model: changedModel };
+  return {
+    toolMessages,
+    outgoingCalls,
+    imageMarkdown: imageMarkdowns.join("\n\n"),
+    images,
+    activities,
+    miniTools,
+    connectionRequests,
+    model: changedModel,
+  };
 }
 
 async function saveAssistantAnswer(conversationId: string, question: string, applicantIds: string[], answer: string, activities: AssistantActivity[] = [], teamId?: string | null): Promise<void> {
@@ -5532,6 +5592,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
+  const partsMode = conversation.title.startsWith("[Parts] ");
   const disabledTools = parseDisabledAssistantTools((parsed.data as unknown as Record<string, unknown>).disabledTools);
   const applicableSkills = mcpOnly ? [] : findRelevantAssistantSkills(
     parsed.data.question,
@@ -5540,6 +5601,12 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   const githubRepositoryBindings = assistantSkillRepositoryBindings(applicableSkills);
   const githubRepositoryAccessState = createGitHubRepositoryAccessState();
   const skillTools = applicableSkills.length ? skillActionAllowlist(applicableSkills) : undefined;
+  const mcpConnectionRequestEnabled = assistantMcpConnectionRequestEnabled({
+    coordinator: !mcpOnly,
+    partsMode,
+    disabled: isAssistantToolDisabled(ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name, disabledTools),
+    skillAllowed: !skillTools || skillTools.has(ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name),
+  });
   if (githubRepositoryBindings.size > 0 && !disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)) {
     skillTools?.add(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME);
   }
@@ -5561,7 +5628,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     ? [...onshapeTools, ...customMcpTools]
     : [
     ...restrictAssistantToolsToSkills(
-      assistantToolsForRequest(disabledTools, onshapeTools, false, customMcpTools),
+      assistantToolsForRequest(disabledTools, onshapeTools, false, customMcpTools, mcpConnectionRequestEnabled),
       applicableSkills,
     ),
     ...(!disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)
@@ -5670,6 +5737,12 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       content: disabledNotice,
     });
   }
+  }
+  if (!mcpOnly && !partsMode) {
+    baseMessages.splice(4, 0, {
+      role: "system" as const,
+      content: "When the coordinator explicitly asks to connect a custom MCP server, call request_custom_mcp_connection with the proposed endpoint URL. This only asks for confirmation. Never claim it is connected, and never contact, inspect, or probe the endpoint.",
+    });
   }
   if (onshapeTools.length > 0) {
     baseMessages.splice(4, 0, {
@@ -5808,6 +5881,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
+      mcpConnectionRequestEnabled,
       );
       if (executed.model) {
         model = executed.model;
@@ -5815,6 +5889,16 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       }
       activities.push(...executed.activities);
       for (const activity of executed.activities) send({ activity });
+      for (const connectionRequest of executed.connectionRequests) {
+        send({ connectionRequest });
+      }
+      if (executed.connectionRequests.length > 0) {
+        if (!answer.trim()) {
+          answer = "Review the proposed destination below. The server will only be contacted if you choose Connect.";
+          send({ delta: answer });
+        }
+        break;
+      }
       if (executed.outgoingCalls.length === 0) break;
       req.log.info({ tools: executed.outgoingCalls.map((call) => call.function.name), round: streamRound }, "Assistant stream tools executed");
       thread.push({
@@ -5885,6 +5969,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
+      mcpConnectionRequestEnabled,
       );
         if (executed.model) {
           model = executed.model;

@@ -12,13 +12,26 @@ registerHooks({
     }
   },
 });
-mock.module("@workspace/db", { namedExports: { pool: { query: async () => ({ rows: [] }) } } });
+const poolQueries = [];
+let poolRows = [];
+mock.module("@workspace/db", {
+  namedExports: {
+    pool: {
+      query: async (text, params = []) => {
+        poolQueries.push({ text: String(text), params });
+        return { rows: poolRows };
+      },
+    },
+  },
+});
 const {
   authorizationMetadataCandidates,
+  customMcpStatus,
   parseRpcPayload,
   quotedParameter,
   resourceMetadataCandidates,
   session,
+  startCustomMcpConnection,
   validateCustomMcpEndpoint,
 } = await import("./customMcp.ts");
 
@@ -86,6 +99,126 @@ test("sends configured API-key headers on MCP initialize and tool requests", asy
     assert.deepEqual(seenHeaders, ["test-value", "test-value", "test-value"]);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("API-key challenge can be retried with the explicit key and remains account/team scoped", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSecret = process.env.SESSION_SECRET;
+  const endpointUrl = "https://8.8.8.8/mcp";
+  process.env.SESSION_SECRET = "test-session-secret-for-custom-mcp-encryption";
+  poolQueries.length = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init.headers);
+    if (url.pathname === "/mcp") {
+      const apiKey = headers.get("x-api-key");
+      if (apiKey !== "correct-test-key") {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: { "www-authenticate": 'Bearer realm="mcp"' },
+        });
+      }
+      const body = JSON.parse(String(init.body));
+      return Response.json({
+        jsonrpc: "2.0",
+        ...(body.id !== undefined ? { id: body.id } : {}),
+        result: body.method === "initialize" ? { protocolVersion: "2025-03-26" } : { tools: [] },
+      });
+    }
+    return new Response("", { status: 404 });
+  };
+  try {
+    const challenged = await startCustomMcpConnection({
+      accountId: "account-a",
+      teamId: "team-a",
+      endpointUrl,
+      redirectUri: "https://app.example/api/assistant/custom-mcp/callback",
+    });
+    assert.equal(challenged.apiKeyRequired, true);
+    assert.equal(challenged.endpointUrl, endpointUrl);
+
+    const connected = await startCustomMcpConnection({
+      accountId: "account-a",
+      teamId: "team-a",
+      endpointUrl,
+      redirectUri: "https://app.example/api/assistant/custom-mcp/callback",
+      apiKey: "correct-test-key",
+      apiKeyHeader: "X-API-Key",
+    });
+    assert.deepEqual(connected, { connected: true, endpointUrl, toolCount: 0 });
+    const saved = poolQueries.find(({ text }) => text.includes("insert into custom_mcp_connections"));
+    assert.deepEqual(saved.params.slice(0, 2), ["account-a", "team-a"]);
+    assert.equal(JSON.stringify(poolQueries).includes("correct-test-key"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = originalSecret;
+  }
+});
+
+test("OAuth discovery returns an authorization URL and stores its state for the signed-in account and team", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSecret = process.env.SESSION_SECRET;
+  const endpointUrl = "https://8.8.8.8/mcp";
+  process.env.SESSION_SECRET = "test-session-secret-for-custom-mcp-encryption";
+  poolQueries.length = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/mcp" && init.method === "POST") {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: {
+          "www-authenticate": 'Bearer realm="mcp", resource_metadata="https://8.8.8.8/.well-known/oauth-protected-resource"',
+        },
+      });
+    }
+    if (url.pathname.includes("oauth-protected-resource")) {
+      return Response.json({
+        resource: endpointUrl,
+        authorization_servers: ["https://8.8.8.8"],
+      });
+    }
+    if (url.pathname.includes("oauth-authorization-server")) {
+      return Response.json({
+        authorization_endpoint: "https://8.8.8.8/oauth/authorize",
+        token_endpoint: "https://8.8.8.8/oauth/token",
+        registration_endpoint: "https://8.8.8.8/oauth/register",
+      });
+    }
+    if (url.pathname === "/oauth/register") return Response.json({ client_id: "test-client" });
+    return new Response("", { status: 404 });
+  };
+  try {
+    const result = await startCustomMcpConnection({
+      accountId: "account-b",
+      teamId: "team-b",
+      endpointUrl,
+      redirectUri: "https://app.example/api/assistant/custom-mcp/callback",
+    });
+    assert.equal(result.connected, false);
+    assert.match(result.authorizationUrl, /^https:\/\/8\.8\.8\.8\/oauth\/authorize\?/);
+    assert.equal(new URL(result.authorizationUrl).searchParams.get("client_id"), "test-client");
+    assert.ok(new URL(result.authorizationUrl).searchParams.get("state"));
+    const savedState = poolQueries.find(({ text }) => text.includes("insert into custom_mcp_oauth_states"));
+    assert.deepEqual(savedState.params.slice(2, 4), ["account-b", "team-b"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = originalSecret;
+  }
+});
+
+test("custom MCP status lookup is isolated by both signed-in account and active team", async () => {
+  poolRows = [{ endpoint_url: "https://tools.example/mcp" }];
+  poolQueries.length = 0;
+  try {
+    const status = await customMcpStatus("account-c", "team-c");
+    assert.deepEqual(status, { connected: true, endpointUrl: "https://tools.example/mcp" });
+    assert.deepEqual(poolQueries.at(-1).params, ["account-c", "team-c"]);
+    assert.match(poolQueries.at(-1).text, /where account_id = \$1 and team_id = \$2/);
+  } finally {
+    poolRows = [];
   }
 });
 

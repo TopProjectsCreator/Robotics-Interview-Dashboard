@@ -52,6 +52,7 @@ import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPic
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
+import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
@@ -6903,7 +6904,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [question, setQuestion] = useState("");
   const questionDraftRef = useRef("");
   const onshapeRetryQuestionRef = useRef("");
-  const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
+  const [history, setHistory] = useState<{
+    q: string;
+    a: string;
+    activities: AssistantActivity[];
+    connectionRequest?: AssistantMcpConnectionRequest;
+    connectionRequestDismissed?: boolean;
+  }[]>([]);
   const assistantScopeReady = conversationScopeIdentity === assistantIdentity;
   const visibleHistory = assistantScopeReady ? history : [];
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode, assistantIdentity));
@@ -7093,13 +7100,21 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     return () => { active = false; };
   }, [assistantIdentity]);
 
-  const connectCustomMcp = async () => {
+  const connectCustomMcp = async (endpointUrl = customMcpEndpoint) => {
     setCustomMcpBusy(true);
     setCustomMcpError("");
-    const popup = customMcpApiKeyRequired
+    const usesApiKey = customMcpApiKeyRequired && endpointUrl === customMcpEndpoint;
+    const alreadyConnectedToTarget = customMcpConnected && endpointUrl === customMcpEndpoint;
+    setCustomMcpEndpoint(endpointUrl);
+    if (!alreadyConnectedToTarget) setCustomMcpConnected(false);
+    if (!usesApiKey) {
+      setCustomMcpApiKeyRequired(false);
+      setCustomMcpApiKey("");
+    }
+    const popup = usesApiKey
       ? null
       : window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
-    if (!customMcpApiKeyRequired && !popup) {
+    if (!usesApiKey && !popup) {
       setCustomMcpError("Allow pop-ups to sign in to this MCP server.");
       setCustomMcpBusy(false);
       return;
@@ -7111,8 +7126,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
         body: JSON.stringify({
-          endpointUrl: customMcpEndpoint,
-          ...(customMcpApiKeyRequired ? {
+          endpointUrl,
+          ...(usesApiKey ? {
             apiKey: customMcpApiKey,
             apiKeyHeader: customMcpApiKeyHeader,
             apiKeyPrefix: customMcpApiKeyPrefix,
@@ -7128,7 +7143,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         setCustomMcpConnected(true);
         setCustomMcpApiKeyRequired(false);
         setCustomMcpApiKey("");
-        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        setCustomMcpEndpoint(result.endpointUrl ?? endpointUrl);
         popup?.close();
         setCustomMcpBusy(false);
         return;
@@ -7138,7 +7153,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         setCustomMcpApiKey("");
         setCustomMcpApiKeyHeader(result.apiKeyHeader ?? "X-API-Key");
         setCustomMcpApiKeyPrefix(result.apiKeyPrefix ?? "");
-        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        setCustomMcpEndpoint(result.endpointUrl ?? endpointUrl);
         popup?.close();
         setCustomMcpBusy(false);
         return;
@@ -7156,17 +7171,22 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
             });
             const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-            if (status.ok && connection.connected) {
+            if (status.ok && connection.connected && connection.endpointUrl === endpointUrl) {
               setCustomMcpConnected(true);
-              setCustomMcpEndpoint(connection.endpointUrl ?? customMcpEndpoint);
+              setCustomMcpEndpoint(connection.endpointUrl ?? endpointUrl);
+            } else {
+              setCustomMcpError("MCP sign-in was not completed. You can retry the connection.");
             }
-          } catch { /* the normal connection status check will recover later */ }
+          } catch {
+            setCustomMcpError("Could not check the MCP connection status. You can retry the connection.");
+          }
           window.clearInterval(poll);
           setCustomMcpBusy(false);
           return;
         }
         if (checks > 180) {
           window.clearInterval(poll);
+          setCustomMcpError("MCP sign-in is taking too long. Check the sign-in window or retry.");
           setCustomMcpBusy(false);
           return;
         }
@@ -7176,9 +7196,9 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
           });
           const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-          if (status.ok && connection.connected) {
+          if (status.ok && connection.connected && connection.endpointUrl === endpointUrl) {
             setCustomMcpConnected(true);
-            setCustomMcpEndpoint(connection.endpointUrl ?? customMcpEndpoint);
+            setCustomMcpEndpoint(connection.endpointUrl ?? endpointUrl);
             setCustomMcpBusy(false);
             window.clearInterval(poll);
           }
@@ -7358,7 +7378,19 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
 
   useEffect(() => {
     if (isStreaming || ask.isPending) return;
-    setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer, activities: item.activities ?? [] })) ?? []);
+    setHistory(current => (activeMessages.data?.items ?? []).map(item => {
+      const existing = current.find(entry =>
+        entry.q === item.question && entry.a === item.answer &&
+        (entry.connectionRequest || entry.connectionRequestDismissed),
+      );
+      return {
+        q: item.question,
+        a: item.answer,
+        activities: item.activities ?? [],
+        ...(existing?.connectionRequest ? { connectionRequest: existing.connectionRequest } : {}),
+        ...(existing?.connectionRequestDismissed ? { connectionRequestDismissed: true } : {}),
+      };
+    }));
   }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
 
   const attachFile = async (file: File) => {
@@ -7416,6 +7448,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         const decoder = new TextDecoder();
         let buffer = "";
         let finalAnswer = "";
+        let connectionRequest: AssistantMcpConnectionRequest | undefined;
         let serverError = "";
         for (;;) {
           const { done, value } = await reader.read();
@@ -7426,13 +7459,37 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           for (const part of parts) {
             const line = part.split("\n").find(entry => entry.startsWith("data:"));
             if (!line) continue;
-            let message: { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string } | null = null;
+            let message: {
+              delta?: string;
+              done?: boolean;
+              answer?: string;
+              model?: string;
+              activities?: AssistantActivity[];
+              activity?: AssistantActivity;
+              connectionRequest?: AssistantMcpConnectionRequest;
+              error?: string;
+            } | null = null;
             try {
-              message = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string };
+              message = JSON.parse(line.slice(5).trim()) as {
+                delta?: string;
+                done?: boolean;
+                answer?: string;
+                model?: string;
+                activities?: AssistantActivity[];
+                activity?: AssistantActivity;
+                connectionRequest?: AssistantMcpConnectionRequest;
+                error?: string;
+              };
             } catch {
               continue;
             }
             if (!message) continue;
+            if (
+              message.connectionRequest?.type === "custom_mcp_connection" &&
+              typeof message.connectionRequest.endpointUrl === "string"
+            ) {
+              connectionRequest = message.connectionRequest;
+            }
             if (typeof message.model === "string" && message.model) {
               rememberModel(message.model);
               payload.model = message.model;
@@ -7457,7 +7514,12 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         }
         if (serverError) throw new Error(serverError);
         if (assistantIdentityRef.current !== requestIdentity) return;
-        setHistory(current => [...current, { q, a: finalAnswer.trim() || "I could not produce an answer for that question.", activities: liveActivitiesRef.current }]);
+        setHistory(current => [...current, {
+          q,
+          a: finalAnswer.trim() || "I could not produce an answer for that question.",
+          activities: liveActivitiesRef.current,
+          ...(connectionRequest ? { connectionRequest } : {}),
+        }]);
         setAttachments([]);
         queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
         queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
@@ -7628,7 +7690,23 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
           {!activeMessages.isLoading && !visibleHistory.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
-          {visibleHistory.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-0 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
+          {visibleHistory.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} />{assistantScopeReady && !partsMode && item.connectionRequest && <AssistantMcpConnectionPrompt
+            request={item.connectionRequest}
+            connected={customMcpConnected && customMcpEndpoint === item.connectionRequest.endpointUrl}
+            busy={customMcpBusy && customMcpEndpoint === item.connectionRequest.endpointUrl}
+            apiKeyRequired={customMcpApiKeyRequired && customMcpEndpoint === item.connectionRequest.endpointUrl}
+            apiKey={customMcpEndpoint === item.connectionRequest.endpointUrl ? customMcpApiKey : ""}
+            apiKeyHeader={customMcpApiKeyHeader}
+            apiKeyPrefix={customMcpApiKeyPrefix}
+            error={customMcpEndpoint === item.connectionRequest.endpointUrl ? customMcpError : ""}
+            onApiKeyChange={setCustomMcpApiKey}
+            onApiKeyHeaderChange={setCustomMcpApiKeyHeader}
+            onApiKeyPrefixChange={setCustomMcpApiKeyPrefix}
+            onConnect={(endpointUrl) => void connectCustomMcp(endpointUrl)}
+            onDismiss={() => setHistory(current => current.map((entry, index) =>
+              index === i ? { ...entry, connectionRequest: undefined, connectionRequestDismissed: true } : entry,
+            ))}
+          />}</div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-0 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
           {isStreaming && assistantScopeReady && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}

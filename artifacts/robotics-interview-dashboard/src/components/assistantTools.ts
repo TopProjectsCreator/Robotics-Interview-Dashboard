@@ -99,6 +99,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
     tools: [
       { name: "rename_conversation", label: "Rename chat", hint: "Short title", write: false },
       { name: "set_assistant_model", label: "Switch model", hint: "On request", write: false },
+      { name: "request_custom_mcp_connection", label: "Request MCP connection", hint: "Ask before connecting", write: true },
     ],
   },
 ];
