@@ -114,6 +114,7 @@
     "kitten-tts-webgpu": "^0.1.1",
     "kokoro-js": "^1.2.1",
     "lib0": "^0.2.117",
+    "libarchive.js": "2.0.2",
     "mammoth": "^1.12.3",
     "occt-import-js": "^0.0.23",
     "three": "^0.183.2",
