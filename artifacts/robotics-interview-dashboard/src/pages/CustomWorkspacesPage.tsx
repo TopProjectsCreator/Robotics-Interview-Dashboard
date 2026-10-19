@@ -11,6 +11,7 @@ type VersionPreview = Version & { html: string; capabilities: Capability[]; sour
 type WorkspaceFile = { path: string; content: string; updatedAt: string };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
+type BuilderModel = { id: string; name?: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
 type PublishAgentEvent = {
   type: "tool_start" | "tool_done" | "screenshot" | "review" | "complete" | "failed";
@@ -94,6 +95,10 @@ export function CustomWorkspacesPage() {
   const [items, setItems] = useState<Workspace[]>([]);
   const [selected, setSelected] = useState<Workspace | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [builderModels, setBuilderModels] = useState<BuilderModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState("");
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [revisionPrompt, setRevisionPrompt] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
@@ -135,6 +140,31 @@ export function CustomWorkspacesPage() {
         })));
       })
       .catch(() => {});
+  }, [canManage]);
+  useEffect(() => {
+    if (!canManage) return;
+    let active = true;
+    setModelsLoading(true);
+    setModelsError("");
+    void Promise.all([
+      request<{ items: BuilderModel[] }>("/api/assistant/models"),
+      request<{ textModel: string }>("/api/assistant/config"),
+    ]).then(([catalog, config]) => {
+      if (!active) return;
+      setBuilderModels(catalog.items);
+      let savedModel = "";
+      try { savedModel = window.localStorage.getItem("robotics-assistant-model") ?? ""; } catch {}
+      const initial = catalog.items.find((item) => item.id === savedModel)?.id
+        ?? catalog.items.find((item) => item.id === config.textModel)?.id
+        ?? catalog.items[0]?.id
+        ?? "";
+      setSelectedModel(initial);
+    }).catch((err) => {
+      if (active) setModelsError(err instanceof Error ? err.message : "Model list unavailable.");
+    }).finally(() => {
+      if (active) setModelsLoading(false);
+    });
+    return () => { active = false; };
   }, [canManage]);
   useEffect(() => {
     setAccessMode(active?.accessMode ?? "team");
@@ -221,7 +251,7 @@ export function CustomWorkspacesPage() {
       method: "POST",
       credentials: "include",
       headers,
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, ...(selectedModel ? { model: selectedModel } : {}) }),
     });
     if (!response.ok || !response.body) {
       const body = await response.json().catch(() => ({}));
@@ -451,6 +481,12 @@ export function CustomWorkspacesPage() {
     active.accessMode !== accessMode ||
     [...(active.allowedInterviewerIds ?? [])].sort().join("\0") !== [...allowedInterviewerIds].sort().join("\0")
   );
+  const chooseModel = (model: string) => {
+    setSelectedModel(model);
+    try {
+      if (model) window.localStorage.setItem("robotics-assistant-model", model);
+    } catch {}
+  };
   const visibleSourceFiles = previewVersion?.sourceFiles ?? sourceFiles;
   const previewHtml = previewVersion
     ? compileWorkspaceSourceFiles(previewVersion.sourceFiles) ?? previewVersion.html
@@ -471,6 +507,21 @@ export function CustomWorkspacesPage() {
           <label htmlFor="workspace-prompt" className="text-sm font-semibold text-[hsl(var(--foreground))]">What should this workspace do?</label>
           {!canManage && <p className="mt-2 rounded-lg bg-[hsl(var(--muted))] p-2.5 text-xs text-[hsl(var(--foreground))]">Only coordinators can create, revise, publish, or change access for custom apps.</p>}
           <textarea id="workspace-prompt" disabled={!canManage} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} maxLength={8000} placeholder="Example: Build a parts catalog for our robot. Track part names, suppliers, prices, and stock; let the team search and add records." className="mt-2 w-full resize-y rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-sm text-[hsl(var(--foreground))] outline-none focus:ring-2 focus:ring-[#16869a] disabled:opacity-60" />
+          <label className="mt-4 grid gap-1.5 text-xs font-semibold text-[hsl(var(--foreground))]">
+            <span>AI model</span>
+            <select
+              aria-label="Workspace builder model"
+              data-testid="workspace-builder-model"
+              value={selectedModel}
+              onChange={(event) => chooseModel(event.target.value)}
+              disabled={!canManage || modelsLoading || builderModels.length === 0}
+              className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm font-normal text-[hsl(var(--foreground))] disabled:opacity-60"
+            >
+              {builderModels.length === 0 && <option value="">{modelsLoading ? "Loading models…" : "Default assistant model"}</option>}
+              {builderModels.map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
+            </select>
+            {modelsError && <span className="font-normal text-amber-700 dark:text-amber-300">Model list unavailable; builds will use the server default.</span>}
+          </label>
           <fieldset className="mt-4">
             <legend className="text-xs font-semibold uppercase tracking-wide text-[#60757c] dark:text-[#b3c3cb]">Allow capabilities</legend>
             <label className="mt-3 flex items-start gap-2 text-sm text-[hsl(var(--foreground))]"><input type="checkbox" disabled={!canManage} checked={capabilities.includes("data")} onChange={(event) => setCapabilities((old) => event.target.checked ? [...old, "data"] : old.filter((value) => value !== "data"))} /> <span><b>Workspace data</b><small className="block text-xs text-[#60757c] dark:text-[#b3c3cb]">Store records in the shared database, isolated to this workspace.</small></span></label>

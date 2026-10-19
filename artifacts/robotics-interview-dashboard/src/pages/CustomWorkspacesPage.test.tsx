@@ -259,6 +259,11 @@ describe("custom workspace visual publish review", () => {
     const draft = { ...workspace, id: "new-workspace", title: "Parts tracker", status: "draft" };
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/assistant/models") return Response.json({ items: [
+        { id: "model-default", name: "Default model" },
+        { id: "model-selected", name: "Selected model" },
+      ] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-default", visionModel: "vision" });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces") return Response.json({
         workspaces: [draft],
@@ -267,7 +272,9 @@ describe("custom workspace visual publish review", () => {
         return Response.json({ files: [{ path: "index.html", content: "<main>Parts tracker</main>", updatedAt: "2026-10-01T00:00:00.000Z" }] });
       }
       if (path === "/api/assistant/ask/stream") {
-        expect(JSON.parse(String(init?.body)).question).toContain("Build a custom workspace app");
+        const body = JSON.parse(String(init?.body));
+        expect(body.question).toContain("Build a custom workspace app");
+        expect(body.model).toBe("model-selected");
         return new Response([
           `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" } })}\n\n`,
           `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." } })}\n\n`,
@@ -278,6 +285,9 @@ describe("custom workspace visual publish review", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomWorkspacesPage />);
+    const modelPicker = await screen.findByRole("combobox", { name: "Workspace builder model" });
+    await waitFor(() => expect(modelPicker).toHaveValue("model-default"));
+    fireEvent.change(modelPicker, { target: { value: "model-selected" } });
     fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
       target: { value: "Track parts and stock" },
     });
