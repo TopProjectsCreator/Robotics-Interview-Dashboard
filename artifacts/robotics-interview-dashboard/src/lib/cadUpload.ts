@@ -50,6 +50,7 @@ const CAD_CONTENT_TYPES: Record<string, string> = {
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ods: "application/vnd.oasis.opendocument.spreadsheet",
+  json: "application/json",
   csv: "text/csv",
   tsv: "text/tab-separated-values",
   txt: "text/plain",

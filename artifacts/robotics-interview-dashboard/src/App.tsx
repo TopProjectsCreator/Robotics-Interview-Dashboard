@@ -57,6 +57,8 @@ import { loadDisabledTools, saveDisabledTools } from "./components/assistantTool
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { readableBrandForeground } from "./lib/team-branding";
+import { classifyFile } from "./lib/fileFormats";
+import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
@@ -1201,39 +1203,24 @@ function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: 
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "spreadsheet" | "step" | "stl" | "text" | "video";
+type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "presentation" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
 }
 
 function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
-  const extension = attachmentExtension(name);
-  if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
-  if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
-  if (contentType === "model/gltf-binary" || extension === "glb") return "model";
-  if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
-  // 3MF is a ZIP of XML mesh data, so it renders in the browser like STL.
-  if (["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) || extension === "3mf") return "3mf";
-  // Plain triangle meshes; three.js parses both without a CAD kernel.
-  if (contentType === "model/obj" || extension === "obj") return "obj";
-  if (contentType === "model/ply" || contentType === "application/ply" || extension === "ply") return "ply";
-  if (
-    contentType === "model/step" ||
-    contentType === "application/step" ||
-    contentType === "application/x-step" ||
-    ["step", "stp", "iges", "igs", "brep", "brp"].includes(extension)
-  ) return "step";
-  if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
-  if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
-  if (contentType === "application/pdf" || extension === "pdf") return "pdf";
-  if (
-    contentType.includes("spreadsheet") ||
-    contentType === "application/vnd.ms-excel" ||
-    ["csv", "tsv", "xls", "xlsx"].includes(extension)
-  ) return ["csv", "tsv"].includes(extension) || contentType.startsWith("text/") ? "text" : "spreadsheet";
-  if (contentType.startsWith("text/") || ["log", "md", "rtf", "txt"].includes(extension)) return "text";
-  return "document";
+  const format = classifyFile(name, contentType);
+  switch (format) {
+    case "three-mf": return "3mf";
+    case "glb": return "model";
+    case "step":
+    case "iges":
+    case "brep": return "step";
+    case "presentation": return "presentation";
+    case "archive": return "document";
+    default: return format;
+  }
 }
 
 function isHeicAttachment(name: string, contentType: string): boolean {
@@ -1291,10 +1278,10 @@ function ChatAttachmentTable({ rows, label }: { rows: string[][]; label: string 
 
 function ChatAttachmentDocument({ name, html, objectUrl }: { name: string; html: string | null; objectUrl: string | null }) {
   if (html) {
-    return <div className="rounded-xl border border-[#dce9e8] bg-white p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><div className="prose prose-sm max-w-none text-[#52666e]" dangerouslySetInnerHTML={{ __html: html }} /></div>;
+    return <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]"><p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} /></div>;
   }
   if (!objectUrl) return null;
-  return <div className="rounded-xl border border-[#dce9e8] bg-white p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" /></div>;
+  return <div className="rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" /></div>;
 }
 
 function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {
@@ -1342,6 +1329,25 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
         if (!active) return;
         setContentType(resolvedType);
         const resolvedKind = attachmentKind(name, resolvedType);
+        const ensureDownloadUrl = () => {
+          if (attachmentBlobRef.current && objectUrlsRef.current.size) return;
+          const url = URL.createObjectURL(blob);
+          createdUrls.add(url);
+          attachmentBlobRef.current = blob;
+          setObjectUrl(url);
+        };
+        if (isOfficePreviewAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = await parseOfficePreview(blob, name);
+          if (active) setText(preview);
+          return;
+        }
+        if (isJsonAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = formatJsonPreview(await blob.text());
+          if (active) setText(preview);
+          return;
+        }
         if (resolvedKind === "text") {
           const raw = await blob.text();
           if (active) setText(raw.slice(0, 250000));
@@ -1422,7 +1428,10 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     }
   };
 
-  if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+  if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46] dark:border-[#70413b] dark:bg-[#2c1d1d] dark:text-[#f1aaa4]" role="alert">
+    <p>Couldn’t preview {name}. The file may be malformed or use unsupported content.</p>
+    <a href={objectUrl ?? appRelativeUrl(src)} download={name} className="mt-1 inline-block font-semibold underline underline-offset-2">Download {name}</a>
+  </div>;
   if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {
     return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
       Couldn’t play {name} in this browser. Try opening it in an app that supports this format.
@@ -1444,7 +1453,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     const delimiter = extension === "tsv" ? "\t" : text.split("\n")[0]?.includes("\t") ? "\t" : ",";
     const isDelimited = ["csv", "tsv"].includes(extension) || contentType === "text/csv" || contentType === "text/tab-separated-values";
     const rows = isDelimited ? parseDelimitedPreview(text, delimiter) : [];
-    return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre className="max-h-[360px] overflow-auto rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e]">{text}</pre>}</div>;
+    return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre aria-label={`Preview of ${name}`} data-testid="text-attachment-preview" className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]">{text}</pre>}</div>;
   }
   if (sheets.length) return <div className="my-2 space-y-3">{sheets.map(sheet => <ChatAttachmentTable key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />)}</div>;
   if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" onError={() => void handleImageError()} className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
@@ -4446,6 +4455,7 @@ const CHAT_FILE_ACCEPT = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.oasis.opendocument.text",
+  "application/json",
   "application/vnd.oasis.opendocument.spreadsheet",
   "application/vnd.oasis.opendocument.presentation",
   "text/csv",
@@ -4460,10 +4470,14 @@ const CHAT_FILE_ACCEPT = [
   ".flac",
   ".doc",
   ".docx",
+  ".odt",
+  ".ods",
+  ".odp",
   ".xls",
   ".xlsx",
   ".ppt",
   ".pptx",
+  ".json",
   ".csv",
   ".tsv",
 ].join(",");
@@ -4475,6 +4489,9 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   csv: "text/csv",
   doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
   flac: "audio/flac",
   gif: "image/gif",
   glb: "model/gltf-binary",
@@ -4500,6 +4517,7 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   png: "image/png",
   ppt: "application/vnd.ms-powerpoint",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  json: "application/json",
   svg: "image/svg+xml",
   tif: "image/tiff",
   tiff: "image/tiff",
@@ -4538,6 +4556,8 @@ function chatFileType(file: File): string {
     "application/vnd.oasis.opendocument.presentation",
     "application/vnd.oasis.opendocument.spreadsheet",
     "application/vnd.oasis.opendocument.text",
+    "application/json",
+    "application/ld+json",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
