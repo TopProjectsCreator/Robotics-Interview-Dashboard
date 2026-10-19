@@ -38,6 +38,7 @@ import {
   requestTeamId,
   requireAdmin,
   requireCoordinator,
+  requireWolverinesCoordinator,
   requireWorkspaceAccess,
   requireWorkspaceAccessOrCoordinator,
 } from "../middlewares/adminAuth";
@@ -62,7 +63,7 @@ import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-router.get('/storage/cad-status', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+router.get('/storage/cad-status', requireWolverinesCoordinator, async (req: Request, res: Response): Promise<void> => {
   const status = getCadStorageStatus();
   if (
     status.usingBackupStorage &&

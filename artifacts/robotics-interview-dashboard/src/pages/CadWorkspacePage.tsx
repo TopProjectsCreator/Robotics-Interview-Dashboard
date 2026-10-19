@@ -452,7 +452,7 @@ export function CadWorkspacePage() {
 
   return (
     <div className="space-y-5">
-      {cadStorageStatus.data?.usingBackupStorage && (
+      {!cadStorageStatus.isError && cadStorageStatus.data?.usingBackupStorage && (
         <div
           role="status"
           aria-live="polite"
