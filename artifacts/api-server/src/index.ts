@@ -249,10 +249,12 @@ async function ensureSchema(): Promise<void> {
        "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
        "html" text not null check (octet_length("html") <= 120000),
        "capabilities" jsonb not null default '[]'::jsonb,
+       "source_files" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
        "message" text not null default '',
        "created_at" timestamptz not null default now()
      )`,
+    `alter table "custom_workspace_versions" add column if not exists "source_files" jsonb not null default '[]'::jsonb`,
     `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
     `create table if not exists "custom_workspace_files" (
        "id" text primary key,
@@ -273,6 +275,9 @@ async function ensureSchema(): Promise<void> {
         select 1 from "custom_workspace_files" f
          where f."workspace_id" = w."id" and f."path" = 'index.html'
       )`,
+    `update "custom_workspace_versions"
+        set "source_files" = jsonb_build_array(jsonb_build_object('path', 'index.html', 'content', "html"))
+      where "source_files" = '[]'::jsonb`,
     `create table if not exists "custom_workspace_data" (
        "id" text primary key,
        "team_id" text,

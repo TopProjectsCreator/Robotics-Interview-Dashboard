@@ -6,7 +6,8 @@ import { getStoredAuthToken } from "../authSession";
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
 type Version = CustomWorkspaceVersion;
-type VersionPreview = Version & { html: string; capabilities: Capability[] };
+type WorkspaceSourceFile = { path: string; content: string };
+type VersionPreview = Version & { html: string; capabilities: Capability[]; sourceFiles: WorkspaceSourceFile[] };
 type WorkspaceFile = { path: string; content: string; updatedAt: string };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
@@ -59,6 +60,21 @@ function sandboxDocument(html: string): string {
   const safeMeta = CSP + BRIDGE;
   if (/<head(?:\\s[^>]*)?>/i.test(html)) return html.replace(/<head(?:\\s[^>]*)?>/i, (head) => `${head}${safeMeta}`);
   return `<!doctype html><html><head>${safeMeta}</head><body>${html}</body></html>`;
+}
+
+function compileWorkspaceSourceFiles(sourceFiles: WorkspaceSourceFile[]): string | null {
+  const files = new Map(sourceFiles.map((file) => [file.path, file.content]));
+  const html = files.get("index.html");
+  if (html === undefined) return null;
+  return html
+    .replace(/<link\b([^>]*?)href=(["'])([^"']+)\2([^>]*)>/gi, (tag, before: string, _quote: string, href: string, after: string) => {
+      const css = files.get(href.replace(/^\.\//, ""));
+      return css === undefined || !/stylesheet/i.test(`${before}${after}`) ? tag : `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+    })
+    .replace(/<script\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>\s*<\/script>/gi, (tag, before: string, _quote: string, src: string, after: string) => {
+      const js = files.get(src.replace(/^\.\//, ""));
+      return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
+    });
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -373,6 +389,9 @@ export function CustomWorkspacesPage() {
         method: "POST", body: "{}",
       });
       setSelected(result.workspace);
+      const files = await request<{ files: WorkspaceFile[] }>(`${API}/${active.id}/files`);
+      setSourceFiles(files.files);
+      setSelectedSourcePath((current) => files.files.some((file) => file.path === current) ? current : files.files[0]?.path ?? "");
       const history = await request<{ versions: Version[] }>(`${API}/${active.id}/versions`);
       setVersions(history.versions);
       setPreviewVersion(null);
@@ -388,7 +407,18 @@ export function CustomWorkspacesPage() {
     setError("");
     try {
       const result = await request<{ version: VersionPreview }>(`${API}/${active.id}/versions/${versionId}`);
-      setPreviewVersion(result.version);
+      const savedVersion = {
+        ...result.version,
+        sourceFiles: Array.isArray(result.version.sourceFiles)
+          ? result.version.sourceFiles
+          : [{ path: "index.html", content: result.version.html }],
+      };
+      setPreviewVersion(savedVersion);
+      setSelectedSourcePath((current) =>
+        savedVersion.sourceFiles.some((file) => file.path === current)
+          ? current
+          : savedVersion.sourceFiles[0]?.path ?? "",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not preview the selected version.");
     } finally {
@@ -400,6 +430,10 @@ export function CustomWorkspacesPage() {
     active.accessMode !== accessMode ||
     [...(active.allowedInterviewerIds ?? [])].sort().join("\0") !== [...allowedInterviewerIds].sort().join("\0")
   );
+  const visibleSourceFiles = previewVersion?.sourceFiles ?? sourceFiles;
+  const previewHtml = previewVersion
+    ? compileWorkspaceSourceFiles(previewVersion.sourceFiles) ?? previewVersion.html
+    : active?.html ?? "";
 
   return <main className="mx-auto w-full max-w-7xl p-4 md:p-8">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -473,15 +507,16 @@ export function CustomWorkspacesPage() {
         </section>}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
-          {!sourceFiles.length
+          {previewVersion && <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Showing files from the selected saved version.</p>}
+          {!visibleSourceFiles.length
             ? <p className="mt-2 text-xs text-[#60757c] dark:text-[#b3c3cb]">No source files have been saved for this workspace yet.</p>
             : <div className="mt-2 grid gap-3 md:grid-cols-[minmax(160px,240px)_minmax(0,1fr)]">
               <ul className="max-h-48 space-y-1 overflow-auto" aria-label="Source files">
-                {sourceFiles.map((file) => <li key={file.path}>
+                {visibleSourceFiles.map((file) => <li key={file.path}>
                   <button type="button" aria-pressed={selectedSourcePath === file.path} onClick={() => setSelectedSourcePath(file.path)} className={`w-full truncate rounded-md px-2 py-1 text-left font-mono text-xs ${selectedSourcePath === file.path ? "bg-[#e9f5f4] text-[#145d6c] dark:bg-[#15353d] dark:text-[#a5e4df]" : "text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"}`}>{file.path}</button>
                 </li>)}
               </ul>
-              <pre className="max-h-64 overflow-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 font-mono text-[11px] leading-relaxed text-[hsl(var(--foreground))]"><code>{sourceFiles.find((file) => file.path === selectedSourcePath)?.content ?? ""}</code></pre>
+              <pre className="max-h-64 overflow-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 font-mono text-[11px] leading-relaxed text-[hsl(var(--foreground))]"><code>{visibleSourceFiles.find((file) => file.path === selectedSourcePath)?.content ?? ""}</code></pre>
             </div>}
         </section>}
         {active && canManage && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
@@ -506,8 +541,8 @@ export function CustomWorkspacesPage() {
           <span className="text-xs text-[hsl(var(--foreground))]">Saved {new Date(previewVersion.createdAt).toLocaleString()} · capabilities at save: {previewVersion.capabilities.join(" · ") || "none"}</span>
           <button type="button" data-testid="button-return-current-app" disabled={busy} onClick={() => setPreviewVersion(null)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-xs font-semibold text-[hsl(var(--foreground))]">Return to current app</button>
         </div>}
-        {(previewVersion?.html ?? active?.html)
-          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewVersion?.html ?? active?.html ?? "")} className="h-[70vh] min-h-[520px] w-full bg-white" />
+        {previewHtml
+          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewHtml)} className="h-[70vh] min-h-[520px] w-full bg-white" />
           : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />Describe a workspace to generate its first draft.</div></div>}
         {active?.status === "draft" && canManage && <div className="border-t border-[hsl(var(--border))] p-4">
           <label htmlFor="workspace-revision" className="text-sm font-semibold text-[hsl(var(--foreground))]">Revise this draft</label>

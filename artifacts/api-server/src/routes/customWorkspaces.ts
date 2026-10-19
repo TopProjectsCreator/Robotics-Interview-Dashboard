@@ -460,9 +460,10 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       [id, teamId, title, description, prompt, html, JSON.stringify(capabilities), accountId],
     );
     await pool.query(
-      `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-       values ($1, $2, $3, $4, $5::jsonb, $6, 'Initial AI draft')`,
-      [randomUUID(), teamId, id, html, JSON.stringify(capabilities), accountId],
+      `insert into "custom_workspace_versions"
+        ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, 'Initial AI draft')`,
+      [randomUUID(), teamId, id, html, JSON.stringify(capabilities), JSON.stringify([{ path: "index.html", content: html }]), accountId],
     );
     await pool.query(
       `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
@@ -526,7 +527,7 @@ router.get("/custom-workspaces/:id/versions/:versionId", requireCoordinator, asy
   if (!await workspaceForVersionHistory(req, res, workspaceId)) return;
   const teamId = await requestTeamId(req);
   const version = await pool.query(
-    `select "id", "html", "capabilities", "message", "created_by" as "createdBy",
+    `select "id", "html", "capabilities", "source_files" as "sourceFiles", "message", "created_by" as "createdBy",
             "created_at" as "createdAt"
        from "custom_workspace_versions"
       where "id" = $1 and "workspace_id" = $2 and ${teamSqlCondition('"team_id"', "$3")}
@@ -590,10 +591,20 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
       return;
     }
     const accountId = authenticatedInterviewerId(req) ?? "";
+    const currentFiles = await pool.query<{ path: string; content: string }>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, teamId],
+    );
+    const currentSourceFiles = currentFiles.rows.length
+      ? currentFiles.rows
+      : [{ path: "index.html", content: current.html }];
     await pool.query(
-      `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-       values ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
-      [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), accountId, `Before revision: ${instruction.slice(0, 300)}`],
+      `insert into "custom_workspace_versions"
+        ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
+      [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), JSON.stringify(currentSourceFiles), accountId, `Before revision: ${instruction.slice(0, 300)}`],
     );
     const updated = await pool.query(
       `update "custom_workspaces" set "title" = $3, "description" = $4, "html" = $5, "updated_at" = now()
@@ -642,8 +653,17 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
       res.status(404).json({ error: "Workspace not found." });
       return;
     }
-    const previous = await client.query<{ html: string; capabilities: string[] }>(
-      `select "html", "capabilities" from "custom_workspace_versions"
+    const currentFiles = await client.query<{ path: string; content: string }>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, teamId],
+    );
+    const currentSourceFiles = currentFiles.rows.length
+      ? currentFiles.rows
+      : [{ path: "index.html", content: currentWorkspace.html }];
+    const previous = await client.query<{ html: string; capabilities: string[]; sourceFiles: WorkspaceSourceFile[] }>(
+      `select "html", "capabilities", "source_files" as "sourceFiles" from "custom_workspace_versions"
         where "id" = $1 and "workspace_id" = $2 and ${teamSqlCondition('"team_id"', "$3")}
         limit 1`,
       [versionId, workspaceId, teamId],
@@ -654,16 +674,27 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
       res.status(404).json({ error: "That version was not found." });
       return;
     }
+    const versionSourceFiles = Array.isArray(previousVersion.sourceFiles)
+      ? previousVersion.sourceFiles
+      : [];
+    const restoredSourceFiles = versionSourceFiles.length
+      ? versionSourceFiles
+      : [{ path: "index.html", content: previousVersion.html }];
+    if (!restoredSourceFiles.some((file) => file.path === "index.html")) {
+      restoredSourceFiles.push({ path: "index.html", content: previousVersion.html });
+    }
     const accountId = authenticatedInterviewerId(req) ?? "";
     await client.query(
-      `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-       values ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+      `insert into "custom_workspace_versions"
+        ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
       [
         randomUUID(),
         teamId,
         workspaceId,
         currentWorkspace.html,
         JSON.stringify(currentWorkspace.capabilities),
+        JSON.stringify(currentSourceFiles),
         accountId,
         currentWorkspace.status === "published" ? "Before published version restore" : "Before version restore",
       ],
@@ -680,12 +711,17 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
       [workspaceId, teamId, previousVersion.html, JSON.stringify(previousVersion.capabilities)],
     );
     await client.query(
-      `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
-       values ($1, $2, $3, 'index.html', $4, $5)
-       on conflict ("workspace_id", "path") do update
-         set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
-      [randomUUID(), teamId, workspaceId, previousVersion.html, accountId],
+      `delete from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+      [workspaceId, teamId],
     );
+    for (const file of restoredSourceFiles) {
+      await client.query(
+        `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+         values ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), teamId, workspaceId, file.path, file.content, accountId],
+      );
+    }
     await client.query("COMMIT");
     res.json({ workspace: restored.rows[0] });
   } catch (error) {
@@ -813,11 +849,18 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
         emit({ type: "failed", message: "This draft changed while it was being reviewed. Reload it and try again." });
         return;
       }
-      if (html !== current.html) {
+      if (html !== current.html || JSON.stringify(sourceFiles) !== JSON.stringify(
+        sourceFilesResult.rows.length ? sourceFilesResult.rows : [{ path: "index.html", content: current.html }],
+      )) {
         await client.query(
-          `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-           values ($1, $2, $3, $4, $5::jsonb, $6, 'Before visual QA repair')`,
-          [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), accountId],
+          `insert into "custom_workspace_versions"
+            ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+           values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, 'Before visual QA repair')`,
+          [
+            randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities),
+            JSON.stringify(sourceFilesResult.rows.length ? sourceFilesResult.rows : [{ path: "index.html", content: current.html }]),
+            accountId,
+          ],
         );
       }
       const result = await client.query(

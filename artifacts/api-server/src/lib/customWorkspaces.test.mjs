@@ -148,6 +148,11 @@ async function createHarness(t) {
     workspaceId: "workspace-a",
     html: "<main>Saved app version</main>",
     capabilities: ["llm"],
+    sourceFiles: [
+      { path: "index.html", content: "<main>Saved app version</main>" },
+      { path: "styles.css", content: ".saved { color: red; }" },
+      { path: "app.js", content: "window.savedVersion = true;" },
+    ],
     createdBy: "coordinator-a",
     message: "Before revision",
     createdAt: "2026-01-02T00:00:00.000Z",
@@ -157,6 +162,7 @@ async function createHarness(t) {
     workspaceId: "workspace-a-selected",
     html: "<main>Selected app saved version</main>",
     capabilities: [],
+    sourceFiles: [{ path: "index.html", content: "<main>Selected app saved version</main>" }],
     createdBy: "coordinator-a",
     message: "Before selected-app revision",
     createdAt: "2026-01-02T00:00:00.000Z",
@@ -166,6 +172,7 @@ async function createHarness(t) {
     workspaceId: "workspace-a-draft",
     html: "<main>Draft saved version</main>",
     capabilities: [],
+    sourceFiles: [{ path: "index.html", content: "<main>Draft saved version</main>" }],
     createdBy: "coordinator-a",
     message: "Before draft revision",
     createdAt: "2026-01-02T00:00:00.000Z",
@@ -201,6 +208,12 @@ async function createHarness(t) {
       };
 
       if (statement.startsWith("select") && statement.includes('from "custom_workspaces"')) {
+        if (statement.includes('select "html", "capabilities"')) {
+          const [id, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
+          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes('"created_by" = $3')) {
           const [id, teamId, accountId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -306,7 +319,9 @@ async function createHarness(t) {
           row.allowedInterviewerIds = JSON.parse(values[4]);
         } else if (statement.includes('set "html" = $3')) {
           row.html = accessMode;
-          if (row.status === "draft") row.capabilities = JSON.parse(allowedIdsJson);
+          if (row.status === "draft" && statement.includes('"capabilities" = case')) {
+            row.capabilities = JSON.parse(allowedIdsJson);
+          }
         } else if (statement.includes('set "access_mode" = $3')) {
           row.accessMode = accessMode;
           row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
@@ -384,13 +399,17 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspace_versions"')) {
-        const [id, teamId, workspaceId, html, capabilities, createdBy, message] = values;
+        const [id, teamId, workspaceId, html, capabilities, sourceFiles, createdBy] = values;
+        const message = values[7] ?? (
+          statement.includes("'Initial AI draft'") ? "Initial AI draft" : "Created by assistant"
+        );
         versions.push({
           id,
           teamId,
           workspaceId,
           html,
           capabilities: JSON.parse(capabilities),
+          sourceFiles: JSON.parse(sourceFiles),
           createdBy,
           message,
           createdAt: "2026-01-03T00:00:00.000Z",
@@ -399,7 +418,9 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspace_files"')) {
-        const [, teamId, workspaceId, filePath, content] = values;
+        const [, teamId, workspaceId, filePath, content] = statement.includes("'index.html'")
+          ? [values[0], values[1], values[2], "index.html", values[3]]
+          : values;
         const workspace = workspaces.find((item) => item.id === workspaceId);
         assert.equal(workspace?.teamId, teamId);
         const files = savedWorkspaceFiles.get(workspaceId) ?? [];
@@ -407,6 +428,23 @@ async function createHarness(t) {
         if (existing) existing.content = content;
         else files.push({ path: filePath, content });
         savedWorkspaceFiles.set(workspaceId, files);
+        return { rows: [], rowCount: 1 };
+      }
+
+      if (statement.startsWith('update "custom_workspace_files"')) {
+        const [workspaceId, filePath, teamId, content] = values;
+        ensureTeamScope('"team_id"', "$3", teamId);
+        const files = savedWorkspaceFiles.get(workspaceId) ?? [];
+        const file = files.find((item) => item.path === filePath);
+        if (!file) return { rows: [], rowCount: 0 };
+        file.content = content;
+        return { rows: [{ path: filePath }], rowCount: 1 };
+      }
+
+      if (statement.startsWith('delete from "custom_workspace_files"')) {
+        const [workspaceId, teamId] = values;
+        ensureTeamScope('"team_id"', "$2", teamId);
+        savedWorkspaceFiles.set(workspaceId, []);
         return { rows: [], rowCount: 1 };
       }
 
@@ -765,6 +803,11 @@ test("coordinators can preview and restore published versions without changing a
   const harness = await createHarness(t);
   const workspace = harness.workspaces.find((item) => item.id === "workspace-a-selected");
   workspace.allowedInterviewerIds = ["admin-a"];
+  harness.savedWorkspaceFiles.set(workspace.id, [
+    { path: "index.html", content: "<main>Selected</main>" },
+    { path: "current.css", content: ".current { color: blue; }" },
+    { path: "current.js", content: "window.currentVersion = true;" },
+  ]);
   const history = await harness.request(
     "coordinator-a",
     "GET",
@@ -777,7 +820,11 @@ test("coordinators can preview and restore published versions without changing a
     "/custom-workspaces/workspace-a-selected/versions/version-a-selected",
   );
   assert.equal(preview.status, 200);
-  assert.equal((await preview.json()).version.html, "<main>Selected app saved version</main>");
+  const previewVersion = (await preview.json()).version;
+  assert.equal(previewVersion.html, "<main>Selected app saved version</main>");
+  assert.deepEqual(previewVersion.sourceFiles, [
+    { path: "index.html", content: "<main>Selected app saved version</main>" },
+  ]);
 
   const forbidden = await harness.request(
     "admin-a",
@@ -804,7 +851,15 @@ test("coordinators can preview and restore published versions without changing a
   const snapshot = harness.versions.find((version) => version.message === "Before published version restore");
   assert.equal(snapshot.html, "<main>Selected</main>");
   assert.deepEqual(snapshot.capabilities, ["data", "llm"]);
+  assert.deepEqual(snapshot.sourceFiles, [
+    { path: "index.html", content: "<main>Selected</main>" },
+    { path: "current.css", content: ".current { color: blue; }" },
+    { path: "current.js", content: "window.currentVersion = true;" },
+  ]);
   assert.equal(snapshot.createdBy, "coordinator-a");
+  assert.deepEqual(harness.savedWorkspaceFiles.get(workspace.id), [
+    { path: "index.html", content: "<main>Selected app saved version</main>" },
+  ], "restore removes files that are not part of the selected saved version");
 
   const foreignPreview = await harness.request(
     "coordinator-b",
@@ -984,6 +1039,29 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.equal(insert.values[1], "team-b");
   assert.equal(insert.values[6], JSON.stringify(["data"]));
   assert.match(insert.statement, /'draft'/);
+  const createdWorkspace = harness.workspaces.find((workspace) => workspace.title === "Assistant-created app");
+  assert.ok(createdWorkspace);
+  const initialVersion = harness.versions.find((version) => version.workspaceId === createdWorkspace.id);
+  assert.deepEqual(initialVersion.sourceFiles, [
+    { path: "index.html", content: "<main>Tracker</main>" },
+  ]);
+
+  await runAssistantWorkspaceTool("create_custom_workspace_file", {
+    workspaceId: createdWorkspace.id,
+    path: "styles.css",
+    content: ".tracker { color: red; }",
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  await runAssistantWorkspaceTool("write_custom_workspace_file", {
+    workspaceId: createdWorkspace.id,
+    path: "index.html",
+    content: '<link rel="stylesheet" href="styles.css"><main class="tracker">Tracker</main>',
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  const beforeIndexEdit = harness.versions.find((version) => version.message === "Before changing index.html");
+  assert.deepEqual(beforeIndexEdit.sourceFiles, [
+    { path: "index.html", content: "<main>Tracker</main>" },
+    { path: "styles.css", content: ".tracker { color: red; }" },
+  ]);
+  assert.match(createdWorkspace.html, /<style>\.tracker \{ color: red; \}<\/style>/);
 
   const queryCount = harness.calls.queries.length;
   const invalid = await runAssistantWorkspaceTool(

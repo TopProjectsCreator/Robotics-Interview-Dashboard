@@ -7,6 +7,35 @@ import { accountById } from "./interviewerAccounts";
 import { readWorkspaceVisibility } from "./workspaceAccess";
 import { userCanSeeWorkspace, type WorkspaceKey } from "./workspaceVisibility";
 
+async function snapshotCustomWorkspaceBeforeFileChange(
+  workspaceId: string,
+  teamId: string,
+  accountId: string,
+  message: string,
+): Promise<void> {
+  const workspace = await pool.query<{ html: string; capabilities: string[] }>(
+    `select "html", "capabilities" from "custom_workspaces"
+      where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+      limit 1`,
+    [workspaceId, teamId],
+  );
+  const current = workspace.rows[0];
+  if (!current) throw new Error("Custom workspace not found while saving version.");
+  const files = await pool.query<{ path: string; content: string }>(
+    `select "path", "content" from "custom_workspace_files"
+      where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+      order by "path"`,
+    [workspaceId, teamId],
+  );
+  const sourceFiles = files.rows.length ? files.rows : [{ path: "index.html", content: current.html }];
+  await pool.query(
+    `insert into "custom_workspace_versions"
+      ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
+    [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), JSON.stringify(sourceFiles), accountId, message],
+  );
+}
+
 const tool = (
   name: string,
   description: string,
@@ -458,9 +487,13 @@ export async function runAssistantWorkspaceTool(
         [id, context.teamId, title, description, prompt, html, serializedCapabilities, context.accountId],
       );
       await pool.query(
-        `insert into "custom_workspace_versions" ("id", "team_id", "workspace_id", "html", "capabilities", "created_by", "message")
-         values ($1, $2, $3, $4, $5::jsonb, $6, 'Created by assistant')`,
-        [randomUUID(), context.teamId, id, html, serializedCapabilities, context.accountId],
+        `insert into "custom_workspace_versions"
+          ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
+         values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, 'Created by assistant')`,
+        [
+          randomUUID(), context.teamId, id, html, serializedCapabilities,
+          JSON.stringify([{ path: "index.html", content: html }]), context.accountId,
+        ],
       );
       await pool.query(
         `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
@@ -485,7 +518,7 @@ export async function runAssistantWorkspaceTool(
     }
     const workspace = await pool.query<{ id: string }>(
       `select "id" from "custom_workspaces"
-        where "id" = $1 and ${teamSqlCondition('"team_id', "$2")}
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
           and "created_by" = $3 and "status" = 'draft'
         limit 1`,
       [workspaceId, context.teamId, context.accountId],
@@ -518,6 +551,12 @@ export async function runAssistantWorkspaceTool(
     if (Buffer.byteLength(content, "utf8") > 120_000) return { content: "File exceeds 120 KB.", detail: "file too large" };
     if (name === "create_custom_workspace_file") {
       try {
+        await snapshotCustomWorkspaceBeforeFileChange(
+          workspaceId,
+          context.teamId,
+          context.accountId,
+          `Before adding ${path}`,
+        );
         await pool.query(
           `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
            values ($1, $2, $3, $4, $5, $6)`,
@@ -530,6 +569,12 @@ export async function runAssistantWorkspaceTool(
         throw error;
       }
     } else {
+      await snapshotCustomWorkspaceBeforeFileChange(
+        workspaceId,
+        context.teamId,
+        context.accountId,
+        `Before changing ${path}`,
+      );
       const updated = await pool.query(
         `update "custom_workspace_files" set "content" = $4, "updated_by" = $5, "updated_at" = now()
           where "workspace_id" = $1 and "path" = $2 and ${teamSqlCondition('"team_id"', "$3")}

@@ -111,10 +111,16 @@ describe("custom workspace access settings", () => {
 describe("custom workspace version history", () => {
   it("previews and restores a saved version of a published app", async () => {
     const restoreRequests: string[] = [];
+    let restored = false;
+    const savedFiles = [
+      { path: "index.html", content: '<!doctype html><html><head><link rel="stylesheet" href="styles.css"><script src="app.js"></script></head><body><main>Saved version preview</main></body></html>', updatedAt: "2026-10-02T00:00:00.000Z" },
+      { path: "styles.css", content: ".saved-preview { color: rgb(1, 2, 3); }", updatedAt: "2026-10-02T00:00:00.000Z" },
+      { path: "app.js", content: "window.savedVersionPreview = true;", updatedAt: "2026-10-02T00:00:00.000Z" },
+    ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
-      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: restored ? savedFiles : [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [workspace] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") {
         return Response.json({ versions: [{
@@ -130,13 +136,15 @@ describe("custom workspace version history", () => {
           message: "Before revision",
           createdBy: "coordinator-1",
           createdAt: "2026-10-02T00:00:00.000Z",
-          html: "<main>Saved version preview</main>",
+          html: savedFiles[0].content,
           capabilities: ["llm"],
+          sourceFiles: savedFiles,
         } });
       }
       if (path === "/api/custom-workspaces/custom-app-1/versions/version-1/restore") {
         restoreRequests.push(path);
-        return Response.json({ workspace: { ...workspace, html: "<main>Saved version preview</main>" } });
+        restored = true;
+        return Response.json({ workspace: { ...workspace, html: savedFiles[0].content } });
       }
       throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
     });
@@ -148,6 +156,12 @@ describe("custom workspace version history", () => {
     fireEvent.click(previewButton);
     const savedPreview = await screen.findByTitle("Team planner saved version");
     expect(savedPreview.getAttribute("srcdoc")).toContain("Saved version preview");
+    expect(savedPreview.getAttribute("srcdoc")).toContain(".saved-preview { color: rgb(1, 2, 3); }");
+    expect(savedPreview.getAttribute("srcdoc")).toContain("window.savedVersionPreview = true;");
+    fireEvent.click(screen.getByRole("button", { name: "styles.css" }));
+    expect(await screen.findByText(".saved-preview { color: rgb(1, 2, 3); }")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "app.js" }));
+    expect(await screen.findByText("window.savedVersionPreview = true;")).toBeInTheDocument();
     expect(screen.getByText(/capabilities at save: llm/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("button-restore-version-version-1"));
@@ -158,6 +172,7 @@ describe("custom workspace version history", () => {
       "srcdoc",
       expect.stringContaining("Saved version preview"),
     );
+    expect(await screen.findByText("window.savedVersionPreview = true;")).toBeInTheDocument();
   });
 });
 
