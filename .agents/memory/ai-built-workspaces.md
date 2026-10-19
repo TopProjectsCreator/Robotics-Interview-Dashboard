@@ -7,6 +7,10 @@ AI-generated workspaces must be buildable from scratch and must not depend on fi
 
 Custom workspaces should support arbitrary interactive apps, while generated code remains untrusted: run it only in the isolated iframe, deny direct network and parent-page access, and route side effects through authenticated server capabilities scoped to the team and workspace. Do not claim that the iframe can host an OS process or real network service.
 
+Workspace-builder and `/assistant` agent runs must continue on the server after the browser tab closes, and their tool activity must be reviewable when the user returns.
+
 **Why:** The user explicitly said the assistant should be able to build a Parts-like workspace even if Parts did not exist, and that custom workspaces should share the existing Supabase database.
 
-**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller.
+**Why:** The user explicitly requires workspace-builder and `/assistant` agent runs to keep working after the tab is closed.
+
+**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review.
