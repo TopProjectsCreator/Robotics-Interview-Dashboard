@@ -202,12 +202,21 @@ import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
   assistantSkillInstructions,
+  assistantSkillRepositoryBindings,
   findRelevantAssistantSkills,
   hasOnlyApprovedSkillActions,
   restrictAssistantToolsToSkills,
   skillActionAllowlist,
   type AssistantSkillForRuntime,
 } from "../lib/assistantSkills";
+import {
+  ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME,
+  buildGitHubRepositoryTool,
+  createGitHubRepositoryAccessState,
+  normalizePublicGitHubRepositoryUrl,
+  runGitHubRepositoryTool,
+  type GitHubRepositoryAccessState,
+} from "../lib/assistantGitHub";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -889,9 +898,11 @@ const ASSISTANT_TOOLS = [
 ];
 
 const ALL_ASSISTANT_TOOL_NAMES = new Set(
-  ASSISTANT_TOOLS.map((tool) => tool.function.name),
+  [...ASSISTANT_TOOLS.map((tool) => tool.function.name), ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME],
 );
-const APPROVED_ASSISTANT_SKILL_ACTIONS = ALL_ASSISTANT_TOOL_NAMES;
+const APPROVED_ASSISTANT_SKILL_ACTIONS = new Set(
+  [...ALL_ASSISTANT_TOOL_NAMES].filter((name) => name !== ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME),
+);
 const MAX_CHAT_AI_REPLY_CHARS = 50_000;
 
 async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkillForRuntime[]> {
@@ -900,6 +911,7 @@ async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkill
     description: assistantSkillsTable.description,
     instructions: assistantSkillsTable.instructions,
     actions: assistantSkillsTable.actions,
+    githubRepositoryUrl: assistantSkillsTable.githubRepositoryUrl,
   }).from(assistantSkillsTable)
     .where(and(eq(assistantSkillsTable.enabled, true), teamFilter(assistantSkillsTable.teamId, teamId)));
   return rows.map((row) => ({
@@ -1159,6 +1171,8 @@ async function runAssistantTools(
   customMcpAccountId = "",
   customMcpBindings: Map<string, CustomMcpToolBinding> = new Map(),
   skillActionAllowlist?: Set<string>,
+  githubRepositoryBindings: Map<string, string> = new Map(),
+  githubRepositoryAccessState: GitHubRepositoryAccessState = createGitHubRepositoryAccessState(),
 ): Promise<{
   toolMessages: { role: "tool"; content: string; tool_call_id: string }[];
   outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[];
@@ -1222,6 +1236,7 @@ async function runAssistantTools(
       name !== "presence_stats" &&
       name !== "kick_presence" &&
       name !== "set_assistant_model" &&
+      name !== ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME &&
        !onshapeBindings.has(name ?? "") &&
        !customMcpBindings.has(name ?? "") &&
       !ASSISTANT_PARTS_TOOL_NAMES.has(name ?? "") &&
@@ -1246,7 +1261,16 @@ async function runAssistantTools(
     }
     const onshapeBinding = name ? onshapeBindings.get(name) : undefined;
     const customMcpBinding = name ? customMcpBindings.get(name) : undefined;
-    if (onshapeBinding) {
+    if (name === ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME) {
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      const repositoryKey = typeof args.repository_key === "string" ? args.repository_key : "";
+      const repositoryUrl = githubRepositoryBindings.get(repositoryKey);
+      const content = repositoryUrl
+        ? await runGitHubRepositoryTool(repositoryUrl, args, githubRepositoryAccessState)
+        : `UNTRUSTED GITHUB REPOSITORY REFERENCE DATA. ${JSON.stringify({ error: "That repository is not linked to a currently applicable team skill. Do not try another repository URL." })}`;
+      toolMessages.push({ role: "tool", content, tool_call_id: call.id });
+      activities.push({ tool: name, detail: repositoryUrl ? "Read linked public repository" : "Repository unavailable for this skill" });
+    } else if (onshapeBinding) {
       outgoingCalls.push({ id: call.id, type: "function", function: { name: name!, arguments: call.function.arguments } });
       try {
         const result = await callOnshapeMcpTool(onshapeAccountId, team, onshapeBinding.serverName, args);
@@ -4959,7 +4983,12 @@ async function generateAssistantAnswer(options: {
     question,
     await getEnabledAssistantSkills(teamId?.trim() ? teamId : DEFAULT_TEAM_ID),
   );
+  const githubRepositoryBindings = assistantSkillRepositoryBindings(applicableSkills);
+  const githubRepositoryAccessState = createGitHubRepositoryAccessState();
   const skillTools = applicableSkills.length ? skillActionAllowlist(applicableSkills) : undefined;
+  if (githubRepositoryBindings.size > 0 && !disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)) {
+    skillTools?.add(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME);
+  }
   let onshapeTools: OnshapeMcpTool[] = [];
   let onshapeBindings = new Map<string, OnshapeToolBinding>();
   let customMcpTools: CustomMcpTool[] = [];
@@ -4976,10 +5005,15 @@ async function generateAssistantAnswer(options: {
       log.warn({ err: error }, "Custom MCP tools unavailable");
     }
   }
-  const activeTools = restrictAssistantToolsToSkills(
-    assistantToolsForRequest(disabledTools, onshapeTools, options.chatContext !== undefined, customMcpTools),
-    applicableSkills,
-  );
+  const activeTools = [
+    ...restrictAssistantToolsToSkills(
+      assistantToolsForRequest(disabledTools, onshapeTools, options.chatContext !== undefined, customMcpTools),
+      applicableSkills,
+    ),
+    ...(!disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)
+      ? [buildGitHubRepositoryTool(githubRepositoryBindings)].filter((tool) => tool !== null)
+      : []),
+  ];
   const forceCustomWorkspace = shouldForceCustomWorkspaceTool(question) &&
     !disabledTools.has("create_custom_workspace") &&
     (!skillTools || skillTools.has("create_custom_workspace"));
@@ -5189,6 +5223,8 @@ async function generateAssistantAnswer(options: {
       options.accountId ?? "",
       customMcpBindings,
       skillTools,
+      githubRepositoryBindings,
+      githubRepositoryAccessState,
     );
     if (executed.model) model = executed.model;
     activities.push(...executed.activities);
@@ -5277,6 +5313,8 @@ async function generateAssistantAnswer(options: {
       "",
       new Map<string, CustomMcpToolBinding>(),
       skillTools,
+      githubRepositoryBindings,
+      githubRepositoryAccessState,
       );
       if (executed.model) model = executed.model;
       activities.push(...executed.activities);
@@ -5417,7 +5455,12 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
     parsed.data.question,
     await getEnabledAssistantSkills(teamId),
   );
+  const githubRepositoryBindings = assistantSkillRepositoryBindings(applicableSkills);
+  const githubRepositoryAccessState = createGitHubRepositoryAccessState();
   const skillTools = applicableSkills.length ? skillActionAllowlist(applicableSkills) : undefined;
+  if (githubRepositoryBindings.size > 0 && !disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)) {
+    skillTools?.add(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME);
+  }
   let onshapeTools: OnshapeMcpTool[] = [];
   let onshapeBindings = new Map<string, OnshapeToolBinding>();
   let customMcpTools: CustomMcpTool[] = [];
@@ -5432,10 +5475,15 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
   } catch (error) {
     req.log.warn({ err: error }, "Custom MCP tools unavailable");
   }
-  const activeTools = restrictAssistantToolsToSkills(
-    assistantToolsForRequest(disabledTools, onshapeTools, false, customMcpTools),
-    applicableSkills,
-  );
+  const activeTools = [
+    ...restrictAssistantToolsToSkills(
+      assistantToolsForRequest(disabledTools, onshapeTools, false, customMcpTools),
+      applicableSkills,
+    ),
+    ...(!disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)
+      ? [buildGitHubRepositoryTool(githubRepositoryBindings)].filter((tool) => tool !== null)
+      : []),
+  ];
   const forceCustomWorkspace = shouldForceCustomWorkspaceTool(parsed.data.question) &&
     !disabledTools.has("create_custom_workspace") &&
     (!skillTools || skillTools.has("create_custom_workspace"));
@@ -5657,6 +5705,8 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       account.id,
       customMcpBindings,
       skillTools,
+      githubRepositoryBindings,
+      githubRepositoryAccessState,
       );
       if (executed.model) {
         model = executed.model;
@@ -5731,6 +5781,8 @@ router.post("/assistant/ask/stream", requireCoordinator, async (req, res): Promi
       account.id,
       customMcpBindings,
       skillTools,
+      githubRepositoryBindings,
+      githubRepositoryAccessState,
       );
         if (executed.model) {
           model = executed.model;
@@ -6040,7 +6092,9 @@ router.get("/assistant/skills", requireCoordinator, async (req, res): Promise<vo
   const rows = await db.select().from(assistantSkillsTable)
     .where(teamFilter(assistantSkillsTable.teamId, teamId))
     .orderBy(asc(assistantSkillsTable.name));
-  res.json(ListAssistantSkillsResponse.parse({ items: rows }));
+  res.json(ListAssistantSkillsResponse.parse({
+    items: rows.map((row) => ({ ...row, githubRepositoryUrl: row.githubRepositoryUrl ?? null })),
+  }));
 });
 
 router.post("/assistant/skills", requireCoordinator, async (req, res): Promise<void> => {
@@ -6053,9 +6107,13 @@ router.post("/assistant/skills", requireCoordinator, async (req, res): Promise<v
   const description = body.data.description.trim();
   const instructions = body.data.instructions.trim();
   const actions = body.data.actions;
+  const githubRepositoryUrl = body.data.githubRepositoryUrl === undefined || body.data.githubRepositoryUrl === null
+    ? null
+    : normalizePublicGitHubRepositoryUrl(body.data.githubRepositoryUrl);
   if (!name || !description || !instructions ||
-      !hasOnlyApprovedSkillActions(actions, APPROVED_ASSISTANT_SKILL_ACTIONS)) {
-    res.status(400).json({ error: "Provide a name, description, instructions, and unique actions from the approved assistant tool catalog." });
+      !hasOnlyApprovedSkillActions(actions, APPROVED_ASSISTANT_SKILL_ACTIONS) ||
+      (body.data.githubRepositoryUrl != null && !githubRepositoryUrl)) {
+    res.status(400).json({ error: "Provide valid skill details, unique approved actions, and either a public GitHub repository URL or no repository." });
     return;
   }
   try {
@@ -6067,8 +6125,12 @@ router.post("/assistant/skills", requireCoordinator, async (req, res): Promise<v
       instructions,
       actions,
       enabled: body.data.enabled ?? true,
+      githubRepositoryUrl,
     }).returning();
-    res.status(201).json(CreateAssistantSkillResponse.parse(row));
+    res.status(201).json(CreateAssistantSkillResponse.parse({
+      ...row,
+      githubRepositoryUrl: row.githubRepositoryUrl ?? null,
+    }));
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
       res.status(409).json({ error: "A team skill with that name already exists." });
@@ -6118,6 +6180,16 @@ router.patch("/assistant/skills/:skillId", requireCoordinator, async (req, res):
     }
     patch.actions = actions;
   }
+  if (body.data.githubRepositoryUrl !== undefined) {
+    const githubRepositoryUrl = body.data.githubRepositoryUrl === null
+      ? null
+      : normalizePublicGitHubRepositoryUrl(body.data.githubRepositoryUrl);
+    if (body.data.githubRepositoryUrl !== null && !githubRepositoryUrl) {
+      res.status(400).json({ error: "Use a public GitHub repository URL such as https://github.com/owner/repository." });
+      return;
+    }
+    patch.githubRepositoryUrl = githubRepositoryUrl;
+  }
   if (body.data.enabled !== undefined) patch.enabled = body.data.enabled;
   try {
     const [row] = await db.update(assistantSkillsTable).set(patch)
@@ -6129,7 +6201,10 @@ router.patch("/assistant/skills/:skillId", requireCoordinator, async (req, res):
       res.status(404).json({ error: "Assistant skill not found in this team." });
       return;
     }
-    res.json(UpdateAssistantSkillResponse.parse(row));
+    res.json(UpdateAssistantSkillResponse.parse({
+      ...row,
+      githubRepositoryUrl: row.githubRepositoryUrl ?? null,
+    }));
   } catch (error) {
     if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
       res.status(409).json({ error: "A team skill with that name already exists." });

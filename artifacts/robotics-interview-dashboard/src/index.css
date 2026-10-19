@@ -241,6 +241,7 @@ button { cursor: pointer; }
 .assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; }
 .assistant-skill-card.is-disabled .assistant-skill-description { opacity: .68; }
 .assistant-skill-detail { margin: 0 8px 8px; border-top: 1px solid hsl(var(--border)); padding-top: 7px; }
+.assistant-skill-repository-link { display: block; margin: 0 0 8px; overflow-wrap: anywhere; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
 .assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 9px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
 .assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 10px; line-height: 1.45; white-space: pre-wrap; }
 .assistant-skill-action-chips { display: flex; flex-wrap: wrap; gap: 4px; }

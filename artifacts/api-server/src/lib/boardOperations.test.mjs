@@ -486,9 +486,12 @@ test("coordinator board and assistant skill operations remain persisted and team
     assert.equal((await request(interviewerSession, "GET", "/assistant/skills")).status, 403);
 
     const listA = await request(coordinatorSession, "GET", "/assistant/skills");
-    assert.deepEqual((await listA.json()).items.map((skill) => skill.id), ["skill-a"]);
+    const listAData = await listA.json();
+    assert.deepEqual(listAData.items.map((skill) => skill.id), ["skill-a"]);
+    assert.equal(listAData.items[0].githubRepositoryUrl, null, "legacy skills are returned with an empty repository field");
     const listB = await request(otherCoordinatorSession, "GET", "/assistant/skills");
     assert.deepEqual((await listB.json()).items.map((skill) => skill.id), ["skill-b"]);
+    assert.equal((await request(coordinatorSession, "GET", "/assistant/skills")).status, 200);
 
     const invalidAction = await request(coordinatorSession, "POST", "/assistant/skills", {
       name: "Invalid tool",
@@ -511,6 +514,24 @@ test("coordinator board and assistant skill operations remain persisted and team
     const createdSkill = await created.json();
     assert.equal(createdSkill.teamId, undefined);
     assert.equal(createdSkill.name, skillInput.name);
+    assert.equal(createdSkill.githubRepositoryUrl, null, "skills created by older clients get a null repository URL");
+    const invalidRepository = await request(coordinatorSession, "POST", "/assistant/skills", {
+      ...skillInput,
+      name: "Invalid repository",
+      githubRepositoryUrl: "https://github.com.evil.example/org/repo",
+    });
+    assert.equal(invalidRepository.status, 400);
+    const linkedSkillResponse = await request(coordinatorSession, "PATCH", `/assistant/skills/${createdSkill.id}`, {
+      githubRepositoryUrl: "https://github.com/example/team-playbook.git/",
+    });
+    assert.equal(linkedSkillResponse.status, 200);
+    const linkedSkill = await linkedSkillResponse.json();
+    assert.equal(linkedSkill.githubRepositoryUrl, "https://github.com/example/team-playbook");
+    const teamList = await request(coordinatorSession, "GET", "/assistant/skills");
+    const teamSkills = (await teamList.json()).items;
+    assert.equal(teamSkills.find((skill) => skill.id === createdSkill.id)?.githubRepositoryUrl, "https://github.com/example/team-playbook");
+    const otherTeamSkills = (await (await request(otherCoordinatorSession, "GET", "/assistant/skills")).json()).items;
+    assert.ok(otherTeamSkills.every((skill) => skill.id !== createdSkill.id), "repository links stay inside the owning team");
     const duplicate = await request(coordinatorSession, "POST", "/assistant/skills", {
       ...skillInput,
       name: "INTERVIEW SUMMARY",
@@ -525,6 +546,10 @@ test("coordinator board and assistant skill operations remain persisted and team
       actions: ["shell_exec"],
     });
     assert.equal(invalidUpdateAction.status, 400);
+    const invalidRepositoryUpdate = await request(coordinatorSession, "PATCH", "/assistant/skills/skill-a", {
+      githubRepositoryUrl: "https://example.com/repo",
+    });
+    assert.equal(invalidRepositoryUpdate.status, 400);
     const crossTeamPatch = await request(coordinatorSession, "PATCH", "/assistant/skills/skill-b", { enabled: false });
     assert.equal(crossTeamPatch.status, 404);
     const crossTeamDelete = await request(coordinatorSession, "DELETE", "/assistant/skills/skill-b");
@@ -532,6 +557,9 @@ test("coordinator board and assistant skill operations remain persisted and team
     const updated = await request(coordinatorSession, "PATCH", `/assistant/skills/${createdSkill.id}`, { enabled: false });
     assert.equal(updated.status, 200);
     assert.equal((await updated.json()).enabled, false);
+    const clearedRepository = await request(coordinatorSession, "PATCH", `/assistant/skills/${createdSkill.id}`, { githubRepositoryUrl: null });
+    assert.equal(clearedRepository.status, 200);
+    assert.equal((await clearedRepository.json()).githubRepositoryUrl, null);
     const deleted = await request(coordinatorSession, "DELETE", `/assistant/skills/${createdSkill.id}`);
     assert.equal(deleted.status, 204);
   } finally {

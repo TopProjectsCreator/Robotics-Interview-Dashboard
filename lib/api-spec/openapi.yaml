@@ -6896,7 +6896,7 @@ components:
                 type: string
     AssistantSkill:
       type: object
-      required: [id, name, description, instructions, actions, enabled, createdAt, updatedAt]
+      required: [id, name, description, instructions, actions, enabled, githubRepositoryUrl, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -6912,6 +6912,11 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
+          description: Optional public GitHub repository URL
         createdAt:
           type: string
           format: date-time
@@ -6950,6 +6955,10 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
     AssistantSkillUpdate:
       type: object
       minProperties: 1
@@ -6974,6 +6983,10 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
     AssistantResponse:
       type: object
       required: [answer]

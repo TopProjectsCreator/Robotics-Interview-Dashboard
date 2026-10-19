@@ -528,9 +528,11 @@ async function ensureSchema(): Promise<void> {
        "instructions" text not null check (length("instructions") between 1 and 8000),
        "actions" jsonb not null default '[]'::jsonb check (jsonb_typeof("actions") = 'array'),
        "enabled" boolean not null default true,
+       "github_repository_url" text,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
+    `alter table "assistant_skills" add column if not exists "github_repository_url" text`,
     `create unique index if not exists "assistant_skills_team_name_unique" on "assistant_skills" ("team_id", lower("name"))`,
     `create index if not exists "assistant_skills_team_enabled_idx" on "assistant_skills" ("team_id", "enabled")`,
     `create table if not exists "onshape_mcp_connections" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "access_token" jsonb not null, "refresh_token" jsonb, "expires_at" timestamptz not null, "scopes" text not null default '', "updated_at" timestamptz not null default now())`,

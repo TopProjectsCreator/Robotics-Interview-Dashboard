@@ -2767,6 +2767,12 @@ export const AskAssistantResponse = zod.object({
 /**
  * @summary List team-shared assistant skills
  */
+export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax = 500;
+
+
+export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
+
 export const ListAssistantSkillsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -2775,6 +2781,7 @@ export const ListAssistantSkillsResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax).regex(listAssistantSkillsResponseItemsItemGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }))
@@ -2792,6 +2799,10 @@ export const createAssistantSkillBodyInstructionsMax = 8000;
 
 export const createAssistantSkillBodyActionsMax = 100;
 
+export const createAssistantSkillBodyGithubRepositoryUrlMax = 500;
+
+
+export const createAssistantSkillBodyGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
 
 
 export const CreateAssistantSkillBody = zod.object({
@@ -2799,8 +2810,15 @@ export const CreateAssistantSkillBody = zod.object({
   "description": zod.string().min(1).max(createAssistantSkillBodyDescriptionMax),
   "instructions": zod.string().min(1).max(createAssistantSkillBodyInstructionsMax),
   "actions": zod.array(zod.string()).max(createAssistantSkillBodyActionsMax),
-  "enabled": zod.boolean().optional()
+  "enabled": zod.boolean().optional(),
+  "githubRepositoryUrl": zod.string().max(createAssistantSkillBodyGithubRepositoryUrlMax).regex(createAssistantSkillBodyGithubRepositoryUrlRegExp).nullish()
 })
+
+export const createAssistantSkillResponseGithubRepositoryUrlMax = 500;
+
+
+export const createAssistantSkillResponseGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
 
 export const CreateAssistantSkillResponse = zod.object({
   "id": zod.string(),
@@ -2809,6 +2827,7 @@ export const CreateAssistantSkillResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(createAssistantSkillResponseGithubRepositoryUrlMax).regex(createAssistantSkillResponseGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -2829,6 +2848,10 @@ export const updateAssistantSkillBodyInstructionsMax = 8000;
 
 export const updateAssistantSkillBodyActionsMax = 100;
 
+export const updateAssistantSkillBodyGithubRepositoryUrlMax = 500;
+
+
+export const updateAssistantSkillBodyGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
 
 
 export const UpdateAssistantSkillBody = zod.object({
@@ -2836,8 +2859,15 @@ export const UpdateAssistantSkillBody = zod.object({
   "description": zod.string().min(1).max(updateAssistantSkillBodyDescriptionMax).optional(),
   "instructions": zod.string().min(1).max(updateAssistantSkillBodyInstructionsMax).optional(),
   "actions": zod.array(zod.string()).max(updateAssistantSkillBodyActionsMax).optional(),
-  "enabled": zod.boolean().optional()
+  "enabled": zod.boolean().optional(),
+  "githubRepositoryUrl": zod.string().max(updateAssistantSkillBodyGithubRepositoryUrlMax).regex(updateAssistantSkillBodyGithubRepositoryUrlRegExp).nullish()
 })
+
+export const updateAssistantSkillResponseGithubRepositoryUrlMax = 500;
+
+
+export const updateAssistantSkillResponseGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
 
 export const UpdateAssistantSkillResponse = zod.object({
   "id": zod.string(),
@@ -2846,6 +2876,7 @@ export const UpdateAssistantSkillResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(updateAssistantSkillResponseGithubRepositoryUrlMax).regex(updateAssistantSkillResponseGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })

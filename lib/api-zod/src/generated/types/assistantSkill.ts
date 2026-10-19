@@ -13,6 +13,13 @@ export interface AssistantSkill {
   instructions: string;
   actions: string[];
   enabled: boolean;
+  /**
+     * Optional public GitHub repository URL
+     * @maxLength 500
+     * @nullable
+     * @pattern ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$
+     */
+  githubRepositoryUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

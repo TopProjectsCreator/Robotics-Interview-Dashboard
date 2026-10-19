@@ -29,6 +29,7 @@ export const assistantSkillsTable = pgTable("assistant_skills", {
   instructions: text("instructions").notNull(),
   actions: jsonb("actions").$type<string[]>().notNull().default([]),
   enabled: boolean("enabled").notNull().default(true),
+  githubRepositoryUrl: text("github_repository_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

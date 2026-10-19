@@ -25,4 +25,10 @@ export interface AssistantSkillUpdate {
   /** @maxItems 100 */
   actions?: string[];
   enabled?: boolean;
+  /**
+     * @maxLength 500
+     * @nullable
+     * @pattern ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$
+     */
+  githubRepositoryUrl?: string | null;
 }
