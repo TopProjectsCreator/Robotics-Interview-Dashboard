@@ -23,7 +23,7 @@ type PublishAgentEvent = {
   message?: string;
   workspace?: Workspace;
 };
-type PublishAgentStep = { id: string; label: string; detail?: string; status: "running" | "done" | "failed" };
+type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; status: "running" | "done" | "failed" };
 
 const API = "/api/custom-workspaces";
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
@@ -117,6 +117,25 @@ export function CustomWorkspacesPage() {
     setSelected((current) => current && result.workspaces.find((item) => item.id === current.id) || null);
   };
   useEffect(() => { void refresh().catch((err) => setError(err.message)); }, []);
+  useEffect(() => {
+    if (!canManage) return;
+    void request<{ items: { question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
+      .then(({ items: history }) => {
+        const latest = [...history].reverse().find((item) =>
+          item.question.startsWith("Build a custom workspace app for the team.") ||
+          item.question.startsWith("Revise custom workspace draft "));
+        if (!latest?.activities.length) return;
+        setPublishAgentSteps(latest.activities.map((activity, index) => ({
+          id: `saved-${index}-${activity.tool}`,
+          label: activity.tool.replaceAll("_", " "),
+          detail: activity.detail,
+          input: activity.input,
+          output: activity.output,
+          status: "done",
+        })));
+      })
+      .catch(() => {});
+  }, [canManage]);
   useEffect(() => {
     setAccessMode(active?.accessMode ?? "team");
     setAllowedInterviewerIds(active?.allowedInterviewerIds ?? []);
@@ -218,13 +237,15 @@ export function CustomWorkspacesPage() {
         let event: Record<string, unknown>;
         try { event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>; } catch { continue; }
         if (event.activity && typeof event.activity === "object") {
-          const activity = event.activity as { tool?: unknown; detail?: unknown };
+          const activity = event.activity as { tool?: unknown; detail?: unknown; input?: unknown; output?: unknown };
           const tool = typeof activity.tool === "string" ? activity.tool : "Assistant tool";
           const detail = typeof activity.detail === "string" ? activity.detail : "";
           setPublishAgentSteps((steps) => [...steps, {
             id: `agent-${steps.length}-${tool}`,
             label: tool.replaceAll("_", " "),
             detail,
+            input: typeof activity.input === "string" ? activity.input : undefined,
+            output: typeof activity.output === "string" ? activity.output : undefined,
             status: "done",
           }]);
         }
@@ -493,11 +514,17 @@ export function CustomWorkspacesPage() {
         </div>
         {publishAgentSteps.length > 0 && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
-          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks the desktop screenshot and browser runtime, repairs code or visual issues, and blocks publishing if they remain." : "Shows the current build or revision request while the AI builder is working."}</p>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks the desktop screenshot and browser runtime, repairs code or visual issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
           <ol className="mt-2 space-y-2">
             {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
               <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
-              <span><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}</span>
+              <span className="min-w-0 flex-1"><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}
+                {(step.input || step.output) && <details className="mt-1">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
+                  {step.input && <><span className="mt-1 block font-semibold">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.input}</pre></>}
+                  {step.output && <><span className="mt-1 block font-semibold">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.output}</pre></>}
+                </details>}
+              </span>
             </li>)}
           </ol>
           {publishScreenshot && <figure className="mt-3 max-w-xl">

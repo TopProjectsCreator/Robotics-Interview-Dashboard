@@ -120,6 +120,7 @@ describe("custom workspace version history", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: restored ? savedFiles : [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [workspace] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") {
@@ -268,8 +269,8 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/assistant/ask/stream") {
         expect(JSON.parse(String(init?.body)).question).toContain("Build a custom workspace app");
         return new Response([
-          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace", detail: "created custom workspace draft" } })}\n\n`,
-          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace_file", detail: "created index.html" } })}\n\n`,
+          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" } })}\n\n`,
+          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." } })}\n\n`,
           `data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`,
         ].join(""), { headers: { "Content-Type": "text/event-stream" } });
       }
@@ -284,5 +285,8 @@ describe("custom workspace visual publish review", () => {
     expect(await screen.findByRole("heading", { name: "Parts tracker" })).toBeInTheDocument();
     expect(await screen.findByTestId("workspace-source-tree")).toHaveTextContent("index.html");
     expect(await screen.findByText("create custom workspace file")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Tool call details")[1]);
+    expect(await screen.findByText('{"path":"index.html"}')).toBeInTheDocument();
+    expect(screen.getByText("Created index.html.")).toBeInTheDocument();
   });
 });

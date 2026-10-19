@@ -1422,7 +1422,9 @@ export const GetInterviewChatResponse = zod.object({
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -1469,7 +1471,9 @@ export const SendInterviewChatBody = zod.object({
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional()
 })
 
@@ -1485,7 +1489,9 @@ export const SendInterviewChatResponse = zod.object({
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -1845,7 +1851,9 @@ export const UpdateChatMessageResponse = zod.object({
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -2759,7 +2767,9 @@ export const AskAssistantResponse = zod.object({
   "model": zod.string().optional().describe('Model id used to produce the answer.'),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional()
 })
 
@@ -3093,7 +3103,9 @@ export const GetAssistantHistoryResponse = zod.object({
   "answer": zod.string(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "createdAt": zod.string()
 }))
@@ -3194,7 +3206,9 @@ export const GetAssistantConversationMessagesResponse = zod.object({
   "answer": zod.string(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "createdAt": zod.string()
 }))

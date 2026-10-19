@@ -1399,6 +1399,10 @@ export const InterviewChatInputScope = {
 export interface AssistantActivity {
   tool: string;
   detail: string;
+  /** Redacted, size-limited tool input for coordinator review. */
+  input?: string;
+  /** Size-limited tool result for coordinator review. */
+  output?: string;
 }
 
 export interface InterviewChatInput {

@@ -7008,6 +7008,12 @@ components:
           type: string
         detail:
           type: string
+        input:
+          type: string
+          description: "Redacted, size-limited tool input for coordinator review."
+        output:
+          type: string
+          description: "Size-limited tool result for coordinator review."
     GenerateImageInput:
       type: object
       required: [prompt]

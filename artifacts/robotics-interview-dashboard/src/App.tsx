@@ -6882,6 +6882,11 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
                 <p className="mt-1 truncate text-xs leading-none text-[#7c8c91]" title={activity.detail}>
                   {activity.detail || "—"}
                 </p>
+                {(activity.input || activity.output) && <details className="mt-1.5">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
+                  {activity.input && <><span className="mt-1 block text-[10px] font-semibold uppercase">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.input}</pre></>}
+                  {activity.output && <><span className="mt-1 block text-[10px] font-semibold uppercase">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.output}</pre></>}
+                </details>}
               </div>
               <Check size={12} className="mt-1 shrink-0 text-[#3aa582]" />
             </div>

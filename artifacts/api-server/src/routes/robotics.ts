@@ -2126,12 +2126,44 @@ async function runAssistantTools(
       });
     }
   }
+  const compactPayload = (value: string): string => {
+    const redact = (item: unknown): unknown => {
+      if (Array.isArray(item)) return item.map(redact);
+      if (!item || typeof item !== "object") return item;
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([key, child]) => [
+        key,
+        /token|secret|password|authorization|api.?key|credential/i.test(key) ? "[redacted]" : redact(child),
+      ]));
+    };
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return JSON.stringify(redact(parsed)).slice(0, 2400);
+    } catch {
+      return value
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+        .replace(/((?:api[_-]?key|access[_-]?token|secret|password|authorization)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
+        .slice(0, 2400);
+    }
+  };
+  const matchedCalls = new Set<string>();
+  const detailedActivities = activities.map((activity) => {
+    const call = outgoingCalls.find((candidate) =>
+      !matchedCalls.has(candidate.id) && candidate.function.name === activity.tool);
+    if (!call) return activity;
+    matchedCalls.add(call.id);
+    const result = toolMessages.find((message) => message.tool_call_id === call.id);
+    return {
+      ...activity,
+      input: compactPayload(call.function.arguments),
+      output: compactPayload(result?.content ?? ""),
+    };
+  });
   return {
     toolMessages,
     outgoingCalls,
     imageMarkdown: imageMarkdowns.join("\n\n"),
     images,
-    activities,
+    activities: detailedActivities,
     miniTools,
     connectionRequests,
     model: changedModel,
@@ -2171,7 +2203,7 @@ function parseStoredActivities(value: string | null | undefined): AssistantActiv
         !!item && typeof item === "object" &&
         typeof (item as AssistantActivity).tool === "string" &&
         typeof (item as AssistantActivity).detail === "string")
-      .slice(0, 10);
+      .slice(0, 100);
   } catch {
     return [];
   }
