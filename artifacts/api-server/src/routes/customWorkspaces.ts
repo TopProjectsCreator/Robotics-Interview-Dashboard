@@ -71,27 +71,99 @@ function escapeAttribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
-function visualSandboxDocument(html: string): string {
-  const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
-  const document = /<head\b[^>]*>/i.test(html)
-    ? html.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}`)
-    : `<!doctype html><html><head>${policy}</head><body>${html}</body></html>`;
-  return `<!doctype html><html><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:#f3f6f5"><iframe sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
+type WorkspaceRuntimeIssue = { kind: string; message: string };
+type WorkspaceSourceFile = { path: string; content: string };
+
+function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | null {
+  const files = new Map(sourceFiles.map((file) => [file.path, file.content]));
+  const html = files.get("index.html");
+  if (html === undefined) return null;
+  return html
+    .replace(/<link\b([^>]*?)href=(["'])([^"']+)\2([^>]*)>/gi, (tag, before: string, _quote: string, href: string, after: string) => {
+      const css = files.get(href.replace(/^\.\//, ""));
+      return css === undefined || !/stylesheet/i.test(`${before}${after}`) ? tag : `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+    })
+    .replace(/<script\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>\s*<\/script>/gi, (tag, before: string, _quote: string, src: string, after: string) => {
+      const js = files.get(src.replace(/^\.\//, ""));
+      return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
+    });
 }
 
-async function captureWorkspaceScreenshot(html: string): Promise<string> {
+function visualSandboxDocument(html: string): string {
+  const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
+  const reporter = `<script>
+(() => {
+  const send = (kind, message) => {
+    try { window.parent.postMessage({ channel: "workspace-runtime-diagnostic", kind, message: String(message).replace(/\\s+/g, " ").slice(0, 500) }, "*"); } catch {}
+  };
+  window.addEventListener("error", (event) => {
+    const target = event.target;
+    if (target && target !== window) {
+      const name = target.localName || target.tagName || "resource";
+      const url = target.currentSrc || target.src || target.href || target.getAttribute?.("src") || target.getAttribute?.("href") || "";
+      send("Asset load failure", name + (url ? " " + url : ""));
+      return;
+    }
+    send("JavaScript exception", (event.message || "Script execution failed") + (event.filename ? " (" + event.filename + ":" + event.lineno + ")" : ""));
+  }, true);
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    send("Unhandled promise rejection", reason && typeof reason === "object" && "message" in reason ? reason.message : reason ?? "Promise rejected");
+  });
+  document.addEventListener("securitypolicyviolation", (event) => {
+    send("Blocked resource", (event.blockedURI || "unknown resource") + " (" + event.violatedDirective + ")");
+  });
+})();
+</script>`;
+  // Keep one known diagnostic-friendly policy. A draft's own CSP meta can only
+  // add a second, stricter policy and accidentally disable the injected reporter.
+  const cleanHtml = html.replace(
+    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(?:"content-security-policy"|'content-security-policy'|content-security-policy))[^>]*>/gi,
+    "",
+  );
+  const document = /<head\b[^>]*>/i.test(cleanHtml)
+    ? cleanHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${reporter}`)
+    : `<!doctype html><html><head>${policy}${reporter}</head><body>${cleanHtml}</body></html>`;
+  const wrapper = `<!doctype html><html><head><script>
+(() => {
+  document.addEventListener("DOMContentLoaded", () => {
+    const frame = document.getElementById("workspace-preview");
+    const issues = [];
+    let captured = false;
+    window.addEventListener("message", (event) => {
+      if (event.source !== frame.contentWindow || event.data?.channel !== "workspace-runtime-diagnostic") return;
+      const issue = { kind: String(event.data.kind || "Runtime error").slice(0, 80), message: String(event.data.message || "").slice(0, 500) };
+      if (!issues.some((existing) => existing.kind === issue.kind && existing.message === issue.message) && issues.length < 20) issues.push(issue);
+    });
+    const finish = () => {
+      if (captured) return;
+      captured = true;
+      document.documentElement.setAttribute("data-qa-runtime", encodeURIComponent(JSON.stringify(issues)));
+    };
+    frame.addEventListener("load", () => setTimeout(finish, 4500), { once: true });
+    setTimeout(finish, 4800);
+  });
+})();
+</script></head><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:#f3f6f5"><iframe id="workspace-preview" sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
+  return wrapper;
+}
+
+async function captureWorkspaceScreenshot(html: string): Promise<{ screenshot: string; runtimeIssues: WorkspaceRuntimeIssue[] }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-visual-qa-"));
   const source = path.join(directory, "preview.html");
   const screenshot = path.join(directory, "preview.png");
   try {
     await writeFile(source, visualSandboxDocument(html), "utf8");
-    await execFileAsync(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
+    const { stdout } = await execFileAsync(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
       "--headless", "--disable-gpu", "--disable-dev-shm-usage",
       "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
-      "--hide-scrollbars", "--window-size=1280,900", "--virtual-time-budget=2500",
+      "--hide-scrollbars", "--window-size=1280,900", "--virtual-time-budget=5000", "--dump-dom",
       `--screenshot=${screenshot}`, `file://${source}`,
     ], { timeout: 20000, maxBuffer: 1024 * 1024 });
-    return (await readFile(screenshot)).toString("base64");
+    const encodedIssues = stdout.match(/data-qa-runtime="([^"]*)"/)?.[1];
+    if (!encodedIssues) throw new Error("The isolated preview did not return its runtime diagnostics.");
+    const runtimeIssues = JSON.parse(decodeURIComponent(encodedIssues)) as WorkspaceRuntimeIssue[];
+    return { screenshot: (await readFile(screenshot)).toString("base64"), runtimeIssues };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -132,7 +204,8 @@ async function repairWorkspaceHtml(
   requirements: string,
   html: string,
   repair: string,
-): Promise<{ title: string; description: string; html: string }> {
+  sourceFiles: WorkspaceSourceFile[],
+): Promise<{ title: string; description: string; html: string; sourceFiles: WorkspaceSourceFile[] }> {
   const completion = await retryAiCall(() => openai.chat.completions.create({
     model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
     max_completion_tokens: 8192,
@@ -140,11 +213,11 @@ async function repairWorkspaceHtml(
     messages: [
       {
         role: "system",
-        content: "Repair the standalone internal app using the visual QA findings. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}.",
+        content: "Repair the standalone internal app using the visual QA and browser runtime findings. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, and missing or blocked resources as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
       },
       {
         role: "user",
-        content: JSON.stringify({ requirements, visualFindings: repair, html }),
+        content: JSON.stringify({ requirements, visualAndRuntimeFindings: repair, html, savedSourceFiles: sourceFiles }),
       },
     ],
   }));
@@ -154,7 +227,28 @@ async function repairWorkspaceHtml(
   if (!repairedHtml || !title || Buffer.byteLength(repairedHtml, "utf8") > MAX_HTML_BYTES) {
     throw new Error("The visual QA repair did not produce a valid app.");
   }
-  return { title, description: clipped(result.description, 1000), html: repairedHtml };
+  let repairedSourceFiles = sourceFiles;
+  if (Array.isArray(result.sourceFiles)) {
+    const byPath = new Map(sourceFiles.map((file) => [file.path, file.content]));
+    for (const file of result.sourceFiles) {
+      if (
+        !file || typeof file !== "object" || typeof file.path !== "string" ||
+        typeof file.content !== "string" || !byPath.has(file.path) ||
+        Buffer.byteLength(file.content, "utf8") > MAX_HTML_BYTES
+      ) continue;
+      byPath.set(file.path, file.content);
+    }
+    repairedSourceFiles = [...byPath].map(([path, content]) => ({ path, content }));
+  } else {
+    repairedSourceFiles = sourceFiles.map((file) => file.path === "index.html"
+      ? { ...file, content: repairedHtml }
+      : file);
+  }
+  const compiledHtml = compileWorkspaceFiles(repairedSourceFiles) ?? repairedHtml;
+  if (Buffer.byteLength(compiledHtml, "utf8") > MAX_HTML_BYTES) {
+    throw new Error("The repaired workspace files compile to an app that is too large.");
+  }
+  return { title, description: clipped(result.description, 1000), html: compiledHtml, sourceFiles: repairedSourceFiles };
 }
 
 type WorkspaceRow = {
@@ -643,10 +737,45 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     let html = current.html;
     let finalScreenshot = "";
     let finalReview: Awaited<ReturnType<typeof inspectWorkspaceScreenshot>> | null = null;
+    const sourceFilesResult = await pool.query<{ path: string; content: string }>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, teamId],
+    );
+    let sourceFiles = sourceFilesResult.rows.length
+      ? sourceFilesResult.rows
+      : [{ path: "index.html", content: current.html }];
     for (let attempt = 0; attempt <= VISUAL_REPAIR_LIMIT; attempt += 1) {
       emit({ type: "tool_start", id: `screenshot-${attempt + 1}`, tool: "Capture preview screenshot", detail: `Rendering attempt ${attempt + 1} at 1280 × 900.` });
-      finalScreenshot = await captureWorkspaceScreenshot(html);
+      emit({ type: "tool_start", id: `runtime-${attempt + 1}`, tool: "Check browser runtime", detail: "Opening the isolated draft and checking scripts and local assets." });
+      const preview = await captureWorkspaceScreenshot(html);
+      finalScreenshot = preview.screenshot;
       emit({ type: "screenshot", id: `screenshot-${attempt + 1}`, image: `data:image/png;base64,${finalScreenshot}` });
+      const runtimeDetails = preview.runtimeIssues.map((issue) => `${issue.kind}: ${issue.message}`);
+      emit({
+        type: "tool_done",
+        id: `runtime-${attempt + 1}`,
+        passed: runtimeDetails.length === 0,
+        detail: runtimeDetails.length ? runtimeDetails.join(" · ") : "No JavaScript errors or failed resource loads.",
+      });
+      if (runtimeDetails.length) {
+        if (attempt === VISUAL_REPAIR_LIMIT) {
+          emit({ type: "failed", message: "Browser runtime checks still found errors. The workspace remains a draft.", issues: runtimeDetails });
+          return;
+        }
+        emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair browser runtime issues", detail: runtimeDetails.join(" · ") });
+        const repaired = await repairWorkspaceHtml(
+          current.prompt,
+          html,
+          `Browser runtime diagnostics:\n${runtimeDetails.join("\n")}`,
+          sourceFiles,
+        );
+        html = repaired.html;
+        sourceFiles = repaired.sourceFiles;
+        emit({ type: "tool_done", id: `repair-${attempt + 1}` });
+        continue;
+      }
       emit({ type: "tool_start", id: `review-${attempt + 1}`, tool: "Review rendered screenshot", detail: "Checking layout and visible requirements." });
       finalReview = await inspectWorkspaceScreenshot(current.prompt, finalScreenshot);
       emit({ type: "review", id: `review-${attempt + 1}`, passed: finalReview.passed, issues: finalReview.issues });
@@ -656,8 +785,14 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
         return;
       }
       emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair visual issues", detail: finalReview.issues.join(" · ") || finalReview.repair });
-      const repaired = await repairWorkspaceHtml(current.prompt, html, finalReview.repair || finalReview.issues.join("\n"));
+      const repaired = await repairWorkspaceHtml(
+        current.prompt,
+        html,
+        finalReview.repair || finalReview.issues.join("\n"),
+        sourceFiles,
+      );
       html = repaired.html;
+      sourceFiles = repaired.sourceFiles;
       emit({ type: "tool_done", id: `repair-${attempt + 1}` });
     }
 
@@ -694,13 +829,15 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
                     "created_at" as "createdAt", "updated_at" as "updatedAt"`,
         [workspaceId, teamId, html, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
       );
-      await client.query(
-        `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
-         values ($1, $2, $3, 'index.html', $4, $5)
-         on conflict ("workspace_id", "path") do update
-           set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
-        [randomUUID(), teamId, workspaceId, html, accountId],
-      );
+      for (const file of sourceFiles) {
+        await client.query(
+          `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+           values ($1, $2, $3, $4, $5, $6)
+           on conflict ("workspace_id", "path") do update
+             set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+          [randomUUID(), teamId, workspaceId, file.path, file.content, accountId],
+        );
+      }
       await client.query("COMMIT");
       emit({ type: "complete", workspace: result.rows[0], image: `data:image/png;base64,${finalScreenshot}` });
     } catch (error) {

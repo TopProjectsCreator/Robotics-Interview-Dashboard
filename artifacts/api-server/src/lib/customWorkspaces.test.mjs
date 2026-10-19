@@ -170,8 +170,22 @@ async function createHarness(t) {
     message: "Before draft revision",
     createdAt: "2026-01-02T00:00:00.000Z",
   }];
-  const calls = { queries: [], llm: [] };
-  const logger = { info() {}, warn() {}, error() {} };
+  const calls = { queries: [], llm: [], routeErrors: [], keepRuntimeBroken: false };
+  const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
+    workspace.id,
+    [{ path: "index.html", content: workspace.html }],
+  ]));
+  const logger = {
+    info() {},
+    warn() {},
+    error(context, message) {
+      calls.routeErrors.push({
+        message,
+        error: context?.err instanceof Error ? context.err.message : context?.err,
+        stack: context?.err instanceof Error ? context.err.stack : undefined,
+      });
+    },
+  };
 
   const pool = {
     async query(statement, values = []) {
@@ -260,6 +274,14 @@ async function createHarness(t) {
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
       }
 
+      if (statement.startsWith("select") && statement.includes('from "custom_workspace_files"')) {
+        const [workspaceId, teamId] = values;
+        ensureTeamScope('"team_id"', "$2", teamId);
+        const row = workspaces.find((workspace) => workspace.id === workspaceId && workspace.teamId === teamId);
+        const rows = row ? savedWorkspaceFiles.get(workspaceId) ?? [] : [];
+        return { rows, rowCount: rows.length };
+      }
+
       if (statement.startsWith("select") && statement.includes('from "interviewer_accounts"')) {
         const teamId = values[0];
         ensureTeamScope('"team_id"', "$1", teamId);
@@ -277,13 +299,14 @@ async function createHarness(t) {
         ensureTeamScope('"team_id"', "$2", teamId);
         const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
         if (!row) return { rows: [], rowCount: 0 };
-        if (statement.includes('set "html" = $3')) {
+        if (statement.includes('set "html" = $3, "status" = \'published\'')) {
+          row.html = accessMode;
+          row.status = "published";
+          row.accessMode = allowedIdsJson;
+          row.allowedInterviewerIds = JSON.parse(values[4]);
+        } else if (statement.includes('set "html" = $3')) {
           row.html = accessMode;
           if (row.status === "draft") row.capabilities = JSON.parse(allowedIdsJson);
-        } else if (statement.includes("set \"status\" = 'published'")) {
-          row.status = "published";
-          row.accessMode = accessMode;
-          row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
         } else if (statement.includes('set "access_mode" = $3')) {
           row.accessMode = accessMode;
           row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
@@ -356,6 +379,7 @@ async function createHarness(t) {
           createdBy,
         };
         workspaces.push(row);
+        savedWorkspaceFiles.set(id, [{ path: "index.html", content: html }]);
         return { rows: [row], rowCount: 1 };
       }
 
@@ -375,9 +399,14 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspace_files"')) {
-        return { rows: [], rowCount: 1 };
-      }
-      if (statement.startsWith('insert into "custom_workspace_files"') && statement.includes("on conflict")) {
+        const [, teamId, workspaceId, filePath, content] = values;
+        const workspace = workspaces.find((item) => item.id === workspaceId);
+        assert.equal(workspace?.teamId, teamId);
+        const files = savedWorkspaceFiles.get(workspaceId) ?? [];
+        const existing = files.find((file) => file.path === filePath);
+        if (existing) existing.content = content;
+        else files.push({ path: filePath, content });
+        savedWorkspaceFiles.set(workspaceId, files);
         return { rows: [], rowCount: 1 };
       }
 
@@ -413,6 +442,39 @@ async function createHarness(t) {
           completions: {
             create: async (request) => {
               calls.llm.push(request);
+              const systemPrompt = request.messages[0]?.content ?? "";
+              if (systemPrompt.includes("visual QA agent")) {
+                return {
+                  choices: [{
+                    message: {
+                      content: JSON.stringify({ passed: true, issues: [], repair: "" }),
+                    },
+                  }],
+                };
+              }
+              if (systemPrompt.includes("Repair the standalone internal app")) {
+                const payload = JSON.parse(request.messages[1]?.content ?? "{}");
+                const sourceFiles = (payload.savedSourceFiles ?? []).map((file) => {
+                  if (calls.keepRuntimeBroken) return file;
+                  if (file.path === "index.html") {
+                    return { ...file, content: file.content.replace('<img src="missing.png">', "") };
+                  }
+                  if (file.path === "app.js") return { ...file, content: "window.previewReady = true;" };
+                  return file;
+                });
+                return {
+                  choices: [{
+                    message: {
+                      content: JSON.stringify({
+                        title: "Repaired draft",
+                        description: "",
+                        html: "<main>Repaired draft</main>",
+                        sourceFiles,
+                      }),
+                    },
+                  }],
+                };
+              }
               return { choices: [{ message: { content: "Authorized answer" } }] };
             },
           },
@@ -469,6 +531,7 @@ async function createHarness(t) {
     calls,
     records,
     workspaces,
+    savedWorkspaceFiles,
     versions,
     async request(user, method, path, body) {
       return fetch(`${baseUrl}${path}`, {
@@ -630,6 +693,71 @@ test("coordinators can update selected members but cannot grant access across te
   assert.equal(
     (await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-draft")).status,
     publishedEvent ? 200 : 404,
+  );
+});
+
+function seedBrokenWorkspacePreview(harness) {
+  const draft = harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft");
+  const indexHtml = "<!doctype html><html><head><meta http-equiv=content-security-policy content=\"default-src 'none'; script-src 'none'\"><script src=\"app.js\"></script></head><body><img src=\"missing.png\"><main>Draft app</main></body></html>";
+  const appJs = 'throw new Error("runtime boom");';
+  draft.html = indexHtml.replace('<script src="app.js"></script>', `<script>${appJs}</script>`);
+  harness.savedWorkspaceFiles.set(draft.id, [
+    { path: "index.html", content: indexHtml },
+    { path: "app.js", content: appJs },
+  ]);
+  return draft;
+}
+
+test("runtime errors and missing local assets are reported, repaired in saved files, and checked again", async (t) => {
+  const harness = await createHarness(t);
+  seedBrokenWorkspacePreview(harness);
+
+  const response = await harness.request("coordinator-a", "POST", "/custom-workspaces/workspace-a-draft/publish", {
+    accessMode: "team",
+  });
+  assert.equal(response.status, 200);
+  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+  const runtimeCheck = events.find((event) => event.type === "tool_done" && event.id === "runtime-1");
+  assert.equal(runtimeCheck.passed, false);
+  assert.match(runtimeCheck.detail, /JavaScript exception:.*runtime boom/);
+  assert.match(runtimeCheck.detail, /Asset load failure|Blocked resource/);
+  assert.ok(events.some((event) => event.type === "tool_start" && event.tool === "Repair browser runtime issues"));
+  assert.ok(
+    events.some((event) => event.type === "complete"),
+    `the repaired preview should pass on the next check: ${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
+  );
+
+  const repairRequest = harness.calls.llm.find((request) =>
+    request.messages[0]?.content?.includes("Repair the standalone internal app"),
+  );
+  const repairPayload = JSON.parse(repairRequest.messages[1].content);
+  assert.ok(repairPayload.savedSourceFiles.some((file) => file.path === "app.js"));
+  assert.equal(
+    harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "app.js").content,
+    "window.previewReady = true;",
+  );
+  assert.doesNotMatch(
+    harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "index.html").content,
+    /missing\.png/,
+  );
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "published");
+});
+
+test("persistent browser runtime failures block publication and leave the draft unchanged", async (t) => {
+  const harness = await createHarness(t);
+  seedBrokenWorkspacePreview(harness);
+  harness.calls.keepRuntimeBroken = true;
+
+  const response = await harness.request("coordinator-a", "POST", "/custom-workspaces/workspace-a-draft/publish", {
+    accessMode: "team",
+  });
+  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events.filter((event) => event.type === "tool_start" && event.tool === "Check browser runtime").length, 3);
+  assert.match(events.find((event) => event.type === "failed").message, /Browser runtime checks still found errors/);
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "draft");
+  assert.match(
+    harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "app.js").content,
+    /runtime boom/,
   );
 });
 

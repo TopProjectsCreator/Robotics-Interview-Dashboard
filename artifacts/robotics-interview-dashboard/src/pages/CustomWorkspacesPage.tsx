@@ -288,7 +288,9 @@ export function CustomWorkspacesPage() {
         if (event.type === "tool_start" && event.id) {
           setPublishAgentSteps((current) => [...current, { id: event.id!, label: event.tool ?? "Agent step", detail: event.detail, status: "running" }]);
         } else if (event.type === "tool_done" && event.id) {
-          setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
+          setPublishAgentSteps((current) => current.map((step) => step.id === event.id
+            ? { ...step, status: event.passed === false ? "failed" : "done", detail: event.detail ?? step.detail }
+            : step));
         } else if (event.type === "screenshot" && event.image) {
           setPublishScreenshot(event.image);
           setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
@@ -457,7 +459,7 @@ export function CustomWorkspacesPage() {
         </div>
         {publishAgentSteps.length > 0 && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
-          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks one desktop screenshot against the written requirements, repairs visible issues, and blocks publishing if they remain." : "Shows the current build or revision request while the AI builder is working."}</p>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks the desktop screenshot and browser runtime, repairs code or visual issues, and blocks publishing if they remain." : "Shows the current build or revision request while the AI builder is working."}</p>
           <ol className="mt-2 space-y-2">
             {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
               <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
