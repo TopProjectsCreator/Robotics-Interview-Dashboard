@@ -231,7 +231,10 @@ async function createHarness(t) {
           const row = workspaces.find((workspace) =>
             workspace.id === id && workspace.teamId === teamId && workspace.status === "draft",
           );
-          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+          const projected = row && statement.includes('select "title", "prompt", "html"')
+            ? [{ title: row.title, prompt: row.prompt, html: row.html }]
+            : row ? [row] : [];
+          return { rows: projected, rowCount: projected.length };
         }
         if (statement.includes("for update")) {
           const [id, teamId] = values;
@@ -486,6 +489,22 @@ async function createHarness(t) {
                   choices: [{
                     message: {
                       content: JSON.stringify({ passed: true, issues: [], repair: "" }),
+                    },
+                  }],
+                };
+              }
+              if (systemPrompt.includes("independent critique agent")) {
+                return {
+                  choices: [{
+                    message: {
+                      content: JSON.stringify({
+                        flaws: Array.from({ length: 10 }, (_, index) => ({
+                          rank: index + 1,
+                          score: 10 - index,
+                          flaw: `Actionable flaw ${index + 1}`,
+                          fix: `Implement fix ${index + 1}`,
+                        })),
+                      }),
                     },
                   }],
                 };
@@ -1063,6 +1082,14 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.deepEqual(initialVersion.sourceFiles, [
     { path: "index.html", content: "<main>Tracker</main>" },
   ]);
+  const critique = await runAssistantWorkspaceTool("critique_custom_workspace", {
+    workspaceId: createdWorkspace.id,
+    round: 1,
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  const report = JSON.parse(critique.content);
+  assert.equal(report.flaws.length, 10);
+  assert.deepEqual(report.flaws.map((flaw) => flaw.score), [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+  assert.match(critique.detail, /10 ranked flaws/);
 
   await runAssistantWorkspaceTool("create_custom_workspace_file", {
     workspaceId: createdWorkspace.id,

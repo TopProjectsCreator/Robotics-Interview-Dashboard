@@ -11,10 +11,14 @@ Workspace-builder and `/assistant` agent runs must continue on the server after 
 
 Generated workspace apps must follow the host Robotics dashboard's shared visual style, including its palette, compact typography, card treatment, and light/dark themes; they should not invent a separate brand or duplicate the global navigation.
 
+Before a custom workspace is reported finished, an independent critique agent must return exactly 10 ranked actionable flaws with 1–10 scores. Implement scores above 6 every round, and below 6 during rounds 1–4; repeat for at most five rounds.
+
 **Why:** The user explicitly said the assistant should be able to build a Parts-like workspace even if Parts did not exist, and that custom workspaces should share the existing Supabase database.
 
 **Why:** The user explicitly requires workspace-builder and `/assistant` agent runs to keep working after the tab is closed.
 
 **Why:** The user explicitly said generated workspaces must uphold the dashboard's established styling and CSS.
 
-**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review. Inject the current dashboard theme tokens into the preview and require the assistant and visual QA to use them.
+**Why:** The user explicitly requires a ranked ten-flaw critique and implementation loop before workspace builds are declared finished.
+
+**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review. Inject the current dashboard theme tokens into the preview and require the assistant and visual QA to use them. Run the separate critique tool after source edits and implement findings using the specified severity and round rules.

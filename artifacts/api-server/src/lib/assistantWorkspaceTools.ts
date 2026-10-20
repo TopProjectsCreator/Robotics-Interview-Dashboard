@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { openai } from "@workspace/integrations-openai-ai-server";
 import { pool } from "@workspace/db";
 import { applyCodeFileContent } from "./codeCollaboration";
 import { pushRealtimeHint } from "./realtime";
@@ -114,7 +115,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
+    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Before reporting the build finished, inspect the complete source in a separate critique pass: return exactly 10 ranked, actionable flaws scored 1–10, regardless of fix size. For rounds 1–4 implement every score above 6 and below 6; on round 5 implement scores above 6 only. Re-critique after fixes and stop only when no eligible fixes remain or five rounds are complete. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -127,6 +128,15 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
       },
     },
     ["title", "prompt", "html", "capabilities"],
+  ),
+  tool(
+    "critique_custom_workspace",
+    "Send the latest complete custom workspace draft to a separate critique agent. It returns exactly 10 actionable flaws ranked by severity, each scored 1–10. Call after source edits and repeat after fixes, at most five rounds.",
+    {
+      workspaceId: { type: "string", minLength: 1 },
+      round: { type: "integer", minimum: 1, maximum: 5 },
+    },
+    ["workspaceId", "round"],
   ),
   tool(
     "list_custom_workspace_files",
@@ -261,7 +271,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
     const account = context.accountId ? await accountById(context.accountId) : undefined;
     if (account?.role !== "coordinator") {
       return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
@@ -508,6 +518,70 @@ export async function runAssistantWorkspaceTool(
     } catch (error) {
       throw error;
     }
+  }
+
+  if (name === "critique_custom_workspace") {
+    const workspaceId = textArg(args, "workspaceId", 128);
+    const round = typeof args.round === "number" ? Math.floor(args.round) : 0;
+    if (!workspaceId || round < 1 || round > 5) {
+      return { content: "A workspace id and critique round from 1 to 5 are required.", detail: "invalid critique request" };
+    }
+    const draft = await pool.query<{ title: string; prompt: string; html: string }>(
+      `select "title", "prompt", "html" from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "created_by" = $3 and "status" = 'draft'
+        limit 1`,
+      [workspaceId, context.teamId, context.accountId],
+    );
+    if (!draft.rowCount) {
+      return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
+    }
+    const sourceFiles = await pool.query<{ path: string; content: string }>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, context.teamId],
+    );
+    const source = JSON.stringify({
+      title: draft.rows[0].title,
+      requirements: draft.rows[0].prompt,
+      files: (sourceFiles.rows.length ? sourceFiles.rows : [{ path: "index.html", content: draft.rows[0].html }])
+        .map((file) => ({ path: file.path, content: file.content.slice(0, 30_000) })),
+    }).slice(0, 100_000);
+    const completion = await openai.chat.completions.create({
+      model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: `You are an independent critique agent reviewing a custom web app before it is marked finished. Identify exactly 10 distinct, specific, actionable flaws in the current source, even if the fixes require substantial code. Rank them from highest to lowest severity and score each 1–10 (10 is most severe). Cover functional behavior, accessibility, responsive layout, data safety, error/empty states, and the host Robotics dashboard style where relevant. Do not praise, repeat issues, or invent flaws. Return JSON only: {"flaws":[{"rank":1,"score":10,"flaw":"...","fix":"..."}]}.` },
+        { role: "user", content: `Critique round ${round}/5. Review this draft:\n${source}` },
+      ],
+    });
+    let result: unknown;
+    try {
+      result = JSON.parse(completion.choices[0]?.message.content ?? "");
+    } catch {
+      return { content: "The critique agent returned invalid JSON. Retry this critique round.", detail: "critique output invalid" };
+    }
+    const rawFlaws = (result as { flaws?: unknown } | null)?.flaws;
+    if (!Array.isArray(rawFlaws)) {
+      return { content: "The critique agent did not return a flaw list. Retry this critique round.", detail: "critique list missing" };
+    }
+    const flaws = rawFlaws.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const flaw = item as Record<string, unknown>;
+      if (!Number.isInteger(flaw.score) || Number(flaw.score) < 1 || Number(flaw.score) > 10 ||
+        typeof flaw.flaw !== "string" || typeof flaw.fix !== "string") return [];
+      return [{ score: Number(flaw.score), flaw: flaw.flaw.slice(0, 1000), fix: flaw.fix.slice(0, 1000) }];
+    }).sort((a, b) => b.score - a.score).slice(0, 10)
+      .map((flaw, index) => ({ rank: index + 1, ...flaw }));
+    if (flaws.length !== 10) {
+      return { content: "The critique agent must return exactly 10 valid actionable flaws. Retry this critique round.", detail: "critique count invalid" };
+    }
+    return {
+      content: JSON.stringify({ round, flaws, implementationRule: "For rounds 1–4 implement scores above 6 and below 6. On round 5 implement scores above 6 only. Use workspace file tools, then critique the updated draft again before finishing." }),
+      detail: `critique round ${round}: 10 ranked flaws`,
+    };
   }
 
   if (name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
