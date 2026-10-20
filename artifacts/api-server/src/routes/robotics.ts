@@ -5247,7 +5247,7 @@ async function generateAssistantAnswer(options: {
   if (!options.mcpOnly) {
   baseMessages.splice(1, 0, {
     role: "system" as const,
-    content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}`,
+    content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}\n\nFor each critique round, use the separate verify_custom_workspace_fixes agent after applying required fixes. It must independently inspect the saved files. Unresolved findings block the next round; retry fixes and verification until all required findings pass. Do not report completion until round 5 is verified.`,
   });
   baseMessages.splice(2, 0, {
     role: "system" as const,
@@ -5753,7 +5753,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   if (!mcpOnly) {
   baseMessages.splice(1, 0, {
     role: "system" as const,
-    content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}`,
+    content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}\n\nFor each critique round, use the separate verify_custom_workspace_fixes agent after applying required fixes. It must independently inspect the saved files. Unresolved findings block the next round; retry fixes and verification until all required findings pass. Do not report completion until round 5 is verified.`,
   });
   baseMessages.splice(2, 0, {
     role: "system" as const,

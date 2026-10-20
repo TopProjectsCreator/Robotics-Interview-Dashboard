@@ -66,6 +66,8 @@ const WORKSPACE_SEEDS = [
     status: "draft",
     accessMode: "team",
     allowedInterviewerIds: [],
+    critiqueRounds: 5,
+    verifiedCritiqueRounds: 5,
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -183,6 +185,7 @@ async function createHarness(t) {
     routeErrors: [],
     keepRuntimeBroken: false,
     darkReviewRejectOnce: false,
+    verificationRejectOnce: false,
   };
   const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
     workspace.id,
@@ -237,8 +240,14 @@ async function createHarness(t) {
           const row = workspaces.find((workspace) =>
             workspace.id === id && workspace.teamId === teamId && workspace.status === "draft",
           );
-          const projected = row && statement.includes('select "title", "prompt", "html"')
-            ? [{ title: row.title, prompt: row.prompt, html: row.html, critique_rounds: row.critiqueRounds ?? 0 }]
+          const projected = row && statement.includes('"critique_rounds"')
+            ? [{
+                ...row,
+                title: row.title, prompt: row.prompt, html: row.html,
+                critique_rounds: row.critiqueRounds ?? 0,
+                verified_critique_rounds: row.verifiedCritiqueRounds ?? 0,
+                critique_findings: row.critiqueFindings ?? {},
+              }]
             : row ? [row] : [];
           return { rows: projected, rowCount: projected.length };
         }
@@ -328,6 +337,32 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("update \"custom_workspaces\"")) {
+        if (statement.includes('set "critique_rounds" = 0')) {
+          const [id, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId && workspace.status === "draft" &&
+            workspace.critiqueRounds > 0 &&
+            workspace.critiqueRounds === workspace.verifiedCritiqueRounds,
+          );
+          if (!row) return { rows: [], rowCount: 0 };
+          row.critiqueRounds = 0;
+          row.verifiedCritiqueRounds = 0;
+          row.critiqueFindings = {};
+          return { rows: [], rowCount: 1 };
+        }
+        if (statement.includes('set "verified_critique_rounds"')) {
+          const [id, teamId, createdBy, verifiedRounds, expectedPrevious] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId && workspace.createdBy === createdBy &&
+            workspace.status === "draft" && (workspace.verifiedCritiqueRounds ?? 0) === expectedPrevious &&
+            workspace.critiqueRounds === verifiedRounds,
+          );
+          if (!row) return { rows: [], rowCount: 0 };
+          row.verifiedCritiqueRounds = verifiedRounds;
+          return { rows: [], rowCount: 1 };
+        }
         if (statement.includes('set "critique_rounds"')) {
           const [id, teamId, createdBy, critiqueRounds, expectedPrevious] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -337,6 +372,7 @@ async function createHarness(t) {
           );
           if (!row) return { rows: [], rowCount: 0 };
           row.critiqueRounds = critiqueRounds;
+          row.critiqueFindings = JSON.parse(values[5]);
           return { rows: [], rowCount: 1 };
         }
         const [id, teamId, accessMode, allowedIdsJson] = values;
@@ -423,6 +459,8 @@ async function createHarness(t) {
           accessMode: "team",
           allowedInterviewerIds: [],
           critiqueRounds: 0,
+          verifiedCritiqueRounds: 0,
+          critiqueFindings: {},
           createdBy,
         };
         workspaces.push(row);
@@ -537,6 +575,18 @@ async function createHarness(t) {
                   }],
                 };
               }
+                if (systemPrompt.includes("independent verification agent")) {
+                  const userText = request.messages[1]?.content ?? "";
+                  const findingsText = userText.split("Required findings:\n")[1]?.split("\nCurrent source:")[0] ?? "[]";
+                  const findings = JSON.parse(findingsText);
+                  const checks = findings.map((finding) => ({
+                    rank: finding.rank,
+                    fixed: !calls.verificationRejectOnce,
+                    reason: calls.verificationRejectOnce ? "The required behavior is still absent." : "Confirmed in the saved source.",
+                  }));
+                  calls.verificationRejectOnce = false;
+                  return { choices: [{ message: { content: JSON.stringify({ checks }) } }] };
+                }
               if (systemPrompt.includes("independent critique agent")) {
                 return {
                   choices: [{
@@ -1176,21 +1226,31 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.match(critique.detail, /10 ranked flaws/);
   assert.equal(report.completedRounds, 1);
   assert.equal(report.requiredRounds, 5);
-  assert.match(report.implementationRule, /all five sequential critique rounds/);
+  assert.match(report.implementationRule, /verify_custom_workspace_fixes/);
   assert.equal(createdWorkspace.critiqueRounds, 1, "a successful critique must persist its round count");
-
-  const skippedRound = await runAssistantWorkspaceTool("critique_custom_workspace", {
-    workspaceId: createdWorkspace.id,
-    round: 3,
+  harness.calls.verificationRejectOnce = true;
+  const rejectedVerification = await runAssistantWorkspaceTool("verify_custom_workspace_fixes", {
+    workspaceId: createdWorkspace.id, round: 1,
   }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
-  assert.equal(skippedRound.detail, "critique round out of sequence");
-  for (const round of [2, 3, 4, 5]) {
-    const nextCritique = await runAssistantWorkspaceTool("critique_custom_workspace", {
-      workspaceId: createdWorkspace.id,
-      round,
+  assert.equal(JSON.parse(rejectedVerification.content).verified, false);
+  assert.match(rejectedVerification.detail, /required fixes remain/);
+
+  const blockedRound = await runAssistantWorkspaceTool("critique_custom_workspace", {
+    workspaceId: createdWorkspace.id, round: 2,
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  assert.equal(blockedRound.detail, "previous critique fixes not verified");
+  for (const round of [1, 2, 3, 4, 5]) {
+    if (round > 1) {
+      const nextCritique = await runAssistantWorkspaceTool("critique_custom_workspace", {
+        workspaceId: createdWorkspace.id, round,
+      }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+      assert.equal(nextCritique.detail, `critique round ${round}: 10 ranked flaws`);
+    }
+    const verification = await runAssistantWorkspaceTool("verify_custom_workspace_fixes", {
+      workspaceId: createdWorkspace.id, round,
     }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
-    assert.equal(nextCritique.detail, `critique round ${round}: 10 ranked flaws`, nextCritique.content);
-    assert.equal(JSON.parse(nextCritique.content).completedRounds, round);
+    assert.equal(JSON.parse(verification.content).verified, true);
+    if (round === 1) continue;
   }
 
   await runAssistantWorkspaceTool("create_custom_workspace_file", {
@@ -1209,6 +1269,15 @@ test("assistant-created custom apps remain drafts owned by the current team", as
     { path: "styles.css", content: ".tracker { color: red; }" },
   ]);
   assert.match(createdWorkspace.html, /<style>\.tracker \{ color: red; \}<\/style>/);
+  assert.equal(createdWorkspace.critiqueRounds, 0, "editing after verification must invalidate the old review");
+  const unverifiedPublish = await harness.request(
+    "coordinator-b",
+    "POST",
+    `/custom-workspaces/${createdWorkspace.id}/publish`,
+    { accessMode: "team", allowedInterviewerIds: [] },
+  );
+  assert.equal(unverifiedPublish.status, 409);
+  assert.match((await unverifiedPublish.json()).error, /verify all five critique rounds/);
 
   const queryCount = harness.calls.queries.length;
   const invalid = await runAssistantWorkspaceTool(

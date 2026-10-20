@@ -115,7 +115,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Before reporting the build finished, complete exactly five sequential critique rounds (1, 2, 3, 4, then 5); five rounds are mandatory even when a round has no eligible fixes. Each critique must return exactly 10 ranked, actionable flaws scored 1–10, regardless of fix size. In rounds 1–4 implement every score above 6 and every score below 6; in round 5 implement scores above 6 only. Re-critique the latest source after applying eligible fixes. Do not finish early or skip a round. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
+    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Before reporting the build finished, complete exactly five sequential critique rounds (1, 2, 3, 4, then 5); five rounds are mandatory. Each separate critique agent must return exactly 10 ranked actionable flaws scored 1–10. In rounds 1–4 fix scores above 6 and below 6; in round 5 fix scores above 6 only. After fixing eligible findings, call verify_custom_workspace_fixes. This is a separate independent reviewer agent that checks each required finding against the latest saved source. If it reports unresolved findings, fix them and call it again; do not advance to the next round or finish until verification passes. Verify round 5 before reporting completion. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -132,6 +132,15 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   tool(
     "critique_custom_workspace",
     "Send the latest complete custom workspace draft to a separate critique agent. It returns exactly 10 actionable flaws ranked by severity, each scored 1–10. Complete rounds sequentially from 1 through 5; all five rounds are mandatory, even when no fixes are eligible.",
+    {
+      workspaceId: { type: "string", minLength: 1 },
+      round: { type: "integer", minimum: 1, maximum: 5 },
+    },
+    ["workspaceId", "round"],
+  ),
+  tool(
+    "verify_custom_workspace_fixes",
+    "Ask a separate independent reviewer agent to compare the latest saved source against every finding that must be fixed for this critique round. The round cannot advance until all required fixes pass verification.",
     {
       workspaceId: { type: "string", minLength: 1 },
       round: { type: "integer", minimum: 1, maximum: 5 },
@@ -271,7 +280,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
     const account = context.accountId ? await accountById(context.accountId) : undefined;
     if (account?.role !== "coordinator") {
       return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
@@ -526,8 +535,8 @@ export async function runAssistantWorkspaceTool(
     if (!workspaceId || round < 1 || round > 5) {
       return { content: "A workspace id and critique round from 1 to 5 are required.", detail: "invalid critique request" };
     }
-    const draft = await pool.query<{ title: string; prompt: string; html: string; critique_rounds: number }>(
-      `select "title", "prompt", "html", "critique_rounds" from "custom_workspaces"
+    const draft = await pool.query<{ title: string; prompt: string; html: string; critique_rounds: number; verified_critique_rounds: number }>(
+      `select "title", "prompt", "html", "critique_rounds", "verified_critique_rounds" from "custom_workspaces"
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
           and "created_by" = $3 and "status" = 'draft'
         limit 1`,
@@ -537,6 +546,13 @@ export async function runAssistantWorkspaceTool(
       return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
     }
     const completedRounds = Number(draft.rows[0].critique_rounds ?? 0);
+    const verifiedRounds = Number(draft.rows[0].verified_critique_rounds ?? 0);
+    if (verifiedRounds !== completedRounds) {
+      return {
+        content: `The independent reviewer must verify round ${verifiedRounds + 1} before critique round ${round} can begin. Fix any unresolved findings and retry verification.`,
+        detail: "previous critique fixes not verified",
+      };
+    }
     if (round !== completedRounds + 1) {
       return {
         content: `Critique rounds must be completed sequentially. The next required round is ${completedRounds + 1}.`,
@@ -586,17 +602,120 @@ export async function runAssistantWorkspaceTool(
       return { content: "The critique agent must return exactly 10 valid actionable flaws. Retry this critique round.", detail: "critique count invalid" };
     }
     const recorded = await pool.query(
-      `update "custom_workspaces" set "critique_rounds" = $4, "updated_at" = now()
+      `update "custom_workspaces" set "critique_rounds" = $4, "critique_findings" = $6::jsonb, "updated_at" = now()
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
           and "created_by" = $3 and "status" = 'draft' and "critique_rounds" = $5`,
-      [workspaceId, context.teamId, context.accountId, round, round - 1],
+      [workspaceId, context.teamId, context.accountId, round, round - 1, JSON.stringify({ round, flaws })],
     );
     if (!recorded.rowCount) {
       return { content: "This critique round could not be recorded because the draft changed or another critique ran. Retry using the next required round.", detail: "critique round not recorded" };
     }
     return {
-      content: JSON.stringify({ round, completedRounds: round, requiredRounds: 5, flaws, implementationRule: "Complete all five sequential critique rounds even when no eligible fixes remain. For rounds 1–4 implement every score above 6 and every score below 6. On round 5 implement scores above 6 only. Apply eligible fixes using workspace file tools before the next critique. Do not finish before round 5." }),
+      content: JSON.stringify({ round, completedRounds: round, requiredRounds: 5, flaws, implementationRule: "Fix findings above 6 in every round and below 6 in rounds 1–4. After changes, call verify_custom_workspace_fixes for this round. The separate verifier must confirm every eligible finding is fixed before another critique round or completion." }),
       detail: `critique round ${round}: 10 ranked flaws`,
+    };
+  }
+
+  if (name === "verify_custom_workspace_fixes") {
+    const workspaceId = textArg(args, "workspaceId", 128);
+    const round = typeof args.round === "number" ? Math.floor(args.round) : 0;
+    const state = await pool.query<{
+      title: string;
+      prompt: string;
+      html: string;
+      critique_rounds: number;
+      verified_critique_rounds: number;
+      critique_findings: unknown;
+    }>(
+      `select "title", "prompt", "html", "critique_rounds", "verified_critique_rounds", "critique_findings"
+         from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "created_by" = $3 and "status" = 'draft'
+        limit 1`,
+      [workspaceId, context.teamId, context.accountId],
+    );
+    if (!state.rowCount) return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
+    const current = state.rows[0];
+    if (round < 1 || round > 5 || Number(current.critique_rounds) !== round ||
+      Number(current.verified_critique_rounds) !== round - 1) {
+      return { content: "Only the latest unverified critique round can be checked.", detail: "verification round out of sequence" };
+    }
+    const findingsData = typeof current.critique_findings === "string"
+      ? JSON.parse(current.critique_findings)
+      : current.critique_findings;
+    const allFindings = (findingsData as { flaws?: unknown } | null)?.flaws;
+    if (!Array.isArray(allFindings)) {
+      return { content: "The saved critique findings are unavailable; rerun this critique round.", detail: "critique findings missing" };
+    }
+    const required = allFindings.flatMap((value) => {
+      if (!value || typeof value !== "object") return [];
+      const finding = value as Record<string, unknown>;
+      const score = Number(finding.score);
+      return score > 6 || (round < 5 && score < 6)
+        ? [{ rank: Number(finding.rank), score, flaw: String(finding.flaw), fix: String(finding.fix) }]
+        : [];
+    });
+    const files = await pool.query<{ path: string; content: string }>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, context.teamId],
+    );
+    const source = JSON.stringify({
+      title: current.title,
+      requirements: current.prompt,
+      files: (files.rows.length ? files.rows : [{ path: "index.html", content: current.html }])
+        .map((file) => ({ path: file.path, content: file.content.slice(0, 30_000) })),
+    }).slice(0, 100_000);
+    let checks: { rank: number; fixed: boolean; reason: string }[] = [];
+    if (required.length) {
+      const completion = await openai.chat.completions.create({
+        model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: `You are an independent verification agent. Do not trust the builder's claims. Inspect the complete saved app source and check whether each required critique finding is actually fixed, not merely attempted or mentioned. Mark fixed=true only when the implementation in source resolves the reported user-facing or technical problem. Return exactly one result for every supplied rank, with no extras: {"checks":[{"rank":1,"fixed":true,"reason":"evidence in source"}]}.` },
+          { role: "user", content: `Verify round ${round} required findings against the current saved source.\nRequired findings:\n${JSON.stringify(required)}\nCurrent source:\n${source}` },
+        ],
+      });
+      try {
+        const parsed = JSON.parse(completion.choices[0]?.message.content ?? "") as { checks?: unknown };
+        if (!Array.isArray(parsed.checks)) throw new Error("Missing checks");
+        checks = parsed.checks.map((item) => {
+          if (!item || typeof item !== "object") throw new Error("Invalid check");
+          const check = item as Record<string, unknown>;
+          if (!Number.isInteger(check.rank) || typeof check.fixed !== "boolean" || typeof check.reason !== "string") {
+            throw new Error("Invalid check");
+          }
+          return { rank: Number(check.rank), fixed: check.fixed, reason: check.reason.slice(0, 1000) };
+        });
+      } catch {
+        return { content: "The independent verifier returned an invalid report. Retry verification; this round remains blocked.", detail: "verification output invalid" };
+      }
+      const expectedRanks = required.map((finding) => finding.rank).sort((a, b) => a - b);
+      const returnedRanks = checks.map((check) => check.rank).sort((a, b) => a - b);
+      if (JSON.stringify(expectedRanks) !== JSON.stringify(returnedRanks)) {
+        return { content: "The independent verifier did not check every required finding. Retry verification; this round remains blocked.", detail: "verification findings incomplete" };
+      }
+    }
+    const unresolved = checks.filter((check) => !check.fixed);
+    if (unresolved.length) {
+      return {
+        content: JSON.stringify({ round, verified: false, unresolved, instruction: "Fix these findings in the saved workspace files, then call verify_custom_workspace_fixes again for this same round. Do not advance or finish." }),
+        detail: `${unresolved.length} required fixes remain`,
+      };
+    }
+    const marked = await pool.query(
+      `update "custom_workspaces" set "verified_critique_rounds" = $4, "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "created_by" = $3 and "status" = 'draft'
+          and "critique_rounds" = $4 and "verified_critique_rounds" = $5`,
+      [workspaceId, context.teamId, context.accountId, round, round - 1],
+    );
+    if (!marked.rowCount) return { content: "The verification could not be recorded. Retry the check; this round remains blocked.", detail: "verification not recorded" };
+    return {
+      content: JSON.stringify({ round, verified: true, verifiedFindings: checks.length, next: round < 5 ? `Run critique round ${round + 1}.` : "All five critique rounds and required fixes are independently verified; completion is now allowed." }),
+      detail: `critique round ${round} verified`,
     };
   }
 
@@ -681,6 +800,15 @@ export async function runAssistantWorkspaceTool(
         [workspaceId, context.teamId, compiledHtml],
       );
     }
+    await pool.query(
+      `update "custom_workspaces"
+          set "critique_rounds" = 0, "verified_critique_rounds" = 0,
+              "critique_findings" = '{}'::jsonb, "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "status" = 'draft' and "critique_rounds" = "verified_critique_rounds"
+          and "critique_rounds" > 0`,
+      [workspaceId, context.teamId],
+    );
     return { content: `${name === "create_custom_workspace_file" ? "Created" : "Updated"} ${path}.`, detail: `${name === "create_custom_workspace_file" ? "created" : "updated"} ${path}` };
   }
 

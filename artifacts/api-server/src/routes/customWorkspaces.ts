@@ -685,6 +685,13 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
          set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
       [randomUUID(), teamId, workspaceId, html, accountId],
     );
+    await pool.query(
+      `update "custom_workspaces"
+          set "critique_rounds" = 0, "verified_critique_rounds" = 0,
+              "critique_findings" = '{}'::jsonb, "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'`,
+      [workspaceId, teamId],
+    );
     res.json({ workspace: updated.rows[0] });
   } catch (error) {
     req.log.error({ err: error, workspaceId }, "Custom workspace revision failed");
@@ -767,6 +774,9 @@ router.post("/custom-workspaces/:id/versions/:versionId/restore", requireCoordin
       `update "custom_workspaces"
           set "html" = $3,
               "capabilities" = case when "status" = 'draft' then $4::jsonb else "capabilities" end,
+              "critique_rounds" = 0,
+              "verified_critique_rounds" = 0,
+              "critique_findings" = '{}'::jsonb,
               "updated_at" = now()
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
         returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
@@ -809,8 +819,9 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     res.status(400).json({ error: "Choose a valid access mode and current team members." });
     return;
   }
-  const currentResult = await pool.query<WorkspaceRow & { prompt: string }>(
+  const currentResult = await pool.query<WorkspaceRow & { prompt: string; critique_rounds: number; verified_critique_rounds: number }>(
     `select "id", "title", "description", "html", "capabilities", "status", "prompt",
+            "critique_rounds", "verified_critique_rounds",
             "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'
@@ -820,6 +831,10 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
   const current = currentResult.rows[0];
   if (!current) {
     res.status(404).json({ error: "Workspace not found." });
+    return;
+  }
+  if (Number(current.critique_rounds) < 5 || Number(current.verified_critique_rounds) < 5) {
+    res.status(409).json({ error: "Complete and independently verify all five critique rounds before publishing this workspace." });
     return;
   }
   const accountId = authenticatedInterviewerId(req) ?? "";
