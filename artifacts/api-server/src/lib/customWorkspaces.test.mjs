@@ -214,7 +214,7 @@ async function createHarness(t) {
           const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
           return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
         }
-        if (statement.includes('"created_by" = $3')) {
+        if (statement.includes('"created_by" = $3') && !statement.includes('select "title", "prompt", "html"')) {
           const [id, teamId, accountId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
           const row = workspaces.find((workspace) =>
@@ -1105,6 +1105,7 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.equal(report.completedRounds, 1);
   assert.equal(report.requiredRounds, 5);
   assert.match(report.implementationRule, /all five sequential critique rounds/);
+  assert.equal(createdWorkspace.critiqueRounds, 1, "a successful critique must persist its round count");
 
   const skippedRound = await runAssistantWorkspaceTool("critique_custom_workspace", {
     workspaceId: createdWorkspace.id,
@@ -1116,6 +1117,7 @@ test("assistant-created custom apps remain drafts owned by the current team", as
       workspaceId: createdWorkspace.id,
       round,
     }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+    assert.equal(nextCritique.detail, `critique round ${round}: 10 ranked flaws`, nextCritique.content);
     assert.equal(JSON.parse(nextCritique.content).completedRounds, round);
   }
 

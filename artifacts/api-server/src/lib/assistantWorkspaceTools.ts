@@ -526,7 +526,7 @@ export async function runAssistantWorkspaceTool(
     if (!workspaceId || round < 1 || round > 5) {
       return { content: "A workspace id and critique round from 1 to 5 are required.", detail: "invalid critique request" };
     }
-    const draft = await pool.query<{ title: string; prompt: string; html: string }>(
+    const draft = await pool.query<{ title: string; prompt: string; html: string; critique_rounds: number }>(
       `select "title", "prompt", "html", "critique_rounds" from "custom_workspaces"
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
           and "created_by" = $3 and "status" = 'draft'
