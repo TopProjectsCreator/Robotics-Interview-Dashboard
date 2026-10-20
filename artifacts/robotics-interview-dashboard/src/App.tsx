@@ -1880,6 +1880,18 @@ const CHAT_PAGE_SIZE = 30;
 
 /** How many recent chat messages the assistant is given for an @ai mention. */
 const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
+
+/**
+ * Object ids may carry an instance segment ("secondary/<uuid>") so the file
+ * is served from the storage instance that actually holds it. Both the plain
+ * and the instance-prefixed shapes are valid; only a malformed response
+ * (empty, or extra path segments) is a real failure.
+ */
+function isValidObjectId(value: string): boolean {
+  if (!value) return false;
+  const withoutInstance = value.startsWith("secondary/") ? value.slice("secondary/".length) : value;
+  return withoutInstance.length > 0 && !withoutInstance.includes("/");
+}
 /** Chat message cap, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 2000;
 
@@ -5121,7 +5133,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             });
             if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
             objectId = requested.objectPath.replace(/^\/objects\//, "");
-            if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+            if (!isValidObjectId(objectId)) fail("CAD upload failed (bad response). Try again.");
           } else if (shouldUseChunkedUpload(prepared.blob.size)) {
             // Big files go part-by-part straight to storage so the API
             // never has to hold the whole thing in memory.
@@ -5165,7 +5177,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         if (!useSignedUpload && !chunked) {
           const parsed = await (response as Response).json() as { objectPath?: unknown };
           objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
-          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+          if (!isValidObjectId(objectId)) fail("Upload failed (bad response). Try again.");
         }
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("USER:")) throw error;
