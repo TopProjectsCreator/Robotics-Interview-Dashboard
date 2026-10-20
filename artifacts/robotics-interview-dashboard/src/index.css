@@ -455,10 +455,15 @@ button { cursor: pointer; }
 .chat-composer-layout {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: "input actions send";
+  /* The "+" sits on the far LEFT of the composer (like Discord/Slack), the
+     text field next to it, then the tool buttons and finally Send. */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "more input actions send";
   align-items: end;
   gap: 0.5rem;
+}
+.chat-composer-more {
+  grid-area: more;
 }
 .chat-composer-input {
   grid-area: input;
@@ -505,15 +510,15 @@ button { cursor: pointer; }
     min-height: 180px;
   }
   .chat-composer-layout {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "input send"
-      "actions actions";
+      "more input send"
+      "actions actions actions";
     gap: 0.35rem 0.5rem;
   }
   .chat-composer-actions {
     display: grid;
-    grid-template-columns: repeat(7, minmax(40px, 1fr));
+    grid-template-columns: repeat(6, minmax(40px, 1fr));
     gap: 0.2rem;
     width: 100%;
     padding: 0;
