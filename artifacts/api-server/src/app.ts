@@ -67,11 +67,13 @@ app.use((req, res, next) => {
       "default-src 'self'",
       // Scripts: our bundle plus WASM modules (Yjs, kokoro TTS, three).
       "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
-      "style-src 'self' 'unsafe-inline'",
+      // The app loads Inter from Google Fonts, so both the stylesheet and
+      // the font files have to stay allowed.
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       // Images/media come from Supabase storage and any https host.
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       // API calls and realtime websockets.
       "connect-src 'self' https: wss:",
       "worker-src 'self' blob:",
