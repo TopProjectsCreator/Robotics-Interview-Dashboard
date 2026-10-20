@@ -183,12 +183,16 @@ describe("custom workspace visual publish review", () => {
     const draft = { ...workspace, status: "draft" };
     const publishedWorkspace = { ...workspace, status: "published" };
     const frames = [
-      { type: "tool_start", id: "screenshot-1", tool: "Capture preview screenshot", detail: "Rendering attempt 1." },
       { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
-      { type: "screenshot", id: "screenshot-1", image: "data:image/png;base64,c2NyZWVuc2hvdA==" },
+      { type: "tool_start", id: "screenshot-light-1", tool: "Capture light theme screenshot", detail: "Rendering at 1280 × 900." },
+      { type: "tool_start", id: "screenshot-dark-1", tool: "Capture dark theme screenshot", detail: "Rendering at 1280 × 900." },
+      { type: "screenshot", id: "screenshot-light-1", theme: "light", image: "data:image/png;base64,bGlnaHQ=" },
+      { type: "screenshot", id: "screenshot-dark-1", theme: "dark", image: "data:image/png;base64,ZGFyaw==" },
       { type: "tool_done", id: "runtime-1", passed: true, detail: "No JavaScript errors or failed resource loads." },
-      { type: "tool_start", id: "review-1", tool: "Review rendered screenshot", detail: "Checking layout." },
-      { type: "review", id: "review-1", passed: true, issues: [] },
+      { type: "tool_start", id: "review-light-1", tool: "Review light theme contrast and layout", detail: "Checking layout." },
+      { type: "review", id: "review-light-1", theme: "light", passed: true, issues: [] },
+      { type: "tool_start", id: "review-dark-1", tool: "Review dark theme contrast and layout", detail: "Checking layout and contrast." },
+      { type: "review", id: "review-dark-1", theme: "dark", passed: true, issues: [] },
       { type: "complete", workspace: publishedWorkspace },
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -211,11 +215,15 @@ describe("custom workspace visual publish review", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
 
     expect(await screen.findByText("Builder agent activity")).toBeInTheDocument();
-    expect(await screen.findByText("Capture preview screenshot")).toBeInTheDocument();
+    expect(await screen.findByText("Capture light theme screenshot")).toBeInTheDocument();
+    expect(await screen.findByText("Capture dark theme screenshot")).toBeInTheDocument();
     expect(await screen.findByText("Check browser runtime")).toBeInTheDocument();
+    expect(await screen.findByText("Review dark theme contrast and layout")).toBeInTheDocument();
     expect(await screen.findByText("No JavaScript errors or failed resource loads.")).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: "Latest screenshot reviewed by the builder agent" }))
-      .toHaveAttribute("src", "data:image/png;base64,c2NyZWVuc2hvdA==");
+      .toHaveAttribute("src", "data:image/png;base64,bGlnaHQ=");
+    expect(await screen.findByRole("img", { name: "Latest dark-theme screenshot reviewed by the builder agent" }))
+      .toHaveAttribute("src", "data:image/png;base64,ZGFyaw==");
     expect(await screen.findByText("Publish workspace")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/publish", expect.objectContaining({
       method: "POST",
@@ -226,9 +234,11 @@ describe("custom workspace visual publish review", () => {
   it("shows runtime failures as failed activity and keeps the draft unpublished", async () => {
     const draft = { ...workspace, status: "draft" };
     const frames = [
-      { type: "tool_start", id: "screenshot-1", tool: "Capture preview screenshot", detail: "Rendering attempt 1." },
       { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
-      { type: "screenshot", id: "screenshot-1", image: "data:image/png;base64,c2NyZWVuc2hvdA==" },
+      { type: "tool_start", id: "screenshot-light-1", tool: "Capture light theme screenshot", detail: "Rendering at 1280 × 900." },
+      { type: "tool_start", id: "screenshot-dark-1", tool: "Capture dark theme screenshot", detail: "Rendering at 1280 × 900." },
+      { type: "screenshot", id: "screenshot-light-1", theme: "light", image: "data:image/png;base64,bGlnaHQ=" },
+      { type: "screenshot", id: "screenshot-dark-1", theme: "dark", image: "data:image/png;base64,ZGFyaw==" },
       { type: "tool_done", id: "runtime-1", passed: false, detail: "JavaScript exception: render failed · Asset load failure: img missing.png" },
       { type: "failed", message: "Browser runtime checks still found errors. The workspace remains a draft." },
     ];

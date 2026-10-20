@@ -89,7 +89,7 @@ function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | nul
     });
 }
 
-function visualSandboxDocument(html: string): string {
+function visualSandboxDocument(html: string, darkMode: boolean): string {
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
   const dashboardTheme = `<style>
   :root {
@@ -102,6 +102,16 @@ function visualSandboxDocument(html: string): string {
     --app-font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
     --app-font-mono: 'DM Mono', ui-monospace, monospace;
   }
+  :root.dark {
+    color-scheme: dark;
+    --background: 220 32% 7%; --foreground: 210 20% 90%; --border: 215 20% 22%;
+    --card: 218 28% 11%; --card-foreground: 210 20% 90%; --card-border: 215 20% 22%;
+    --primary: 190 55% 55%; --primary-foreground: 220 32% 8%; --secondary: 215 22% 18%;
+    --secondary-foreground: 210 18% 88%; --muted: 215 22% 16%; --muted-foreground: 214 14% 62%;
+    --accent: 215 22% 18%; --accent-foreground: 210 20% 90%; --input: 215 20% 26%; --ring: 190 60% 55%;
+    --workspace-navy: #e5edf2; --workspace-teal: #6fc3cf; --workspace-yellow: #e8c85a;
+  }
+  html, body { min-height: 100%; }
   body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); }
   </style>`;
   const reporter = `<script>
@@ -134,9 +144,21 @@ function visualSandboxDocument(html: string): string {
     /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(?:"content-security-policy"|'content-security-policy'|content-security-policy))[^>]*>/gi,
     "",
   );
-  const document = /<head\b[^>]*>/i.test(cleanHtml)
-    ? cleanHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${dashboardTheme}${reporter}`)
-    : `<!doctype html><html><head>${policy}${dashboardTheme}${reporter}</head><body>${cleanHtml}</body></html>`;
+  const themedHtml = /<html\b([^>]*)>/i.test(cleanHtml)
+    ? cleanHtml.replace(/<html\b([^>]*)>/i, (_tag, attrs: string) => {
+      const existingClass = attrs.match(/\bclass=(["'])(.*?)\1/i);
+      if (existingClass) {
+        const retainedClasses = existingClass[2].split(/\s+/).filter((name) => name && name !== "dark");
+        if (darkMode) retainedClasses.push("dark");
+        return `<html${attrs.replace(existingClass[0], `class="${retainedClasses.join(" ")}"`)}>`;
+      }
+      return `<html${attrs}${darkMode ? ' class="dark"' : ""}>`;
+    })
+    : `<!doctype html><html${darkMode ? ' class="dark"' : ""}>${cleanHtml}</html>`;
+  const document = /<head\b[^>]*>/i.test(themedHtml)
+    ? themedHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${dashboardTheme}${reporter}`)
+    : themedHtml.replace(/<html\b[^>]*>/i, (root) => `${root}<head>${policy}${dashboardTheme}${reporter}</head>`);
+  const wrapperBackground = darkMode ? "#0c121a" : "#f3f6f5";
   const wrapper = `<!doctype html><html><head><script>
 (() => {
   document.addEventListener("DOMContentLoaded", () => {
@@ -157,16 +179,21 @@ function visualSandboxDocument(html: string): string {
     setTimeout(finish, 4800);
   });
 })();
-</script></head><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:#f3f6f5"><iframe id="workspace-preview" sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
+</script></head><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:${wrapperBackground}"><iframe id="workspace-preview" sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
   return wrapper;
 }
 
-async function captureWorkspaceScreenshot(html: string): Promise<{ screenshot: string; runtimeIssues: WorkspaceRuntimeIssue[] }> {
+type WorkspaceTheme = "light" | "dark";
+
+async function captureWorkspaceScreenshot(
+  html: string,
+  theme: WorkspaceTheme,
+): Promise<{ screenshot: string; runtimeIssues: WorkspaceRuntimeIssue[] }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-visual-qa-"));
   const source = path.join(directory, "preview.html");
   const screenshot = path.join(directory, "preview.png");
   try {
-    await writeFile(source, visualSandboxDocument(html), "utf8");
+    await writeFile(source, visualSandboxDocument(html, theme === "dark"), "utf8");
     const { stdout } = await execFileAsync(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
       "--headless", "--disable-gpu", "--disable-dev-shm-usage",
       "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
@@ -207,6 +234,7 @@ export function setWorkspaceVisualTools(overrides: Partial<WorkspaceVisualTools>
 
 async function inspectWorkspaceScreenshot(
   requirements: string,
+  theme: WorkspaceTheme,
   screenshotBase64: string,
 ): Promise<{ passed: boolean; issues: string[]; repair: string }> {
   const completion = await retryAiCall(() => openai.chat.completions.create({
@@ -216,12 +244,12 @@ async function inspectWorkspaceScreenshot(
     messages: [
       {
         role: "system",
-        content: `Act as the visual QA agent for an app embedded in the Robotics team workspace. Review the rendered 1280x900 screenshot against the requirements and the host dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. Reject unrelated palettes, oversized marketing hero styling, or duplicated host navigation as brand mismatches. Also check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when the app is coherent, meets the brief, and visually belongs to the host workspace. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
+        content: `Act as the visual QA agent for an app embedded in the Robotics team workspace. Review the rendered 1280x900 ${theme.toUpperCase()}-THEME screenshot against the requirements and the host dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. For dark mode, ensure text, controls, cards, borders, and states remain readable against dark surfaces, and reject hard-coded light surfaces or colors that become low-contrast or off-brand. Reject unrelated palettes, oversized marketing hero styling, or duplicated host navigation as brand mismatches. Also check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when this theme is coherent, meets the brief, and visually belongs to the host workspace. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
       },
       {
         role: "user",
         content: [
-          { type: "text", text: `Requirements:\n${requirements}\n\nReview this rendered screenshot.` },
+          { type: "text", text: `Requirements:\n${requirements}\n\nReview this ${theme} theme screenshot.` },
           { type: "image_url", image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
         ],
       },
@@ -249,7 +277,7 @@ async function repairWorkspaceHtml(
     messages: [
       {
         role: "system",
-        content: "Repair the standalone internal app using the visual QA and browser runtime findings. Preserve and apply the Robotics dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. Do not introduce a competing brand or duplicate the host navigation. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, missing or blocked resources, and style mismatches as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
+        content: "Repair the standalone internal app using the visual QA findings for BOTH light and dark theme screenshots and the browser runtime findings. Preserve and apply the Robotics dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. In dark mode, ensure text, controls, cards, borders, and interactive states have readable contrast and avoid hard-coded light surfaces or colors that conflict with the host palette. Do not introduce a competing brand or duplicate the host navigation. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, missing or blocked resources, and style mismatches as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
       },
       {
         role: "user",
@@ -808,7 +836,8 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
   try {
     let html = current.html;
     let finalScreenshot = "";
-    let finalReview: Awaited<ReturnType<typeof inspectWorkspaceScreenshot>> | null = null;
+    const finalScreenshots: Partial<Record<WorkspaceTheme, string>> = {};
+    let finalReview: { passed: boolean; issues: string[]; repair: string } | null = null;
     const sourceFilesResult = await pool.query<{ path: string; content: string }>(
       `select "path", "content" from "custom_workspace_files"
         where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
@@ -819,22 +848,42 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
       ? sourceFilesResult.rows
       : [{ path: "index.html", content: current.html }];
     for (let attempt = 0; attempt <= VISUAL_REPAIR_LIMIT; attempt += 1) {
-      emit({ type: "tool_start", id: `screenshot-${attempt + 1}`, tool: "Capture preview screenshot", detail: `Rendering attempt ${attempt + 1} at 1280 × 900.` });
-      emit({ type: "tool_start", id: `runtime-${attempt + 1}`, tool: "Check browser runtime", detail: "Opening the isolated draft and checking scripts and local assets." });
-      let preview: Awaited<ReturnType<typeof visualTools.capture>>;
-      try {
-        preview = await visualTools.capture(html);
-      } catch (captureError) {
+      emit({
+        type: "tool_start",
+        id: `runtime-${attempt + 1}`,
+        tool: "Check browser runtime",
+        detail: `Opening the isolated draft in light and dark themes (attempt ${attempt + 1}).`,
+      });
+      const runtimeDetails: string[] = [];
+      for (const theme of ["light", "dark"] as const) {
+        const screenshotId = `screenshot-${theme}-${attempt + 1}`;
         emit({
-          type: "failed",
-          message: "The browser runtime check could not run on this server. The workspace remains a draft.",
-          issues: [captureError instanceof Error ? captureError.message : "Browser preview unavailable."],
+          type: "tool_start",
+          id: screenshotId,
+          tool: `Capture ${theme} theme screenshot`,
+          detail: "Rendering at 1280 × 900.",
         });
-        return;
+        let preview: Awaited<ReturnType<typeof visualTools.capture>>;
+        try {
+          preview = await visualTools.capture(html, theme);
+        } catch (captureError) {
+          emit({
+            type: "failed",
+            message: "The browser runtime check could not run on this server. The workspace remains a draft.",
+            issues: [captureError instanceof Error ? captureError.message : "Browser preview unavailable."],
+          });
+          return;
+        }
+        finalScreenshots[theme] = preview.screenshot;
+        if (theme === "light") finalScreenshot = preview.screenshot;
+        emit({
+          type: "screenshot",
+          id: screenshotId,
+          theme,
+          image: `data:image/png;base64,${preview.screenshot}`,
+        });
+        runtimeDetails.push(...preview.runtimeIssues.map((issue) => `${theme} theme — ${issue.kind}: ${issue.message}`));
       }
-      finalScreenshot = preview.screenshot;
-      emit({ type: "screenshot", id: `screenshot-${attempt + 1}`, image: `data:image/png;base64,${finalScreenshot}` });
-      const runtimeDetails = preview.runtimeIssues.map((issue) => `${issue.kind}: ${issue.message}`);
       emit({
         type: "tool_done",
         id: `runtime-${attempt + 1}`,
@@ -858,9 +907,39 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
         emit({ type: "tool_done", id: `repair-${attempt + 1}` });
         continue;
       }
-      emit({ type: "tool_start", id: `review-${attempt + 1}`, tool: "Review rendered screenshot", detail: "Checking layout and visible requirements." });
-      finalReview = await visualTools.inspect(current.prompt, finalScreenshot);
-      emit({ type: "review", id: `review-${attempt + 1}`, passed: finalReview.passed, issues: finalReview.issues });
+      const themeReviews: Array<{ theme: WorkspaceTheme; review: Awaited<ReturnType<typeof visualTools.inspect>> }> = [];
+      for (const theme of ["light", "dark"] as const) {
+        const reviewId = `review-${theme}-${attempt + 1}`;
+        emit({
+          type: "tool_start",
+          id: reviewId,
+          tool: `Review ${theme} theme contrast and layout`,
+          detail: `Checking the ${theme} rendering against the brief and Robotics workspace style.`,
+        });
+        const review = await visualTools.inspect(current.prompt, theme, finalScreenshots[theme] ?? "");
+        themeReviews.push({ theme, review });
+        emit({
+          type: "review",
+          id: reviewId,
+          theme,
+          passed: review.passed,
+          issues: review.issues,
+        });
+      }
+      finalReview = {
+        passed: themeReviews.every(({ review }) => review.passed),
+        issues: themeReviews.flatMap(({ theme, review }) =>
+          review.issues.length
+            ? review.issues.map((issue) => `${theme} theme — ${issue}`)
+            : review.passed
+              ? []
+              : [`${theme} theme — the visual review did not identify a specific issue.`],
+        ),
+        repair: themeReviews
+          .filter(({ review }) => !review.passed)
+          .map(({ theme, review }) => `${theme.toUpperCase()} THEME:\n${[...review.issues, review.repair].filter(Boolean).join("\n") || "Correct contrast and align colors with the dashboard theme tokens."}`)
+          .join("\n\n"),
+      };
       if (finalReview.passed) break;
       if (attempt === VISUAL_REPAIR_LIMIT) {
         emit({ type: "failed", message: "Visual review still found issues. The workspace remains a draft.", issues: finalReview.issues });

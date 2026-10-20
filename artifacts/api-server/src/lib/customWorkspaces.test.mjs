@@ -177,7 +177,13 @@ async function createHarness(t) {
     message: "Before draft revision",
     createdAt: "2026-01-02T00:00:00.000Z",
   }];
-  const calls = { queries: [], llm: [], routeErrors: [], keepRuntimeBroken: false };
+  const calls = {
+    queries: [],
+    llm: [],
+    routeErrors: [],
+    keepRuntimeBroken: false,
+    darkReviewRejectOnce: false,
+  };
   const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
     workspace.id,
     [{ path: "index.html", content: workspace.html }],
@@ -235,6 +241,17 @@ async function createHarness(t) {
             ? [{ title: row.title, prompt: row.prompt, html: row.html, critique_rounds: row.critiqueRounds ?? 0 }]
             : row ? [row] : [];
           return { rows: projected, rowCount: projected.length };
+        }
+        if (statement.includes('"created_by" = $3')) {
+          const [id, teamId, accountId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id &&
+            workspace.teamId === teamId &&
+            (workspace.status === "published" ||
+              (workspace.status === "draft" && workspace.createdBy === accountId)),
+          );
+          return { rows: row ? [{ id: row.id }] : [], rowCount: row ? 1 : 0 };
         }
         if (statement.includes("for update")) {
           const [id, teamId] = values;
@@ -497,6 +514,21 @@ async function createHarness(t) {
               calls.llm.push(request);
               const systemPrompt = request.messages[0]?.content ?? "";
               if (systemPrompt.includes("visual QA agent")) {
+                const userText = request.messages[1]?.content?.find((item) => item.type === "text")?.text ?? "";
+                if (calls.darkReviewRejectOnce && userText.includes("dark theme screenshot")) {
+                  calls.darkReviewRejectOnce = false;
+                  return {
+                    choices: [{
+                      message: {
+                        content: JSON.stringify({
+                          passed: false,
+                          issues: ["Dark card text has insufficient contrast."],
+                          repair: "Use readable dashboard foreground and card colors in dark mode.",
+                        }),
+                      },
+                    }],
+                  };
+                }
                 return {
                   choices: [{
                     message: {
@@ -830,6 +862,42 @@ test("runtime errors and missing local assets are reported, repaired in saved fi
   assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "published");
 });
 
+test("dark-theme contrast failures are repaired and both themes pass before publishing", async (t) => {
+  const harness = await createHarness(t);
+  harness.calls.darkReviewRejectOnce = true;
+
+  const response = await harness.request("coordinator-a", "POST", "/custom-workspaces/workspace-a-draft/publish", {
+    accessMode: "team",
+  });
+  assert.equal(response.status, 200);
+  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.ok(events.some((event) => event.type === "screenshot" && event.theme === "light"));
+  assert.ok(
+    events.some((event) => event.type === "screenshot" && event.theme === "dark"),
+    `dark screenshot missing: ${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
+  );
+  assert.ok(events.some((event) =>
+    event.type === "review" && event.theme === "dark" && event.passed === false &&
+    event.issues.includes("Dark card text has insufficient contrast."),
+  ));
+  assert.ok(events.some((event) => event.type === "tool_start" && event.tool === "Repair visual issues"));
+  assert.ok(events.some((event) => event.type === "complete"));
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "published");
+
+  const reviewRequests = harness.calls.llm.filter((request) =>
+    request.messages[0]?.content?.includes("visual QA agent"),
+  );
+  assert.ok(reviewRequests.some((request) =>
+    request.messages[0].content.includes("DARK-THEME") &&
+    request.messages[0].content.includes("hard-coded light surfaces"),
+  ));
+  const repairRequest = harness.calls.llm.find((request) =>
+    request.messages[0]?.content?.includes("Repair the standalone internal app"),
+  );
+  assert.match(JSON.parse(repairRequest.messages[1].content).visualAndRuntimeFindings, /DARK THEME:/);
+  assert.match(JSON.parse(repairRequest.messages[1].content).visualAndRuntimeFindings, /insufficient contrast/);
+});
+
 test("persistent browser runtime failures block publication and leave the draft unchanged", async (t) => {
   const harness = await createHarness(t);
   seedBrokenWorkspacePreview(harness);
@@ -839,7 +907,11 @@ test("persistent browser runtime failures block publication and leave the draft 
     accessMode: "team",
   });
   const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(events.filter((event) => event.type === "tool_start" && event.tool === "Check browser runtime").length, 3);
+  assert.equal(
+    events.filter((event) => event.type === "tool_start" && event.tool === "Check browser runtime").length,
+    3,
+    `${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
+  );
   assert.match(events.find((event) => event.type === "failed").message, /Browser runtime checks still found errors/);
   assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "draft");
   assert.match(

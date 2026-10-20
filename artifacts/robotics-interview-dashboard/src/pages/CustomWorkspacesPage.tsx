@@ -20,6 +20,7 @@ type PublishAgentEvent = {
   tool?: string;
   detail?: string;
   image?: string;
+  theme?: "light" | "dark";
   passed?: boolean;
   issues?: string[];
   message?: string;
@@ -150,7 +151,7 @@ export function CustomWorkspacesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
-  const [publishScreenshot, setPublishScreenshot] = useState("");
+  const [publishScreenshots, setPublishScreenshots] = useState<Partial<Record<"light" | "dark", string>>>({});
   const frame = useRef<HTMLIFrameElement>(null);
   const active = useMemo(() => selected ?? items[0] ?? null, [items, selected]);
 
@@ -347,7 +348,7 @@ export function CustomWorkspacesPage() {
   const generate = async () => {
     setError("");
     setBusy(true);
-    setPublishScreenshot("");
+    setPublishScreenshots({});
     setPublishAgentSteps([{ id: "generate", label: "Start workspace agent", detail: "The assistant will build the app through multiple tool rounds.", status: "running" }]);
     try {
       const beforeIds = new Set(items.map((item) => item.id));
@@ -367,7 +368,7 @@ export function CustomWorkspacesPage() {
     setBusy(true);
     setError("");
     setPublishAgentSteps([]);
-    setPublishScreenshot("");
+    setPublishScreenshots({});
     try {
       const response = await fetch(`${API}/${active.id}/publish`, {
         method: "POST", body: JSON.stringify({ accessMode, allowedInterviewerIds }),
@@ -397,7 +398,10 @@ export function CustomWorkspacesPage() {
             ? { ...step, status: event.passed === false ? "failed" : "done", detail: event.detail ?? step.detail }
             : step));
         } else if (event.type === "screenshot" && event.image) {
-          setPublishScreenshot(event.image);
+          setPublishScreenshots((current) => ({
+            ...current,
+            [event.theme ?? "light"]: event.image!,
+          }));
           setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
         } else if (event.type === "review" && event.id) {
           setPublishAgentSteps((current) => current.map((step) => step.id === event.id
@@ -456,7 +460,7 @@ export function CustomWorkspacesPage() {
     if (!active || !revisionPrompt.trim()) return;
     setBusy(true);
     setError("");
-    setPublishScreenshot("");
+    setPublishScreenshots({});
     setPublishAgentSteps([{ id: "revise", label: "Start workspace revision agent", detail: "The assistant will inspect and edit the saved source tree.", status: "running" }]);
     try {
       await runBuilderAgent(`Revise custom workspace draft ${active.id}. Requested changes: ${revisionPrompt}\n\nUse list_custom_workspace_files and read_custom_workspace_file before editing. Keep the changes in this draft's persistent source tree and do not publish.`, new Set(items.map((item) => item.id)));
@@ -603,7 +607,7 @@ export function CustomWorkspacesPage() {
         </div>
         {publishAgentSteps.length > 0 && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
-          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshot ? "Checks the desktop screenshot and browser runtime, repairs code or visual issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshots.light || publishScreenshots.dark ? "Checks light- and dark-theme screenshots and browser runtime, repairs code or contrast issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
           <ol className="mt-2 space-y-2">
             {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
               <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
@@ -616,10 +620,16 @@ export function CustomWorkspacesPage() {
               </span>
             </li>)}
           </ol>
-          {publishScreenshot && <figure className="mt-3 max-w-xl">
-            <img src={publishScreenshot} alt="Latest screenshot reviewed by the builder agent" className="max-h-72 w-full rounded-lg border border-[hsl(var(--border))] object-contain object-left-top" />
-            <figcaption className="mt-1 text-[11px] text-[#60757c] dark:text-[#b3c3cb]">Latest 1280 × 900 render reviewed by the agent before publishing.</figcaption>
-          </figure>}
+          {(["light", "dark"] as const).filter((theme) => publishScreenshots[theme]).length > 0 && <div className="mt-3 grid max-w-4xl gap-3 md:grid-cols-2">
+            {(["light", "dark"] as const).map((theme) => publishScreenshots[theme] && <figure key={theme}>
+              <img
+                src={publishScreenshots[theme]}
+                alt={theme === "light" ? "Latest screenshot reviewed by the builder agent" : "Latest dark-theme screenshot reviewed by the builder agent"}
+                className="max-h-72 w-full rounded-lg border border-[hsl(var(--border))] object-contain object-left-top"
+              />
+              <figcaption className="mt-1 text-[11px] text-[#60757c] dark:text-[#b3c3cb]">Latest 1280 × 900 {theme} theme render reviewed before publishing.</figcaption>
+            </figure>)}
+          </div>}
         </section>}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
