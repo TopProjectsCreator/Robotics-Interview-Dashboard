@@ -389,7 +389,15 @@ describe("custom workspace visual publish review", () => {
       fireEvent.click(screen.getByRole("button", { name: "Remove reference.txt" }));
       expect(screen.queryByText(/reference\.txt/)).not.toBeInTheDocument();
       fireEvent.change(screen.getByTestId("input-question-file-reference"), {
-        target: { files: [new File(["updated reference"], "replacement.txt", { type: "text/plain" })] },
+        target: { files: [new File(["not supported"], "reference.bin", { type: "application/octet-stream" })] },
+      });
+      expect(await screen.findByRole("alert")).toHaveTextContent(/reference\.bin is not a supported attachment/);
+      expect(screen.getByRole("button", { name: "Submit answers" })).toBeDisabled();
+      fireEvent.change(screen.getByTestId("input-question-file-reference"), {
+        target: { files: [
+          new File(["updated reference"], "replacement.txt", { type: "text/plain" }),
+          new File(["%PDF-1.4 document"], "specification.pdf", { type: "application/pdf" }),
+        ] },
       });
       fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
 
@@ -399,7 +407,10 @@ describe("custom workspace visual publish review", () => {
         layout: { value: "Cards" },
         features: { value: ["Search"] },
         approved: { value: "yes" },
-        reference: [{ name: "replacement.txt", type: "text/plain", textContent: "updated reference" }],
+        reference: [
+          { name: "replacement.txt", type: "text/plain", textContent: "updated reference" },
+          expect.objectContaining({ name: "specification.pdf", type: "application/pdf", dataUrl: expect.stringMatching(/^data:application\/pdf;base64,/) }),
+        ],
       });
     } finally {
       if (originalCreateObjectURL) Object.defineProperty(URL, "createObjectURL", originalCreateObjectURL);

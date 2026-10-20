@@ -34,6 +34,27 @@ type AgentQuestion = {
   questions: { id: string; type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload"; title: string; required?: boolean; placeholder?: string; options?: string[]; accept?: string; maxFiles?: number }[];
 };
 type QuestionFile = { file: File; previewUrl: string };
+const MAX_QUESTION_DOCUMENT_BYTES = 2 * 1024 * 1024;
+const MAX_QUESTION_IMAGE_BYTES = 1024 * 1024;
+const MAX_QUESTION_TEXT_BYTES = 1024 * 1024;
+const MAX_QUESTION_TOTAL_BYTES = 4 * 1024 * 1024;
+const QUESTION_DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"]);
+const QUESTION_TEXT_EXTENSIONS = new Set(["csv", "json", "md", "txt", "html", "htm", "css", "js", "ts", "xml"]);
+
+function questionFileIssue(file: File): string | null {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const isDocument = QUESTION_DOCUMENT_EXTENSIONS.has(extension);
+  const isImage = file.type.startsWith("image/");
+  const isText = file.type.startsWith("text/") || QUESTION_TEXT_EXTENSIONS.has(extension);
+  if (!isDocument && !isImage && !isText) {
+    return `${file.name} is not a supported attachment. Choose a PDF or Office document, an image, or a text file.`;
+  }
+  const limit = isDocument ? MAX_QUESTION_DOCUMENT_BYTES : isImage ? MAX_QUESTION_IMAGE_BYTES : MAX_QUESTION_TEXT_BYTES;
+  if (file.size > limit) {
+    return `${file.name} is larger than the ${isDocument ? "2 MB document" : isImage ? "1 MB image" : "1 MB text file"} limit.`;
+  }
+  return null;
+}
 
 function readFileDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -48,12 +69,27 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, QuestionFile[]>>({});
+  const [fileSelectionIssues, setFileSelectionIssues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const previewUrls = useRef(new Set<string>());
   useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
+  const selectedFiles = Object.values(files).flat();
+  const selectedFileCount = selectedFiles.length;
+  const attachmentIssues = [
+    ...Object.values(fileSelectionIssues).filter(Boolean),
+    ...selectedFiles.map(({ file }) => questionFileIssue(file)).filter((issue): issue is string => issue !== null),
+    ...(selectedFileCount > 5 ? ["Choose no more than 5 attachments in total."] : []),
+    ...(selectedFiles.reduce((total, { file }) => total + file.size, 0) > MAX_QUESTION_TOTAL_BYTES
+      ? ["Attachments together must be 4 MB or smaller."]
+      : []),
+  ];
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (attachmentIssues.length) {
+      setError(attachmentIssues[0]);
+      return;
+    }
     setSending(true);
     setError("");
     try {
@@ -61,13 +97,16 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
       for (const item of question.questions) {
         if (item.type === "fileUpload") {
           answers[item.id] = await Promise.all((files[item.id] ?? []).map(async ({ file }) => {
-            if (file.size > 1_000_000) throw new Error(`${file.name} is larger than 1 MB.`);
             const base = { name: file.name, type: file.type, size: file.size };
+            const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+            if (QUESTION_DOCUMENT_EXTENSIONS.has(extension)) {
+              return { ...base, dataUrl: await readFileDataUrl(file) };
+            }
             if (file.type.startsWith("image/")) return { ...base, dataUrl: await readFileDataUrl(file) };
-            if (file.type.startsWith("text/") || /\.(csv|json|md|html?|css|js|ts|xml)$/i.test(file.name)) {
+            if (file.type.startsWith("text/") || QUESTION_TEXT_EXTENSIONS.has(extension)) {
               return { ...base, textContent: (await file.text()).slice(0, 40_000) };
             }
-            return base;
+            throw new Error(`${file.name} is not a supported attachment.`);
           }));
         } else {
           const value = item.type === "multiSelect"
@@ -99,8 +138,15 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
       {item.type === "boolean" && <div className="flex gap-4">{[["yes", "Yes"], ["no", "No"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === value} onChange={() => setValues((old) => ({ ...old, [item.id]: value }))} />{label}</label>)}</div>}
       {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm" />}
       {item.type === "fileUpload" && <>
-        <input type="file" accept={item.accept} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
-          const picked = Array.from(event.target.files ?? []).slice(0, item.maxFiles ?? 1);
+        <input type="file" accept={item.accept ?? ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.css,.js,.ts,image/*"} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
+          const selection = Array.from(event.target.files ?? []);
+          const picked = selection.slice(0, item.maxFiles ?? 1);
+          setFileSelectionIssues((old) => ({
+            ...old,
+            [item.id]: selection.length > (item.maxFiles ?? 1)
+              ? `Choose no more than ${item.maxFiles ?? 1} file${(item.maxFiles ?? 1) === 1 ? "" : "s"} for “${item.title}”.`
+              : "",
+          }));
           const next = picked.map((file) => {
             const previewUrl = URL.createObjectURL(file);
             previewUrls.current.add(previewUrl);
@@ -115,12 +161,16 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
           {file.type.startsWith("image/") && <img src={previewUrl} alt={`Preview of ${file.name}`} className="h-12 w-12 rounded object-cover" />}
           <span className="min-w-0 flex-1 truncate">{file.name} · {Math.ceil(file.size / 1024)} KB</span>
           <a href={previewUrl} target="_blank" rel="noreferrer" className="underline">View</a>
+          {questionFileIssue(file) && <span className="basis-full text-red-700 dark:text-red-300">{questionFileIssue(file)}</span>}
           <button type="button" onClick={() => setFiles((old) => { URL.revokeObjectURL(previewUrl); return { ...old, [item.id]: old[item.id].filter((entry) => entry.previewUrl !== previewUrl) }; })} aria-label={`Remove ${file.name}`}>Remove</button>
         </li>)}</ul>}
+        {fileSelectionIssues[item.id] && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{fileSelectionIssues[item.id]}</p>}
       </>}
     </fieldset>)}
+    {selectedFiles.length > 0 && <p className="text-xs text-[#60757c] dark:text-[#b3c3cb]">PDF and Office files are read for this builder request only. Attachments are limited to 2 MB each and 4 MB total.</p>}
+    {attachmentIssues[0] && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{attachmentIssues[0]}</p>}
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
-    <button type="submit" disabled={sending} className="rounded-lg bg-[#16869a] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" data-testid="button-submit-agent-answers">{sending ? "Sending…" : "Submit answers"}</button>
+    <button type="submit" disabled={sending || attachmentIssues.length > 0} className="rounded-lg bg-[#16869a] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" data-testid="button-submit-agent-answers">{sending ? "Sending…" : "Submit answers"}</button>
   </form>;
 }
 

@@ -199,6 +199,10 @@ import {
   runAssistantWorkspaceTool,
   type AssistantQuestion,
 } from "../lib/assistantWorkspaceTools";
+import {
+  AssistantQuestionAttachmentError,
+  prepareAssistantQuestionAnswers,
+} from "../lib/assistantQuestionAttachments";
 import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
@@ -5675,9 +5679,19 @@ router.post("/assistant/questions/:questionId/answer", requireCoordinator, async
     res.status(404).json({ error: "This question is no longer waiting for an answer." });
     return;
   }
+  let preparedAnswers: Record<string, unknown>;
+  try {
+    preparedAnswers = await prepareAssistantQuestionAnswers(pending.questions, answers as Record<string, unknown>);
+  } catch (error) {
+    if (error instanceof AssistantQuestionAttachmentError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
   clearTimeout(pending.timer);
   pendingAssistantQuestions.delete(questionId);
-  pending.resolve(answers as Record<string, unknown>);
+  pending.resolve(preparedAnswers);
   res.json({ submitted: true });
 });
 
