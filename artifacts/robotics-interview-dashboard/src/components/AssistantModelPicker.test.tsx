@@ -15,6 +15,24 @@ function renderWithQuery(ui: ReactNode) {
 }
 
 describe("AssistantModelPicker", () => {
+  it("shows the provider catalog name for the selected MiniMax default", () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="minimax/minimax-m3.1-flash:free"
+        models={[{
+          id: "minimax/minimax-m3.1-flash:free",
+          name: "MiniMax: MiniMax M3.1 Flash (free)",
+        }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Assistant model" }))
+      .toHaveTextContent("MiniMax: MiniMax M3.1 Flash (free)");
+  });
+
   it("shows provider models and reports the selected id", async () => {
     const onChange = vi.fn();
     renderWithQuery(

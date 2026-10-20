@@ -19,7 +19,7 @@ Required runtime services and secrets:
 - `ADMIN_PASSWORD` — shared coordinator passcode; server-only
 - `SESSION_SECRET` — session signing secret (required in production)
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` — optional OpenAI-compatible provider overrides; the checked-in default is Kilo's keyless OpenRouter route with the `anonymous` key
-- `AI_ASSISTANT_MODEL` — chat model override (default `openrouter/free`)
+- `AI_ASSISTANT_MODEL` — general-purpose assistant model override (default `minimax/minimax-m3.1-flash:free`, catalog label “MiniMax: MiniMax M3.1 Flash (free)”)
 - `DISABLE_DEMO_SEED` — set `true` to stop sample applicants from seeding an empty roster
 - `ALLOWED_ORIGINS` — comma-separated origins allowed to call the API (default reflects any origin for iframe embedding; lock down in production)
 - `PYTHON_SANDBOX` — `auto` (default), `docker` (full stdlib, needs daemon + `python:3.12-slim` image), or `restricted`

@@ -547,6 +547,16 @@ async function createHarness(t) {
   mock.module("@workspace/integrations-openai-ai-server", {
     namedExports: {
       openai: {
+        models: {
+          list: async () => ({
+            data: [{
+              id: "minimax/minimax-m3.1-flash:free",
+              name: "MiniMax: MiniMax M3.1 Flash (free)",
+              isFree: true,
+              supported_parameters: ["reasoning", "tools"],
+            }],
+          }),
+        },
         chat: {
           completions: {
             create: async (request) => {
@@ -1182,6 +1192,7 @@ test("LLM requests require workspace visibility and the LLM capability", async (
   assert.equal(allowed.status, 200);
   assert.deepEqual(await allowed.json(), { answer: "Authorized answer" });
   assert.equal(harness.calls.llm.length, 1);
+  assert.equal(harness.calls.llm[0].model, "minimax/minimax-m3.1-flash:free");
   assert.equal(harness.calls.llm[0].messages[0].content, "Summarize this app's records");
 
   const foreignTeam = await harness.request("admin-b", "POST", "/custom-workspaces/workspace-a/llm", {
@@ -1215,6 +1226,16 @@ test("LLM requests require workspace visibility and the LLM capability", async (
 
 test("assistant-created custom apps remain drafts owned by the current team", async (t) => {
   const harness = await createHarness(t);
+  const { DEFAULT_ASSISTANT_MODEL, resolveAssistantModel } = await import(`./assistantModel.ts?test=${++importId}`);
+  assert.equal(DEFAULT_ASSISTANT_MODEL, "minimax/minimax-m3.1-flash:free");
+  assert.equal(resolveAssistantModel("missing/model", [
+    { id: DEFAULT_ASSISTANT_MODEL, isFree: true },
+    { id: "provider/other", isFree: true },
+  ]), DEFAULT_ASSISTANT_MODEL);
+  assert.equal(resolveAssistantModel("provider/other", [
+    { id: DEFAULT_ASSISTANT_MODEL, isFree: true },
+    { id: "provider/other", isFree: true },
+  ]), "provider/other");
   const { runAssistantWorkspaceTool } = await import(`./assistantWorkspaceTools.ts?test=${++importId}`);
   const args = {
     title: "Assistant-created app",
@@ -1248,6 +1269,7 @@ test("assistant-created custom apps remain drafts owned by the current team", as
     workspaceId: createdWorkspace.id,
     round: 1,
   }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  assert.equal(harness.calls.llm.at(-1).model, DEFAULT_ASSISTANT_MODEL);
   const report = JSON.parse(critique.content);
   assert.equal(report.flaws.length, 10);
   assert.deepEqual(report.flaws.map((flaw) => flaw.score), [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);

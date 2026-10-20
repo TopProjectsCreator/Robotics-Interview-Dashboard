@@ -3,6 +3,7 @@ import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "l
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
+import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace;
@@ -193,11 +194,11 @@ export function CustomWorkspacesPage() {
       setBuilderModels(catalog.items);
       let savedModel = "";
       try { savedModel = window.localStorage.getItem("robotics-assistant-model") ?? ""; } catch {}
-      const initial = catalog.items.find((item) => item.id === savedModel)?.id
-        ?? catalog.items.find((item) => item.id === config.textModel)?.id
-        ?? catalog.items[0]?.id
-        ?? "";
+      const initial = resolveAssistantModelSelection(savedModel, config.textModel, catalog.items);
       setSelectedModel(initial);
+      if (initial) {
+        try { window.localStorage.setItem("robotics-assistant-model", initial); } catch {}
+      }
     }).catch((err) => {
       if (active) setModelsError(err instanceof Error ? err.message : "Model list unavailable.");
     }).finally(() => {

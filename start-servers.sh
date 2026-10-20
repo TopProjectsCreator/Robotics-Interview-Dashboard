@@ -13,7 +13,7 @@ set +a
 # Free-tier defaults (not secret)
 export AI_INTEGRATIONS_OPENAI_BASE_URL="${AI_INTEGRATIONS_OPENAI_BASE_URL:-https://api.kilo.ai/api/openrouter}"
 export AI_INTEGRATIONS_OPENAI_API_KEY="${AI_INTEGRATIONS_OPENAI_API_KEY:-anonymous}"
-export AI_ASSISTANT_MODEL="${AI_ASSISTANT_MODEL:-openrouter/free}"
+export AI_ASSISTANT_MODEL="${AI_ASSISTANT_MODEL:-minimax/minimax-m3.1-flash:free}"
 export DISABLE_DEMO_SEED="${DISABLE_DEMO_SEED:-true}"
 export NODE_ENV=development
 export PORT=8080

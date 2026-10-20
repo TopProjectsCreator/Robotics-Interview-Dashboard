@@ -16,6 +16,7 @@ import {
 } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { teamSqlCondition } from "../lib/teams";
+import { getAssistantModel } from "../lib/assistantModel";
 
 /**
  * Admins only. Custom apps is an unfinished experiment with no settled purpose,
@@ -237,8 +238,9 @@ async function inspectWorkspaceScreenshot(
   theme: WorkspaceTheme,
   screenshotBase64: string,
 ): Promise<{ passed: boolean; issues: string[]; repair: string }> {
+  const model = await getAssistantModel();
   const completion = await retryAiCall(() => openai.chat.completions.create({
-    model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+    model,
     max_completion_tokens: 8192,
     response_format: { type: "json_object" },
     messages: [
@@ -270,8 +272,9 @@ async function repairWorkspaceHtml(
   repair: string,
   sourceFiles: WorkspaceSourceFile[],
 ): Promise<{ title: string; description: string; html: string; sourceFiles: WorkspaceSourceFile[] }> {
+  const model = await getAssistantModel();
   const completion = await retryAiCall(() => openai.chat.completions.create({
-    model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+    model,
     max_completion_tokens: 8192,
     response_format: { type: "json_object" },
     messages: [
@@ -485,7 +488,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+      model: await getAssistantModel(),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -632,7 +635,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+      model: await getAssistantModel(),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -1171,7 +1174,7 @@ router.post("/custom-workspaces/:id/llm", requireCustomWorkspaceAdmin, async (re
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: process.env.AI_ASSISTANT_MODEL || "gpt-5.6-terra",
+      model: await getAssistantModel(),
       max_tokens: 800,
       messages: [{ role: "user", content: question }],
     });

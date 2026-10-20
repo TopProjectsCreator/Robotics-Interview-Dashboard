@@ -58,6 +58,7 @@ import { loadDisabledTools, saveDisabledTools } from "./components/assistantTool
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { readableBrandForeground } from "./lib/team-branding";
+import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
 import { classifyFile } from "./lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
@@ -6983,10 +6984,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   };
-  const availableModel = modelOptions.find((item) => item.id === selectedModel)?.id
-    ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
-    ?? modelOptions[0]?.id
-    ?? "";
+  const availableModel = resolveAssistantModelSelection(
+    selectedModel,
+    assistantConfig.data?.textModel,
+    modelOptions,
+  );
   const thinkingLevel = thinkingByModel[availableModel] ?? "auto";
   const rememberThinkingLevel = (level: AssistantThinkingLevel) => {
     const next = { ...thinkingByModel, [availableModel]: level };
@@ -6999,10 +7001,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   };
   useEffect(() => {
     if (!modelOptions.length) return;
-    const nextModel = modelOptions.some((item) => item.id === selectedModel)
-      ? selectedModel
-      : modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
-        ?? modelOptions[0].id;
+    const nextModel = resolveAssistantModelSelection(
+      selectedModel,
+      assistantConfig.data?.textModel,
+      modelOptions,
+    );
     if (nextModel !== selectedModel) setSelectedModel(nextModel);
     try {
       window.localStorage.setItem("robotics-assistant-model", nextModel);

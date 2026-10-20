@@ -201,6 +201,12 @@ import {
 import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
+  configuredAssistantModel,
+  getAssistantModel,
+  listAssistantProviderModels,
+  resolveAssistantModel,
+} from "../lib/assistantModel";
+import {
   assistantSkillInstructions,
   assistantSkillRepositoryBindings,
   findRelevantAssistantSkills,
@@ -350,8 +356,7 @@ function pollinationsImage(prompt: string, size?: string): { url: string; seed: 
 // Text model for the assistant (Kilo gateway, verified live with tool
 // calling). Override with AI_ASSISTANT_MODEL. Vision requests always go to
 // VISION_MODEL below, never here.
-const TEXT_MODEL =
-  process.env.AI_ASSISTANT_MODEL || "openrouter/free";
+const TEXT_MODEL = configuredAssistantModel();
 // Vision-capable free model (verified live: correctly describes generated
 // images). Override with AI_ASSISTANT_VISION_MODEL. Used only for the
 // follow-up turn after generate_image so the assistant SEES what it made.
@@ -2511,7 +2516,7 @@ router.post("/applicants/search/ai", requireCoordinator, async (req, res): Promi
 
   try {
     const completion = await openai.chat.completions.create({
-      model: TEXT_MODEL,
+      model: await getAssistantModel(),
       temperature: 0,
       max_tokens: 240,
       messages: [
@@ -2693,7 +2698,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
       return `Q${index + 1} [${type}]: ${question}\nA${index + 1}: ${answer}`;
     }).join("\n")
     : "(no transcript recorded)";
-  const model = TEXT_MODEL;
+  const model = await getAssistantModel();
   const evaluationMessages = [
     {
       role: "system" as const,
@@ -4526,7 +4531,7 @@ router.post("/queue/chat/scheduled/interpret", requireAdmin, async (req, res): P
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: TEXT_MODEL,
+      model: await getAssistantModel(),
       temperature: 0,
       messages: [
         {
@@ -5202,6 +5207,7 @@ async function generateAssistantAnswer(options: {
   try {
     assistantModels = await listFreeAssistantModels();
     freeModelIds = assistantModels.map((item) => item.id);
+    if (!requestedModel) model = resolveAssistantModel(TEXT_MODEL, assistantModels);
   } catch (catalogError) {
     modelCatalogAvailable = false;
     log.warn({ err: catalogError }, "Assistant model catalog unavailable");
@@ -5708,6 +5714,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   try {
     assistantModels = await listFreeAssistantModels();
     freeModelIds = assistantModels.map((item) => item.id);
+    if (!requestedModel) model = resolveAssistantModel(TEXT_MODEL, assistantModels);
   } catch (catalogError) {
     modelCatalogAvailable = false;
     req.log.warn({ err: catalogError }, "Assistant model catalog unavailable");
@@ -6266,20 +6273,11 @@ function assistantThinkingRequest(
 }
 
 async function listFreeAssistantModels(): Promise<AssistantProviderModel[]> {
-  const result = await openai.models.list();
+  const catalog = await listAssistantProviderModels();
+  const configuredModel = await getAssistantModel();
   // Trust explicit provider metadata; free model ids do not all use :free.
-  const catalog = result.data as Array<(typeof result.data)[number] & {
-    isFree?: unknown;
-    name?: unknown;
-    supported_parameters?: unknown;
-    supportedParameters?: unknown;
-    reasoning_levels?: unknown;
-    reasoningLevels?: unknown;
-    reasoning_efforts?: unknown;
-    reasoningEfforts?: unknown;
-  }>;
   return catalog
-    .filter((model) => model.isFree === true)
+    .filter((model) => model.isFree === true || model.id === configuredModel)
     .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
     .map((model) => {
       const thinkingParameter = assistantThinkingParameter(model.supported_parameters ?? model.supportedParameters);
@@ -6319,7 +6317,7 @@ router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> =>
 });
 
 router.get("/assistant/config", requireAdmin, async (_req, res): Promise<void> => {
-  res.json(GetAssistantConfigResponse.parse({ textModel: TEXT_MODEL, visionModel: VISION_MODEL }));
+  res.json(GetAssistantConfigResponse.parse({ textModel: await getAssistantModel(), visionModel: VISION_MODEL }));
 });
 
 router.get("/assistant/skills", requireCoordinator, async (req, res): Promise<void> => {

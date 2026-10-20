@@ -31,6 +31,7 @@ const workspace = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.removeItem("robotics-assistant-model");
   mocks.getSession.mockReturnValue({ data: { role: "coordinator" } });
 });
 
@@ -267,13 +268,14 @@ describe("custom workspace visual publish review", () => {
 
   it("builds through the streamed assistant tool loop and displays the saved file tree", async () => {
     const draft = { ...workspace, id: "new-workspace", title: "Parts tracker", status: "draft" };
+    window.localStorage.setItem("robotics-assistant-model", "openrouter/free");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/models") return Response.json({ items: [
-        { id: "model-default", name: "Default model" },
+        { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
         { id: "model-selected", name: "Selected model" },
       ] });
-      if (path === "/api/assistant/config") return Response.json({ textModel: "model-default", visionModel: "vision" });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "minimax/minimax-m3.1-flash:free", visionModel: "vision" });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces") return Response.json({
         workspaces: [draft],
@@ -296,7 +298,10 @@ describe("custom workspace visual publish review", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomWorkspacesPage />);
     const modelPicker = await screen.findByRole("combobox", { name: "Workspace builder model" });
-    await waitFor(() => expect(modelPicker).toHaveValue("model-default"));
+    await waitFor(() => expect(modelPicker).toHaveValue("minimax/minimax-m3.1-flash:free"));
+    expect(modelPicker).toHaveTextContent("MiniMax: MiniMax M3.1 Flash (free)");
+    expect(window.localStorage.getItem("robotics-assistant-model"))
+      .toBe("minimax/minimax-m3.1-flash:free");
     fireEvent.change(modelPicker, { target: { value: "model-selected" } });
     fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
       target: { value: "Track parts and stock" },
@@ -311,5 +316,40 @@ describe("custom workspace visual publish review", () => {
     fireEvent.click(screen.getAllByText("Tool call details")[1]);
     expect(await screen.findByText('{"path":"index.html"}')).toBeInTheDocument();
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();
+  });
+
+  it("sends the catalog-backed MiniMax default with a new workspace request", async () => {
+    let submittedModel = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/models") return Response.json({ items: [
+        { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
+      ] });
+      if (path === "/api/assistant/config") return Response.json({
+        textModel: "minimax/minimax-m3.1-flash:free",
+        visionModel: "vision",
+      });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      if (path === "/api/assistant/ask/stream") {
+        submittedModel = JSON.parse(String(init?.body)).model;
+        return new Response(`data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    const picker = await screen.findByRole("combobox", { name: "Workspace builder model" });
+    await waitFor(() => expect(picker).toHaveValue("minimax/minimax-m3.1-flash:free"));
+    fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+      target: { value: "Create a team parts tracker" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+
+    await waitFor(() => expect(submittedModel).toBe("minimax/minimax-m3.1-flash:free"));
   });
 });
