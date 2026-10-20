@@ -169,6 +169,29 @@ async function captureWorkspaceScreenshot(html: string): Promise<{ screenshot: s
   }
 }
 
+/**
+ * Test seam for the browser-visual step. The real capture needs a headless
+ * Chromium, which is not present everywhere (and is absent on Render), so the
+ * tools are swappable: tests inject a deterministic capture instead of
+ * requiring a machine-specific binary, and production reports a clear
+ * failure instead of crashing the stream when Chromium is missing.
+ */
+export type WorkspaceVisualTools = {
+  capture: typeof captureWorkspaceScreenshot;
+  inspect: typeof inspectWorkspaceScreenshot;
+  repair: typeof repairWorkspaceHtml;
+};
+
+let visualTools: WorkspaceVisualTools = {
+  capture: captureWorkspaceScreenshot,
+  inspect: inspectWorkspaceScreenshot,
+  repair: repairWorkspaceHtml,
+};
+
+export function setWorkspaceVisualTools(overrides: Partial<WorkspaceVisualTools>): void {
+  visualTools = { ...visualTools, ...overrides };
+}
+
 async function inspectWorkspaceScreenshot(
   requirements: string,
   screenshotBase64: string,
@@ -785,7 +808,17 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     for (let attempt = 0; attempt <= VISUAL_REPAIR_LIMIT; attempt += 1) {
       emit({ type: "tool_start", id: `screenshot-${attempt + 1}`, tool: "Capture preview screenshot", detail: `Rendering attempt ${attempt + 1} at 1280 × 900.` });
       emit({ type: "tool_start", id: `runtime-${attempt + 1}`, tool: "Check browser runtime", detail: "Opening the isolated draft and checking scripts and local assets." });
-      const preview = await captureWorkspaceScreenshot(html);
+      let preview: Awaited<ReturnType<typeof visualTools.capture>>;
+      try {
+        preview = await visualTools.capture(html);
+      } catch (captureError) {
+        emit({
+          type: "failed",
+          message: "The browser runtime check could not run on this server. The workspace remains a draft.",
+          issues: [captureError instanceof Error ? captureError.message : "Browser preview unavailable."],
+        });
+        return;
+      }
       finalScreenshot = preview.screenshot;
       emit({ type: "screenshot", id: `screenshot-${attempt + 1}`, image: `data:image/png;base64,${finalScreenshot}` });
       const runtimeDetails = preview.runtimeIssues.map((issue) => `${issue.kind}: ${issue.message}`);
@@ -801,7 +834,7 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
           return;
         }
         emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair browser runtime issues", detail: runtimeDetails.join(" · ") });
-        const repaired = await repairWorkspaceHtml(
+        const repaired = await visualTools.repair(
           current.prompt,
           html,
           `Browser runtime diagnostics:\n${runtimeDetails.join("\n")}`,
@@ -813,7 +846,7 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
         continue;
       }
       emit({ type: "tool_start", id: `review-${attempt + 1}`, tool: "Review rendered screenshot", detail: "Checking layout and visible requirements." });
-      finalReview = await inspectWorkspaceScreenshot(current.prompt, finalScreenshot);
+      finalReview = await visualTools.inspect(current.prompt, finalScreenshot);
       emit({ type: "review", id: `review-${attempt + 1}`, passed: finalReview.passed, issues: finalReview.issues });
       if (finalReview.passed) break;
       if (attempt === VISUAL_REPAIR_LIMIT) {
@@ -821,7 +854,7 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
         return;
       }
       emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair visual issues", detail: finalReview.issues.join(" · ") || finalReview.repair });
-      const repaired = await repairWorkspaceHtml(
+      const repaired = await visualTools.repair(
         current.prompt,
         html,
         finalReview.repair || finalReview.issues.join("\n"),

@@ -189,6 +189,7 @@ function createHarness(t, {
     namedExports: {
       requireAdmin: (_req, _res, next) => next(),
       requireCoordinator: (_req, _res, next) => next(),
+      requireWolverinesCoordinator: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
       authenticatedInterviewerId: () => "account-1",

@@ -82,6 +82,7 @@ async function loadStorage(t) {
       authenticatedInterviewerId: () => "account-1",
       requireAdmin: (_req, _res, next) => next(),
       requireCoordinator: (_req, _res, next) => next(),
+      requireWolverinesCoordinator: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
       requestTeamId: async () => "default",

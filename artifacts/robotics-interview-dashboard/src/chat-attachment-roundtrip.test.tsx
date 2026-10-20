@@ -368,24 +368,24 @@ describe("chat attachment round trip", () => {
   });
 
   it("uploads and schedules a dropped attachment through the existing scheduled-message flow", async () => {
-    let scheduledBody: { message: string; scheduledAt: string } | null = null;
-    let uploadedBlob: Blob | null = null;
+    const scheduled: { body: { message: string; scheduledAt: string } | null } = { body: null };
+    const uploaded: { blob: Blob | null } = { blob: null };
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const rawUrl = input instanceof Request ? input.url : String(input);
       const url = new URL(rawUrl, window.location.origin);
       if (url.pathname === "/api/storage/uploads" && init?.method === "POST") {
-        uploadedBlob = init.body instanceof Blob ? init.body : null;
+        uploaded.blob = init.body instanceof Blob ? init.body : null;
         return jsonResponse({ objectPath: "/objects/scheduled-attachment-1" });
       }
       if (url.pathname === "/api/queue/chat/scheduled" && init?.method === "POST") {
-        scheduledBody = JSON.parse(String(init.body)) as { message: string; scheduledAt: string };
+        scheduled.body = JSON.parse(String(init.body)) as { message: string; scheduledAt: string };
         return jsonResponse({
           id: "scheduled-dropped-attachment",
           author: "Interviewer",
           createdBy: "browser-test",
-          message: scheduledBody.message,
+          message: scheduled.body?.message ?? "",
           scope: "shared",
-          scheduledAt: scheduledBody.scheduledAt,
+          scheduledAt: scheduled.body?.scheduledAt ?? "",
           status: "pending",
           attempts: 0,
           createdAt: "2026-09-30T12:00:00.000Z",
@@ -423,11 +423,11 @@ describe("chat attachment round trip", () => {
     fireEvent.change(screen.getByTestId("input-schedule-time"), { target: { value: time } });
     fireEvent.click(screen.getByTestId("button-confirm-schedule"));
 
-    await waitFor(() => expect(scheduledBody).not.toBeNull());
-    expect(uploadedBlob).toBeInstanceOf(Blob);
-    expect(await uploadedBlob?.text()).toContain("scheduled robotics brief");
-    expect(scheduledBody?.message).toContain("[brief.pdf](/api/storage/objects/scheduled-attachment-1)");
-    expect(Number.isNaN(Date.parse(scheduledBody?.scheduledAt ?? ""))).toBe(false);
+    await waitFor(() => expect(scheduled.body).not.toBeNull());
+    expect(uploaded.blob).toBeInstanceOf(Blob);
+    expect(await uploaded.blob?.text()).toContain("scheduled robotics brief");
+    expect(scheduled.body?.message).toContain("[brief.pdf](/api/storage/objects/scheduled-attachment-1)");
+    expect(Number.isNaN(Date.parse(scheduled.body?.scheduledAt ?? ""))).toBe(false);
     expect(await screen.findByTestId("schedule-notice")).toHaveTextContent("Scheduled for");
   });
 

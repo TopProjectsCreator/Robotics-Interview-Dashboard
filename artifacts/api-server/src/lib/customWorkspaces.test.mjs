@@ -546,10 +546,28 @@ async function createHarness(t) {
 
   t.after(() => mock.restoreAll());
 
-  const [{ default: express }, { default: router }] = await Promise.all([
+  const [{ default: express }, { default: router, setWorkspaceVisualTools }] = await Promise.all([
     import("express"),
     import(`../routes/customWorkspaces.ts?test=${++importId}`),
   ]);
+  // Deterministic browser check: the real capture needs a headless Chromium
+  // binary that only exists on some machines. The stub reports the same two
+  // diagnostics the sandboxed preview reports (a thrown script and a missing
+  // local asset) for the seeded broken draft, and nothing once repaired.
+  setWorkspaceVisualTools({
+    capture: async (html) => {
+      const broken = html.includes("runtime boom") || html.includes("missing.png");
+      return {
+        screenshot: Buffer.from("stub-screenshot").toString("base64"),
+        runtimeIssues: broken
+          ? [
+              { kind: "javascript", message: "JavaScript exception: runtime boom" },
+              { kind: "asset", message: "Asset load failure: missing.png" },
+            ]
+          : [],
+      };
+    },
+  });
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {

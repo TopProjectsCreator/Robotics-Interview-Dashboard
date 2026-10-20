@@ -23,7 +23,9 @@ type AuthenticationOptions = Parameters<typeof startAuthentication>[0]["optionsJ
 export async function registerPasskeyFlow(label?: string): Promise<string> {
   const options = unwrapPasskeyOptions(await getPasskeyRegisterOptions(), "registration");
   const attestation = await startRegistration({
-    optionsJSON: options.publicKey as unknown as CreationOptions,
+    // unwrapPasskeyOptions already returns the inner publicKey object;
+    // reading .publicKey again here handed the authenticator `undefined`.
+    optionsJSON: options as unknown as CreationOptions,
   });
   const credential = await registerPasskey({
     response: attestation as unknown as PasskeyRegistrationInput["response"],
@@ -45,7 +47,7 @@ export async function loginWithPasskeyFlow(
     "sign-in",
   );
   const assertion = await startAuthentication({
-    optionsJSON: options.publicKey as unknown as AuthenticationOptions,
+    optionsJSON: options as unknown as AuthenticationOptions,
   });
   return loginWithPasskey({ eventPassword, interviewerId, response: assertion as unknown as PasskeyLoginInput["response"] });
 }

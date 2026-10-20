@@ -41,11 +41,14 @@ const decoder = new TextDecoder("utf-8", { fatal: false });
 
 function matchesSignature(bytes: Uint8Array, offset: number, signature: number): boolean {
   if (offset < 0 || offset + 4 > bytes.length) return false;
+  // `&` binds tighter than `===`, so the masks MUST be wrapped: without
+  // them this compared the byte to `signature & 0xff` instead of masking
+  // both sides, which broke every signature match.
   return (
-    bytes[offset] === signature & 0xff &&
-    bytes[offset + 1] === (signature >>> 8) & 0xff &&
-    bytes[offset + 2] === (signature >>> 16) & 0xff &&
-    bytes[offset + 3] === (signature >>> 24) & 0xff
+    (bytes[offset] & 0xff) === (signature & 0xff) &&
+    (bytes[offset + 1] & 0xff) === ((signature >>> 8) & 0xff) &&
+    (bytes[offset + 2] & 0xff) === ((signature >>> 16) & 0xff) &&
+    (bytes[offset + 3] & 0xff) === ((signature >>> 24) & 0xff)
   );
 }
 

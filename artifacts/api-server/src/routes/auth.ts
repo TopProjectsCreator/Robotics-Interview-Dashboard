@@ -132,6 +132,42 @@ const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
 const eventPasscodeFailures = new Map<string, { count: number; resetAt: number }>();
 
+// IP-based limits alone are NOT enough here: Render passes a client's
+// X-Forwarded-For straight through, so req.ip is whatever the caller claims.
+// An attacker can rotate that header for a fresh attempt budget every time.
+// These counters are keyed on the SECRET being guessed instead, so they
+// hold even when the caller spoofs its address.
+const credentialFailures = new Map<string, { count: number; resetAt: number }>();
+const CREDENTIAL_WINDOW_MS = 15 * 60 * 1000;
+const CREDENTIAL_MAX_FAILURES = 10;
+
+function credentialKey(kind: string, value: string): string {
+  return `${kind}:${value.trim().toLowerCase()}`;
+}
+
+function credentialAllowed(kind: string, value: string): boolean {
+  const entry = credentialFailures.get(credentialKey(kind, value));
+  if (!entry || entry.resetAt <= Date.now()) {
+    credentialFailures.delete(credentialKey(kind, value));
+    return true;
+  }
+  return entry.count < CREDENTIAL_MAX_FAILURES;
+}
+
+function recordCredentialFailure(kind: string, value: string): void {
+  const key = credentialKey(kind, value);
+  const entry = credentialFailures.get(key);
+  if (!entry || entry.resetAt <= Date.now()) {
+    credentialFailures.set(key, { count: 1, resetAt: Date.now() + CREDENTIAL_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+}
+
+function clearCredentialFailures(kind: string, value: string): void {
+  credentialFailures.delete(credentialKey(kind, value));
+}
+
 router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   const [team] = await db.select({

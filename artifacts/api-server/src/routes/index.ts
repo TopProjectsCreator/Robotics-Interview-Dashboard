@@ -12,7 +12,7 @@ import cadRouter from "./cad";
 import codeRouter from "./code";
 import customWorkspacesRouter from "./customWorkspaces";
 import featureRequestsRouter from "./featureRequests";
-import sitemapRouter, { setApiRouter } from "./sitemap";
+import sitemapRouter from "./sitemap";
 
 const router: IRouter = Router();
 
@@ -31,7 +31,5 @@ router.use(cadRouter);
 router.use(codeRouter);
 router.use(customWorkspacesRouter);
 router.use(featureRequestsRouter);
-
-setApiRouter(router);
 
 export default router;

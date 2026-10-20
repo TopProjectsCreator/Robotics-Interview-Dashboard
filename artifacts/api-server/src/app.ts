@@ -49,6 +49,40 @@ app.use(cors({
   origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,
 }));
+// Security headers. The app is embeddable in a coordinator's iframe, so
+// framing is allowed ONLY for the same origin and the explicitly allowed
+// origins (never for arbitrary sites). Everything else is locked down:
+// no sniffing, no referrer leaking paths, HSTS so browsers never try plain
+// HTTP again, and a content policy that only loads our own scripts.
+const frameAncestors = ["'self'", ...allowedOrigins].join(" ");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      // Scripts: our bundle plus WASM modules (Yjs, kokoro TTS, three).
+      "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
+      "style-src 'self' 'unsafe-inline'",
+      // Images/media come from Supabase storage and any https host.
+      "img-src 'self' data: blob: https:",
+      "media-src 'self' blob: https:",
+      "font-src 'self' data:",
+      // API calls and realtime websockets.
+      "connect-src 'self' https: wss:",
+      "worker-src 'self' blob:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      `frame-ancestors ${frameAncestors}`,
+    ].join("; "),
+  );
+  next();
+});
 app.use(cookieParser());
 app.use(attachAdminSession);
 // Shrink JSON over the wire (Render meters every byte out): ~75% off lists
