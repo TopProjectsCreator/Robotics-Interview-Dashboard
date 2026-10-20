@@ -575,6 +575,11 @@ async function createHarness(t) {
                   }],
                 };
               }
+              if (systemPrompt.includes("separate read-only subagent")) {
+                return {
+                  choices: [{ message: { content: "Independent review: the draft should improve keyboard focus visibility." } }],
+                };
+              }
                 if (systemPrompt.includes("independent verification agent")) {
                   const userText = request.messages[1]?.content ?? "";
                   const findingsText = userText.split("Required findings:\n")[1]?.split("\nCurrent source:")[0] ?? "[]";
@@ -1212,6 +1217,13 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.match(insert.statement, /'draft'/);
   const createdWorkspace = harness.workspaces.find((workspace) => workspace.title === "Assistant-created app");
   assert.ok(createdWorkspace);
+  const delegated = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "accessibility",
+    objective: "Review keyboard accessibility.",
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  assert.match(delegated.detail, /spawned read-only accessibility subagent/);
+  assert.match(JSON.parse(delegated.content).report, /keyboard focus/);
   const initialVersion = harness.versions.find((version) => version.workspaceId === createdWorkspace.id);
   assert.deepEqual(initialVersion.sourceFiles, [
     { path: "index.html", content: "<main>Tracker</main>" },
