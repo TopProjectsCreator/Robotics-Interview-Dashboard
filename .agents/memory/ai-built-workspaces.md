@@ -22,3 +22,9 @@ Before a custom workspace is reported finished or published, an independent crit
 **Why:** The user explicitly requires a ranked ten-flaw critique and implementation loop before workspace builds are declared finished.
 
 **How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review. Inject the current dashboard theme tokens into the preview and require the assistant and visual QA to use them. Enforce rounds 1–5 sequentially; make findings below 6 eligible in rounds 1–4, alongside findings above 6. Require a separate saved-source verifier to clear each round and invalidate reviews after later source edits.
+
+Custom workspace builds reuse the coordinator's existing /assistant MCP connections and relevant enabled team skills; do not build a second connection or skill store. The primary agent may automatically delegate focused read-only analysis to subagents, but only the primary agent can edit files or use MCP tools.
+
+**Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help.
+
+**How to apply:** Keep MCP calls scoped to the signed-in coordinator and team, preserve confirmation before connecting a new MCP, and pass subagents only the current draft source and a bounded analysis objective.
