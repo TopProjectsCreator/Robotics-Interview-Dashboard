@@ -70,6 +70,9 @@ export const chunkedUploadsTable = pgTable("chunked_uploads", {
   sizeBytes: integer("size_bytes").notNull().default(0),
   totalParts: integer("total_parts").notNull(),
   partSizeBytes: integer("part_size_bytes").notNull(),
+  // Which storage instance the parts were written to. Reads (download,
+  // preview conversion) must use the same instance or they find nothing.
+  storageInstance: text("storage_instance"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

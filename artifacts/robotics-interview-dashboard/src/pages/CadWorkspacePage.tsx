@@ -360,7 +360,7 @@ export function CadWorkspacePage() {
                 );
               }
             }}
-            className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <FolderPlus size={13} aria-hidden="true" />
           </button>
@@ -377,7 +377,7 @@ export function CadWorkspacePage() {
                 );
               }
             }}
-            className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <MoreHorizontal size={13} aria-hidden="true" />
           </button>
@@ -396,7 +396,7 @@ export function CadWorkspacePage() {
               }
               void runAction(() => deleteCadFolder(folder.id), "Folder deleted.");
             }}
-            className="rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <Trash2 size={13} aria-hidden="true" />
           </button>
@@ -666,7 +666,7 @@ export function CadWorkspacePage() {
                           );
                         }
                       }}
-                      className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <FolderPlus size={13} aria-hidden="true" />
                     </button>
@@ -683,7 +683,7 @@ export function CadWorkspacePage() {
                           );
                         }
                       }}
-                      className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <MoreHorizontal size={13} aria-hidden="true" />
                     </button>
@@ -704,7 +704,7 @@ export function CadWorkspacePage() {
                         }
                         void runAction(() => deleteCadBot({ botId: bot.id }), "Bot deleted.");
                       }}
-                      className="rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <Trash2 size={13} aria-hidden="true" />
                     </button>

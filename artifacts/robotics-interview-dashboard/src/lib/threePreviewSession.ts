@@ -42,7 +42,7 @@ export async function attachPreviewInteraction(params: {
   const controls = new OrbitControls(camera, renderer.domElement);
   // A 3D canvas must own its touch gestures, or the browser spends two-finger
   // gestures on scrolling the page instead of driving the camera.
-  renderer.domElement.style.touchAction = "none";
+  renderer.domElement.style.touchAction = "pan-y";
 
   // OrbitControls registers its own wheel listener in its constructor, so the
   // pan handler attaches first and wins the registration order.

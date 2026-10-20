@@ -42,10 +42,12 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
-html { -webkit-text-size-adjust: 100%; }
-body { overflow-x: hidden; }
+/* `clip` (not `hidden`) so the root never becomes a scroll container: wide
+   content is trimmed at the page edge instead of adding a sideways scroll,
+   while vertical scrolling and `position: sticky` keep working. */
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body { overflow-x: clip; }
 body { font-family: var(--app-font-sans); background: hsl(var(--background)); color: hsl(var(--foreground)); }
-button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 @media (pointer: coarse) {
   button, [role="button"], input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
@@ -157,7 +159,7 @@ button { cursor: pointer; }
 .assistant-tools-gear:focus-visible { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / .16); }
 .assistant-tools-gear-dot { position: absolute; top: 7px; right: 7px; height: 7px; width: 7px; border-radius: 9999px; background: hsl(var(--primary)); }
 .assistant-thinking-menu { z-index: 110; border: 1px solid hsl(var(--border)); border-radius: 12px; background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); padding: 6px; box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); }
-.assistant-tools-popover { z-index: 110; width: 340px; max-width: calc(100vw - 24px); max-height: min(480px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; padding: 0; border: 1px solid hsl(var(--border)); background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); opacity: 1; }
+.assistant-tools-popover { z-index: 110; width: 340px; max-width: calc(100vw - 24px); max-height: min(480px, calc(100dvh - 48px)); overflow: hidden; display: flex; flex-direction: column; padding: 0; border: 1px solid hsl(var(--border)); background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); opacity: 1; }
 .assistant-tools-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 14px 10px; border-bottom: 1px solid hsl(var(--border)); }
 .assistant-tools-title { font-size: 13px; font-weight: 700; }
 .assistant-tools-subtitle { margin-top: 2px; font-size: 11px; color: hsl(var(--muted-foreground)); }
@@ -231,47 +233,47 @@ button { cursor: pointer; }
 .assistant-skill-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: hsl(var(--muted-foreground) / .45); }
 .assistant-skill-status-dot.is-on { background: hsl(151 48% 42%); box-shadow: 0 0 0 3px hsl(151 48% 42% / .12); }
 .assistant-skill-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
-.assistant-skill-enable { display: inline-flex; width: 26px; height: 16px; align-items: center; border: 1px solid hsl(var(--border)); border-radius: 99px; background: hsl(var(--muted)); padding: 2px; }
-.assistant-skill-enable span { width: 10px; height: 10px; border-radius: 50%; background: hsl(var(--muted-foreground)); transition: transform .16s ease, background-color .16s ease; }
+.assistant-skill-enable { display: inline-flex; width: 44px; height: 26px; align-items: center; border: 1px solid hsl(var(--border)); border-radius: 99px; background: hsl(var(--muted)); padding: 3px; }
+.assistant-skill-enable span { width: 18px; height: 18px; border-radius: 50%; background: hsl(var(--muted-foreground)); transition: transform .16s ease, background-color .16s ease; }
 .assistant-skill-enable.is-on { justify-content: flex-end; border-color: hsl(151 42% 48% / .5); background: hsl(151 42% 48% / .15); }
 .assistant-skill-enable.is-on span { background: hsl(151 48% 42%); }
-.assistant-skill-icon-button { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-icon-button { display: inline-grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
 .assistant-skill-icon-button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .assistant-skill-delete-button:hover { background: hsl(var(--destructive) / .1); color: hsl(var(--destructive)); }
-.assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; }
+.assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; }
 .assistant-skill-card.is-disabled .assistant-skill-description { opacity: .68; }
 .assistant-skill-detail { margin: 0 8px 8px; border-top: 1px solid hsl(var(--border)); padding-top: 7px; }
 .assistant-skill-repository-link { display: block; margin: 0 0 8px; overflow-wrap: anywhere; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
-.assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 9px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
-.assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 10px; line-height: 1.45; white-space: pre-wrap; }
+.assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 11px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
 .assistant-skill-action-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.assistant-skill-action-chips span { border: 1px solid hsl(var(--primary) / .18); border-radius: 5px; background: hsl(var(--primary) / .07); padding: 2px 5px; color: hsl(var(--primary)); font-size: 9px; line-height: 1.3; }
+.assistant-skill-action-chips span { border: 1px solid hsl(var(--primary) / .18); border-radius: 5px; background: hsl(var(--primary) / .07); padding: 2px 5px; color: hsl(var(--primary)); font-size: 11px; line-height: 1.3; }
 .assistant-skill-action-chips .assistant-skill-no-actions { border-color: hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); }
-.assistant-skill-updated { margin: 7px 0 0; color: hsl(var(--muted-foreground)); font-size: 9px; }
-.assistant-skill-delete-confirm { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px; border-radius: 6px; background: hsl(var(--destructive) / .08); padding: 5px 6px; color: hsl(var(--destructive)); font-size: 9px; }
+.assistant-skill-updated { margin: 7px 0 0; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.assistant-skill-delete-confirm { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px; border-radius: 6px; background: hsl(var(--destructive) / .08); padding: 5px 6px; color: hsl(var(--destructive)); font-size: 12px; }
 .assistant-skill-delete-confirm span { flex: 1; }
-.assistant-skill-delete-confirm button { border: 0; border-radius: 4px; background: transparent; padding: 3px 5px; color: inherit; font-size: 9px; font-weight: 700; }
+.assistant-skill-delete-confirm button { border: 0; border-radius: 4px; background: transparent; padding: 8px 9px; color: inherit; font-size: 12px; font-weight: 700; }
 .assistant-skill-delete-confirm button:last-child { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
 .assistant-skill-editor { margin-bottom: 7px; border: 1px solid hsl(var(--primary) / .28); border-radius: 9px; background: hsl(var(--card)); padding: 9px; box-shadow: 0 5px 16px rgba(24,58,75,.06); }
-.assistant-skill-editor-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: hsl(var(--foreground)); font-size: 11px; }
-.assistant-skill-editor-title button { display: inline-grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
-.assistant-skill-field { display: grid; gap: 3px; margin-bottom: 7px; color: hsl(var(--muted-foreground)); font-size: 9px; font-weight: 600; }
-.assistant-skill-field input, .assistant-skill-field textarea { width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: hsl(var(--background)); padding: 6px 7px; color: hsl(var(--foreground)); font-size: 10px; font-weight: 400; }
+.assistant-skill-editor-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: hsl(var(--foreground)); font-size: 13px; }
+.assistant-skill-editor-title button { display: inline-grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-field { display: grid; gap: 3px; margin-bottom: 7px; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 600; }
+.assistant-skill-field input, .assistant-skill-field textarea { width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: hsl(var(--background)); padding: 8px 9px; color: hsl(var(--foreground)); font-size: 16px; font-weight: 400; }
 .assistant-skill-field textarea { min-height: 72px; resize: vertical; line-height: 1.4; }
 .assistant-skill-field input:focus-visible, .assistant-skill-field textarea:focus-visible { outline: 2px solid hsl(var(--ring) / .55); outline-offset: 1px; }
 .assistant-skill-action-picker { margin: 0 0 7px; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px; }
-.assistant-skill-action-picker legend { padding: 0 3px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 700; }
-.assistant-skill-action-picker legend span { margin-left: 5px; color: hsl(var(--muted-foreground)); font: 400 8px/1 var(--app-font-mono); }
+.assistant-skill-action-picker legend { padding: 0 3px; color: hsl(var(--foreground)); font-size: 12px; font-weight: 700; }
+.assistant-skill-action-picker legend span { margin-left: 5px; color: hsl(var(--muted-foreground)); font: 400 10px/1 var(--app-font-mono); }
 .assistant-skill-action-list { display: grid; max-height: 118px; overflow: auto; gap: 1px; }
 .assistant-skill-action-option { display: flex; align-items: flex-start; gap: 6px; border-radius: 5px; padding: 4px 3px; cursor: pointer; }
 .assistant-skill-action-option:hover { background: hsl(var(--accent)); }
-.assistant-skill-action-option input, .assistant-skill-enabled-check input { width: 13px; height: 13px; flex: 0 0 auto; margin: 1px 0 0; accent-color: hsl(var(--primary)); }
+.assistant-skill-action-option input, .assistant-skill-enabled-check input { width: 18px; height: 18px; flex: 0 0 auto; margin: 1px 0 0; accent-color: hsl(var(--primary)); }
 .assistant-skill-action-option span { display: grid; min-width: 0; gap: 1px; }
-.assistant-skill-action-option strong { color: hsl(var(--foreground)); font-size: 9px; line-height: 1.25; }
-.assistant-skill-action-option small { color: hsl(var(--muted-foreground)); font-size: 8px; line-height: 1.25; }
-.assistant-skill-enabled-check { display: flex; align-items: center; gap: 6px; margin: 1px 0 8px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 600; cursor: pointer; }
+.assistant-skill-action-option strong { color: hsl(var(--foreground)); font-size: 12px; line-height: 1.25; }
+.assistant-skill-action-option small { color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.25; }
+.assistant-skill-enabled-check { display: flex; align-items: center; gap: 6px; margin: 1px 0 8px; color: hsl(var(--foreground)); font-size: 12px; font-weight: 600; cursor: pointer; }
 .assistant-skill-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.assistant-skill-editor-actions button { display: inline-flex; min-height: 27px; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; padding: 5px 8px; font-size: 9px; font-weight: 700; }
+.assistant-skill-editor-actions button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
 .assistant-skill-cancel { border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--muted-foreground)); }
 .assistant-skill-save { border: 1px solid hsl(var(--primary)); background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 .assistant-skill-editor-actions button:disabled { cursor: wait; opacity: .6; }
@@ -518,20 +520,20 @@ button { cursor: pointer; }
   }
   .chat-composer-actions {
     display: grid;
-    grid-template-columns: repeat(6, minmax(40px, 1fr));
+    grid-template-columns: repeat(6, minmax(44px, 1fr));
     gap: 0.2rem;
     width: 100%;
     padding: 0;
   }
   .chat-composer-actions .chat-composer-control {
     width: 100%;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
   .chat-composer-send {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 }
 @media (max-width: 400px) {
@@ -539,7 +541,90 @@ button { cursor: pointer; }
     padding: 0.75rem;
   }
   .chat-composer-actions {
-    grid-template-columns: repeat(4, minmax(40px, 1fr));
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+}
+
+/* --- Touch parity ------------------------------------------------------- */
+/* Every hover-revealed control stays reachable on touch devices: the action
+   is revealed permanently and the hit area grows to the 44px minimum. */
+@media (pointer: coarse) {
+  .touch-reveal {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Chat controls stay thumb-sized on touch devices at every width. */
+  .chat-message-actions button,
+  .chat-composer-control,
+  [data-testid="chat-pinned-bar"] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* CAD tree rows hide their actions until hover; on touch — and on narrow
+   windows, where there is no hover to discover them — they are always shown
+   and get a full-size hit area. */
+@media (pointer: coarse), (max-width: 639px) {
+  .cad-row-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* Chat message actions cannot be discovered by hovering on a phone, so they
+   move out of the overlay and into the message flow with a 44px hit area. */
+@media (max-width: 767px) {
+  .chat-message-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-message-actions {
+    position: static;
+    order: 99;
+    transform: none;
+    margin-top: 0.5rem;
+    opacity: 1;
+    pointer-events: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .chat-message-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* The document toolbar is a single non-wrapping row of ~570px controls. Let
+   it scroll sideways instead of clipping the right-hand buttons away. */
+@media (max-width: 700px) {
+  .document-editor .document-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .document-editor .document-toolbar > div {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-toolbar-button {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-toolbar label,
+  .document-editor .document-toolbar-separator {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-style-select {
+    flex: 0 0 auto;
   }
 }
 .dark .ai-search-panel {

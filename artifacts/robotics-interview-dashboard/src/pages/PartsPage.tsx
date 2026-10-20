@@ -1258,20 +1258,20 @@ export default function PartsPage() {
                                   type="button"
                                   size="icon"
                                   variant="outline"
-                                  className="size-8"
+                                  className="size-10"
                                   aria-label={`Decrease quantity of ${product.title}`}
                                   onClick={() => setDraftQuantity(product.url, quantity - 1)}
                                 >
                                   <Minus size={14} aria-hidden="true" />
                                 </Button>
-                                <span className="w-7 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
+                                <span className="w-8 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
                                   {quantity}
                                 </span>
                                 <Button
                                   type="button"
                                   size="icon"
                                   variant="outline"
-                                  className="size-8"
+                                  className="size-10"
                                   aria-label={`Increase quantity of ${product.title}`}
                                   onClick={() => setDraftQuantity(product.url, quantity + 1)}
                                 >

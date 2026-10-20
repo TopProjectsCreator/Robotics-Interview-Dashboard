@@ -29,6 +29,20 @@ function parasolidFormat(name: string): "x-t" | "x-b" | null {
   return null;
 }
 
+/**
+ * The stored object's path behind an attachment URL, so the server can build
+ * a preview straight from storage. Attachments are served from
+ * /api/storage/objects/<path>, and the path may carry an instance segment
+ * ("secondary/<uuid>") that the server needs to find the right bucket.
+ */
+function objectPathFromAttachmentSrc(src: string): string | null {
+  const marker = "/api/storage/objects/";
+  const at = src.indexOf(marker);
+  if (at < 0) return null;
+  const path = src.slice(at + marker.length).split("?")[0].split("#")[0];
+  return path ? `/objects/${path}` : null;
+}
+
 export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +67,65 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
     void (async () => {
       try {
         if (!format) throw new Error("Only .x_t and .x_b files can be previewed.");
+
+        // Big models are converted SERVER-SIDE from the stored object. The
+        // old path downloaded the whole file into this tab and uploaded it
+        // back, so a 1 GB model meant 1 GB down plus 1 GB up and a hard size
+        // cap - it stalled or failed. Now the browser only ever receives the
+        // small progressive preview.
+        const objectPath = objectPathFromAttachmentSrc(src);
+        if (objectPath) {
+          const token = getStoredAuthToken();
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (token) headers.Authorization = `Bearer ${token}`;
+          setStatus("Preparing the 3D preview on the server…");
+          // The conversion runs as a job on the server: a very large model can
+          // take a while, so we poll for it instead of holding one request
+          // open. While it works the message stays informative - never an
+          // error the coordinator has to act on.
+          const start = await fetch(`${import.meta.env.BASE_URL}api/storage/cad-preview-from-object`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ objectPath, format: format === "x-t" ? "x_t" : "x_b" }),
+            credentials: "include",
+            signal: controller.signal,
+          });
+          if (!start.ok) throw new Error(`Preview conversion failed (${start.status}).`);
+          const started = (await start.json()) as { jobId?: string };
+          if (!started.jobId) throw new Error("Preview conversion could not start.");
+          for (;;) {
+            if (controller.signal.aborted) return;
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            const poll = await fetch(
+              `${import.meta.env.BASE_URL}api/storage/cad-preview-from-object/${encodeURIComponent(started.jobId)}`,
+              { credentials: "include", signal: controller.signal },
+            );
+            if (!poll.ok) throw new Error(`Preview conversion failed (${poll.status}).`);
+            const state = (await poll.json()) as {
+              status?: string;
+              previewId?: string;
+              elapsedMs?: number;
+              error?: string;
+            };
+            if (state.status === "ready") {
+              if (!active) return;
+              setProgressivePreview(parseProgressiveCadPreviewManifest(state));
+              setStatus("Coarse overview ready; exact geometry loads as you zoom.");
+              return;
+            }
+            if (state.status === "failed") {
+              throw new Error(state.error ?? "Couldn't build a preview for this CAD file.");
+            }
+            if (active) {
+              const seconds = Math.round((state.elapsedMs ?? 0) / 1000);
+              setStatus(
+                seconds > 20
+                  ? `Preparing the 3D preview… ${seconds}s (large models take a few minutes)`
+                  : "Preparing the 3D preview…",
+              );
+            }
+          }
+        }
 
         const sourceResponse = await fetch(src, { signal: controller.signal });
         if (!sourceResponse.ok) throw new Error("Couldn't load the stored CAD file.");

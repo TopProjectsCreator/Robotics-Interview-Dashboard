@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { open } from 'node:fs/promises';
 import { pipeline } from "node:stream/promises";
 import { eq } from "drizzle-orm";
 import { db, chunkedUploadsTable } from "@workspace/db";
@@ -67,6 +68,42 @@ export async function deleteChunkParts(
  * fetched with fetch() and piped, so peak memory stays at one stream rather
  * than the whole file.
  */
+/**
+ * Materializes a chunked upload as ONE local file. The preview converter needs
+ * a real file on disk, and streaming a 1 GB model through the browser (down
+ * to the tab, then back up to the API) was what made big CAD previews stall
+ * or fail. This assembles it server-side, straight from storage.
+ */
+export async function materializeChunkedUpload(
+  uploadId: string,
+  targetPath: string,
+  signPartUrl: (path: string) => Promise<string>,
+): Promise<{ contentType: string; fileName: string; sizeBytes: number }> {
+  const manifest = await getChunkUpload(uploadId);
+  if (!manifest) throw new Error('Chunked upload not found');
+  const handle = await open(targetPath, 'w');
+  try {
+    for (let index = 0; index < manifest.totalParts; index += 1) {
+      const signedUrl = await signPartUrl(chunkStoragePath(uploadId, index));
+      const upstream = await fetch(signedUrl);
+      if (!upstream.ok || !upstream.body) {
+        throw new Error(`Part ${index} is missing from storage`);
+      }
+      // Write each part straight into the open file handle.
+      for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) {
+        await handle.write(chunk);
+      }
+    }
+  } finally {
+    await handle.close();
+  }
+  return {
+    contentType: manifest.contentType,
+    fileName: manifest.fileName,
+    sizeBytes: manifest.sizeBytes,
+  };
+}
+
 export async function streamChunkedUpload(
   uploadId: string,
   res: { write: (chunk: Uint8Array) => boolean; end: () => void; destroy?: (error?: Error) => void },

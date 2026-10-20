@@ -531,6 +531,7 @@ async function ensureSchema(): Promise<void> {
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
     `alter table "applicants" add column if not exists "photo_thumb_url" text`,
+    `alter table "chunked_uploads" add column if not exists "storage_instance" text`,
     // Core tables below predate the boot-DDL array on the primary (created
     // via drizzle-kit push), but a FRESH secondary boots from this array
     // alone — so every table needs a CREATE here. All idempotent.

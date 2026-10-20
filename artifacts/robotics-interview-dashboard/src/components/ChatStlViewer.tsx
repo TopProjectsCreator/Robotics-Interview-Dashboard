@@ -44,7 +44,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
         ]);
         if (!active) return;
 
-        const width = Math.max(host.clientWidth, 320);
+        const width = Math.max(host.clientWidth, 240);
         const height = 320;
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(40, width / height, 0.001, 1_000_000);
@@ -58,7 +58,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
         viewerRenderer.domElement.tabIndex = 0;
         // Without this the browser claims two-finger gestures for page scroll,
         // so OrbitControls never receives them.
-        viewerRenderer.domElement.style.touchAction = "none";
+        viewerRenderer.domElement.style.touchAction = "pan-y";
         host.appendChild(viewerRenderer.domElement);
 
         scene.add(new THREE.AmbientLight(0xffffff, 1.7));
@@ -82,7 +82,7 @@ export function ChatStlViewer({ name, src }: ChatStlViewerProps) {
 
         const resize = () => {
           if (!active) return;
-          const nextWidth = Math.max(host.clientWidth, 320);
+          const nextWidth = Math.max(host.clientWidth, 240);
           camera.aspect = nextWidth / height;
           camera.updateProjectionMatrix();
           viewerRenderer.setSize(nextWidth, height, false);

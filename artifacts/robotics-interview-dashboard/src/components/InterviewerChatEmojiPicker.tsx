@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import EmojiPicker, { Categories, EmojiStyle, Theme, type EmojiClickData } from "emoji-picker-react";
 import { Check, SmilePlus, Upload, X } from "lucide-react";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import {
   getListChatCustomEmojisQueryKey,
   useUploadChatCustomEmoji,
@@ -101,9 +102,16 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
     }
   };
 
+  // The picker opens upward from the composer. When the software keyboard is
+  // open the visible area is much shorter, so cap the grid to what is left.
+  const { height: viewportHeight } = useVisualViewport();
+  const pickerHeight = viewportHeight
+    ? Math.max(200, Math.min(340, Math.round(viewportHeight * 0.5)))
+    : 340;
+
   return (
     <div
-      className="absolute bottom-[calc(100%+10px)] right-0 z-40 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]"
+      className="absolute bottom-[calc(100%+10px)] right-0 z-40 max-h-[min(70dvh,420px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]"
       role="dialog"
       aria-label="Emoji picker"
       data-testid="emoji-picker"
@@ -149,7 +157,7 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
           emojiStyle={EmojiStyle.NATIVE}
           searchPlaceHolder="Search emojis"
           width="100%"
-          height={340}
+          height={pickerHeight}
           lazyLoadEmojis
           autoFocusSearch
           previewConfig={{ showPreview: false }}

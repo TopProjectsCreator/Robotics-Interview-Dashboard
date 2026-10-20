@@ -66,6 +66,7 @@ async function loadStorage(t) {
     namedExports: {
       MAX_STORAGE_UPLOAD_BYTES: 50 * 1024 * 1024,
       hasSecondaryStorage: () => false,
+      storageInstanceRestricted: () => false,
       getCadStorageStatus: () => ({
         usingBackupStorage: false,
         lastFailoverAt: null,

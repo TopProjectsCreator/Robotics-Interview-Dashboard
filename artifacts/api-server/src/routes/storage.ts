@@ -16,6 +16,8 @@ import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
 import { currentInstance, db, chunkedUploadsTable } from '@workspace/db';
+import { materializeChunkedUpload } from '../lib/chunkedUploads';
+import { storageInstanceRestricted } from '../lib/objectStorage';
 import { eq } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -384,6 +386,14 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
   }
   try {
     let storageInstance = parsed.data.storageInstance ?? currentInstance();
+    // If that instance is already known to be refusing storage work (over
+    // quota), write to the other instance from the start. Minting can still
+    // succeed on a restricted project while reads fail, so waiting for a
+    // mint error is not enough - the parts would land where nothing can
+    // read them back.
+    if (storageInstanceRestricted(storageInstance) && hasSecondaryStorage()) {
+      storageInstance = storageInstance === 'primary' ? 'secondary' : 'primary';
+    }
     let signedUrl: string;
     try {
       signedUrl = await objectStorageService.mintChunkUpload(
@@ -463,6 +473,9 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     sizeBytes: Number(sizeBytes) || 0,
     totalParts: Number(totalParts),
     partSizeBytes: Number(partSizeBytes) || 0,
+    // Remember where the parts actually live so later reads (download,
+    // preview conversion) go to the same instance.
+    storageInstance: storageInstance ?? currentInstance(),
   };
   try {
     // Manifests carry the uploader's team; a foreign manifest under the same
@@ -668,6 +681,212 @@ router.post(
       if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Unable to store this CAD file' });
     }
+  },
+);
+
+/**
+ * POST /storage/cad-preview-from-object
+ *
+ * Starts a server-side preview build for a CAD file that is ALREADY stored.
+ * The old flow downloaded the source into the browser tab and uploaded it
+ * back, so a 1 GB model meant 1 GB down plus 1 GB up before any conversion
+ * started - which is why big files stalled or failed outright.
+ *
+ * Conversion is CPU-bound and can take many minutes on a big model, so it
+ * runs as a JOB: this returns a job id immediately, the client polls
+ * GET /storage/cad-preview-from-object/:jobId, and the preview is served
+ * when it is ready. The browser only ever receives the small result.
+ */
+type CadPreviewJob = {
+  status: "preparing" | "ready" | "failed";
+  startedAt: number;
+  previewId?: string;
+  glbBytes?: number;
+  error?: string;
+  instance?: "primary" | "secondary";
+  manifest?: {
+    overviewBytes: number;
+    detailBytes: number;
+    triangles: number;
+    tiles: unknown[];
+  };
+};
+const cadPreviewJobs = new Map<string, CadPreviewJob>();
+const CAD_PREVIEW_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+
+function pruneCadPreviewJobs(): void {
+  const now = Date.now();
+  for (const [id, job] of cadPreviewJobs) {
+    if (now - job.startedAt > CAD_PREVIEW_JOB_TTL_MS) cadPreviewJobs.delete(id);
+  }
+}
+const cadPreviewJobSweep = setInterval(pruneCadPreviewJobs, 5 * 60 * 1000);
+cadPreviewJobSweep.unref();
+
+router.post(
+  '/storage/cad-preview-from-object',
+  requireWorkspaceAccessOrCoordinator('cad'),
+  async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { objectPath?: unknown; format?: unknown };
+    const objectPath = typeof body.objectPath === 'string' ? body.objectPath.trim() : '';
+    const formatHeader = typeof body.format === 'string' ? body.format.toLowerCase() : '';
+    const sourceFormat = formatHeader === 'x_t' || formatHeader === 'x-b' ? formatHeader : null;
+    if (!objectPath) {
+      res.status(400).json({ error: 'An object path is required' });
+      return;
+    }
+    if (!sourceFormat) {
+      res.status(400).json({ error: 'Parasolid format must be x_t or x_b' });
+      return;
+    }
+    pruneCadPreviewJobs();
+    const jobId = randomUUID();
+    const job: CadPreviewJob = { status: 'preparing', startedAt: Date.now() };
+    cadPreviewJobs.set(jobId, job);
+
+    // Run the conversion in the background: a big model can take many
+    // minutes, and the browser should never be stuck on one request.
+    void (async () => {
+      let tempRoot: string | null = null;
+      try {
+        tempRoot = await mkdtemp(join(tmpdir(), 'robotics-cad-preview-'));
+        const inputPath = join(tempRoot, sourceFormat === 'x_t' ? 'source.x_t' : 'source.x_b');
+        // Paths look like /objects/chunk/<uploadId> or
+        // /objects/chunk/secondary/<uploadId> (the instance segment sits
+        // between "chunk" and the upload id).
+        const chunkParts = objectPath.replace(/^\/objects\//, '').split('/');
+        let chunkId: string | null = null;
+        if (chunkParts[0] === 'chunk') {
+          chunkId = chunkParts[1] === 'secondary' ? (chunkParts[2] ?? null) : (chunkParts[1] ?? null);
+        }
+        if (chunkId) {
+          // Sign the parts on the instance that actually holds them.
+          const { getChunkUpload } = await import('../lib/chunkedUploads');
+          const manifest = await getChunkUpload(chunkId);
+          const partsInstance = manifest?.storageInstance === 'secondary' ? 'secondary' : 'primary';
+          await materializeChunkedUpload(
+            chunkId,
+            inputPath,
+            (path) => objectStorageService.signDownloadUrl(path, 900, partsInstance),
+          );
+        } else {
+          await objectStorageService.downloadObjectToFile(objectPath, inputPath);
+        }
+        const progressiveDir = join(tempRoot, 'progressive');
+        const output = await new Promise<string>((resolve, reject) => {
+          execFile(
+            PARASOLID_PREVIEW_CADPROGRESSIVE_PATH,
+            [
+              inputPath,
+              progressiveDir,
+              '--sag',
+              '0.01',
+              '--angle',
+              '8',
+              '--overview-sag',
+              '0.8',
+              '--overview-angle',
+              '20',
+            ],
+            {
+              timeout: PARASOLID_PROGRESSIVE_PREVIEW_TIMEOUT_MS,
+              maxBuffer: 4 * 1024 * 1024,
+              windowsHide: true,
+              env: {
+                ...process.env,
+                RAYON_NUM_THREADS: '2',
+                XT_NO_COONS: '1',
+              },
+            },
+            (error, stdout, stderr) => {
+              if (error) reject(error);
+              else resolve(`${stdout}\n${stderr}`);
+            },
+          );
+        });
+        requireCompleteCadconvertFaceSummary(output);
+        const rawManifest = JSON.parse(
+          await readFile(join(progressiveDir, 'manifest.json'), 'utf8'),
+        ) as unknown;
+        const manifest = parseProgressiveManifest(rawManifest);
+        const totalBytes = manifest.overviewBytes + manifest.detailBytes;
+        if (totalBytes > PARASOLID_PROGRESSIVE_MAX_OUTPUT_BYTES) {
+          throw new Error('The progressive converter returned an oversized preview');
+        }
+        const overviewPath = join(progressiveDir, 'overview.glb');
+        const overviewStat = await stat(overviewPath);
+        if (
+          overviewStat.size !== manifest.overviewBytes ||
+          !(await isValidGlbFile(overviewPath, overviewStat.size))
+        ) {
+          throw new Error('The progressive converter returned an invalid overview GLB');
+        }
+        for (const tile of manifest.tiles) {
+          const tilePath = join(progressiveDir, 'tiles', `${tile.id}.glb`);
+          const tileStat = await stat(tilePath);
+          if (tileStat.size !== tile.bytes || !(await isValidGlbFile(tilePath, tileStat.size))) {
+            throw new Error(`The progressive converter returned an invalid tile ${tile.id}`);
+          }
+        }
+        while (progressivePreviewFiles.size >= PARASOLID_PROGRESSIVE_MAX_CACHED_PREVIEWS) {
+          const oldestId = progressivePreviewFiles.keys().next().value;
+          if (!oldestId) break;
+          removeProgressivePreview(oldestId);
+        }
+        const previewId = randomUUID();
+        progressivePreviewFiles.set(previewId, {
+          root: tempRoot,
+          expiresAt: Date.now() + PARASOLID_PROGRESSIVE_TTL_MS,
+          tileIds: new Set(manifest.tiles.map((tile) => tile.id)),
+        });
+        tempRoot = null;
+        job.status = 'ready';
+        job.previewId = previewId;
+        job.glbBytes = manifest.overviewBytes;
+        job.instance = currentInstance();
+        job.manifest = {
+          overviewBytes: manifest.overviewBytes,
+          detailBytes: manifest.detailBytes,
+          triangles: manifest.triangles,
+          tiles: manifest.tiles,
+        };
+      } catch (error) {
+        req.log.error({ err: error }, 'Stored CAD preview failed');
+        if (tempRoot) {
+          await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+        }
+        job.status = 'failed';
+        job.error = 'Could not build a preview for this CAD file.';
+      }
+    })();
+
+    res.status(202).json({ jobId, status: 'preparing' });
+  },
+);
+
+/**
+ * GET /storage/cad-preview-from-object/:jobId
+ *
+ * Reports on a preview build. "ready" means the progressive preview is
+ * available and can be rendered by the client.
+ */
+router.get(
+  '/storage/cad-preview-from-object/:jobId',
+  requireWorkspaceAccessOrCoordinator('cad'),
+  async (req: Request, res: Response) => {
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : '';
+    const job = cadPreviewJobs.get(jobId);
+    if (!job) {
+      res.status(404).json({ error: 'Preview job not found. Start a new preview.' });
+      return;
+    }
+    res.json({
+      status: job.status,
+      ...(job.previewId ? { previewId: job.previewId } : {}),
+      ...(job.manifest ? job.manifest : {}),
+      ...(job.error ? { error: job.error } : {}),
+      elapsedMs: Date.now() - job.startedAt,
+    });
   },
 );
 

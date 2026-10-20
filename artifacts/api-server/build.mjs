@@ -152,6 +152,27 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
   if (!nativeBuildIsCurrent) {
     try {
+      // The build image has no Rust toolchain by default. Install a minimal
+      // one so the CAD converter (Parasolid/STEP -> progressive tiles) can be
+      // built: without it a 1 GB X_T file cannot be previewed at all.
+      if (!existsSync(join(homedir(), ".cargo/bin/cargo"))) {
+        try {
+          execFileSync(
+            "curl",
+            ["-sSf", "https://sh.rustup.rs", "-o", join(tmpdir(), "rustup-init.sh")],
+            { stdio: "inherit" },
+          );
+          execFileSync(
+            "sh",
+            [join(tmpdir(), "rustup-init.sh"), "-y", "--default-toolchain", "stable", "--profile", "minimal"],
+            { stdio: "inherit" },
+          );
+        } catch (installError) {
+          console.warn(
+            `Could not install a Rust toolchain (${installError?.message ?? "unknown"}). The CAD preview converter will be unavailable.`,
+          );
+        }
+      }
       execFileSync(
         "cargo",
         [
@@ -170,6 +191,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
           stdio: "inherit",
           env: {
             ...process.env,
+            PATH: `${join(homedir(), ".cargo", "bin")}:${process.env.PATH ?? ""}`,
             CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2",
           },
         },

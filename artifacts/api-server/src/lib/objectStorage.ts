@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { currentInstance, type DbInstance } from '@workspace/db';
+import { writeFile } from 'node:fs/promises';
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -144,6 +145,15 @@ const restrictedUntil = new Map<StorageInstance, number>();
 
 function markRestricted(instance: StorageInstance): void {
   restrictedUntil.set(instance, Date.now() + RESTRICTED_MEMORY_MS);
+}
+
+/**
+ * True when that instance is known to be refusing storage work (e.g. the
+ * project is over its egress quota). Callers use it to route writes and
+ * reads to the other instance instead of failing.
+ */
+export function storageInstanceRestricted(instance: StorageInstance): boolean {
+  return isRestricted(instance);
 }
 
 function isRestricted(instance: StorageInstance): boolean {
@@ -576,6 +586,25 @@ export class ObjectStorageService {
     await ensureBucket(instance);
     const { error } = await supabaseFor(instance).storage.from(storageBucket(instance)).remove(paths);
     if (error) throw new Error(`Failed to delete storage objects: ${error.message}`);
+  }
+
+  /**
+   * Streams a stored object to a local file. Used by the CAD preview path so
+   * a multi-gigabyte model is fetched server-side (storage -> disk) instead of
+   * being downloaded by the browser and uploaded back.
+   */
+  async downloadObjectToFile(objectPath: string, targetPath: string): Promise<{ contentType: string; sizeBytes: number }> {
+    const storagePath = toStoragePath(objectPath);
+    const instance = objectStorageInstance(objectPath) ?? currentInstance();
+    const { data, error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
+      .download(storagePath);
+    if (error || !data) {
+      throw new ObjectNotFoundError();
+    }
+    const bytes = Buffer.from(await data.arrayBuffer());
+    await writeFile(targetPath, bytes);
+    return { contentType: data.type || 'application/octet-stream', sizeBytes: bytes.byteLength };
   }
 
   async downloadObject(objectPath: string): Promise<{ data: Buffer; contentType: string }> {
