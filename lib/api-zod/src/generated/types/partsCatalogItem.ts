@@ -23,6 +23,16 @@ export interface PartsCatalogItem {
   /** @nullable */
   imageUrl: string | null;
   /**
+     * @maxLength 120
+     * @nullable
+     */
+  storageLocation: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  inventoryNotes: string | null;
+  /**
      * @minimum 0
      * @maximum 99999999.99
      * @nullable

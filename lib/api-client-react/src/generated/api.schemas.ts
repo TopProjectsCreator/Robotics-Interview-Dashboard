@@ -232,6 +232,16 @@ export interface PartsCatalogItem {
   /** @nullable */
   imageUrl: string | null;
   /**
+     * @maxLength 120
+     * @nullable
+     */
+  storageLocation: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  inventoryNotes: string | null;
+  /**
      * @minimum 0
      * @maximum 99999999.99
      * @nullable
@@ -270,6 +280,16 @@ export interface PartsDashboard {
 export interface PartsCatalogList {
   items: PartsCatalogItem[];
   total: number;
+}
+
+export interface PartsCatalogDetails {
+  item: PartsCatalogItem;
+  priceSnapshots: PartsPriceSnapshot[];
+  /**
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  locations: string[];
 }
 
 export interface PartsCatalogSearchResult {
@@ -524,6 +544,35 @@ export interface PartsCostUpdateInput {
      * @pattern ^[A-Z]{3}$
      */
   costCurrency: string | null;
+}
+
+export interface PartsCatalogDetailsUpdateInput {
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  imageUrl?: string | null;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  unitCost?: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  costCurrency?: string | null;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  storageLocation?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  inventoryNotes?: string | null;
 }
 
 export interface PartsRobotAllocationInput {

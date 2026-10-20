@@ -91,8 +91,6 @@ async function removeTestAccounts(): Promise<void> {
 }
 
 
-
-
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
 async function ensureSchema(): Promise<void> {
@@ -362,6 +360,18 @@ async function ensureSchema(): Promise<void> {
     // first pass provably finite.
     `create table if not exists "parts_catalog_crawl_skips" ("vendor_key" text not null, "product_url" text not null, "reason" text not null, "attempts" integer not null default 1, "updated_at" timestamptz not null default now(), primary key ("vendor_key", "product_url"))`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
+    `alter table "parts_inventory" add column if not exists "storage_location" text`,
+    `alter table "parts_inventory" add column if not exists "inventory_notes" text`,
+    `do $parts_inventory_details$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_inventory_storage_location_valid') then
+         alter table "parts_inventory" add constraint "parts_inventory_storage_location_valid"
+           check ("storage_location" is null or length("storage_location") <= 120);
+       end if;
+       if not exists (select 1 from pg_constraint where conname = 'parts_inventory_notes_valid') then
+         alter table "parts_inventory" add constraint "parts_inventory_notes_valid"
+           check ("inventory_notes" is null or length("inventory_notes") <= 2000);
+       end if;
+     end $parts_inventory_details$`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
     `alter table "parts_robots" add column if not exists "preview_file_name" text`,

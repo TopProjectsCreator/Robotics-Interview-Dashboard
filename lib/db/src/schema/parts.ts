@@ -71,12 +71,22 @@ export const partsInventoryTable = pgTable(
       .primaryKey()
       .references(() => partsCatalogItemsTable.id, { onDelete: "cascade" }),
     quantityOwned: integer("quantity_owned").default(0).notNull(),
+    storageLocation: text("storage_location"),
+    inventoryNotes: text("inventory_notes"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     nonnegativeQuantity: check(
       "parts_inventory_nonnegative_quantity",
       sql`${table.quantityOwned} >= 0`,
+    ),
+    validStorageLocation: check(
+      "parts_inventory_storage_location_valid",
+      sql`${table.storageLocation} is null or length(${table.storageLocation}) <= 120`,
+    ),
+    validInventoryNotes: check(
+      "parts_inventory_notes_valid",
+      sql`${table.inventoryNotes} is null or length(${table.inventoryNotes}) <= 2000`,
     ),
   }),
 );

@@ -2024,7 +2024,7 @@ async function runAssistantTools(
         tool_call_id: call.id,
       });
     } else if (ASSISTANT_PARTS_TOOL_NAMES.has(name ?? "")) {
-      const result = await runAssistantPartsTool(name ?? "", args);
+      const result = await runAssistantPartsTool(name ?? "", args, team);
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: result.content, tool_call_id: call.id });
       activities.push(result.activity);

@@ -9,6 +9,8 @@ import {
   CreatePartsRobotBody,
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
+  GetPartsCatalogDetailsParams,
+  GetPartsCatalogDetailsResponse,
   GetPartsRobotDetailsParams,
   GetPartsRobotDetailsResponse,
   ImportPartsCatalogBody,
@@ -25,6 +27,9 @@ import {
   UpdatePartsCatalogCostBody,
   UpdatePartsCatalogCostParams,
   UpdatePartsCatalogCostResponse,
+  UpdatePartsCatalogDetailsParams,
+  UpdatePartsCatalogDetailsBody,
+  UpdatePartsCatalogDetailsResponse,
   UpdatePartsRobotBody,
   UpdatePartsRobotParams,
   UpdatePartsRobotResponse,
@@ -445,6 +450,8 @@ function mapCatalogRow(row: Record<string, unknown>) {
     description: (row.description as string | null) ?? null,
     productUrl: (row.productUrl as string | null) ?? null,
     imageUrl: (row.imageUrl as string | null) ?? null,
+    storageLocation: (row.storageLocation as string | null) ?? null,
+    inventoryNotes: (row.inventoryNotes as string | null) ?? null,
     unitCost: costCurrency ? unitCost : null,
     costCurrency,
     quantityOwned,
@@ -465,7 +472,8 @@ async function queryCatalogRows(
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
-             c."image_url" as "imageUrl", c."unit_cost" as "unitCost",
+             c."image_url" as "imageUrl", i."storage_location" as "storageLocation",
+             i."inventory_notes" as "inventoryNotes", c."unit_cost" as "unitCost",
              c."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
             coalesce(i."quantity_owned", 0)::int as "quantityOwned",
@@ -482,7 +490,7 @@ async function queryCatalogRows(
      left join "parts_robot_allocations" a on a."part_id" = c."id"
      left join "parts_robots" r on r."id" = a."robot_id"
      ${whereSql}
-     group by c."id", i."quantity_owned"
+     group by c."id", i."quantity_owned", i."storage_location", i."inventory_notes"
      order by c."updated_at" desc, lower(c."name"), c."id"
      limit $${values.length + 1} offset $${values.length + 2}`,
     [...values, limit, offset],
@@ -535,6 +543,123 @@ async function getCatalogItem(partId: string, teamId?: string) {
   const scoped = withTeamScope(`where c."id" = $1`, [partId], teamId, "c");
   const rows = await queryCatalogRows(scoped.whereSql, scoped.values, 1, 0);
   return rows[0] ? mapCatalogRow(rows[0]) : null;
+}
+
+async function getCatalogDetails(partId: string, teamId: string) {
+  const item = await getCatalogItem(partId, teamId);
+  if (!item) return null;
+  const [snapshotResult, locationResult] = await Promise.all([
+    pool.query(
+      `select s."id", s."part_id" as "partId", s."unit_price" as "unitPrice",
+              s."currency", s."source_url" as "sourceUrl",
+              s."captured_at" as "capturedAt", s."is_starting_at" as "isStartingAt",
+              c."vendor_key" as "vendorKey"
+       from "parts_supplier_price_snapshots" s
+       join "parts_catalog_items" c on c."id" = s."part_id"
+       where s."part_id" = $1 and ${teamSqlCondition('c."team_id"', "$2")}
+       order by s."captured_at" desc`,
+      [partId, teamId],
+    ),
+    pool.query(
+      `select distinct i."storage_location" as "storageLocation"
+       from "parts_inventory" i
+       join "parts_catalog_items" c on c."id" = i."part_id"
+       where ${teamSqlCondition('c."team_id"', "$1")}
+         and i."storage_location" is not null
+       order by lower(i."storage_location")`,
+      [teamId],
+    ),
+  ]);
+  const now = Date.now();
+  const priceSnapshots = snapshotResult.rows.map((row) => {
+    const vendorKey = String(row.vendorKey);
+    const vendor = vendorByKey.get(vendorKey);
+    return {
+      id: String(row.id),
+      partId: String(row.partId),
+      vendorKey,
+      vendorName: vendor?.name ?? vendorKey,
+      sourceUrl: String(row.sourceUrl),
+      unitPrice: moneyFromDatabase(row.unitPrice),
+      currency: String(row.currency),
+      capturedAt: isoDate(row.capturedAt as Date | string),
+      isStartingAt: Boolean(row.isStartingAt),
+      isStale: isPriceSnapshotStale(row.capturedAt as Date | string, now),
+    };
+  });
+  return {
+    item,
+    priceSnapshots,
+    locations: locationResult.rows
+      .map((row) => String(row.storageLocation))
+      .filter((location) => location.length > 0),
+  };
+}
+
+async function updateCatalogDetails(
+  partId: string,
+  body: Record<string, unknown>,
+  teamId: string,
+): Promise<boolean> {
+  const hasCost = Object.hasOwn(body, "unitCost") || Object.hasOwn(body, "costCurrency");
+  if (hasCost && (!Object.hasOwn(body, "unitCost") || !Object.hasOwn(body, "costCurrency"))) {
+    throw new BadInputError("Update saved cost and currency together.");
+  }
+  const unitCost = body.unitCost;
+  const costCurrency = body.costCurrency;
+  if (
+    hasCost &&
+    ((unitCost === null) !== (costCurrency === null) ||
+      (unitCost !== null && !isValidMoneyAmount(unitCost)) ||
+      (costCurrency !== null && !isValidCurrencyCode(costCurrency)))
+  ) {
+    throw new BadInputError("Enter both a valid amount and a three-letter currency, or clear both.");
+  }
+  const imageUrl = Object.hasOwn(body, "imageUrl") ? validateImageUrl(body.imageUrl) : null;
+  if (Object.hasOwn(body, "storageLocation") && typeof body.storageLocation === "string" && body.storageLocation.length > 120) {
+    throw new BadInputError("Storage location must be 120 characters or fewer.");
+  }
+  if (Object.hasOwn(body, "inventoryNotes") && typeof body.inventoryNotes === "string" && body.inventoryNotes.length > 2000) {
+    throw new BadInputError("Inventory notes must be 2,000 characters or fewer.");
+  }
+  return withTransaction(async (client) => {
+    const saved = await client.query(
+      `update "parts_catalog_items"
+       set "image_url" = case when $2 then $3 else "image_url" end,
+           "unit_cost" = case when $4 then $5 else "unit_cost" end,
+           "cost_currency" = case when $4 then $6 else "cost_currency" end,
+           "updated_at" = now()
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$7")}
+       returning "id"`,
+      [
+        partId,
+        Object.hasOwn(body, "imageUrl"),
+        imageUrl,
+        hasCost,
+        unitCost ?? null,
+        costCurrency ?? null,
+        teamId,
+      ],
+    );
+    if (saved.rowCount === 0) return false;
+    const hasLocation = Object.hasOwn(body, "storageLocation");
+    const hasNotes = Object.hasOwn(body, "inventoryNotes");
+    if (hasLocation || hasNotes) {
+      const storageLocation = cleanText(body.storageLocation, 120);
+      const inventoryNotes = cleanText(body.inventoryNotes, 2000);
+      await client.query(
+        `insert into "parts_inventory"
+           ("part_id", "quantity_owned", "storage_location", "inventory_notes")
+         values ($1, 0, $2, $3)
+         on conflict ("part_id") do update set
+           "storage_location" = case when $4 then excluded."storage_location" else "parts_inventory"."storage_location" end,
+           "inventory_notes" = case when $5 then excluded."inventory_notes" else "parts_inventory"."inventory_notes" end,
+           "updated_at" = now()`,
+        [partId, storageLocation, inventoryNotes, hasLocation, hasNotes],
+      );
+    }
+    return true;
+  });
 }
 
 function parseSseResponse(text: string): unknown {
@@ -640,7 +765,7 @@ export const ASSISTANT_PARTS_TOOLS = [
     type: "function" as const,
     function: {
       name: "list_parts_catalog",
-      description: "List saved parts and inventory with exact part IDs, vendor, SKU, owned stock, allocations, and availability. Use this before editing stock or allocations.",
+      description: "List this team's saved parts and inventory with exact part IDs, vendor, SKU, product details, saved unit cost/currency, storage location, inventory notes, owned stock, allocations, and availability. Saved unit cost is separate from any live supplier search price; use get_parts_inventory_details for quote history.",
       parameters: {
         type: "object",
         properties: {
@@ -650,6 +775,37 @@ export const ASSISTANT_PARTS_TOOLS = [
           offset: { type: "integer", minimum: 0 },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_parts_inventory_details",
+      description: "Read one saved part in the signed-in team's Parts workspace, including product description and image, saved unit cost/currency, storage location, inventory-specific notes, reusable team locations, and dated supplier quote history. Live search prices are not saved unit costs.",
+      parameters: {
+        type: "object",
+        properties: { partId: { type: "string", minLength: 1, maxLength: 128 } },
+        required: ["partId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_parts_inventory_details",
+      description: "Update a saved part in the signed-in team's Parts workspace. Set imageUrl, storageLocation, inventoryNotes, and/or saved unitCost plus costCurrency together; null clears an optional value. This changes saved unit cost only when explicitly provided and does not turn a live supplier search price into saved cost. Use the exact part ID from list_parts_catalog.",
+      parameters: {
+        type: "object",
+        properties: {
+          partId: { type: "string", minLength: 1, maxLength: 128 },
+          imageUrl: { type: ["string", "null"], maxLength: 2000 },
+          unitCost: { type: ["number", "null"], minimum: 0, maximum: 99999999.99 },
+          costCurrency: { type: ["string", "null"], pattern: "^[A-Z]{3}$" },
+          storageLocation: { type: ["string", "null"], maxLength: 120 },
+          inventoryNotes: { type: ["string", "null"], maxLength: 2000 },
+        },
+        required: ["partId"],
       },
     },
   },
@@ -1154,6 +1310,7 @@ export async function searchPublicCatalog(
 export async function runAssistantPartsTool(
   name: string,
   args: Record<string, unknown>,
+  teamId: string,
 ): Promise<{ content: string; activity: AssistantActivity }> {
   const result = (content: string, detail: string) => ({
     content,
@@ -1170,7 +1327,7 @@ export async function runAssistantPartsTool(
       const offsetValue = Number(args.offset);
       const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 50;
       const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
-      const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset);
+      const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
       let products: PublicCatalogSearchResult[] = [];
       let liveSearchStatus: "available" | "unavailable" = "available";
       try {
@@ -1213,12 +1370,14 @@ export async function runAssistantPartsTool(
       );
     }
     if (name === "list_parts_robots") {
+      const scoped = withTeamScope("", [], teamId, "r");
       const rows = await pool.query(
         `select "id", "name", "preview_object_path" as "previewObjectPath",
                 "preview_file_name" as "previewFileName",
                 "preview_content_type" as "previewContentType",
                 "created_at" as "createdAt", "updated_at" as "updatedAt"
-         from "parts_robots" order by lower("name")`,
+         from "parts_robots" r ${scoped.whereSql} order by lower("name")`,
+        scoped.values,
       );
       const robots = rows.rows.map(mapRobot);
       return result(JSON.stringify({ robots }), `${robots.length} robot(s)`);
@@ -1241,17 +1400,43 @@ export async function runAssistantPartsTool(
       const offsetValue = Number(args.offset);
       const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 30;
       const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
-      const rows = await queryCatalogRows(clauses.length ? `where ${clauses.join(" and ")}` : "", values, limit, offset);
+      const scoped = withTeamScope(clauses.length ? `where ${clauses.join(" and ")}` : "", values, teamId, "c");
+      const rows = await queryCatalogRows(scoped.whereSql, scoped.values, limit, offset);
       const items = rows.map(mapCatalogRow);
       return result(JSON.stringify({ offset, limit, items }), `${items.length} part(s)`);
+    }
+    if (name === "get_parts_inventory_details") {
+      const params = GetPartsCatalogDetailsParams.safeParse({ partId: args.partId });
+      if (!params.success) return result("Use a valid part ID from this team's Parts catalog.", "invalid part ID");
+      const details = await getCatalogDetails(params.data.partId, teamId);
+      if (!details) return result("Part not found in this team's inventory.", "part not found");
+      return result(JSON.stringify(details), `details for ${details.item.name}`);
+    }
+    if (name === "update_parts_inventory_details") {
+      const params = UpdatePartsCatalogDetailsParams.safeParse({ partId: args.partId });
+      const bodyArgs = { ...args };
+      delete bodyArgs.partId;
+      const body = UpdatePartsCatalogDetailsBody.safeParse(bodyArgs);
+      if (!params.success || !body.success || Object.keys(body.data).length === 0) {
+        return result("Provide a valid part ID and at least one valid inventory detail to update.", "invalid part details");
+      }
+      const changed = await updateCatalogDetails(params.data.partId, body.data, teamId);
+      if (!changed) return result("Part not found in this team's inventory; no changes were saved.", "part not found");
+      const details = await getCatalogDetails(params.data.partId, teamId);
+      if (!details) return result("The part update was saved, but its persisted state could not be reloaded.", "reload failed");
+      const fields = Object.keys(body.data).join(", ");
+      return result(
+        JSON.stringify({ updated: true, changedFields: Object.keys(body.data), ...details }),
+        `Saved ${fields} for ${details.item.name}; persisted state returned.`,
+      );
     }
     if (name === "create_parts_robot") {
       const parsed = CreatePartsRobotBody.safeParse({ name: args.name });
       if (!parsed.success || !parsed.data.name.trim()) return result("Enter a valid robot name.", "invalid robot name");
       const rows = await pool.query(
-        `insert into "parts_robots" ("id", "name") values ($1, $2)
+        `insert into "parts_robots" ("id", "team_id", "name") values ($1, $2, $3)
          returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-        [randomUUID(), parsed.data.name.trim()],
+        [randomUUID(), teamId, parsed.data.name.trim()],
       );
       const robot = mapRobot(rows.rows[0]);
       return result(JSON.stringify({ created: true, robot }), `added ${robot.name}`);
@@ -1260,10 +1445,11 @@ export async function runAssistantPartsTool(
       const params = UpdatePartsRobotParams.safeParse({ robotId: args.robotId });
       const body = UpdatePartsRobotBody.safeParse({ name: args.name });
       if (!params.success || !body.success || !body.data.name.trim()) return result("A valid robot ID and name are required.", "invalid rename");
+      const scoped = withTeamScope(`where "id" = $1`, [params.data.robotId], teamId, "parts_robots");
       const rows = await pool.query(
-        `update "parts_robots" set "name" = $2, "updated_at" = now() where "id" = $1
+        `update "parts_robots" set "name" = $3, "updated_at" = now() ${scoped.whereSql}
          returning "id", "name", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-        [params.data.robotId, body.data.name.trim()],
+        [...scoped.values, body.data.name.trim()],
       );
       if (!rows.rowCount) return result("Robot not found; no change was made.", "robot not found");
       const robot = mapRobot(rows.rows[0]);
@@ -1290,11 +1476,11 @@ export async function runAssistantPartsTool(
           productUrl,
           imageUrl,
           isManual: true,
-        });
-        if (input.quantityOwned !== undefined) await setOwnedQuantity(client, item.id, input.quantityOwned);
+        }, teamId);
+        if (input.quantityOwned !== undefined) await setOwnedQuantity(client, item.id, input.quantityOwned, teamId);
         return item;
       });
-      const item = await getCatalogItem(saved.id);
+      const item = await getCatalogItem(saved.id, teamId);
       if (!item) return result("The saved item could not be reloaded; check the catalog before retrying.", "reload failed");
       return result(JSON.stringify({ created: saved.created, item }), `${saved.created ? "added" : "updated"} ${item.name}`);
     }
@@ -1302,16 +1488,16 @@ export async function runAssistantPartsTool(
       const params = UpdatePartsCatalogStockParams.safeParse({ partId: args.partId });
       const body = UpdatePartsCatalogStockBody.safeParse({ quantityOwned: args.quantityOwned });
       if (!params.success || !body.success) return result("Use a valid part ID and non-negative whole-number quantity.", "invalid stock");
-      const update = await withTransaction((client) => setOwnedQuantity(client, params.data.partId, body.data.quantityOwned));
+      const update = await withTransaction((client) => setOwnedQuantity(client, params.data.partId, body.data.quantityOwned, teamId));
       if (!update.exists) return result("Part not found; no stock was changed.", "part not found");
-      const item = await getCatalogItem(params.data.partId);
+      const item = await getCatalogItem(params.data.partId, teamId);
       return result(JSON.stringify({ updated: true, item }), `stock updated: ${item?.name ?? params.data.partId}`);
     }
     if (name === "set_parts_robot_allocation") {
       const params = SetPartsRobotAllocationParams.safeParse({ robotId: args.robotId, partId: args.partId });
       const body = SetPartsRobotAllocationBody.safeParse({ quantity: args.quantity });
       if (!params.success || !body.success) return result("Use valid robot/part IDs and a non-negative whole-number quantity.", "invalid allocation");
-      const allocation = await saveRobotAllocation(params.data.robotId, params.data.partId, body.data.quantity);
+      const allocation = await saveRobotAllocation(params.data.robotId, params.data.partId, body.data.quantity, teamId);
       if ("missing" in allocation) return result(`${allocation.missing} not found; no change was made.`, `${allocation.missing} not found`);
       if ("conflict" in allocation) return result(`Only ${allocation.available} unassigned unit(s) are available; no change was made.`, "insufficient stock");
       return result(JSON.stringify({ updated: true, allocation }), `${allocation.robotName}: ${allocation.quantity} assigned`);
@@ -2669,6 +2855,56 @@ router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Prom
   } catch (error) {
     req.log.error({ err: error }, "Parts saved cost update failed");
     res.status(500).json({ error: "Unable to update the saved unit cost." });
+  }
+});
+
+router.get("/parts/catalog/:partId/details", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetPartsCatalogDetailsParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "The catalog item ID is invalid." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const details = await getCatalogDetails(params.data.partId, teamId);
+    if (!details) {
+      res.status(404).json({ error: "Catalog item not found." });
+      return;
+    }
+    res.json(GetPartsCatalogDetailsResponse.parse(details));
+  } catch (error) {
+    req.log.error({ err: error, partId: params.data.partId }, "Parts inventory details load failed");
+    res.status(500).json({ error: "Unable to load this part's inventory details." });
+  }
+});
+
+router.patch("/parts/catalog/:partId/details", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdatePartsCatalogDetailsParams.safeParse(req.params);
+  const body = UpdatePartsCatalogDetailsBody.safeParse(req.body);
+  if (!params.success || !body.success || Object.keys(body.data).length === 0) {
+    res.status(400).json({ error: "Provide at least one valid part detail to update." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const changed = await updateCatalogDetails(params.data.partId, body.data, teamId);
+    if (!changed) {
+      res.status(404).json({ error: "Catalog item not found." });
+      return;
+    }
+    const details = await getCatalogDetails(params.data.partId, teamId);
+    if (!details) {
+      res.status(404).json({ error: "Catalog item not found." });
+      return;
+    }
+    res.json(UpdatePartsCatalogDetailsResponse.parse(details));
+  } catch (error) {
+    if (error instanceof BadInputError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error, partId: params.data.partId }, "Parts inventory details update failed");
+    res.status(500).json({ error: "Unable to update this part's inventory details." });
   }
 });
 

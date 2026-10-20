@@ -223,6 +223,8 @@ export * from './listInterviewWhiteboardsScope';
 export * from './listPartsCatalogParams';
 export * from './loginInput';
 export * from './messageResponse';
+export * from './partsCatalogDetails';
+export * from './partsCatalogDetailsUpdateInput';
 export * from './partsCatalogImportInput';
 export * from './partsCatalogImportItem';
 export * from './partsCatalogImportResponse';

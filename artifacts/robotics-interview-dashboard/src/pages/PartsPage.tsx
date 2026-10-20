@@ -9,6 +9,7 @@ import {
   Camera,
   Check,
   ExternalLink,
+  Info,
   Loader2,
   Minus,
   Package,
@@ -50,6 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PartsRobotDetailsDialog } from "@/components/PartsRobotDetailsDialog";
+import { PartsInventoryDetailsDialog } from "@/components/PartsInventoryDetailsDialog";
 import {
   PartsImageIdentifyDialog,
   type PartsImageReviewedPart,
@@ -337,12 +339,14 @@ function PartCard({
   robots,
   onSaveStock,
   onSetAllocation,
+  onOpenDetails,
   busy,
 }: {
   item: PartsCatalogItem;
   robots: { id: string; name: string }[];
   onSaveStock: (item: PartsCatalogItem, quantity: number) => Promise<void>;
   onSetAllocation: (item: PartsCatalogItem, robotId: string, quantity: number) => Promise<void>;
+  onOpenDetails: (item: PartsCatalogItem) => void;
   busy: boolean;
 }) {
   const currentRobotId = item.allocations[0]?.robotId ?? "";
@@ -369,7 +373,15 @@ function PartCard({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-foreground">{item.name}</h3>
+            <button
+              type="button"
+              onClick={() => onOpenDetails(item)}
+              className="inline-flex min-w-0 items-center gap-1.5 text-left font-semibold text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Open details for ${item.name}`}
+            >
+              <span>{item.name}</span>
+              <Info size={15} className="shrink-0 text-primary" aria-hidden="true" />
+            </button>
             <Badge variant="secondary">{item.vendorName}</Badge>
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -532,6 +544,7 @@ export default function PartsPage() {
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
+  const [selectedPart, setSelectedPart] = useState<PartsCatalogItem | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -1711,6 +1724,7 @@ export default function PartsPage() {
                         robots={robots}
                         onSaveStock={saveStock}
                         onSetAllocation={setAllocation}
+                        onOpenDetails={setSelectedPart}
                         busy={isMutating}
                       />
                     ))}
@@ -1733,6 +1747,11 @@ export default function PartsPage() {
          robot={selectedRobot}
          onClose={closeRobotDetails}
          onPreviewReplaced={refreshRobotDashboard}
+       />
+       <PartsInventoryDetailsDialog
+         item={selectedPart}
+         onClose={() => setSelectedPart(null)}
+         onSaved={refreshParts}
        />
     </main>
   );

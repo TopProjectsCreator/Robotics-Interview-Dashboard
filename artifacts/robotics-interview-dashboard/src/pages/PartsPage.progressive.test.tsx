@@ -24,6 +24,19 @@ const testVendor = {
   lastSync: null,
 };
 
+const testPriceSnapshot = {
+  id: "detail-quote-1",
+  partId: "team-a-detail-part",
+  vendorKey: "andymark",
+  vendorName: "AndyMark",
+  sourceUrl: "https://www.andymark.com/products/precision-bracket",
+  unitPrice: 14.75,
+  currency: "USD",
+  capturedAt: "2026-01-15T00:00:00.000Z",
+  isStartingAt: true,
+  isStale: true,
+};
+
 vi.mock("@workspace/api-client-react", async () => {
   const { useQuery, useQueryClient } =
     await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
@@ -31,6 +44,7 @@ vi.mock("@workspace/api-client-react", async () => {
   return {
     consumePartsCatalogSearchStream: mocks.consumeSearch,
     getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
+    getGetPartsCatalogDetailsQueryKey: (partId: string) => ["/parts/catalog/details", partId],
     getListPartsCatalogQueryKey: () => ["/parts/catalog"],
     useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
     useCreatePartsCatalogItem: () => {
@@ -52,6 +66,8 @@ vi.mock("@workspace/api-client-react", async () => {
               description: input.data.description,
               productUrl: input.data.productUrl,
               imageUrl: input.data.imageUrl,
+              storageLocation: null,
+              inventoryNotes: null,
               quantityOwned,
               quantityAssigned: 0,
               quantityAvailable: quantityOwned,
@@ -66,6 +82,27 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useCreatePartsRobot: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useGetPartsCatalogDetails: (partId: string, options?: {
+      query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
+    }) => {
+      const teamId = getTeamId();
+      return useQuery({
+        queryKey: options?.query?.queryKey ?? ["/parts/catalog", partId, "details"],
+        queryFn: async () => {
+          const items = mocks.teamInventory.get(teamId) ?? [];
+          const item = items.find((candidate) => candidate.id === partId);
+          if (!item) throw new Error("Catalog item not found.");
+          return {
+            item,
+            priceSnapshots: [testPriceSnapshot],
+            locations: [...new Set(items
+              .map((candidate) => candidate.storageLocation)
+              .filter((location): location is string => typeof location === "string" && Boolean(location)))],
+          };
+        },
+        ...options?.query,
+      });
+    },
     useGetPartsDashboard: (options?: {
       query?: Record<string, unknown>;
     }) => {
@@ -122,6 +159,26 @@ vi.mock("@workspace/api-client-react", async () => {
     useSetPartsRobotAllocation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useSyncPartsCatalog: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdatePartsCatalogStock: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useUpdatePartsCatalogDetails: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ partId, data }: { partId: string; data: Record<string, unknown> }) => {
+          const items = mocks.teamInventory.get(teamId) ?? [];
+          const updated = items.map((item) => item.id === partId ? { ...item, ...data } : item);
+          mocks.teamInventory.set(teamId, updated);
+          const item = updated.find((candidate) => candidate.id === partId);
+          if (!item) throw new Error("Catalog item not found.");
+          return {
+            item,
+            priceSnapshots: [testPriceSnapshot],
+            locations: [...new Set(updated
+              .map((candidate) => candidate.storageLocation)
+              .filter((location): location is string => typeof location === "string" && Boolean(location)))],
+          };
+        },
+        isPending: false,
+      };
+    },
   };
 });
 
@@ -429,6 +486,8 @@ describe("progressive Parts search", () => {
       description: "Belongs to another team.",
       productUrl: null,
       imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
       quantityOwned: 8,
       quantityAssigned: 0,
       quantityAvailable: 8,
@@ -475,4 +534,83 @@ describe("progressive Parts search", () => {
     expect(within(otherTeam.container).queryByText("Photo-added team bracket")).not.toBeInTheDocument();
     expect(within(otherTeam.container).queryByText("Team B private bracket")).toBeInTheDocument();
   }, 15_000);
+
+  it("opens part details, saves inventory fields separately, and reloads the persisted values", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-detail-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Precision bracket",
+      sku: "PREC-42",
+      category: "Structure",
+      description: "Supplier description for the bracket.",
+      productUrl: "https://www.andymark.com/products/precision-bracket",
+      imageUrl: "https://images.example.test/bracket.png",
+      storageLocation: null,
+      inventoryNotes: null,
+      unitCost: 12.5,
+      costCurrency: "USD",
+      quantityOwned: 4,
+      quantityAssigned: 1,
+      quantityAvailable: 3,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+
+    const firstPage = await renderPartsPage("team-a");
+    fireEvent.click(within(firstPage.container).getByRole("tab", { name: "Inventory" }));
+    expect(within(firstPage.container).getByLabelText("Owned stock for Precision bracket")).toHaveValue(4);
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await screen.findByLabelText("Storage location");
+    const firstDialog = within(screen.getByRole("dialog"));
+    expect(firstDialog.getByText("Supplier description for the bracket.")).toBeInTheDocument();
+    expect(firstDialog.getByText(/Stale quote/)).toBeInTheDocument();
+    expect(firstDialog.getByText(/starting at/)).toBeInTheDocument();
+    expect(firstDialog.getByText(/Current saved cost:/)).toHaveTextContent("12.50");
+    expect(firstDialog.getByText(/Current saved cost:/)).not.toHaveTextContent("14.75");
+    expect(screen.getByRole("spinbutton", { name: "Saved unit cost" })).toHaveValue(12.5);
+    expect(screen.getByRole("textbox", { name: "Saved cost currency" })).toHaveValue("USD");
+    fireEvent.change(screen.getByLabelText("Storage location"), {
+      target: { value: "Shelf A" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Inventory notes" }), {
+      target: { value: "Keep with the spare fasteners." },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Saved unit cost" }), {
+      target: { value: "13.25" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Saved cost currency" }), {
+      target: { value: "CAD" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Product image URL" }), {
+      target: { value: "https://images.example.test/bracket-v2.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save details" }));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Part details saved."));
+    const saved = mocks.teamInventory.get("team-a")?.[0];
+    expect(saved).toMatchObject({
+      storageLocation: "Shelf A",
+      inventoryNotes: "Keep with the spare fasteners.",
+      unitCost: 13.25,
+      costCurrency: "CAD",
+      imageUrl: "https://images.example.test/bracket-v2.png",
+      description: "Supplier description for the bracket.",
+      quantityOwned: 4,
+    });
+
+    firstPage.unmount();
+    const reloadedPage = await renderPartsPage("team-a");
+    fireEvent.click(within(reloadedPage.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
+    const reloadedDialog = within(await screen.findByRole("dialog"));
+    expect(await screen.findByDisplayValue("Shelf A")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Keep with the spare fasteners.")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("13.25")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CAD")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://images.example.test/bracket-v2.png")).toBeInTheDocument();
+    expect(reloadedDialog.getByText("Supplier description for the bracket.")).toBeInTheDocument();
+  });
 });

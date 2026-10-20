@@ -161,6 +161,8 @@ import type {
   ListPartsCatalogParams,
   LoginInput,
   MessageResponse,
+  PartsCatalogDetails,
+  PartsCatalogDetailsUpdateInput,
   PartsCatalogImportInput,
   PartsCatalogImportResponse,
   PartsCatalogItem,
@@ -10032,6 +10034,155 @@ export const useUpdatePartsCatalogStock = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUpdatePartsCatalogStockMutationOptions(options));
+    }
+
+export const getGetPartsCatalogDetailsUrl = (partId: string,) => {
+
+
+
+
+  return `/api/parts/catalog/${partId}/details`
+}
+
+/**
+ * @summary Get a team-scoped inventory part and supplier quote history
+ */
+export const getPartsCatalogDetails = async (partId: string, options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogDetails> => {
+
+  return customFetch<PartsCatalogDetails>(getGetPartsCatalogDetailsUrl(partId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPartsCatalogDetailsQueryKey = (partId: string,) => {
+    return [
+    `/api/parts/catalog/${partId}/details`
+    ] as const;
+    }
+
+
+export const getGetPartsCatalogDetailsQueryOptions = <TData = Awaited<ReturnType<typeof getPartsCatalogDetails>>, TError = ErrorType<ErrorResponse>>(partId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsCatalogDetails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPartsCatalogDetailsQueryKey(partId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPartsCatalogDetails>>> = ({ signal }) => getPartsCatalogDetails(partId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: partId !== null && partId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPartsCatalogDetails>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPartsCatalogDetailsQueryResult = NonNullable<Awaited<ReturnType<typeof getPartsCatalogDetails>>>
+export type GetPartsCatalogDetailsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a team-scoped inventory part and supplier quote history
+ */
+
+export function useGetPartsCatalogDetails<TData = Awaited<ReturnType<typeof getPartsCatalogDetails>>, TError = ErrorType<ErrorResponse>>(
+ partId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsCatalogDetails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPartsCatalogDetailsQueryOptions(partId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePartsCatalogDetailsUrl = (partId: string,) => {
+
+
+
+
+  return `/api/parts/catalog/${partId}/details`
+}
+
+/**
+ * @summary Update saved product image, cost, location, or inventory notes
+ */
+export const updatePartsCatalogDetails = async (partId: string,
+    partsCatalogDetailsUpdateInput: PartsCatalogDetailsUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsCatalogDetails> => {
+
+  return customFetch<PartsCatalogDetails>(getUpdatePartsCatalogDetailsUrl(partId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsCatalogDetailsUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartsCatalogDetailsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogDetails>>, TError,{partId: string;data: BodyType<PartsCatalogDetailsUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogDetails>>, TError,{partId: string;data: BodyType<PartsCatalogDetailsUpdateInput>}, TContext> => {
+
+const mutationKey = ['updatePartsCatalogDetails'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsCatalogDetails>>, {partId: string;data: BodyType<PartsCatalogDetailsUpdateInput>}> = (props) => {
+          const {partId,data} = props ?? {};
+
+          return  updatePartsCatalogDetails(partId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartsCatalogDetailsMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsCatalogDetails>>>
+    export type UpdatePartsCatalogDetailsMutationBody = BodyType<PartsCatalogDetailsUpdateInput>
+    export type UpdatePartsCatalogDetailsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update saved product image, cost, location, or inventory notes
+ */
+export const useUpdatePartsCatalogDetails = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsCatalogDetails>>, TError,{partId: string;data: BodyType<PartsCatalogDetailsUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartsCatalogDetails>>,
+        TError,
+        {partId: string;data: BodyType<PartsCatalogDetailsUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePartsCatalogDetailsMutationOptions(options));
     }
 
 export const getCreatePartsRobotUrl = () => {
