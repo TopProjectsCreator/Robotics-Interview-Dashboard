@@ -102,6 +102,7 @@ app.use(compression({
 app.use("/api/queue/custom-emojis", express.json({ limit: "1mb" }));
 app.use("/api/spreadsheets", express.json({ limit: "10mb" }));
 app.use("/api/parts/catalog/identify-image", express.json({ limit: "4.1mb" }));
+app.use("/api/assistant/questions", express.json({ limit: "8mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

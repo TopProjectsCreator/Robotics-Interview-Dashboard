@@ -2379,6 +2379,23 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export type AssistantQuestionAnswersInputAnswers = { [key: string]: unknown };
+
+export interface AssistantQuestionAnswersInput {
+  answers: AssistantQuestionAnswersInputAnswers;
+}
+
+export type AssistantPendingQuestionsResponseQuestionsItemQuestionsItem = { [key: string]: unknown };
+
+export type AssistantPendingQuestionsResponseQuestionsItem = {
+  id: string;
+  questions: AssistantPendingQuestionsResponseQuestionsItemQuestionsItem[];
+};
+
+export interface AssistantPendingQuestionsResponse {
+  questions: AssistantPendingQuestionsResponseQuestionsItem[];
+}
+
 export interface AssistantSkill {
   id: string;
   name: string;
@@ -3152,6 +3169,10 @@ export type GetDisplayStateParams = {
  * Team access code to scope the public display to one team. Omitted = signed-in user's team or default team.
  */
 eventPassword?: string;
+};
+
+export type AnswerAssistantQuestion200 = {
+  submitted: boolean;
 };
 
 export type GetAssistantConversationMessagesParams = {

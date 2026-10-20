@@ -1990,6 +1990,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/questions/{questionId}/answer:
+    post:
+      operationId: answerAssistantQuestion
+      tags: [assistant]
+      summary: Submit answers to a pending assistant question
+      parameters:
+        - name: questionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQuestionAnswersInput"
+      responses:
+        "200":
+          description: Answers submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submitted]
+                properties:
+                  submitted: { type: boolean }
+        "404":
+          description: Question is no longer pending
+  /assistant/questions/pending:
+    get:
+      operationId: getPendingAssistantQuestions
+      tags: [assistant]
+      summary: List pending assistant questions for the signed-in coordinator
+      responses:
+        "200":
+          description: Pending questions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPendingQuestionsResponse"
   /assistant/skills:
     get:
       operationId: listAssistantSkills
@@ -7000,6 +7040,30 @@ components:
                 type: string
               message:
                 type: string
+    AssistantQuestionAnswersInput:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          additionalProperties: true
+    AssistantPendingQuestionsResponse:
+      type: object
+      required: [questions]
+      properties:
+        questions:
+          type: array
+          items:
+            type: object
+            required: [id, questions]
+            properties:
+              id:
+                type: string
+              questions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
     AssistantSkill:
       type: object
       required: [id, name, description, instructions, actions, enabled, githubRepositoryUrl, createdAt, updatedAt]

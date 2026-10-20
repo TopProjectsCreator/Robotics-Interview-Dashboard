@@ -2775,6 +2775,33 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * @summary Submit answers to a pending assistant question
+ */
+export const AnswerAssistantQuestionParams = zod.object({
+  "questionId": zod.coerce.string()
+})
+
+export const AnswerAssistantQuestionBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown())
+})
+
+export const AnswerAssistantQuestionResponse = zod.object({
+  "submitted": zod.boolean()
+})
+
+
+/**
+ * @summary List pending assistant questions for the signed-in coordinator
+ */
+export const GetPendingAssistantQuestionsResponse = zod.object({
+  "questions": zod.array(zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}))
+})
+
+
+/**
  * @summary List team-shared assistant skills
  */
 export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax = 500;

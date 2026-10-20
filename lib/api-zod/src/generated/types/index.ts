@@ -7,6 +7,7 @@
  */
 
 export * from './advanceQueueInput';
+export * from './answerAssistantQuestion200';
 export * from './applicant';
 export * from './applicantList';
 export * from './applicantSearchAiInput';
@@ -28,6 +29,11 @@ export * from './assistantInputThinkingLevel';
 export * from './assistantModel';
 export * from './assistantModelList';
 export * from './assistantModelThinkingLevelsItem';
+export * from './assistantPendingQuestionsResponse';
+export * from './assistantPendingQuestionsResponseQuestionsItem';
+export * from './assistantPendingQuestionsResponseQuestionsItemQuestionsItem';
+export * from './assistantQuestionAnswersInput';
+export * from './assistantQuestionAnswersInputAnswers';
 export * from './assistantResponse';
 export * from './assistantSkill';
 export * from './assistantSkillInput';

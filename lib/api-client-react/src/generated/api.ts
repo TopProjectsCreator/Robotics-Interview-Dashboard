@@ -21,6 +21,7 @@ import type {
 
 import type {
   AdvanceQueueInput,
+  AnswerAssistantQuestion200,
   Applicant,
   ApplicantList,
   ApplicantSearchAiInput,
@@ -35,6 +36,8 @@ import type {
   AssistantHistory,
   AssistantInput,
   AssistantModelList,
+  AssistantPendingQuestionsResponse,
+  AssistantQuestionAnswersInput,
   AssistantResponse,
   AssistantSkill,
   AssistantSkillInput,
@@ -7575,6 +7578,155 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
     }
+
+export const getAnswerAssistantQuestionUrl = (questionId: string,) => {
+
+
+
+
+  return `/api/assistant/questions/${questionId}/answer`
+}
+
+/**
+ * @summary Submit answers to a pending assistant question
+ */
+export const answerAssistantQuestion = async (questionId: string,
+    assistantQuestionAnswersInput: AssistantQuestionAnswersInput, options?: Parameters<typeof customFetch>[1]): Promise<AnswerAssistantQuestion200> => {
+
+  return customFetch<AnswerAssistantQuestion200>(getAnswerAssistantQuestionUrl(questionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantQuestionAnswersInput)
+  }
+);}
+
+
+
+
+
+export const getAnswerAssistantQuestionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof answerAssistantQuestion>>, TError,{questionId: string;data: BodyType<AssistantQuestionAnswersInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof answerAssistantQuestion>>, TError,{questionId: string;data: BodyType<AssistantQuestionAnswersInput>}, TContext> => {
+
+const mutationKey = ['answerAssistantQuestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof answerAssistantQuestion>>, {questionId: string;data: BodyType<AssistantQuestionAnswersInput>}> = (props) => {
+          const {questionId,data} = props ?? {};
+
+          return  answerAssistantQuestion(questionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnswerAssistantQuestionMutationResult = NonNullable<Awaited<ReturnType<typeof answerAssistantQuestion>>>
+    export type AnswerAssistantQuestionMutationBody = BodyType<AssistantQuestionAnswersInput>
+    export type AnswerAssistantQuestionMutationError = ErrorType<void>
+
+    /**
+ * @summary Submit answers to a pending assistant question
+ */
+export const useAnswerAssistantQuestion = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof answerAssistantQuestion>>, TError,{questionId: string;data: BodyType<AssistantQuestionAnswersInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof answerAssistantQuestion>>,
+        TError,
+        {questionId: string;data: BodyType<AssistantQuestionAnswersInput>},
+        TContext
+      > => {
+      return useMutation(getAnswerAssistantQuestionMutationOptions(options));
+    }
+
+export const getGetPendingAssistantQuestionsUrl = () => {
+
+
+
+
+  return `/api/assistant/questions/pending`
+}
+
+/**
+ * @summary List pending assistant questions for the signed-in coordinator
+ */
+export const getPendingAssistantQuestions = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantPendingQuestionsResponse> => {
+
+  return customFetch<AssistantPendingQuestionsResponse>(getGetPendingAssistantQuestionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPendingAssistantQuestionsQueryKey = () => {
+    return [
+    `/api/assistant/questions/pending`
+    ] as const;
+    }
+
+
+export const getGetPendingAssistantQuestionsQueryOptions = <TData = Awaited<ReturnType<typeof getPendingAssistantQuestions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAssistantQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPendingAssistantQuestionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingAssistantQuestions>>> = ({ signal }) => getPendingAssistantQuestions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPendingAssistantQuestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPendingAssistantQuestionsQueryResult = NonNullable<Awaited<ReturnType<typeof getPendingAssistantQuestions>>>
+export type GetPendingAssistantQuestionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List pending assistant questions for the signed-in coordinator
+ */
+
+export function useGetPendingAssistantQuestions<TData = Awaited<ReturnType<typeof getPendingAssistantQuestions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingAssistantQuestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPendingAssistantQuestionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAssistantSkillsUrl = () => {
 

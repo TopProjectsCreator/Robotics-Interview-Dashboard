@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
@@ -28,6 +29,100 @@ type PublishAgentEvent = {
   workspace?: Workspace;
 };
 type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; status: "running" | "done" | "failed" };
+type AgentQuestion = {
+  id: string;
+  questions: { id: string; type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload"; title: string; required?: boolean; placeholder?: string; options?: string[]; accept?: string; maxFiles?: number }[];
+};
+type QuestionFile = { file: File; previewUrl: string };
+
+function readFileDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; onSubmit: (answers: Record<string, unknown>) => Promise<void> }) {
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const [comments, setComments] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, QuestionFile[]>>({});
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const previewUrls = useRef(new Set<string>());
+  useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSending(true);
+    setError("");
+    try {
+      const answers: Record<string, unknown> = {};
+      for (const item of question.questions) {
+        if (item.type === "fileUpload") {
+          answers[item.id] = await Promise.all((files[item.id] ?? []).map(async ({ file }) => {
+            if (file.size > 1_000_000) throw new Error(`${file.name} is larger than 1 MB.`);
+            const base = { name: file.name, type: file.type, size: file.size };
+            if (file.type.startsWith("image/")) return { ...base, dataUrl: await readFileDataUrl(file) };
+            if (file.type.startsWith("text/") || /\.(csv|json|md|html?|css|js|ts|xml)$/i.test(file.name)) {
+              return { ...base, textContent: (await file.text()).slice(0, 40_000) };
+            }
+            return base;
+          }));
+        } else {
+          const value = item.type === "multiSelect"
+            ? (Array.isArray(values[item.id]) ? values[item.id] : [])
+            : values[item.id] ?? "";
+          if (item.required && item.type === "multiSelect" && (value as unknown[]).length === 0) {
+            throw new Error(`Choose at least one option for “${item.title}”.`);
+          }
+          answers[item.id] = {
+            value,
+            ...(comments[item.id] ? { comment: comments[item.id] } : {}),
+          };
+        }
+      }
+      await onSubmit(answers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit your answers.");
+    } finally {
+      setSending(false);
+    }
+  };
+  return <form onSubmit={(event) => void submit(event)} className="my-3 space-y-4 rounded-xl border border-[#16869a]/40 bg-[hsl(var(--background))] p-4" data-testid="agent-question-form">
+    <h4 className="text-sm font-semibold text-[hsl(var(--foreground))]">The workspace agent needs your input</h4>
+    {question.questions.map((item) => <fieldset key={item.id} className="space-y-2" data-testid={`agent-question-${item.id}`}>
+      <legend className="text-sm font-medium text-[hsl(var(--foreground))]">{item.title}{item.required && <span aria-label="required"> *</span>}</legend>
+      {item.type === "text" && <textarea required={item.required} value={String(values[item.id] ?? "")} onChange={(event) => setValues((old) => ({ ...old, [item.id]: event.target.value }))} placeholder={item.placeholder} rows={3} className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm text-[hsl(var(--foreground))]" data-testid={`input-question-${item.id}`} />}
+      {item.type === "singleSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === option} onChange={() => setValues((old) => ({ ...old, [item.id]: option }))} />{option}</label>)}</div>}
+      {item.type === "multiSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="checkbox" checked={(values[item.id] as string[] | undefined)?.includes(option) ?? false} onChange={(event) => setValues((old) => { const current = (old[item.id] as string[] | undefined) ?? []; return { ...old, [item.id]: event.target.checked ? [...current, option] : current.filter((value) => value !== option) }; })} />{option}</label>)}</div>}
+      {item.type === "boolean" && <div className="flex gap-4">{[["yes", "Yes"], ["no", "No"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === value} onChange={() => setValues((old) => ({ ...old, [item.id]: value }))} />{label}</label>)}</div>}
+      {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm" />}
+      {item.type === "fileUpload" && <>
+        <input type="file" accept={item.accept} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
+          const picked = Array.from(event.target.files ?? []).slice(0, item.maxFiles ?? 1);
+          const next = picked.map((file) => {
+            const previewUrl = URL.createObjectURL(file);
+            previewUrls.current.add(previewUrl);
+            return { file, previewUrl };
+          });
+          setFiles((old) => {
+            Object.values(old[item.id] ?? []).forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl));
+            return { ...old, [item.id]: next };
+          });
+        }} className="block w-full text-sm" data-testid={`input-question-file-${item.id}`} />
+        {!!files[item.id]?.length && <ul className="grid gap-2 sm:grid-cols-2">{files[item.id].map(({ file, previewUrl }, index) => <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-xs">
+          {file.type.startsWith("image/") && <img src={previewUrl} alt={`Preview of ${file.name}`} className="h-12 w-12 rounded object-cover" />}
+          <span className="min-w-0 flex-1 truncate">{file.name} · {Math.ceil(file.size / 1024)} KB</span>
+          <a href={previewUrl} target="_blank" rel="noreferrer" className="underline">View</a>
+          <button type="button" onClick={() => setFiles((old) => { URL.revokeObjectURL(previewUrl); return { ...old, [item.id]: old[item.id].filter((entry) => entry.previewUrl !== previewUrl) }; })} aria-label={`Remove ${file.name}`}>Remove</button>
+        </li>)}</ul>}
+      </>}
+    </fieldset>)}
+    {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
+    <button type="submit" disabled={sending} className="rounded-lg bg-[#16869a] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" data-testid="button-submit-agent-answers">{sending ? "Sending…" : "Submit answers"}</button>
+  </form>;
+}
 
 const API = "/api/custom-workspaces";
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
@@ -151,6 +246,7 @@ export function CustomWorkspacesPage() {
   const [teamMembersLoading, setTeamMembersLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [agentQuestion, setAgentQuestion] = useState<AgentQuestion | null>(null);
   const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
   const [publishScreenshots, setPublishScreenshots] = useState<Partial<Record<"light" | "dark", string>>>({});
   const frame = useRef<HTMLIFrameElement>(null);
@@ -162,6 +258,12 @@ export function CustomWorkspacesPage() {
     setSelected((current) => current && result.workspaces.find((item) => item.id === current.id) || null);
   };
   useEffect(() => { void refresh().catch((err) => setError(err.message)); }, []);
+  useEffect(() => {
+    if (!canManage) return;
+    void request<{ questions: AgentQuestion[] }>("/api/assistant/questions/pending")
+      .then(({ questions }) => setAgentQuestion((current) => current ?? questions[0] ?? null))
+      .catch(() => {});
+  }, [canManage]);
   useEffect(() => {
     if (!canManage) return;
     void request<{ items: { question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
@@ -318,6 +420,10 @@ export function CustomWorkspacesPage() {
             output: typeof activity.output === "string" ? activity.output : undefined,
             status: "done",
           }]);
+        }
+        if (event.question && typeof event.question === "object") {
+          const question = event.question as AgentQuestion;
+          if (typeof question.id === "string" && Array.isArray(question.questions)) setAgentQuestion(question);
         }
         if (typeof event.error === "string") throw new Error(event.error);
         if (event.done === true) done = true;
@@ -606,7 +712,7 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
-        {publishAgentSteps.length > 0 && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
+        {(publishAgentSteps.length > 0 || agentQuestion) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
           <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshots.light || publishScreenshots.dark ? "Checks light- and dark-theme screenshots and browser runtime, repairs code or contrast issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
           <ol className="mt-2 space-y-2">
@@ -621,6 +727,13 @@ export function CustomWorkspacesPage() {
               </span>
             </li>)}
           </ol>
+          {agentQuestion && <AgentQuestionCard question={agentQuestion} onSubmit={async (answers) => {
+            await request(`/api/assistant/questions/${encodeURIComponent(agentQuestion.id)}/answer`, {
+              method: "POST",
+              body: JSON.stringify({ answers }),
+            });
+            setAgentQuestion(null);
+          }} />}
           {(["light", "dark"] as const).filter((theme) => publishScreenshots[theme]).length > 0 && <div className="mt-3 grid max-w-4xl gap-3 md:grid-cols-2">
             {(["light", "dark"] as const).map((theme) => publishScreenshots[theme] && <figure key={theme}>
               <img

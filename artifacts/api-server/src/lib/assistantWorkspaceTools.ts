@@ -159,6 +159,32 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
     ["workspaceId", "specialty", "objective"],
   ),
   tool(
+    "ask_user",
+    "Ask the coordinator for information that blocks correct progress. Batch related questions in one call and use the richest suitable fields: text, single/multiple choice, yes/no, or file uploads. Users can preview and remove files before submitting. Wait for answers before continuing.",
+    {
+      questions: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", minLength: 1, maxLength: 48 },
+            type: { type: "string", enum: ["text", "singleSelect", "multiSelect", "boolean", "fileUpload"] },
+            title: { type: "string", minLength: 1, maxLength: 160 },
+            required: { type: "boolean" },
+            placeholder: { type: "string", maxLength: 240 },
+            options: { type: "array", items: { type: "string", maxLength: 120 }, maxItems: 8 },
+            accept: { type: "string", maxLength: 200 },
+            maxFiles: { type: "integer", minimum: 1, maximum: 5 },
+          },
+          required: ["id", "type", "title"],
+        },
+      },
+    },
+    ["questions"],
+  ),
+  tool(
     "list_custom_workspace_files",
     "List source files in a custom workspace draft owned by the signed-in coordinator's team.",
     { workspaceId: { type: "string" } },
@@ -227,6 +253,18 @@ type ToolContext = {
   accountId: string;
   teamId: string;
   authorName: string;
+  askCoordinator?: (questions: AssistantQuestion[]) => Promise<Record<string, unknown>>;
+};
+
+export type AssistantQuestion = {
+  id: string;
+  type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload";
+  title: string;
+  required?: boolean;
+  placeholder?: string;
+  options?: string[];
+  accept?: string;
+  maxFiles?: number;
 };
 
 function textArg(args: Record<string, unknown>, key: string, maxLength: number): string {
@@ -291,7 +329,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "ask_user" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
     const account = context.accountId ? await accountById(context.accountId) : undefined;
     if (account?.role !== "coordinator") {
       return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
@@ -759,7 +797,7 @@ export async function runAssistantWorkspaceTool(
         .map((file) => ({ path: file.path, content: file.content.slice(0, 30_000) })),
     }).slice(0, 100_000);
     const subagentTools = ASSISTANT_WORKSPACE_TOOLS.filter((candidate) =>
-      ["list_custom_workspace_files", "read_custom_workspace_file", "create_custom_workspace_file", "write_custom_workspace_file"]
+      ["list_custom_workspace_files", "read_custom_workspace_file", "create_custom_workspace_file", "write_custom_workspace_file", "ask_user"]
         .includes(candidate.function.name),
     );
     type SubagentMessage = Parameters<typeof openai.chat.completions.create>[0]["messages"][number];
@@ -815,6 +853,41 @@ export async function runAssistantWorkspaceTool(
       content: JSON.stringify({ specialty, objective, report, edits }),
       detail: `spawned ${specialty} subagent${edits.length ? `; ${edits.length} file operations` : ""}`,
     };
+  }
+
+  if (name === "ask_user") {
+    if (!context.askCoordinator || !Array.isArray(args.questions) || args.questions.length < 1 || args.questions.length > 8) {
+      return { content: "Question prompts are unavailable in this run.", detail: "question tool unavailable" };
+    }
+    const questions: AssistantQuestion[] = [];
+    for (const candidate of args.questions) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        return { content: "Each question must be a structured question object.", detail: "invalid question" };
+      }
+      const item = candidate as Record<string, unknown>;
+      const id = typeof item.id === "string" ? item.id.trim().slice(0, 48) : "";
+      const title = typeof item.title === "string" ? item.title.trim().slice(0, 160) : "";
+      const type = typeof item.type === "string" ? item.type : "";
+      if (!id || !title || !["text", "singleSelect", "multiSelect", "boolean", "fileUpload"].includes(type)) {
+        return { content: "Each question needs an id, title, and supported type.", detail: "invalid question" };
+      }
+      const options = Array.isArray(item.options)
+        ? item.options.filter((value): value is string => typeof value === "string").map((value) => value.trim().slice(0, 120)).filter(Boolean).slice(0, 8)
+        : undefined;
+      if ((type === "singleSelect" || type === "multiSelect") && (options?.length ?? 0) < 2) {
+        return { content: "Choice questions need at least two options.", detail: "invalid question options" };
+      }
+      questions.push({
+        id, title, type: type as AssistantQuestion["type"],
+        ...(item.required === true ? { required: true } : {}),
+        ...(typeof item.placeholder === "string" ? { placeholder: item.placeholder.slice(0, 240) } : {}),
+        ...(options ? { options } : {}),
+        ...(typeof item.accept === "string" ? { accept: item.accept.slice(0, 200) } : {}),
+        ...(typeof item.maxFiles === "number" ? { maxFiles: Math.min(5, Math.max(1, Math.floor(item.maxFiles))) } : {}),
+      });
+    }
+    const answers = await context.askCoordinator(questions);
+    return { content: JSON.stringify({ answers }), detail: `received answers to ${questions.length} question${questions.length === 1 ? "" : "s"}` };
   }
 
   if (name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {

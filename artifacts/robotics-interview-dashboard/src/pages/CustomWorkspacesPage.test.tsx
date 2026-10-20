@@ -44,6 +44,7 @@ describe("custom workspace access settings", () => {
     const savedBodies: unknown[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/custom-workspaces/team-members") {
         return Response.json({ members: [{ id: "ada-id", displayName: "Ada" }, { id: "ben-id", displayName: "Ben" }] });
       }
@@ -120,6 +121,7 @@ describe("custom workspace version history", () => {
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/assistant/history") return Response.json({ items: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: restored ? savedFiles : [] });
@@ -198,6 +200,7 @@ describe("custom workspace visual publish review", () => {
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [published ? publishedWorkspace : draft] });
@@ -245,6 +248,7 @@ describe("custom workspace visual publish review", () => {
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
@@ -271,6 +275,7 @@ describe("custom workspace visual publish review", () => {
     window.localStorage.setItem("robotics-assistant-model", "openrouter/free");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/assistant/models") return Response.json({ items: [
         { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
         { id: "model-selected", name: "Selected model" },
@@ -318,10 +323,97 @@ describe("custom workspace visual publish review", () => {
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();
   });
 
+  it("collects a batch of agent questions and lets the coordinator inspect and remove an uploaded file", async () => {
+    let finishAnswer = () => {};
+    const answersSubmitted = new Promise<void>((resolve) => { finishAnswer = resolve; });
+    let submittedAnswers: Record<string, unknown> | undefined;
+    const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+    const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: () => "blob:question-file" });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => {} });
+    const questions = {
+      id: "pending-question-1",
+      questions: [
+        { id: "purpose", type: "text", title: "What will the workspace track?", required: true },
+        { id: "layout", type: "singleSelect", title: "Choose a layout", options: ["Table", "Cards"], required: true },
+        { id: "features", type: "multiSelect", title: "Which features?", options: ["Search", "Export"] },
+        { id: "approved", type: "boolean", title: "Should the team use it?", required: true },
+        { id: "reference", type: "fileUpload", title: "Upload a reference", maxFiles: 2 },
+      ],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected", visionModel: "vision" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      if (path === "/api/assistant/questions/pending-question-1/answer") {
+        submittedAnswers = JSON.parse(String(init?.body)).answers;
+        finishAnswer();
+        return Response.json({ submitted: true });
+      }
+      if (path === "/api/assistant/ask/stream") {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ question: questions })}\n\n`));
+            void answersSubmitted.then(() => {
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, answer: "Draft complete." })}\n\n`));
+              controller.close();
+            });
+          },
+        });
+        return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      render(<CustomWorkspacesPage />);
+      fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+        target: { value: "Track team projects" },
+      });
+      await waitFor(() => expect(screen.getByRole("button", { name: "Generate draft" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+      expect(await screen.findByTestId("agent-question-form")).toBeInTheDocument();
+      fireEvent.change(screen.getByTestId("input-question-purpose"), { target: { value: "Projects and owners" } });
+      fireEvent.click(screen.getByLabelText("Cards"));
+      fireEvent.click(screen.getByLabelText("Search"));
+      fireEvent.click(screen.getByLabelText("Yes"));
+      const reference = new File(["sample reference"], "reference.txt", { type: "text/plain" });
+      fireEvent.change(screen.getByTestId("input-question-file-reference"), { target: { files: [reference] } });
+      expect(await screen.findByText(/reference\.txt/)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "blob:question-file");
+      fireEvent.click(screen.getByRole("button", { name: "Remove reference.txt" }));
+      expect(screen.queryByText(/reference\.txt/)).not.toBeInTheDocument();
+      fireEvent.change(screen.getByTestId("input-question-file-reference"), {
+        target: { files: [new File(["updated reference"], "replacement.txt", { type: "text/plain" })] },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+
+      await waitFor(() => expect(submittedAnswers).toBeDefined());
+      expect(submittedAnswers).toMatchObject({
+        purpose: { value: "Projects and owners" },
+        layout: { value: "Cards" },
+        features: { value: ["Search"] },
+        approved: { value: "yes" },
+        reference: [{ name: "replacement.txt", type: "text/plain", textContent: "updated reference" }],
+      });
+    } finally {
+      if (originalCreateObjectURL) Object.defineProperty(URL, "createObjectURL", originalCreateObjectURL);
+      else Reflect.deleteProperty(URL, "createObjectURL");
+      if (originalRevokeObjectURL) Object.defineProperty(URL, "revokeObjectURL", originalRevokeObjectURL);
+      else Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
+  });
+
   it("sends the catalog-backed MiniMax default with a new workspace request", async () => {
     let submittedModel = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/assistant/models") return Response.json({ items: [
         { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
       ] });

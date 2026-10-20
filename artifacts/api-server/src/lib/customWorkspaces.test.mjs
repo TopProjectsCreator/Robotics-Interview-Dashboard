@@ -1261,6 +1261,22 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.match(insert.statement, /'draft'/);
   const createdWorkspace = harness.workspaces.find((workspace) => workspace.title === "Assistant-created app");
   assert.ok(createdWorkspace);
+  const userAnswers = await runAssistantWorkspaceTool("ask_user", {
+    questions: [
+      { id: "layout", type: "singleSelect", title: "Which layout?", options: ["Table", "Cards"] },
+      { id: "reference", type: "fileUpload", title: "Upload a reference", maxFiles: 2 },
+    ],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    askCoordinator: async (questions) => ({
+      layout: { value: "Cards" },
+      reference: [{ name: "layout.png", type: "image/png", dataUrl: "data:image/png;base64,dGVzdA==" }],
+      questionCount: questions.length,
+    }),
+  });
+  assert.equal(JSON.parse(userAnswers.content).answers.questionCount, 2);
   const initialVersion = harness.versions.find((version) => version.workspaceId === createdWorkspace.id);
   assert.deepEqual(initialVersion.sourceFiles, [
     { path: "index.html", content: "<main>Tracker</main>" },
