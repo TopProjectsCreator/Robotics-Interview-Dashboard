@@ -223,11 +223,13 @@ async function ensureSchema(): Promise<void> {
        "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner', 'selected')),
        "allowed_interviewer_ids" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
+        "critique_rounds" integer not null default 0 check ("critique_rounds" between 0 and 5),
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
     `alter table "custom_workspaces" add column if not exists "access_mode" text not null default 'team'`,
     `alter table "custom_workspaces" add column if not exists "allowed_interviewer_ids" jsonb not null default '[]'::jsonb`,
+    `alter table "custom_workspaces" add column if not exists "critique_rounds" integer not null default 0`,
     `do $custom_access$
        begin
          if not exists (

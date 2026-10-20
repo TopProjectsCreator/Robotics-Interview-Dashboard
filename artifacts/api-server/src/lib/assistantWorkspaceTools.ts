@@ -115,7 +115,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Before reporting the build finished, inspect the complete source in a separate critique pass: return exactly 10 ranked, actionable flaws scored 1–10, regardless of fix size. For rounds 1–4 implement every score above 6 and below 6; on round 5 implement scores above 6 only. Re-critique after fixes and stop only when no eligible fixes remain or five rounds are complete. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
+    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. Before reporting the build finished, complete exactly five sequential critique rounds (1, 2, 3, 4, then 5); five rounds are mandatory even when a round has no eligible fixes. Each critique must return exactly 10 ranked, actionable flaws scored 1–10, regardless of fix size. In rounds 1–4 implement every score above 6 and every score below 6; in round 5 implement scores above 6 only. Re-critique the latest source after applying eligible fixes. Do not finish early or skip a round. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -131,7 +131,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "critique_custom_workspace",
-    "Send the latest complete custom workspace draft to a separate critique agent. It returns exactly 10 actionable flaws ranked by severity, each scored 1–10. Call after source edits and repeat after fixes, at most five rounds.",
+    "Send the latest complete custom workspace draft to a separate critique agent. It returns exactly 10 actionable flaws ranked by severity, each scored 1–10. Complete rounds sequentially from 1 through 5; all five rounds are mandatory, even when no fixes are eligible.",
     {
       workspaceId: { type: "string", minLength: 1 },
       round: { type: "integer", minimum: 1, maximum: 5 },
@@ -527,7 +527,7 @@ export async function runAssistantWorkspaceTool(
       return { content: "A workspace id and critique round from 1 to 5 are required.", detail: "invalid critique request" };
     }
     const draft = await pool.query<{ title: string; prompt: string; html: string }>(
-      `select "title", "prompt", "html" from "custom_workspaces"
+      `select "title", "prompt", "html", "critique_rounds" from "custom_workspaces"
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
           and "created_by" = $3 and "status" = 'draft'
         limit 1`,
@@ -535,6 +535,13 @@ export async function runAssistantWorkspaceTool(
     );
     if (!draft.rowCount) {
       return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
+    }
+    const completedRounds = Number(draft.rows[0].critique_rounds ?? 0);
+    if (round !== completedRounds + 1) {
+      return {
+        content: `Critique rounds must be completed sequentially. The next required round is ${completedRounds + 1}.`,
+        detail: "critique round out of sequence",
+      };
     }
     const sourceFiles = await pool.query<{ path: string; content: string }>(
       `select "path", "content" from "custom_workspace_files"
@@ -578,8 +585,17 @@ export async function runAssistantWorkspaceTool(
     if (flaws.length !== 10) {
       return { content: "The critique agent must return exactly 10 valid actionable flaws. Retry this critique round.", detail: "critique count invalid" };
     }
+    const recorded = await pool.query(
+      `update "custom_workspaces" set "critique_rounds" = $4, "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "created_by" = $3 and "status" = 'draft' and "critique_rounds" = $5`,
+      [workspaceId, context.teamId, context.accountId, round, round - 1],
+    );
+    if (!recorded.rowCount) {
+      return { content: "This critique round could not be recorded because the draft changed or another critique ran. Retry using the next required round.", detail: "critique round not recorded" };
+    }
     return {
-      content: JSON.stringify({ round, flaws, implementationRule: "For rounds 1–4 implement scores above 6 and below 6. On round 5 implement scores above 6 only. Use workspace file tools, then critique the updated draft again before finishing." }),
+      content: JSON.stringify({ round, completedRounds: round, requiredRounds: 5, flaws, implementationRule: "Complete all five sequential critique rounds even when no eligible fixes remain. For rounds 1–4 implement every score above 6 and every score below 6. On round 5 implement scores above 6 only. Apply eligible fixes using workspace file tools before the next critique. Do not finish before round 5." }),
       detail: `critique round ${round}: 10 ranked flaws`,
     };
   }

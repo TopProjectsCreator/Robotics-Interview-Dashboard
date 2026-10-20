@@ -232,7 +232,7 @@ async function createHarness(t) {
             workspace.id === id && workspace.teamId === teamId && workspace.status === "draft",
           );
           const projected = row && statement.includes('select "title", "prompt", "html"')
-            ? [{ title: row.title, prompt: row.prompt, html: row.html }]
+            ? [{ title: row.title, prompt: row.prompt, html: row.html, critique_rounds: row.critiqueRounds ?? 0 }]
             : row ? [row] : [];
           return { rows: projected, rowCount: projected.length };
         }
@@ -311,6 +311,17 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("update \"custom_workspaces\"")) {
+        if (statement.includes('set "critique_rounds"')) {
+          const [id, teamId, createdBy, critiqueRounds, expectedPrevious] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId && workspace.createdBy === createdBy &&
+            workspace.status === "draft" && (workspace.critiqueRounds ?? 0) === expectedPrevious,
+          );
+          if (!row) return { rows: [], rowCount: 0 };
+          row.critiqueRounds = critiqueRounds;
+          return { rows: [], rowCount: 1 };
+        }
         const [id, teamId, accessMode, allowedIdsJson] = values;
         ensureTeamScope('"team_id"', "$2", teamId);
         const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
@@ -394,6 +405,7 @@ async function createHarness(t) {
           status: "draft",
           accessMode: "team",
           allowedInterviewerIds: [],
+          critiqueRounds: 0,
           createdBy,
         };
         workspaces.push(row);
@@ -1090,6 +1102,22 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.equal(report.flaws.length, 10);
   assert.deepEqual(report.flaws.map((flaw) => flaw.score), [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
   assert.match(critique.detail, /10 ranked flaws/);
+  assert.equal(report.completedRounds, 1);
+  assert.equal(report.requiredRounds, 5);
+  assert.match(report.implementationRule, /all five sequential critique rounds/);
+
+  const skippedRound = await runAssistantWorkspaceTool("critique_custom_workspace", {
+    workspaceId: createdWorkspace.id,
+    round: 3,
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  assert.equal(skippedRound.detail, "critique round out of sequence");
+  for (const round of [2, 3, 4, 5]) {
+    const nextCritique = await runAssistantWorkspaceTool("critique_custom_workspace", {
+      workspaceId: createdWorkspace.id,
+      round,
+    }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+    assert.equal(JSON.parse(nextCritique.content).completedRounds, round);
+  }
 
   await runAssistantWorkspaceTool("create_custom_workspace_file", {
     workspaceId: createdWorkspace.id,
