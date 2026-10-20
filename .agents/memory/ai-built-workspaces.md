@@ -9,8 +9,12 @@ Custom workspaces should support arbitrary interactive apps, while generated cod
 
 Workspace-builder and `/assistant` agent runs must continue on the server after the browser tab closes, and their tool activity must be reviewable when the user returns.
 
+Generated workspace apps must follow the host Robotics dashboard's shared visual style, including its palette, compact typography, card treatment, and light/dark themes; they should not invent a separate brand or duplicate the global navigation.
+
 **Why:** The user explicitly said the assistant should be able to build a Parts-like workspace even if Parts did not exist, and that custom workspaces should share the existing Supabase database.
 
 **Why:** The user explicitly requires workspace-builder and `/assistant` agent runs to keep working after the tab is closed.
 
-**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review.
+**Why:** The user explicitly said generated workspaces must uphold the dashboard's established styling and CSS.
+
+**How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review. Inject the current dashboard theme tokens into the preview and require the assistant and visual QA to use them.

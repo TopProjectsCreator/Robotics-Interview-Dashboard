@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "lucide-react";
+import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 
@@ -57,10 +58,46 @@ const BRIDGE = `<script>
 })();
 </script>`;
 
-function sandboxDocument(html: string): string {
-  const safeMeta = CSP + BRIDGE;
-  if (/<head(?:\\s[^>]*)?>/i.test(html)) return html.replace(/<head(?:\\s[^>]*)?>/i, (head) => `${head}${safeMeta}`);
-  return `<!doctype html><html><head>${safeMeta}</head><body>${html}</body></html>`;
+function sandboxDocument(html: string, darkMode: boolean): string {
+  const themeTokens = `<style>
+:root {
+  --background: 216 38% 96%; --foreground: 220 25% 16%; --border: 215 25% 86%;
+  --card: 0 0% 100%; --card-foreground: 220 25% 16%; --card-border: 215 25% 87%;
+  --primary: 190 76% 37%; --primary-foreground: 0 0% 100%; --secondary: 215 26% 91%;
+  --secondary-foreground: 220 25% 21%; --muted: 215 26% 92%; --muted-foreground: 216 13% 44%;
+  --accent: 42 91% 62%; --accent-foreground: 220 32% 13%; --input: 215 22% 80%; --ring: 190 76% 37%;
+  --workspace-navy: #183a4b; --workspace-teal: #16869a; --workspace-yellow: #f8c84a;
+  --app-font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --app-font-mono: 'DM Mono', ui-monospace, monospace;
+}
+:root.dark {
+  color-scheme: dark;
+  --background: 220 32% 7%; --foreground: 210 20% 90%; --border: 215 20% 22%;
+  --card: 218 28% 11%; --card-foreground: 210 20% 90%; --card-border: 215 20% 22%;
+  --primary: 190 55% 55%; --primary-foreground: 220 32% 8%; --secondary: 215 22% 18%;
+  --secondary-foreground: 210 18% 88%; --muted: 215 22% 16%; --muted-foreground: 214 14% 62%;
+  --accent: 215 22% 18%; --accent-foreground: 210 20% 90%; --input: 215 20% 26%; --ring: 190 60% 55%;
+  --workspace-navy: #e5edf2; --workspace-teal: #6fc3cf; --workspace-yellow: #e8c85a;
+}
+html, body { min-height: 100%; }
+body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); }
+</style>`;
+  const safeMeta = CSP + BRIDGE + themeTokens;
+  const rootClass = darkMode ? "dark" : "";
+  const themedHtml = /<html\b([^>]*)>/i.test(html)
+    ? html.replace(/<html\b([^>]*)>/i, (_tag, attrs: string) => {
+      const existingClass = attrs.match(/\bclass=(["'])(.*?)\1/i);
+      if (existingClass) {
+        const retainedClasses = existingClass[2].split(/\s+/).filter((name) => name && name !== "dark");
+        if (rootClass) retainedClasses.push(rootClass);
+        const classValue = retainedClasses.join(" ");
+        return `<html${attrs.replace(existingClass[0], `class="${classValue}"`)}>`;
+      }
+      return `<html${attrs}${rootClass ? ` class="${rootClass}"` : ""}>`;
+    })
+    : html;
+  if (/<head(?:\s[^>]*)?>/i.test(themedHtml)) return themedHtml.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}${safeMeta}`);
+  return `<!doctype html><html class="${rootClass}"><head>${safeMeta}</head><body>${themedHtml}</body></html>`;
 }
 
 function compileWorkspaceSourceFiles(sourceFiles: WorkspaceSourceFile[]): string | null {
@@ -90,6 +127,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function CustomWorkspacesPage() {
+  const { resolvedTheme } = useTheme();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const canManage = session.data?.role === "coordinator";
   const [items, setItems] = useState<Workspace[]>([]);
@@ -620,7 +658,7 @@ export function CustomWorkspacesPage() {
           <button type="button" data-testid="button-return-current-app" disabled={busy} onClick={() => setPreviewVersion(null)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-xs font-semibold text-[hsl(var(--foreground))]">Return to current app</button>
         </div>}
         {previewHtml
-          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewHtml)} className="h-[70vh] min-h-[520px] w-full bg-white" />
+          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewHtml, resolvedTheme === "dark")} className="h-[70vh] min-h-[520px] w-full bg-white dark:bg-[#0b141b]" />
           : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />Describe a workspace to generate its first draft.</div></div>}
         {active?.status === "draft" && canManage && <div className="border-t border-[hsl(var(--border))] p-4">
           <label htmlFor="workspace-revision" className="text-sm font-semibold text-[hsl(var(--foreground))]">Revise this draft</label>

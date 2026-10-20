@@ -295,6 +295,9 @@ describe("custom workspace visual publish review", () => {
     expect(await screen.findByRole("heading", { name: "Parts tracker" })).toBeInTheDocument();
     expect(await screen.findByTestId("workspace-source-tree")).toHaveTextContent("index.html");
     expect(await screen.findByText("create custom workspace file")).toBeInTheDocument();
+    const preview = await screen.findByTitle("Parts tracker preview");
+    expect(preview.getAttribute("srcdoc")).toContain("--workspace-teal: #16869a");
+    expect(preview.getAttribute("srcdoc")).toContain(":root.dark");
     fireEvent.click(screen.getAllByText("Tool call details")[1]);
     expect(await screen.findByText('{"path":"index.html"}')).toBeInTheDocument();
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();

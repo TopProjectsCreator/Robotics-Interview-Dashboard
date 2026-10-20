@@ -91,6 +91,19 @@ function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | nul
 
 function visualSandboxDocument(html: string): string {
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
+  const dashboardTheme = `<style>
+  :root {
+    --background: 216 38% 96%; --foreground: 220 25% 16%; --border: 215 25% 86%;
+    --card: 0 0% 100%; --card-foreground: 220 25% 16%; --card-border: 215 25% 87%;
+    --primary: 190 76% 37%; --primary-foreground: 0 0% 100%; --secondary: 215 26% 91%;
+    --secondary-foreground: 220 25% 21%; --muted: 215 26% 92%; --muted-foreground: 216 13% 44%;
+    --accent: 42 91% 62%; --accent-foreground: 220 32% 13%; --input: 215 22% 80%; --ring: 190 76% 37%;
+    --workspace-navy: #183a4b; --workspace-teal: #16869a; --workspace-yellow: #f8c84a;
+    --app-font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --app-font-mono: 'DM Mono', ui-monospace, monospace;
+  }
+  body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); }
+  </style>`;
   const reporter = `<script>
 (() => {
   const send = (kind, message) => {
@@ -122,8 +135,8 @@ function visualSandboxDocument(html: string): string {
     "",
   );
   const document = /<head\b[^>]*>/i.test(cleanHtml)
-    ? cleanHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${reporter}`)
-    : `<!doctype html><html><head>${policy}${reporter}</head><body>${cleanHtml}</body></html>`;
+    ? cleanHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${dashboardTheme}${reporter}`)
+    : `<!doctype html><html><head>${policy}${dashboardTheme}${reporter}</head><body>${cleanHtml}</body></html>`;
   const wrapper = `<!doctype html><html><head><script>
 (() => {
   document.addEventListener("DOMContentLoaded", () => {
@@ -203,7 +216,7 @@ async function inspectWorkspaceScreenshot(
     messages: [
       {
         role: "system",
-        content: `Act as the visual QA agent for an internal web app. Review the rendered 1280x900 screenshot against the requirements. Check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when the screenshot is coherent and satisfies the brief. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
+        content: `Act as the visual QA agent for an app embedded in the Robotics team workspace. Review the rendered 1280x900 screenshot against the requirements and the host dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. Reject unrelated palettes, oversized marketing hero styling, or duplicated host navigation as brand mismatches. Also check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when the app is coherent, meets the brief, and visually belongs to the host workspace. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
       },
       {
         role: "user",
@@ -236,7 +249,7 @@ async function repairWorkspaceHtml(
     messages: [
       {
         role: "system",
-        content: "Repair the standalone internal app using the visual QA and browser runtime findings. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, and missing or blocked resources as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
+        content: "Repair the standalone internal app using the visual QA and browser runtime findings. Preserve and apply the Robotics dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. Do not introduce a competing brand or duplicate the host navigation. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, missing or blocked resources, and style mismatches as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
       },
       {
         role: "user",
@@ -450,7 +463,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       messages: [
         {
           role: "system",
-          content: `Build a complete, responsive internal web application from the user's requirements. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup.`,
+          content: `Build a complete, responsive internal web application from the user's requirements that looks native inside the Robotics team workspace. Follow this design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, 10–16px corners, compact mono metadata, and accessible light/dark variants using shared CSS theme tokens. Do not invent a competing palette, duplicate the host sidebar/header/navigation, or use oversized marketing hero styling. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup.`,
         },
         { role: "user", content: prompt },
       ],
@@ -595,7 +608,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
+        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes while preserving the Robotics dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. Use the shared CSS theme tokens; do not invent a competing brand or duplicate the host navigation. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
         { role: "user", content: JSON.stringify({ requirements: instruction, existing: { title: current.title, description: current.description, html: current.html, capabilities: current.capabilities } }) },
       ],
     });
