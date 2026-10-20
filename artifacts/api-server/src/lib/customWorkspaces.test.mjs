@@ -186,6 +186,7 @@ async function createHarness(t) {
     keepRuntimeBroken: false,
     darkReviewRejectOnce: false,
     verificationRejectOnce: false,
+    subagentWriteOnce: false,
   };
   const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
     workspace.id,
@@ -575,10 +576,32 @@ async function createHarness(t) {
                   }],
                 };
               }
-              if (systemPrompt.includes("separate read-only subagent")) {
-                return {
-                  choices: [{ message: { content: "Independent review: the draft should improve keyboard focus visibility." } }],
-                };
+              if (systemPrompt.includes("separate custom workspace subagent")) {
+                if (!calls.subagentWriteOnce) {
+                  calls.subagentWriteOnce = true;
+                  const userText = request.messages[1]?.content ?? "";
+                  const workspaceId = userText.match(/Draft ID: ([^\n]+)/)?.[1] ?? "";
+                  return {
+                    choices: [{
+                      message: {
+                        content: null,
+                        tool_calls: [{
+                          id: "subagent-file-write",
+                          type: "function",
+                          function: {
+                            name: "create_custom_workspace_file",
+                            arguments: JSON.stringify({
+                              workspaceId,
+                              path: "subagent-review.md",
+                              content: "Added a focused accessibility review.",
+                            }),
+                          },
+                        }],
+                      },
+                    }],
+                  };
+                }
+                return { choices: [{ message: { content: "Created subagent-review.md with the requested review." } }] };
               }
                 if (systemPrompt.includes("independent verification agent")) {
                   const userText = request.messages[1]?.content ?? "";
@@ -1217,13 +1240,6 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   assert.match(insert.statement, /'draft'/);
   const createdWorkspace = harness.workspaces.find((workspace) => workspace.title === "Assistant-created app");
   assert.ok(createdWorkspace);
-  const delegated = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
-    workspaceId: createdWorkspace.id,
-    specialty: "accessibility",
-    objective: "Review keyboard accessibility.",
-  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
-  assert.match(delegated.detail, /spawned read-only accessibility subagent/);
-  assert.match(JSON.parse(delegated.content).report, /keyboard focus/);
   const initialVersion = harness.versions.find((version) => version.workspaceId === createdWorkspace.id);
   assert.deepEqual(initialVersion.sourceFiles, [
     { path: "index.html", content: "<main>Tracker</main>" },
@@ -1290,6 +1306,19 @@ test("assistant-created custom apps remain drafts owned by the current team", as
   );
   assert.equal(unverifiedPublish.status, 409);
   assert.match((await unverifiedPublish.json()).error, /verify all five critique rounds/);
+
+  const delegated = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "accessibility",
+    objective: "Review keyboard accessibility and make a useful source edit.",
+  }, { accountId: "coordinator-b", authorName: "Team B coordinator", teamId: "team-b" });
+  assert.match(delegated.detail, /spawned accessibility subagent; 1 file operations/);
+  assert.match(JSON.parse(delegated.content).report, /Created subagent-review\.md/);
+  assert.equal(
+    harness.savedWorkspaceFiles.get(createdWorkspace.id).find((file) => file.path === "subagent-review.md")?.content,
+    "Added a focused accessibility review.",
+    "the subagent must save its own file edit in the authorized draft",
+  );
 
   const queryCount = harness.calls.queries.length;
   const invalid = await runAssistantWorkspaceTool(
