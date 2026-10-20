@@ -2396,6 +2396,49 @@ export interface AssistantPendingQuestionsResponse {
   questions: AssistantPendingQuestionsResponseQuestionsItem[];
 }
 
+export type AssistantBuilderRunStatus = typeof AssistantBuilderRunStatus[keyof typeof AssistantBuilderRunStatus];
+
+
+export const AssistantBuilderRunStatus = {
+  running: 'running',
+  waiting_for_answer: 'waiting_for_answer',
+  completed: 'completed',
+  failed: 'failed',
+  interrupted: 'interrupted',
+} as const;
+
+export type AssistantBuilderRunQuestionQuestionsItem = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type AssistantBuilderRunQuestion = {
+  id: string;
+  questions: AssistantBuilderRunQuestionQuestionsItem[];
+} | null;
+
+export type AssistantBuilderRunAnswers = { [key: string]: unknown };
+
+export interface AssistantBuilderRun {
+  id: string;
+  status: AssistantBuilderRunStatus;
+  prompt: string;
+  /** @nullable */
+  question: AssistantBuilderRunQuestion;
+  answers: AssistantBuilderRunAnswers;
+  activities: AssistantActivity[];
+  /** @nullable */
+  result: string | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssistantBuilderRunResponse {
+  run: AssistantBuilderRun | null;
+}
+
 export interface AssistantSkill {
   id: string;
   name: string;

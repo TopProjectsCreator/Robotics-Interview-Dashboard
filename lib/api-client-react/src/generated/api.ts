@@ -28,6 +28,7 @@ import type {
   ApplicantSearchAiResponse,
   ApplicantUpdate,
   AskCustomWorkspaceLlm200,
+  AssistantBuilderRunResponse,
   AssistantConfig,
   AssistantConversation,
   AssistantConversationInput,
@@ -7716,6 +7717,83 @@ export function useGetPendingAssistantQuestions<TData = Awaited<ReturnType<typeo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPendingAssistantQuestionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLatestAssistantBuilderRunUrl = () => {
+
+
+
+
+  return `/api/assistant/custom-workspace-builder/runs/latest`
+}
+
+/**
+ * @summary Get the signed-in coordinator's latest custom workspace builder run
+ */
+export const getLatestAssistantBuilderRun = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantBuilderRunResponse> => {
+
+  return customFetch<AssistantBuilderRunResponse>(getGetLatestAssistantBuilderRunUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLatestAssistantBuilderRunQueryKey = () => {
+    return [
+    `/api/assistant/custom-workspace-builder/runs/latest`
+    ] as const;
+    }
+
+
+export const getGetLatestAssistantBuilderRunQueryOptions = <TData = Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLatestAssistantBuilderRunQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>> = ({ signal }) => getLatestAssistantBuilderRun({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLatestAssistantBuilderRunQueryResult = NonNullable<Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>>
+export type GetLatestAssistantBuilderRunQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the signed-in coordinator's latest custom workspace builder run
+ */
+
+export function useGetLatestAssistantBuilderRun<TData = Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLatestAssistantBuilderRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLatestAssistantBuilderRunQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

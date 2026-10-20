@@ -45,6 +45,7 @@ describe("custom workspace access settings", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/team-members") {
         return Response.json({ members: [{ id: "ada-id", displayName: "Ada" }, { id: "ben-id", displayName: "Ben" }] });
       }
@@ -122,6 +123,7 @@ describe("custom workspace version history", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/assistant/history") return Response.json({ items: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: restored ? savedFiles : [] });
@@ -201,6 +203,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [published ? publishedWorkspace : draft] });
@@ -249,6 +252,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
@@ -276,6 +280,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/assistant/models") return Response.json({ items: [
         { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
         { id: "model-selected", name: "Selected model" },
@@ -344,6 +349,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
       if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected", visionModel: "vision" });
       if (path === "/api/assistant/history") return Response.json({ items: [] });
@@ -425,6 +431,7 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/assistant/models") return Response.json({ items: [
         { id: "minimax/minimax-m3.1-flash:free", name: "MiniMax: MiniMax M3.1 Flash (free)" },
       ] });
@@ -454,5 +461,96 @@ describe("custom workspace visual publish review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
 
     await waitFor(() => expect(submittedModel).toBe("minimax/minimax-m3.1-flash:free"));
+  });
+
+  it("reloads an interrupted question, saves its answer, and shows the recovered result", async () => {
+    const question = {
+      id: "persisted-question-1",
+      questions: [{ id: "purpose", type: "text", title: "What should the workspace track?", required: true }],
+    };
+    const savedPrompt = "Build a custom workspace app for the team. Requirements: Tryout day schedule.";
+    let answer: Record<string, unknown> | null = null;
+    let recovered = false;
+    let recoveredPrompt = "";
+    const interruptedRun = {
+      id: "builder-run-1",
+      status: "interrupted",
+      prompt: savedPrompt,
+      question,
+      answers: {},
+      activities: [{ tool: "create_custom_workspace", detail: "Saved a draft workspace." }],
+      result: null,
+      error: "This builder stopped before it could finish.",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      updatedAt: "2026-10-20T10:01:00.000Z",
+    };
+    const completedRun = {
+      ...interruptedRun,
+      id: "builder-run-2",
+      status: "completed",
+      question: null,
+      answers: answer ?? {},
+      result: "The tryout schedule draft is ready for review.",
+      error: null,
+      updatedAt: "2026-10-20T10:02:00.000Z",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [question] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") {
+        return Response.json({ run: recovered ? { ...completedRun, answers: answer ?? {} } : {
+          ...interruptedRun,
+          question: answer ? null : question,
+          answers: answer ?? {},
+        } });
+      }
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "default" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      if (path === "/api/assistant/questions/persisted-question-1/answer") {
+        answer = JSON.parse(String(init?.body)).answers;
+        return Response.json({ submitted: true, resumed: false, status: "interrupted" });
+      }
+      if (path === "/api/assistant/ask/stream") {
+        recovered = true;
+        recoveredPrompt = JSON.parse(String(init?.body)).question;
+        return new Response([
+          `data: ${JSON.stringify({ builderRunId: "builder-run-2" })}`,
+          `data: ${JSON.stringify({ done: true, answer: "The tryout schedule draft is ready for review." })}`,
+          "",
+          "",
+        ].join("\n"), { headers: { "Content-Type": "text/event-stream" } });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = render(<CustomWorkspacesPage />);
+    expect(await screen.findByTestId("agent-question-form")).toBeInTheDocument();
+    expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Stopped — can continue");
+    fireEvent.change(screen.getByTestId("input-question-purpose"), {
+      target: { value: "Interview time slots and room assignments" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+
+    await waitFor(() => expect(answer).toEqual({
+      purpose: { value: "Interview time slots and room assignments" },
+    }));
+    expect(await screen.findByTestId("button-continue-builder")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-continue-builder"));
+
+    expect(await screen.findByTestId("builder-run-result")).toHaveTextContent(
+      "The tryout schedule draft is ready for review.",
+    );
+    expect(recoveredPrompt).toContain("Interview time slots and room assignments");
+    expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Complete");
+
+    page.unmount();
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByTestId("builder-run-result")).toHaveTextContent(
+      "The tryout schedule draft is ready for review.",
+    );
   });
 });

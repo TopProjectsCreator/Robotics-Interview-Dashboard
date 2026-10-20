@@ -2802,6 +2802,33 @@ export const GetPendingAssistantQuestionsResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in coordinator's latest custom workspace builder run
+ */
+export const GetLatestAssistantBuilderRunResponse = zod.object({
+  "run": zod.union([zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "prompt": zod.string(),
+  "question": zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}).nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
  * @summary List team-shared assistant skills
  */
 export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax = 500;

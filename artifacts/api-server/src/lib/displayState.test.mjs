@@ -23,6 +23,7 @@ registerHooks({
 const tableNames = [
   "applicantsTable",
   "assistantConversationsTable",
+  "assistantBuilderRunsTable",
   "assistantMessagesTable",
   "assistantSkillsTable",
   "broadcastAcksTable",

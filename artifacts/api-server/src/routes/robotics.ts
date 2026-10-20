@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantConversationsTable, assistantMessagesTable, assistantSkillsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantSkillsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -51,6 +51,7 @@ import {
   GetQueueResponse,
   GetQueueLabelsResponse,
   GetAssistantHistoryResponse,
+  GetLatestAssistantBuilderRunResponse,
   GenerateAssistantImageBody,
   GenerateAssistantImageResponse,
   ListAssistantModelsResponse,
@@ -242,7 +243,12 @@ const pendingAssistantQuestions = new Map<string, {
   questions: AssistantQuestion[];
   resolve: (answers: Record<string, unknown>) => void;
   timer: ReturnType<typeof setTimeout>;
+  answerPoll?: ReturnType<typeof setInterval>;
+  builderRunId?: string;
 }>();
+const activeBuilderRuns = new Set<string>();
+const BUILDER_RUN_HEARTBEAT_MS = 10_000;
+const BUILDER_RUN_STALE_MS = 45_000;
 const objectStorageService = new ObjectStorageService();
 
 function assistantConversationResponse(conversation: typeof assistantConversationsTable.$inferSelect, messageCount: number) {
@@ -5652,6 +5658,52 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
+router.get("/assistant/custom-workspace-builder/runs/latest", requireCoordinator, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const teamId = await requestTeamId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  let [run] = await db.select().from(assistantBuilderRunsTable).where(and(
+    eq(assistantBuilderRunsTable.teamId, teamId),
+    eq(assistantBuilderRunsTable.coordinatorId, accountId),
+  )).orderBy(desc(assistantBuilderRunsTable.createdAt)).limit(1);
+  if (!run) {
+    res.json(GetLatestAssistantBuilderRunResponse.parse({ run: null }));
+    return;
+  }
+  if (
+    (run.status === "running" || run.status === "waiting_for_answer") &&
+    !activeBuilderRuns.has(run.id) &&
+    Date.now() - run.updatedAt.getTime() > BUILDER_RUN_STALE_MS
+  ) {
+    const message = "This builder stopped before it could finish. Your question and any saved answer are available to continue in a new run.";
+    [run] = await db.update(assistantBuilderRunsTable)
+      .set({ status: "interrupted", error: message, updatedAt: new Date() })
+      .where(and(
+        eq(assistantBuilderRunsTable.id, run.id),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, accountId),
+      ))
+      .returning();
+  }
+  res.json(GetLatestAssistantBuilderRunResponse.parse({
+    run: {
+      id: run.id,
+      status: run.status,
+      prompt: run.prompt,
+      question: run.questionId && run.questions ? { id: run.questionId, questions: run.questions } : null,
+      answers: run.answers,
+      activities: parseStoredActivities(run.activities),
+      result: run.result,
+      error: run.error,
+      createdAt: run.createdAt.toISOString(),
+      updatedAt: run.updatedAt.toISOString(),
+    },
+  }));
+});
+
 router.get("/assistant/questions/pending", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const teamId = await requestTeamId(req);
@@ -5659,10 +5711,28 @@ router.get("/assistant/questions/pending", requireCoordinator, async (req, res):
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  const questions = [...pendingAssistantQuestions.entries()]
-    .filter(([, pending]) => pending.accountId === accountId && pending.teamId === teamId)
-    .map(([id, pending]) => ({ id, questions: pending.questions }));
-  res.json({ questions });
+  const savedQuestions = await db.select().from(assistantBuilderRunsTable).where(and(
+    eq(assistantBuilderRunsTable.teamId, teamId),
+    eq(assistantBuilderRunsTable.coordinatorId, accountId),
+    isNotNull(assistantBuilderRunsTable.questionId),
+    isNotNull(assistantBuilderRunsTable.questions),
+    or(
+      eq(assistantBuilderRunsTable.status, "waiting_for_answer"),
+      eq(assistantBuilderRunsTable.status, "interrupted"),
+    ),
+  )).orderBy(desc(assistantBuilderRunsTable.createdAt));
+  const questions = new Map<string, { id: string; questions: AssistantQuestion[] }>();
+  for (const [id, pending] of pendingAssistantQuestions.entries()) {
+    if (pending.accountId === accountId && pending.teamId === teamId) {
+      questions.set(id, { id, questions: pending.questions });
+    }
+  }
+  for (const run of savedQuestions) {
+    if (run.questionId && run.questions && !run.answers[run.questionId]) {
+      questions.set(run.questionId, { id: run.questionId, questions: run.questions as AssistantQuestion[] });
+    }
+  }
+  res.json({ questions: [...questions.values()] });
 });
 
 router.post("/assistant/questions/:questionId/answer", requireCoordinator, async (req, res): Promise<void> => {
@@ -5673,15 +5743,33 @@ router.post("/assistant/questions/:questionId/answer", requireCoordinator, async
     res.status(400).json({ error: "Provide answers for the pending question." });
     return;
   }
-  const pending = pendingAssistantQuestions.get(questionId);
   const teamId = await requestTeamId(req);
-  if (!pending || pending.accountId !== accountId || pending.teamId !== teamId) {
+  const pending = pendingAssistantQuestions.get(questionId);
+  if (pending && (pending.accountId !== accountId || pending.teamId !== teamId)) {
     res.status(404).json({ error: "This question is no longer waiting for an answer." });
     return;
   }
+  let savedRun: typeof assistantBuilderRunsTable.$inferSelect | undefined;
+  if (!pending) {
+    [savedRun] = await db.select().from(assistantBuilderRunsTable).where(and(
+      eq(assistantBuilderRunsTable.questionId, questionId),
+      eq(assistantBuilderRunsTable.teamId, teamId),
+      eq(assistantBuilderRunsTable.coordinatorId, accountId),
+      isNotNull(assistantBuilderRunsTable.questions),
+      or(
+        eq(assistantBuilderRunsTable.status, "waiting_for_answer"),
+        eq(assistantBuilderRunsTable.status, "interrupted"),
+      ),
+    )).limit(1);
+    if (!savedRun || !savedRun.questions) {
+      res.status(404).json({ error: "This question is no longer waiting for an answer." });
+      return;
+    }
+  }
+  const questionsForRun = pending?.questions ?? savedRun?.questions as AssistantQuestion[];
   let preparedAnswers: Record<string, unknown>;
   try {
-    preparedAnswers = await prepareAssistantQuestionAnswers(pending.questions, answers as Record<string, unknown>);
+    preparedAnswers = await prepareAssistantQuestionAnswers(questionsForRun, answers as Record<string, unknown>);
   } catch (error) {
     if (error instanceof AssistantQuestionAttachmentError) {
       res.status(400).json({ error: error.message });
@@ -5689,10 +5777,48 @@ router.post("/assistant/questions/:questionId/answer", requireCoordinator, async
     }
     throw error;
   }
-  clearTimeout(pending.timer);
-  pendingAssistantQuestions.delete(questionId);
-  pending.resolve(preparedAnswers);
-  res.json({ submitted: true });
+  if (pending) {
+    clearTimeout(pending.timer);
+    if (pending.answerPoll) clearInterval(pending.answerPoll);
+    pendingAssistantQuestions.delete(questionId);
+    if (pending.builderRunId) {
+      const [run] = await db.select({ answers: assistantBuilderRunsTable.answers })
+        .from(assistantBuilderRunsTable)
+        .where(and(
+          eq(assistantBuilderRunsTable.id, pending.builderRunId),
+          eq(assistantBuilderRunsTable.teamId, teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, accountId),
+        )).limit(1);
+      await db.update(assistantBuilderRunsTable).set({
+        status: "running",
+        questions: null,
+        answers: { ...(run?.answers ?? {}), ...preparedAnswers },
+        error: null,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantBuilderRunsTable.id, pending.builderRunId),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, accountId),
+      ));
+    }
+    pending.resolve(preparedAnswers);
+    res.json({ submitted: true, resumed: true });
+    return;
+  }
+  const isStale = savedRun!.status === "interrupted" ||
+    Date.now() - savedRun!.updatedAt.getTime() > BUILDER_RUN_STALE_MS;
+  await db.update(assistantBuilderRunsTable).set({
+    status: isStale ? "interrupted" : "running",
+    questions: null,
+    answers: { ...savedRun!.answers, ...preparedAnswers },
+    error: isStale ? "The answer was saved. Continue the builder to apply it and finish the draft." : null,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(assistantBuilderRunsTable.id, savedRun!.id),
+    eq(assistantBuilderRunsTable.teamId, teamId),
+    eq(assistantBuilderRunsTable.coordinatorId, accountId),
+  ));
+  res.json({ submitted: true, resumed: !isStale, status: isStale ? "interrupted" : "running" });
 });
 
 // NOTE: Orval cannot express SSE token streams; the /assistant page uses a manual fetch reader.
@@ -5710,6 +5836,9 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   }
   const teamId = await requestTeamId(req);
   const mcpOnly = account.role !== "coordinator";
+  const isCustomWorkspaceBuilderRun = !mcpOnly &&
+    /^(Build a custom workspace app for the team\.|Revise custom workspace draft )/i.test(parsed.data.question);
+  const builderRunId = isCustomWorkspaceBuilderRun ? randomUUID() : undefined;
   const conversationOwnerId = account.role === "coordinator" ? null : account.id;
   const conversation = await getOrCreateAssistantConversation(
     parsed.data.conversationId,
@@ -5899,6 +6028,30 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   const isRateLimit = (error: unknown) =>
     typeof error === "object" && error !== null && "status" in error &&
     (error as { status: unknown }).status === 429;
+  let builderHeartbeat: ReturnType<typeof setInterval> | undefined;
+  let builderRunCompleted = false;
+  if (builderRunId) {
+    await db.insert(assistantBuilderRunsTable).values({
+      id: builderRunId,
+      teamId,
+      coordinatorId: account.id,
+      conversationId: conversation.id,
+      prompt: parsed.data.question,
+      status: "running",
+      activities: "[]",
+    });
+    activeBuilderRuns.add(builderRunId);
+    builderHeartbeat = setInterval(() => {
+      void db.update(assistantBuilderRunsTable)
+        .set({ updatedAt: new Date() })
+        .where(and(
+          eq(assistantBuilderRunsTable.id, builderRunId),
+          eq(assistantBuilderRunsTable.teamId, teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, account.id),
+        ))
+        .catch((error) => req.log.warn({ err: error }, "Builder run heartbeat could not be saved"));
+    }, BUILDER_RUN_HEARTBEAT_MS);
+  }
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -5912,15 +6065,66 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       // Client went away mid-stream.
     }
   };
-  const askCoordinator = (questions: AssistantQuestion[]) => new Promise<Record<string, unknown>>((resolve) => {
+  if (builderRunId) send({ builderRunId });
+  const askCoordinator = async (questions: AssistantQuestion[]): Promise<Record<string, unknown>> => {
     const questionId = randomUUID();
-    const timer = setTimeout(() => {
-      pendingAssistantQuestions.delete(questionId);
-      resolve({ error: "The coordinator did not answer before the question expired." });
-    }, 20 * 60 * 1000);
-    pendingAssistantQuestions.set(questionId, { accountId: account.id, teamId, questions, resolve, timer });
-    send({ question: { id: questionId, questions } });
-  });
+    if (builderRunId) {
+      await db.update(assistantBuilderRunsTable).set({
+        status: "waiting_for_answer",
+        questionId,
+        questions,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantBuilderRunsTable.id, builderRunId),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, account.id),
+      ));
+    }
+    return new Promise<Record<string, unknown>>((resolve) => {
+      let answerPoll: ReturnType<typeof setInterval> | undefined;
+      const finish = (answers: Record<string, unknown>) => {
+        clearTimeout(timer);
+        if (answerPoll) clearInterval(answerPoll);
+        pendingAssistantQuestions.delete(questionId);
+        resolve(answers);
+      };
+      const timer = setTimeout(() => {
+        if (builderRunId) {
+          void db.update(assistantBuilderRunsTable).set({
+            status: "running",
+            questionId: null,
+            questions: null,
+            error: "The coordinator did not answer before the question expired.",
+            updatedAt: new Date(),
+          }).where(eq(assistantBuilderRunsTable.id, builderRunId));
+        }
+        finish({ error: "The coordinator did not answer before the question expired." });
+      }, 20 * 60 * 1000);
+      answerPoll = builderRunId ? setInterval(() => {
+        void db.select().from(assistantBuilderRunsTable).where(and(
+          eq(assistantBuilderRunsTable.id, builderRunId),
+          eq(assistantBuilderRunsTable.teamId, teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, account.id),
+        )).limit(1).then(([run]) => {
+          if (
+            run?.questionId === questionId &&
+            run.questions === null &&
+            Object.keys(run.answers ?? {}).length > 0
+          ) finish(run.answers);
+        }).catch((error) => req.log.warn({ err: error }, "Builder answer could not be reloaded"));
+      }, 1000) : undefined;
+      pendingAssistantQuestions.set(questionId, {
+        accountId: account.id,
+        teamId,
+        questions,
+        resolve: finish,
+        timer,
+        answerPoll,
+        builderRunId,
+      });
+      send({ question: { id: questionId, questions } });
+    });
+  };
   try {
     const streamPass = async (messages: AssistantThreadMessage[], useAssistantTools: boolean, overrides?: { model?: string; maxTokens?: number; forceCustomWorkspace?: boolean }) => {
       const stream = await openai.chat.completions.create({
@@ -6034,6 +6238,16 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         send({ model });
       }
       activities.push(...executed.activities);
+      if (builderRunId) {
+        await db.update(assistantBuilderRunsTable).set({
+          activities: JSON.stringify(activities),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(assistantBuilderRunsTable.id, builderRunId),
+          eq(assistantBuilderRunsTable.teamId, teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, account.id),
+        ));
+      }
       for (const activity of executed.activities) send({ activity });
       for (const connectionRequest of executed.connectionRequests) {
         send({ connectionRequest });
@@ -6123,6 +6337,16 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
           send({ model });
         }
         activities.push(...executed.activities);
+        if (builderRunId) {
+          await db.update(assistantBuilderRunsTable).set({
+            activities: JSON.stringify(activities),
+            updatedAt: new Date(),
+          }).where(and(
+            eq(assistantBuilderRunsTable.id, builderRunId),
+            eq(assistantBuilderRunsTable.teamId, teamId),
+            eq(assistantBuilderRunsTable.coordinatorId, account.id),
+          ));
+        }
         for (const activity of executed.activities) send({ activity });
         if (executed.outgoingCalls.length > 0) {
           send({ status: "working" });
@@ -6165,21 +6389,56 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       }
     }
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
-    await saveAssistantAnswer(
-      conversation.id,
-      parsed.data.question,
-      mcpOnly ? [] : parsed.data.applicantIds ?? [],
-      answer,
-      activities,
-      teamId,
-    );
+    if (builderRunId) {
+      await db.update(assistantBuilderRunsTable).set({
+        status: "completed",
+        questionId: null,
+        questions: null,
+        activities: JSON.stringify(activities),
+        result: answer,
+        error: null,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantBuilderRunsTable.id, builderRunId),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, account.id),
+      ));
+      builderRunCompleted = true;
+    }
+    try {
+      await saveAssistantAnswer(
+        conversation.id,
+        parsed.data.question,
+        mcpOnly ? [] : parsed.data.applicantIds ?? [],
+        answer,
+        activities,
+        teamId,
+      );
+    } catch (saveError) {
+      if (!builderRunId) throw saveError;
+      req.log.warn({ err: saveError }, "Builder result is saved, but assistant history could not be updated");
+    }
     send({ done: true, answer, activities, model });
     res.end();
   } catch (error) {
     const limited = isRateLimit(error);
     req.log.error({ err: error }, "Assistant stream failed");
+    if (builderRunId && !builderRunCompleted) {
+      await db.update(assistantBuilderRunsTable).set({
+        status: "failed",
+        error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "Assistant is unavailable. Try again.",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantBuilderRunsTable.id, builderRunId),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, account.id),
+      )).catch((saveError) => req.log.warn({ err: saveError }, "Builder failure status could not be saved"));
+    }
     send({ error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
     res.end();
+  } finally {
+    if (builderHeartbeat) clearInterval(builderHeartbeat);
+    if (builderRunId) activeBuilderRuns.delete(builderRunId);
   }
 });
 

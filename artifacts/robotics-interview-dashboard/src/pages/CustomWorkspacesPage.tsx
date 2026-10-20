@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "lucide-react";
 import { useTheme } from "next-themes";
-import { getGetSessionQueryKey, useGetSession, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
+import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 
@@ -33,6 +33,8 @@ type AgentQuestion = {
   id: string;
   questions: { id: string; type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload"; title: string; required?: boolean; placeholder?: string; options?: string[]; accept?: string; maxFiles?: number }[];
 };
+type BuilderRunFromApi = NonNullable<AssistantBuilderRunResponse["run"]>;
+type BuilderRun = Omit<BuilderRunFromApi, "question"> & { question: AgentQuestion | null };
 type QuestionFile = { file: File; previewUrl: string };
 const MAX_QUESTION_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_QUESTION_IMAGE_BYTES = 1024 * 1024;
@@ -273,6 +275,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function builderRunSteps(activities: BuilderRun["activities"]): PublishAgentStep[] {
+  return activities.map((activity, index) => ({
+    id: `saved-${index}-${activity.tool}`,
+    label: activity.tool.replaceAll("_", " "),
+    detail: activity.detail,
+    input: activity.input,
+    output: activity.output,
+    status: "done",
+  }));
+}
+
+function normalizeBuilderRun(run: AssistantBuilderRunResponse["run"]): BuilderRun | null {
+  return run ? { ...run, question: run.question as AgentQuestion | null } : null;
+}
+
 export function CustomWorkspacesPage() {
   const { resolvedTheme } = useTheme();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
@@ -297,10 +314,13 @@ export function CustomWorkspacesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [agentQuestion, setAgentQuestion] = useState<AgentQuestion | null>(null);
+  const [builderRun, setBuilderRun] = useState<BuilderRun | null>(null);
+  const builderRunRef = useRef<BuilderRun | null>(null);
   const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
   const [publishScreenshots, setPublishScreenshots] = useState<Partial<Record<"light" | "dark", string>>>({});
   const frame = useRef<HTMLIFrameElement>(null);
   const active = useMemo(() => selected ?? items[0] ?? null, [items, selected]);
+  useEffect(() => { builderRunRef.current = builderRun; }, [builderRun]);
 
   const refresh = async () => {
     const result = await request<{ workspaces: Workspace[] }>(API);
@@ -316,12 +336,49 @@ export function CustomWorkspacesPage() {
   }, [canManage]);
   useEffect(() => {
     if (!canManage) return;
+    let active = true;
+    const reload = () => request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest")
+      .then(({ run }) => {
+        if (!active) return;
+        const normalizedRun = normalizeBuilderRun(run);
+        setBuilderRun(normalizedRun);
+        if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
+        if (normalizedRun?.question) setAgentQuestion(normalizedRun.question);
+        else if (normalizedRun?.status === "completed" || normalizedRun?.status === "interrupted" || normalizedRun?.status === "failed") {
+          setAgentQuestion(null);
+        }
+      })
+      .catch(() => {});
+    void reload();
+    return () => { active = false; };
+  }, [canManage]);
+  useEffect(() => {
+    if (!canManage || !builderRun || !["running", "waiting_for_answer"].includes(builderRun.status)) return;
+    let active = true;
+    const refreshRun = async () => {
+      try {
+        const { run } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
+        if (!active || !run) return;
+        const normalizedRun = normalizeBuilderRun(run);
+        setBuilderRun(normalizedRun);
+        if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
+        setAgentQuestion(normalizedRun?.question ?? null);
+      } catch {}
+    };
+    const timer = window.setInterval(() => void refreshRun(), 2500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [canManage, builderRun?.id, builderRun?.status]);
+  useEffect(() => {
+    if (!canManage) return;
     void request<{ items: { question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
       .then(({ items: history }) => {
         const latest = [...history].reverse().find((item) =>
           item.question.startsWith("Build a custom workspace app for the team.") ||
           item.question.startsWith("Revise custom workspace draft "));
-        if (!latest?.activities.length) return;
+        if (!latest?.activities.length || builderRunRef.current) return;
         setPublishAgentSteps(latest.activities.map((activity, index) => ({
           id: `saved-${index}-${activity.tool}`,
           label: activity.tool.replaceAll("_", " "),
@@ -458,6 +515,20 @@ export function CustomWorkspacesPage() {
         if (!line.startsWith("data:")) continue;
         let event: Record<string, unknown>;
         try { event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>; } catch { continue; }
+        if (typeof event.builderRunId === "string") {
+          setBuilderRun((current) => current?.id === event.builderRunId ? current : {
+            id: event.builderRunId as string,
+            status: "running",
+            prompt: question,
+            question: null,
+            answers: {},
+            activities: [],
+            result: null,
+            error: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
         if (event.activity && typeof event.activity === "object") {
           const activity = event.activity as { tool?: unknown; detail?: unknown; input?: unknown; output?: unknown };
           const tool = typeof activity.tool === "string" ? activity.tool : "Assistant tool";
@@ -489,6 +560,10 @@ export function CustomWorkspacesPage() {
     }
     if (buffer.trim()) acceptEvent(buffer);
     if (!done) throw new Error("The builder agent ended without completing its response.");
+    const { run } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
+    const normalizedRun = normalizeBuilderRun(run);
+    setBuilderRun(normalizedRun);
+    if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
     const result = await request<{ workspaces: Workspace[] }>(API);
     setItems(result.workspaces);
     const created = result.workspaces.find((workspace) => !beforeIds.has(workspace.id));
@@ -516,6 +591,26 @@ export function CustomWorkspacesPage() {
     } catch (err) {
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" as const } : step));
       setError(err instanceof Error ? err.message : "Could not build the workspace.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const continueInterruptedBuilder = async () => {
+    if (!builderRun || !canManage) return;
+    setBusy(true);
+    setError("");
+    setPublishScreenshots({});
+    setPublishAgentSteps([{ id: "recover", label: "Continue builder", detail: "Starting a new server run from the saved request, answers, and draft files.", status: "running" }]);
+    try {
+      const savedAnswers = Object.keys(builderRun.answers).length
+        ? `\n\nCoordinator answers to the saved builder question (use these directly and do not ask the same questions again):\n${JSON.stringify(builderRun.answers)}`
+        : "";
+      const recoveryPrompt = `${builderRun.prompt}\n\nContinue this existing custom workspace build from its saved draft files. Do not create a duplicate workspace if a draft for this request already exists.${savedAnswers}`;
+      await runBuilderAgent(recoveryPrompt, new Set(items.map((item) => item.id)));
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Builder run complete." } : step));
+    } catch (err) {
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" as const } : step));
+      setError(err instanceof Error ? err.message : "Could not continue the builder.");
     } finally {
       setBusy(false);
     }
@@ -762,9 +857,19 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
-        {(publishAgentSteps.length > 0 || agentQuestion) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
+        {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
           <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshots.light || publishScreenshots.dark ? "Checks light- and dark-theme screenshots and browser runtime, repairs code or contrast issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
+          {builderRun && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--foreground))]" data-testid="builder-run-status">
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : builderRun.status === "interrupted" || builderRun.status === "failed" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
+              {builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
+                builderRun.status === "running" ? "Building" :
+                  builderRun.status === "completed" ? "Complete" :
+                    builderRun.status === "interrupted" ? "Stopped — can continue" : "Could not finish — can continue"}
+            </span>
+            <span className="text-[#60757c] dark:text-[#b3c3cb]">Last updated {new Date(builderRun.updatedAt).toLocaleString()}</span>
+          </div>}
+          {builderRun?.error && <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">{builderRun.error}</p>}
           <ol className="mt-2 space-y-2">
             {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
               <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
@@ -783,7 +888,22 @@ export function CustomWorkspacesPage() {
               body: JSON.stringify({ answers }),
             });
             setAgentQuestion(null);
+            const latest = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
+            setBuilderRun(normalizeBuilderRun(latest.run));
           }} />}
+          {(builderRun?.status === "interrupted" || builderRun?.status === "failed") && !builderRun.question && <button
+            type="button"
+            disabled={busy}
+            onClick={() => void continueInterruptedBuilder()}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            data-testid="button-continue-builder"
+          >
+            {busy && <LoaderCircle size={14} className="animate-spin" />} Continue builder
+          </button>}
+          {builderRun?.result && <div className="mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3" data-testid="builder-run-result">
+            <h4 className="text-xs font-semibold text-[hsl(var(--foreground))]">Latest builder result</h4>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[hsl(var(--foreground))]">{builderRun.result}</p>
+          </div>}
           {(["light", "dark"] as const).filter((theme) => publishScreenshots[theme]).length > 0 && <div className="mt-3 grid max-w-4xl gap-3 md:grid-cols-2">
             {(["light", "dark"] as const).map((theme) => publishScreenshots[theme] && <figure key={theme}>
               <img

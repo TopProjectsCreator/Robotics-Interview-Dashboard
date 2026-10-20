@@ -2030,6 +2030,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantPendingQuestionsResponse"
+  /assistant/custom-workspace-builder/runs/latest:
+    get:
+      operationId: getLatestAssistantBuilderRun
+      tags: [assistant]
+      summary: Get the signed-in coordinator's latest custom workspace builder run
+      responses:
+        "200":
+          description: Latest builder run, if one exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantBuilderRunResponse"
   /assistant/skills:
     get:
       operationId: listAssistantSkills
@@ -7064,6 +7076,53 @@ components:
                 items:
                   type: object
                   additionalProperties: true
+    AssistantBuilderRun:
+      type: object
+      required: [id, status, prompt, question, answers, activities, result, error, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [running, waiting_for_answer, completed, failed, interrupted]
+        prompt:
+          type: string
+        question:
+          type: ["object", "null"]
+          required: [id, questions]
+          properties:
+            id:
+              type: string
+            questions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+        answers:
+          type: object
+          additionalProperties: true
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
+        result:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AssistantBuilderRunResponse:
+      type: object
+      required: [run]
+      properties:
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/AssistantBuilderRun"
+            - type: "null"
     AssistantSkill:
       type: object
       required: [id, name, description, instructions, actions, enabled, githubRepositoryUrl, createdAt, updatedAt]
