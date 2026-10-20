@@ -6922,7 +6922,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode, assistantIdentity));
   const [renamingId, setRenamingId] = useState("");
   const [renameValue, setRenameValue] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     try {
       return window.localStorage.getItem("robotics-assistant-model") ?? "";
@@ -7032,7 +7031,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const createConversation = useCreateAssistantConversation();
   const renameConversation = useRenameAssistantConversation();
   const deleteConversation = useDeleteAssistantConversation();
-  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }), enabled: !partsMode && canManageAssistantTools } });
   const prompts = !canManageAssistantTools
     ? ["What can my connected Onshape MCP do?", "Summarize information from my custom MCP server.", "Use my connected MCP tools to answer a question."]
     : partsMode
@@ -7045,7 +7043,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     questionDraftRef.current = "";
     setHistory([]);
     setActiveConversationId(readStoredConversationId(partsMode, assistantIdentity));
-    setSelected([]);
     setAttachments([]);
     setAttachError("");
     setStreamingText("");
@@ -7440,7 +7437,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     streamAbort.current = controller;
     setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}), conversationId: activeConversationId, applicantIds: canManageAssistantTools && !partsMode && selected.length ? selected : [], ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
+    const payload = { question: q, model: availableModel || undefined, ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}), conversationId: activeConversationId, ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
     const authToken = getStoredAuthToken();
     void (async () => {
       try {
@@ -7645,7 +7642,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           <Badge tone="blue">
             <Sparkles size={12} className="mr-1" />
             {canManageAssistantTools
-              ? partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`
+              ? partsMode ? "Parts workspace" : "Team assistant"
               : "Private MCP access"}
           </Badge>
           <AssistantModelPicker
@@ -7692,7 +7689,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           {!conversations.isLoading && !scopedConversations.length && <p className="px-1 py-4 text-xs leading-5 text-[#7c8c91]">No saved conversations yet. Start a new chat above.</p>}
         </div>
       </aside>
-      <section className="relative order-1 min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
+      <section className="relative order-1 min-h-[560px] min-w-0 rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
         <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">{canManageAssistantTools ? "Shared with coordinators in this team." : "Only you can access this conversation."}</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
         
         <div className="space-y-5 py-6">
@@ -7741,7 +7738,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </div>
         {assistantScopeReady && canManageAssistantTools && attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
         {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
-        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={!assistantScopeReady || ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        <form onSubmit={submit} className="flex w-full min-w-0 gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 w-0 min-w-0 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={!assistantScopeReady || ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5"><ArrowRight size={16} /> Ask</button></form>
         {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
       {partsMode && canManageAssistantTools ? (
@@ -7754,7 +7751,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </Section>
       ) : canManageAssistantTools ? (
         <>
-          <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer" className="order-3"><div className="space-y-2">{list.data && list.data.total > 8 && <p className="px-2 text-[11px] text-[#8a999d]">Showing first 8 of {list.data.total} — search on the Applicants page for the rest.</p>}{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section>
           <ImageStudio />
         </>
       ) : null}
