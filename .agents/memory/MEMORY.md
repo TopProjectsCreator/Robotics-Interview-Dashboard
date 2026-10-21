@@ -46,3 +46,10 @@
 - [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
 - [Sitemap page scope](sitemap-page-scope.md) — the sitemap lists frontend pages only; API endpoints live in the OpenAPI spec and must not be re-added.
 - [Codebase line counting](codebase-line-counting.md) — measure hand-written code from `git ls-files`, excluding node_modules, dist, generated clients, locks, and binary assets; the repo is ~167k code lines, not ~19.6M.
+- [Database instance pinning scope](db-instance-async-local-scope.md) — AsyncLocalStorage must hold a per-request scope object, not a bare instance string, or a nested pin leaks into the caller.
+- [Pool transaction client](pool-transaction-client.md) — BEGIN and COMMIT must run on one checked-out client; pool.query sends each statement to a different connection.
+- [Broadcast acknowledgement uniqueness](broadcast-ack-unique-index.md) — broadcast acks need a unique index on (broadcast, session) or every poll adds a row and duplicates the broadcast.
+- [Shared query keys and retry options](react-query-shared-key-retry.md) — observers that share a query key but disagree on retry make the query retry forever and never surface isError.
+- [Applicant drawer close rule](applicant-detail-drawer-roster.md) — the applicant drawer closes on a server 400/404 or a miss in the unfiltered roster, but never because a filter narrowed the list.
+- [Streaming large object downloads](streaming-large-object-download.md) — large CAD objects must be streamed to disk, never buffered in memory, because the instance has a 512 MB ceiling.
+- [Persisted CAD previews](persisted-cad-previews.md) — a finished CAD preview is stored under a path-derived id so it can be found again after the instance restarts.

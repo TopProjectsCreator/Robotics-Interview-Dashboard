@@ -111,7 +111,7 @@ const SIGNED_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
  * message, and nothing is lost: uploads and downloads resume at reset.
  */
 const STORAGE_PAUSED_MESSAGE =
-  'File storage is temporarily paused (team quota exceeded). Nothing is lost — try again after it resets.';
+  'Uploads are busy right now. Nothing was lost — try again in a moment.';
 function storageRestricted(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
   return /exceed_egress_quota|spend ?caps?|restricted|quota exceeded|upgrade.*plan/i.test(message);

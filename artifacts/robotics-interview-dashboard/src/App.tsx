@@ -11,7 +11,7 @@ import { useTheme } from "next-themes";
 import {
   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
   getListAssistantConversationsQueryKey,
-   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey,
+   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
   useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
@@ -39,7 +39,6 @@ import {
   useEditOwnFeatureRequest, useDeleteOwnFeatureRequest,
   useGetSiteStats, getGetSiteStatsQueryKey,
   useInterpretApplicantSearch,
-  useGetSystemUsage,
   useCreateSpreadsheet,
   getInterviewChat,
   getAssistantConversationMessages,
@@ -218,7 +217,14 @@ function expireSessionOnError(error: unknown) {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error) => !isExpiredSessionError(error) && failureCount < 3,
+      // A 4xx will not change on its own: retrying a 404 or a 400 only
+      // delays the "this record is gone" answer the UI is waiting for.
+      retry: (failureCount, error) => {
+        if (isExpiredSessionError(error)) return false;
+        const status = error && typeof error === "object" ? (error as { status?: unknown }).status : undefined;
+        if (typeof status === "number" && status >= 400 && status < 500) return false;
+        return failureCount < 3;
+      },
     },
   },
   queryCache: new QueryCache({
@@ -916,7 +922,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
-        <SettingRow title="Instant updates" detail="Pushes changes in about a second via Supabase Realtime. Polling stays on as backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
+        <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
       </div>
       <div className={divider}><p className={sectionLabel}>Notifications</p>
@@ -3678,19 +3684,6 @@ function WorkspaceOverview() {
 function InterviewOverview() {
   const summary = useGetDashboardSummary({ query: { queryKey: getGetDashboardSummaryQueryKey() } });
   const roster = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
-  const usage = useGetSystemUsage({ query: { queryKey: getGetSystemUsageQueryKey() } });
-  const usageBars = useMemo(() => {
-    const u = usage.data;
-    if (!u) return [];
-    const mb = (bytes: number) => bytes / (1024 * 1024);
-    const fmtMb = (bytes: number) => `${mb(bytes) >= 100 ? Math.round(mb(bytes)) : mb(bytes).toFixed(1)} MB`;
-    const rows: { label: string; value: number }[] = [
-      { label: `Database · ${fmtMb(u.databaseBytes)} of ${fmtMb(u.databaseQuotaBytes)}`, value: Math.min(100, Math.round((u.databaseBytes / Math.max(1, u.databaseQuotaBytes)) * 100)) },
-    ];
-    if (u.storageBytes !== null && u.storageBytes !== undefined) rows.push({ label: `Uploads · ${fmtMb(u.storageBytes)} of ${fmtMb(u.storageQuotaBytes)}`, value: Math.min(100, Math.round((u.storageBytes / Math.max(1, u.storageQuotaBytes)) * 100)) });
-    if (u.authUsers !== null && u.authUsers !== undefined) rows.push({ label: `Auth users · ${u.authUsers} of ${u.authUsersQuota ?? 50000}`, value: Math.min(100, Math.round((u.authUsers / Math.max(1, u.authUsersQuota ?? 50000)) * 100)) });
-    return rows;
-  }, [usage.data]);
   const mix = useMemo(() => {
     const genders = new Map<string, number>();
     const skills = new Map<string, number>();
@@ -3730,7 +3723,7 @@ function InterviewOverview() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, team." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Team decisions" kicker="What your interviewers actually said"><Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />{!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}</Section><Section title="Roster lanes" kicker="Where applicants sit right now"><Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" xAxisLabel="Resource" yAxisLabel="Usage %" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Team decisions" kicker="What your interviewers actually said"><Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />{!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}</Section><Section title="Roster lanes" kicker="Where applicants sit right now"><Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
 }
 function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
@@ -3824,15 +3817,21 @@ function Applicants() {
     ? (selectedApplicant.error as { status?: unknown }).status
     : undefined;
   useEffect(() => {
-    console.log("DBG", JSON.stringify({ selected, listLoading: list.isLoading, listSuccess: list.isSuccess, listError: list.isError, detailError: selectedApplicant.isError, status: selectedApplicantErrorStatus }));
-    return () => console.log("DBG-CLEANUP");
+    // The roster list is filtered, so an applicant dropping out of it usually
+    // means the filters changed or they were moved to another lane -- not
+    // that they are gone. Only the unfiltered roster is authoritative here,
+    // so narrowing a search or moving someone between lanes never throws
+    // away unsaved notes.
+    const listFiltered = Boolean(params.search || params.category || params.grade);
+    const missingFromRoster = !listFiltered && selected && list.isSuccess && !list.data.items.some(applicant => applicant.id === selected);
     if (
       selected === "" ||
+      missingFromRoster ||
       (selectedApplicant.isError && (selectedApplicantErrorStatus === 400 || selectedApplicantErrorStatus === 404))
     ) {
       closeApplicant();
     }
-  }, [selected, selectedApplicant.isError, selectedApplicantErrorStatus, closeApplicant]);
+  }, [selected, list.isSuccess, list.data, params.search, params.category, params.grade, selectedApplicant.isError, selectedApplicantErrorStatus, closeApplicant]);
   const skillRank = (s: ApplicantSignals) => s.skill === "BUILD" ? 0 : s.skill === "CAD" ? 1 : s.skill === "CODE" ? 2 : 3;
   const genderRank = (s: ApplicantSignals) => s.gender === "M" ? 0 : s.gender === "F" ? 1 : 2;
   const items = useMemo(() => {
@@ -4143,7 +4142,7 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
 }
 
 function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {  const { overlayProps, panelProps } = useModalOverlay({ label: "Applicant details", onClose });
- const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); // Fields the interviewer has edited but not yet saved. A remote refresh (a
+ const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id), retry: false } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); // Fields the interviewer has edited but not yet saved. A remote refresh (a
   // teammate saving, the window regaining focus, our own save round-trip)
   // must never overwrite typing in progress, so incoming data only fills
   // the fields nobody has touched.
@@ -6644,6 +6643,11 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
       }
       if (!current) return;
       if (event.key === "Enter") {
+        // Only when the keyboard is not already on a control: otherwise
+        // pressing Enter on the Finish button would finish the next
+        // applicant as well.
+        const onControl = Boolean(node?.closest("button, a, [role='button'], [role='link'], summary"));
+        if (onControl) return;
         event.preventDefault();
         finishApplicant(current.id);
         return;

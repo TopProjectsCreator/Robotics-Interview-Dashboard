@@ -627,16 +627,24 @@ export class ObjectStorageService {
   async downloadObjectToFile(objectPath: string, targetPath: string): Promise<{ contentType: string; sizeBytes: number }> {
     const storagePath = toStoragePath(objectPath);
     const instance = objectStorageInstance(objectPath) ?? currentInstance();
-    const { data, error } = await supabaseFor(instance)
-      .storage.from(storageBucket(instance))
-      .download(storagePath);
-    if (error || !data) {
-      throw new ObjectNotFoundError();
-    }
     // STREAM to disk. Buffering a 166 MB (or larger) model in memory and
     // then running the converter would need ~500 MB in one process, which
     // OOMs a 512 MB instance. Piping the body keeps memory flat.
-    const signedUrl = await this.signDownloadUrl(objectPath, 900, instance);
+    //
+    // The bytes come from a signed URL on the storage path, not from the
+    // storage SDK's download(): that call materialises the whole object as
+    // a Blob in this process, so it would defeat the streaming AND transfer
+    // the object twice. `signDownloadUrl` signs a bucket-relative storage
+    // path, so it has to be given `storagePath`, not the `/objects/...`
+    // path the API exposes.
+    let signedUrl: string;
+    try {
+      signedUrl = await this.signDownloadUrl(storagePath, 900, instance);
+    } catch {
+      // Signing fails when the object is not in the bucket. The previous
+      // SDK download reported that as a missing object, so keep that shape.
+      throw new ObjectNotFoundError();
+    }
     const upstream = await fetch(signedUrl);
     if (!upstream.ok || !upstream.body) {
       throw new ObjectNotFoundError();
@@ -656,7 +664,10 @@ export class ObjectStorageService {
     } finally {
       await handle.close();
     }
-    return { contentType: data.type || 'application/octet-stream', sizeBytes };
+    return {
+      contentType: upstream.headers.get('content-type') || 'application/octet-stream',
+      sizeBytes,
+    };
   }
 
   async downloadObject(objectPath: string): Promise<{ data: Buffer; contentType: string }> {

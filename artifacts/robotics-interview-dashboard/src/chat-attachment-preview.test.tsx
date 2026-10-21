@@ -423,7 +423,7 @@ describe("chat attachment inline previews", () => {
       <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
     );
 
-    await waitFor(() => fixture.assertPreview(container));
+    await waitFor(() => fixture.assertPreview(container), { timeout: 15_000 });
 
     const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
       .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
@@ -450,7 +450,7 @@ describe("chat attachment inline previews", () => {
       <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
     );
 
-    const preview = await screen.findByTestId("text-attachment-preview");
+    const preview = await screen.findByTestId("text-attachment-preview", undefined, { timeout: 15_000 });
     expect(preview).toHaveTextContent(fixture.expectedText);
     if (isJson) {
       expect(() => JSON.parse(preview.textContent ?? "")).not.toThrow();

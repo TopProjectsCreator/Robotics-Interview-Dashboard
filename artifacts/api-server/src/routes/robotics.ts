@@ -2831,7 +2831,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
   } catch (error) {
     const limited = isRateLimit(error);
     req.log.error({ err: error }, "Failed to regenerate applicant evaluation");
-    res.status(limited ? 429 : 503).json({ error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "The evaluation could not be regenerated. Try again." });
+    res.status(limited ? 429 : 503).json({ error: limited ? "The assistant is busy right now. Try again in a moment." : "The evaluation could not be regenerated. Try again." });
   }
 });
 
@@ -5425,7 +5425,7 @@ async function generateAssistantAnswer(options: {
   } catch (error) {
     const limited = isRateLimit(error);
     log.error({ err: error }, "Assistant chat completion failed");
-    throw new AssistantAnswerError(limited ? 429 : 503, limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "Assistant is unavailable. Check AI_INTEGRATIONS_OPENAI_BASE_URL / API key and AI_ASSISTANT_MODEL.");
+    throw new AssistantAnswerError(limited ? 429 : 503, limited ? "The assistant is busy right now. Try again in a moment." : "The assistant is unavailable right now. Try again shortly.");
   }
   let answer = completion.choices[0]?.message.content ?? "";
   const firstText = assistantText(completion.choices[0]?.message ?? {});
@@ -5683,7 +5683,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
       return;
     }
     req.log.error({ err: error }, "Assistant chat completion failed");
-    res.status(503).json({ error: "Assistant is unavailable. Check AI_INTEGRATIONS_OPENAI_BASE_URL / API key and AI_ASSISTANT_MODEL." });
+    res.status(503).json({ error: "The assistant is unavailable right now. Try again shortly." });
     return;
   }
 });
@@ -6456,7 +6456,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     if (builderRunId && !builderRunCompleted) {
       await db.update(assistantBuilderRunsTable).set({
         status: "failed",
-        error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "Assistant is unavailable. Try again.",
+        error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.",
         updatedAt: new Date(),
       }).where(and(
         eq(assistantBuilderRunsTable.id, builderRunId),
@@ -6464,7 +6464,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         eq(assistantBuilderRunsTable.coordinatorId, account.id),
       )).catch((saveError) => req.log.warn({ err: saveError }, "Builder failure status could not be saved"));
     }
-    send({ error: limited ? "The free AI tier is rate-limited right now. Wait about a minute and try again." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
+    send({ error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
     res.end();
   } finally {
     if (builderHeartbeat) clearInterval(builderHeartbeat);

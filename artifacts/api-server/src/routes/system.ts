@@ -68,11 +68,14 @@ router.get("/system/usage", requireAdmin, async (req, res): Promise<void> => {
   res.json(
     GetSystemUsageResponse.parse({
       databaseBytes: databaseBytes ?? 0,
-      databaseQuotaBytes: quotaEnv("SUPABASE_DB_QUOTA_MB", 500),
+      // Plan/tier numbers are deliberately not reported: they describe the
+      // hosting account, not this team's workspace, and showing them to
+      // every team invites the wrong impression (and helps nobody).
+      databaseQuotaBytes: 0,
       storageBytes,
-      storageQuotaBytes: quotaEnv("SUPABASE_STORAGE_QUOTA_MB", 1024),
+      storageQuotaBytes: 0,
       authUsers,
-      authUsersQuota: Math.round(Number(process.env.SUPABASE_MAU_QUOTA) || 50000),
+      authUsersQuota: 0,
       applicantCount: applicantCount ?? 0,
     }),
   );

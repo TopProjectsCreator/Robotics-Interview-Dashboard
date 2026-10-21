@@ -116,8 +116,11 @@ export async function uploadChunked(
           const rejected = Boolean(error && typeof error === "object" && (error as { storageRejected?: boolean }).storageRejected);
           if (rejected) {
             // The bucket refused it. Retrying the same part will not help.
+            // Never echo the provider's message: it can name the hosting
+            // account's limits ("restricted ... exceed_egress_quota"), which
+            // is our infrastructure, not the team's problem to see.
             throw new PartUploadError(
-              `Part ${partIndex + 1} of ${totalParts} was rejected by storage (${(error as Error).message})`,
+              `Part ${partIndex + 1} of ${totalParts} could not be stored. Try again in a moment.`,
               storageInstance ?? "primary",
               true,
             );
