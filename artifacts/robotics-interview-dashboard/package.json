@@ -15,7 +15,8 @@
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
     "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",
     "test:passkey-browser": "node browser-tests/passkey.browser.mjs",
-    "test:workspace-access-browser": "node browser-tests/workspace-access.browser.mjs"
+    "test:workspace-access-browser": "node browser-tests/workspace-access.browser.mjs",
+    "test:lowmem": "vitest run --config vitest.lowmem.config.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
