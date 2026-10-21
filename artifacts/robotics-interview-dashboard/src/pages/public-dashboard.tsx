@@ -92,7 +92,7 @@ export default function PublicDashboard() {
 
   return (
     <main
-      className="relative isolate min-h-[100dvh] overflow-hidden bg-[#f5f8f4] text-[#16303b] dark:bg-[#0c1d24] dark:text-[#e3efeb]"
+      className="relative isolate min-h-[100dvh] overflow-x-clip bg-[#f5f8f4] text-[#16303b] dark:bg-[#0c1d24] dark:text-[#e3efeb]"
       data-testid="public-dashboard"
     >
       <div
@@ -166,7 +166,7 @@ export default function PublicDashboard() {
             </p>
             <h1
               id="public-dashboard-title"
-              className="text-[clamp(46px,7vw,86px)] font-semibold leading-[.94] tracking-[-.075em] text-[#153642] dark:text-[#e3efeb]"
+              className="text-[clamp(2rem,8.5vw,3rem)] font-semibold leading-[.94] tracking-[-.075em] text-[#153642] sm:text-[clamp(46px,7vw,86px)] dark:text-[#e3efeb]"
             >
               One home for the whole{" "}
               <span className="text-[#168b94] dark:text-[#6bd1d0]">robotics team.</span>
@@ -218,7 +218,7 @@ export default function PublicDashboard() {
               />
               <div className="relative flex items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-7">
                 <div>
-                  <p className="font-mono text-[9px] tracking-[.14em] text-[#8cb7b5]">ROBOTICS TEAM WORKSPACE</p>
+                  <p className="font-mono text-[11px] sm:text-[9px] tracking-[.14em] text-[#8cb7b5]">ROBOTICS TEAM WORKSPACE</p>
                   <h2 className="mt-2 text-xl font-semibold tracking-[-.04em] text-[#f1f8f4] sm:text-2xl">
                     Robotics workspace
                   </h2>
@@ -234,14 +234,14 @@ export default function PublicDashboard() {
                       <Icon size={18} />
                     </span>
                     <span className="min-w-0">
-                      <span className="block font-mono text-[8px] tracking-[.12em] text-[#8cb7b5]">{label}</span>
+                      <span className="block font-mono text-[11px] sm:text-[8px] tracking-[.12em] text-[#8cb7b5]">{label}</span>
                       <strong className="mt-1 block text-xs font-semibold text-[#f1f8f4] sm:text-sm">{title}</strong>
                       <small className="mt-1 block text-[10px] text-[#a8c6c3]">{detail}</small>
                     </span>
                   </div>
                 ))}
               </div>
-              <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-3 font-mono text-[9px] text-[#8cb7b5] sm:px-7">
+              <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-3 font-mono text-[11px] sm:text-[9px] text-[#8cb7b5] sm:px-7">
                 <span className="inline-flex items-center gap-2"><Radio size={12} /> SHARED TEAM TOOLS</span>
               </div>
             </div>
@@ -254,19 +254,19 @@ export default function PublicDashboard() {
           data-testid="section-platform-areas"
         >
           <div className="border-b border-[#d9e6e1] py-4 pr-3 dark:border-[#28464d] sm:border-b-0 sm:pr-5">
-            <span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">01 / Connect</span>
+            <span className="font-mono text-[11px] sm:text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">01 / Connect</span>
             <strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">Chat & boards</strong>
           </div>
           <div className="border-b border-l border-[#d9e6e1] py-4 pl-4 dark:border-[#28464d] sm:border-b-0 sm:px-5">
-            <span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">02 / Design</span>
+            <span className="font-mono text-[11px] sm:text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">02 / Design</span>
             <strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">CAD & 3D files</strong>
           </div>
           <div className="py-4 pr-3 dark:border-[#28464d] sm:border-l sm:px-5">
-            <span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">03 / Organize</span>
+            <span className="font-mono text-[11px] sm:text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">03 / Organize</span>
             <strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">Sheets & insights</strong>
           </div>
           <div className="border-l border-[#d9e6e1] py-4 pl-4 dark:border-[#28464d] sm:pl-5">
-            <span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">04 / Coordinate</span>
+            <span className="font-mono text-[11px] sm:text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">04 / Coordinate</span>
             <strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">Team operations</strong>
           </div>
         </section>
@@ -301,9 +301,9 @@ export default function PublicDashboard() {
               >
                 <div className="flex items-center justify-between">
                   <span className={`grid size-10 place-items-center rounded-xl ${iconStyle}`}><Icon size={18} /></span>
-                  <span className="font-mono text-[9px] tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">{number}</span>
+                  <span className="font-mono text-[11px] sm:text-[9px] tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">{number}</span>
                 </div>
-                <p className="mb-2 mt-6 font-mono text-[9px] tracking-[.13em] text-[#168b94] dark:text-[#7edbd0]">{eyebrow}</p>
+                <p className="mb-2 mt-6 font-mono text-[11px] sm:text-[9px] tracking-[.13em] text-[#168b94] dark:text-[#7edbd0]">{eyebrow}</p>
                 <h3 className="text-lg font-semibold tracking-[-.035em] text-[#153642] dark:text-[#e3efeb]">{title}</h3>
                 <p className="mt-2 text-xs leading-5 text-[#607981] dark:text-[#aac1be]">{description}</p>
               </article>
@@ -436,7 +436,7 @@ export default function PublicDashboard() {
         <section className="mb-12 overflow-hidden rounded-2xl bg-[#153642] px-6 py-8 text-[#eef8f3] dark:border dark:border-[#335963] sm:mb-16 sm:px-10 sm:py-10" data-testid="section-team-access">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="mb-3 font-mono text-[9px] uppercase tracking-[.16em] text-[#9dc7bf]">Robotics team workspace</p>
+              <p className="mb-3 font-mono text-[11px] sm:text-[9px] uppercase tracking-[.16em] text-[#9dc7bf]">Robotics team workspace</p>
               <h2 className="max-w-[650px] text-3xl font-medium leading-[1.02] tracking-[-.06em] sm:text-4xl">
                 Bring the team’s work together.
               </h2>
@@ -451,7 +451,7 @@ export default function PublicDashboard() {
           </div>
         </section>
 
-        <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
+        <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[11px] sm:text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
           <span>Robotics team workspace</span>
         </footer>
       </div>

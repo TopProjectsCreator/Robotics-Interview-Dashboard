@@ -9,7 +9,7 @@
   --chat-yellow: #f4c74e;
   --chat-coral: #e48b71;
   min-height: 100dvh;
-  overflow: hidden;
+  overflow-x: clip;
   color: var(--chat-ink);
   background:
     radial-gradient(circle at 83% 7%, rgba(175, 220, 199, .46), transparent 23rem),
@@ -1600,4 +1600,35 @@
   .chat-landing h2:focus-visible {
     outline-color: Highlight !important;
   }
+}
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .chat-landing__topline { font-size: 11px; }
+  .chat-landing__brand-copy small { font-size: 11px; }
+  .chat-landing__privacy-note { font-size: 11px; }
+  .chat-landing__workspace-kicker { font-size: 11px; }
+  .chat-landing__preview-pill { font-size: 11px; }
+  .chat-landing__workspace-sidebar-label { font-size: 11px; }
+  .chat-landing__direct-heading { font-size: 11px; }
+  .chat-landing__conversation-head span { font-size: 11px; }
+  .chat-landing__message-avatar { font-size: 11px; }
+  .chat-landing__message-meta time { font-size: 11px; }
+  .chat-landing__mention { font-size: 11px; }
+  .chat-landing__file-context strong { font-size: 11px; }
+  .chat-landing__workspace-foot { font-size: 11px; }
+  .chat-landing__feature-list span { font-size: 11px; }
+  .chat-landing__context-top span { font-size: 11px; }
+  .chat-landing__context-avatar { font-size: 11px; }
+  .chat-landing__file-meta { font-size: 11px; }
+  .chat-landing__footer { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .chat-landing__hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
 }

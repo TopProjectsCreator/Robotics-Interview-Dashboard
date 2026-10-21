@@ -9,6 +9,7 @@ import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@wor
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startScheduledChatDispatcher } from "./routes/robotics";
+import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 
 initRealtime();
 
@@ -573,6 +574,12 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_mcp_oauth_states" add column if not exists "resource_uri" text not null default ''`,
     `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,
     `create table if not exists "broadcast_acks" ("broadcast_id" text not null, "session_hash" text not null, "acked_at" timestamptz not null default now())`,
+    // One ack per (broadcast, session). Acks were written without a unique
+    // constraint, so every poll inserted another row; the "my broadcasts"
+    // join then returned the same broadcast once per accumulated row. Drop
+    // the duplicates before the index can be created.
+    `delete from "broadcast_acks" a using "broadcast_acks" b where a.ctid > b.ctid and a."broadcast_id" = b."broadcast_id" and a."session_hash" = b."session_hash"`,
+    `create unique index if not exists "broadcast_acks_broadcast_session_unique" on "broadcast_acks" ("broadcast_id", "session_hash")`,
     `create table if not exists "dashboard_charts" ("id" text primary key, "team_id" text, "owner_id" text, "source" text not null, "chart" text not null, "x_axis" text, "y_axis" text, "position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "data_snapshots" ("id" text primary key, "team_id" text, "label" text not null, "created_by" text not null default 'coordinator', "applicant_count" integer not null default 0, "payload" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "display_settings" ("id" integer primary key default 1, "team_id" text, "custom_headline" text, "custom_subheadline" text, "show_names" boolean not null default true, "announce" boolean not null default true, "updated_at" timestamptz not null default now())`,
@@ -718,6 +725,19 @@ server.listen(port, () => {
         });
       }, 60 * 60 * 1000);
       catalogRefreshCheck.unref();
+      // Chunked uploads that nothing points at any more (a tab closed
+      // mid-upload, an attachment that was removed) keep their parts in
+      // storage forever otherwise, and a single abandoned CAD model can be
+      // hundreds of megabytes.
+      void sweepOrphanChunkUploads().catch((err) => {
+        logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+      });
+      const chunkSweepCheck = setInterval(() => {
+        void sweepOrphanChunkUploads().catch((err) => {
+          logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+        });
+      }, 60 * 60 * 1000);
+      chunkSweepCheck.unref();
       // Server-side scheduled chat delivery: posts due messages even when no
       // browser is open.
       startScheduledChatDispatcher();

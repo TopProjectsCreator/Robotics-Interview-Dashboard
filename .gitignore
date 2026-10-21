@@ -53,6 +53,15 @@ scripts/fix-opencode-fork.py
 scripts/opencode-wrapper.sh
 scripts/install-opencode-wrapper.sh
 
+# Local-only agent scratch (per-runner, not for commit)
+# Agents copy the source tree into the repo to diff against or to run the
+# suite against pristine HEAD. These are throwaway working copies, not source.
+artifacts/robotics-interview-dashboard/.mobile-fix-snapshot/
+artifacts/robotics-interview-dashboard/.headcheck/
+artifacts/robotics-interview-dashboard/scripts/
+__pycache__/
+*.pyc
+
 # Environment and secrets — never commit (Supabase, DATABASE_URL, session, etc.)
 .env
 .env.*

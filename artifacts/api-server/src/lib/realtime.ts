@@ -22,6 +22,13 @@ export const REALTIME_WATCHED_TABLES = [
   "interview_whiteboards",
   "chat_settings",
   "code_files",
+  "cad_bots",
+  "cad_folders",
+  "cad_models",
+  "parts_catalog_items",
+  "parts_inventory",
+  "parts_robots",
+  "parts_robot_allocations",
 ] as const;
 
 export interface RealtimeHint {

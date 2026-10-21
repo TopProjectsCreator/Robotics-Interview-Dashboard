@@ -32,24 +32,62 @@ function readViewport(): VisualViewportState {
   };
 }
 
+const listeners = new Set<() => void>();
+let current: VisualViewportState = readViewport();
+let started = false;
+
+function publish() {
+  current = readViewport();
+  // Publish the inset as a CSS variable so plain CSS (sticky footers,
+  // overlay padding) can react to the keyboard without a React re-render.
+  if (typeof document !== "undefined") {
+    const root = document.documentElement;
+    root.style.setProperty("--kb-inset", `${current.keyboardInset}px`);
+    root.style.setProperty("--kb-open", current.keyboardOpen ? "1" : "0");
+  }
+  for (const listener of listeners) listener();
+}
+
+function start() {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  viewport.addEventListener("resize", publish);
+  viewport.addEventListener("scroll", publish);
+  window.addEventListener("orientationchange", publish);
+  publish();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  start();
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// Publish the inset as soon as the module loads so plain CSS (sticky
+// footers, overlay padding) can react to the keyboard even on routes that
+// never call the hook.
+if (typeof window !== "undefined") start();
+
 /**
  * Tracks the visual viewport so mobile layouts can react to the on-screen
  * keyboard. Browsers without `visualViewport` report no keyboard inset.
  */
 export function useVisualViewport(): VisualViewportState {
-  const [state, setState] = React.useState<VisualViewportState>(readViewport);
+  const [state, setState] = React.useState<VisualViewportState>(current);
 
-  React.useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const onChange = () => setState(readViewport());
-    viewport.addEventListener("resize", onChange);
-    viewport.addEventListener("scroll", onChange);
-    return () => {
-      viewport.removeEventListener("resize", onChange);
-      viewport.removeEventListener("scroll", onChange);
-    };
-  }, []);
+  React.useEffect(() => subscribe(() => setState(current)), []);
 
   return state;
+}
+
+/**
+ * The keyboard inset on its own, for components that only need to know how
+ * far the keyboard covers the viewport.
+ */
+export function useKeyboardInset(): number {
+  return useVisualViewport().keyboardInset;
 }

@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -564,6 +563,18 @@ button { cursor: pointer; }
     min-width: 44px;
     min-height: 44px;
   }
+
+  /* The document toolbar is a strip of icons with no visible labels, so the
+     icons themselves have to carry the hit area. */
+  .document-editor .document-toolbar-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* The code workspace file rows hide their delete button until hover. */
+  .code-file-delete {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
 }
 
 /* CAD tree rows hide their actions until hover; on touch — and on narrow
@@ -732,7 +743,7 @@ button { cursor: pointer; }
 .landing-final-cta { display: flex; align-items: end; justify-content: space-between; gap: 55px; max-width: none; margin-top: 80px; padding: clamp(70px, 9vw, 120px) max(20px, calc((100vw - 1136px) / 2)); background: var(--landing-yellow); }.landing-final-cta h2 { margin: 17px 0 0; color: var(--landing-navy); font-size: clamp(3rem, 5.4vw, 5.7rem); line-height: .88; letter-spacing: -.085em; }.landing-final-cta h2 em { color: #237c81; }.landing-final-actions { max-width: 350px; }.landing-final-actions p { margin: 0 0 23px; color: #5e6d61; font-size: 13px; line-height: 1.55; }.landing-final-display-link { display: inline-flex; align-items: center; gap: 7px; margin: 18px 0 0 2px; color: #53675c; font-size: 11px; font-weight: 700; text-decoration: none; }.landing-final-display-link:hover { color: var(--landing-navy); }
 .landing-footer { display: flex; align-items: center; justify-content: space-between; gap: 25px; max-width: 1280px; margin: 0 auto; padding: 30px clamp(20px, 5vw, 72px) 38px; }.landing-footer-brand b { font-size: 11px; }.landing-footer-brand small { font-size: 7px; }.landing-footer-meta, .landing-footer-status { color: #7d918e; font-size: 8px; letter-spacing: .12em; }.landing-footer-status { display: inline-flex; align-items: center; gap: 8px; color: #4d9275; }
 @media (max-width: 900px) { .landing-hero { grid-template-columns: 1fr; padding-top: 70px; }.landing-hero-copy { max-width: 620px; }.landing-hero-visual { max-width: 600px; width: 100%; margin: 0 auto; }.landing-room-heading { align-items: start; flex-direction: column; }.landing-image-story { gap: 65px; }.landing-trust-section, .landing-faq-section { gap: 40px; } }
-@media (max-width: 700px) { .landing-nav { gap: 15px; }.landing-nav-links { display: none; position: absolute; top: 75px; left: 20px; right: 20px; flex-direction: column; align-items: stretch; gap: 0; padding: 10px; border: 1px solid #d5e2dc; border-radius: 14px; background: rgba(249,252,248,.98); box-shadow: 0 18px 32px rgba(23,66,68,.12); }.landing-nav-links.is-open { display: flex; }.landing-nav-links a { padding: 12px 10px; }.landing-nav-links .landing-nav-display { padding: 12px 10px; }.landing-nav-cta { margin-left: auto; padding: 10px 12px; font-size: 10px; }.landing-menu-button { display: block; padding: 7px; }.landing-hero { min-height: auto; padding-top: 48px; padding-bottom: 70px; }.landing-hero h1 { font-size: clamp(3.8rem, 18vw, 6rem); }.landing-lede { font-size: 14px; }.landing-hero-visual { min-height: 455px; padding: 25px 0 35px; }.landing-control-card { padding: 22px 16px 15px; }.landing-control-top h2 { font-size: 19px; }.landing-display-float { right: -2px; bottom: 5px; width: 190px; }.landing-signal-strip { justify-content: flex-start; overflow: auto; gap: 25px; }.landing-signal-strip i { flex-shrink: 0; }.landing-signal-strip div { min-width: max-content; }.landing-section { padding-top: 85px; padding-bottom: 100px; }.landing-section-intro h2, .landing-room-heading h2, .landing-faq-section h2 { font-size: 3.2rem; }.landing-workflow-list { margin-top: 48px; }.landing-workflow-item { grid-template-columns: 37px 1fr 18px; gap: 12px; }.landing-step-line { display: none; }.landing-workflow-item h3 { font-size: 20px; }.landing-workflow-item p { font-size: 12px; }.landing-room-section { padding-top: 20px; }.landing-room-grid { grid-template-columns: 1fr; margin-top: 48px; }.landing-room-panel-large { grid-row: auto; padding: 21px 17px; }.landing-attendance { gap: 17px; margin-top: 35px; }.landing-attendance-number { font-size: 43px; }.landing-room-panel-display, .landing-room-panel-quote { padding: 19px; }.landing-image-story { grid-template-columns: 1fr; padding-top: 85px; }.landing-image-collage { min-height: 400px; }.landing-image-main { height: 350px; }.landing-image-small { height: 190px; }.landing-trust-section, .landing-faq-section { grid-template-columns: 1fr; padding-top: 75px; padding-bottom: 90px; }.landing-trust-items { grid-template-columns: 1fr; gap: 30px; }.landing-trust-items p { margin-top: 15px; }.landing-final-cta { align-items: start; flex-direction: column; gap: 38px; margin-top: 20px; }.landing-final-cta h2 { font-size: 3.7rem; }.landing-footer { align-items: start; flex-direction: column; }.landing-footer-status { order: -1; } }
+@media (max-width: 700px) { .landing-nav { gap: 15px; }.landing-nav-links { display: none; position: absolute; top: 75px; left: clamp(20px, 5vw, 72px); right: clamp(20px, 5vw, 72px); flex-direction: column; align-items: stretch; gap: 0; padding: 10px; border: 1px solid #d5e2dc; border-radius: 14px; background: rgba(249,252,248,.98); box-shadow: 0 18px 32px rgba(23,66,68,.12); }.landing-nav-links.is-open { display: flex; }.landing-nav-links a { padding: 12px 10px; }.landing-nav-links .landing-nav-display { padding: 12px 10px; }.landing-nav-cta { margin-left: auto; padding: 10px 12px; font-size: 10px; }.landing-menu-button { display: block; padding: 7px; }.landing-hero { min-height: auto; padding-top: 48px; padding-bottom: 70px; }.landing-hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }.landing-lede { font-size: 14px; }.landing-hero-visual { min-height: 455px; padding: 25px 0 35px; }.landing-control-card { padding: 22px 16px 15px; }.landing-control-top h2 { font-size: 19px; }.landing-display-float { right: -2px; bottom: 5px; width: 190px; z-index: 1; }.landing-signal-strip { justify-content: flex-start; overflow: auto; gap: 25px; }.landing-signal-strip i { flex-shrink: 0; }.landing-signal-strip div { min-width: max-content; }.landing-section { padding-top: 85px; padding-bottom: 100px; }.landing-section-intro h2, .landing-room-heading h2, .landing-faq-section h2 { font-size: 3.2rem; }.landing-workflow-list { margin-top: 48px; }.landing-workflow-item { grid-template-columns: 37px 1fr 18px; gap: 12px; }.landing-step-line { display: none; }.landing-workflow-item h3 { font-size: 20px; }.landing-workflow-item p { font-size: 12px; }.landing-room-section { padding-top: 20px; }.landing-room-grid { grid-template-columns: 1fr; margin-top: 48px; }.landing-room-panel-large { grid-row: auto; padding: 21px 17px; }.landing-attendance { gap: 17px; margin-top: 35px; }.landing-attendance-number { font-size: 43px; }.landing-room-panel-display, .landing-room-panel-quote { padding: 19px; }.landing-image-story { grid-template-columns: 1fr; padding-top: 85px; }.landing-image-collage { min-height: 400px; }.landing-image-main { height: 350px; }.landing-image-small { height: 190px; }.landing-trust-section, .landing-faq-section { grid-template-columns: 1fr; padding-top: 75px; padding-bottom: 90px; }.landing-trust-items { grid-template-columns: 1fr; gap: 30px; }.landing-trust-items p { margin-top: 15px; }.landing-final-cta { align-items: start; flex-direction: column; gap: 38px; margin-top: 20px; }.landing-final-cta h2 { font-size: 3.7rem; }.landing-footer { align-items: start; flex-direction: column; }.landing-footer-status { order: -1; } }
 @media (prefers-reduced-motion: reduce) { .landing-page *, .landing-page *::before, .landing-page *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 .chat-mention { display: inline; padding: 0 .18em; border-radius: .3em; color: var(--chat-mention-text); background: var(--chat-mention-bg); box-shadow: inset 0 -1px 0 var(--chat-mention-border); font-weight: 700; cursor: help; text-decoration: underline; text-decoration-color: var(--chat-mention-border); text-underline-offset: 2px; }
 .chat-mention:hover { background: var(--chat-mention-border); }
@@ -828,4 +839,77 @@ button { cursor: pointer; }
   .code-editor-stage { min-height: 250px; }
   .code-statusbar { gap: 6px; font-size: 10px; }
   .code-bottom-panel { max-height: 9rem; }
+}
+
+/* --- Mobile foundations -------------------------------------------------- */
+/* iOS Safari zooms the viewport when a focused form control computes a
+   font-size below 16px, and never zooms back out. Every control in the app
+   already opts into `text-base md:text-sm`; this is the safety net for any
+   control added later. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* The keyboard inset is published by `use-visual-viewport` as `--kb-inset`.
+   Modal overlays cap their height against the *visual* viewport so their
+   footer buttons stay reachable above the on-screen keyboard, and they keep
+   clear of the notch and the home indicator. */
+[data-modal-overlay] [data-modal-panel] {
+  max-height: calc(100dvh - var(--kb-inset, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* On a phone a modal becomes a bottom sheet, the way mobile apps behave. */
+@media (max-width: 639px) {
+  [data-modal-overlay] [data-modal-panel] {
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+}
+
+/* A narrow window has no hover to discover hidden actions either. */
+@media (max-width: 900px) {
+  .code-file-delete {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .landing-brand small { font-size: 11px; }
+  .landing-visual-label { font-size: 11px; }
+  .landing-micro-label { font-size: 11px; }
+  .landing-queue-head { font-size: 11px; }
+  .landing-panel-time { font-size: 11px; }
+  .landing-queue-summary span { font-size: 11px; }
+  .landing-queue-row small { font-size: 11px; }
+  .landing-avatar { font-size: 11px; }
+  .landing-control-footer { font-size: 11px; }
+  .landing-display-bar { font-size: 11px; }
+  .landing-display-float small { font-size: 11px; }
+  .landing-step-label { font-size: 11px; }
+  .landing-progress small { font-size: 11px; }
+  .landing-mini-table > div:first-child { font-size: 11px; }
+  .landing-mini-avatar { font-size: 11px; }
+  .landing-display-preview p { font-size: 11px; }
+  .landing-display-preview small { font-size: 11px; }
+  .landing-quote-avatar { font-size: 11px; }
+  .landing-room-panel-quote small { font-size: 11px; }
+  .landing-image-caption { font-size: 11px; }
+  .landing-footer-meta { font-size: 11px; }
+  .landing-footer-status { font-size: 11px; }
+  .code-side-label { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .landing-hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
 }

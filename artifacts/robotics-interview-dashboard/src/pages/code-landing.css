@@ -895,3 +895,25 @@
     outline-color: Highlight !important;
   }
 }
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .code-landing__brand-copy small { font-size: 11px; }
+  .code-landing__workspace-kicker { font-size: 11px; }
+  .code-landing__preview-pill { font-size: 11px; }
+  .code-landing__workspace-sidebar-label { font-size: 11px; }
+  .code-landing__editor-head span { font-size: 11px; }
+  .code-landing__editor-foot { font-size: 11px; }
+  .code-landing__workspace-foot { font-size: 11px; }
+  .code-landing__collab-top { font-size: 11px; }
+  .code-landing__deploy-top { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .code-landing__hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
+}

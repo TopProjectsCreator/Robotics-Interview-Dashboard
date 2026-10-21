@@ -18,7 +18,7 @@ export default function Landing() {
     { q: "Can two admins work at once?", a: "Yes. The admin workspace is designed for a front desk and a room lead to stay in step as the queue changes." },
   ];
   return (
-    <main className="landing-page noise min-h-[100dvh] overflow-hidden bg-[#f4f7f4] text-[#182232]" data-testid="landing-page">
+    <main className="landing-page noise min-h-[100dvh] overflow-x-clip bg-[#f4f7f4] text-[#182232]" data-testid="landing-page">
       <div className="landing-orbit landing-orbit-one" aria-hidden="true" />
       <div className="landing-orbit landing-orbit-two" aria-hidden="true" />
       <header className="landing-nav-wrap">

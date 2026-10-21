@@ -975,7 +975,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             onChange={(event) => setProjectId(event.target.value || null)}
             aria-label="Code project"
             data-testid="code-project-select"
-            className="code-project-select h-9 min-w-0 max-w-full rounded-lg border border-border bg-card px-3 text-sm"
+            className="code-project-select h-9 min-w-0 max-w-full rounded-lg border border-border bg-card px-3 text-base md:text-sm"
           >
             {projectList.map((item) => (
               <option key={item.id} value={item.id}>
@@ -1120,7 +1120,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                     </span>
                   </div>
                   <div className="px-3 pb-2">
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter files" aria-label="Filter files" data-testid="code-search" className="h-8 border-white/10 bg-[#1e1e1e] text-sm text-white placeholder:text-[#6a6a6a]" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter files" aria-label="Filter files" data-testid="code-search" className="h-8 border-white/10 bg-[#1e1e1e] text-base md:text-sm text-white placeholder:text-[#6a6a6a]" />
                   </div>
                   <div className="min-h-0 flex-1 overflow-auto px-1 pb-3">
                     {fileList.length === 0 && (

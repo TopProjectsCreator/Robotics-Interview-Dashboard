@@ -44,6 +44,7 @@ import {
 import { pool } from "@workspace/db";
 import { requestTeamId, requireAdmin } from "../middlewares/adminAuth";
 import { teamSqlCondition } from "../lib/teams";
+import { pushRealtimeHint } from "../lib/realtime";
 import {
   fallbackProductSearchMetadata,
   extractProductPageMetadata,
@@ -2475,6 +2476,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       return saved.id;
     });
     const savedItem = await getCatalogItem(itemId, teamId);
+    pushRealtimeHint("parts_catalog_items", "INSERT");
     res.status(201).json(CreatePartsCatalogItemResponse.parse(savedItem));
   } catch (error) {
     if (error instanceof BadInputError) {
@@ -2730,7 +2732,9 @@ export function startSitemapCatalogCrawler(): void {
 
 router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void> => {
   try {
-    res.json(await syncPublicPartsCatalogs());
+    const synced = await syncPublicPartsCatalogs();
+    pushRealtimeHint("parts_catalog_items", "INSERT");
+    res.json(synced);
   } catch (error) {
     req.log.error({ err: error }, "Public parts catalog synchronization failed");
     res.status(500).json({ error: "Unable to sync public supplier catalogs." });
@@ -2778,6 +2782,7 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
       }
       return { created, updated };
     });
+    pushRealtimeHint("parts_catalog_items", "INSERT");
     res.json(ImportPartsCatalogResponse.parse(counts));
   } catch (error) {
     if (error instanceof BadInputError) {
@@ -2810,6 +2815,7 @@ router.patch("/parts/catalog/:partId/stock", requireAdmin, async (req, res): Pro
       return;
     }
     const savedItem = await getCatalogItem(params.data.partId, teamId);
+    pushRealtimeHint("parts_inventory", "UPDATE");
     res.json(UpdatePartsCatalogStockResponse.parse(savedItem));
   } catch (error) {
     if (error instanceof StockConflictError) {
@@ -2851,6 +2857,7 @@ router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Prom
       return;
     }
     const savedItem = await getCatalogItem(params.data.partId, teamId);
+    pushRealtimeHint("parts_catalog_items", "UPDATE");
     res.json(UpdatePartsCatalogCostResponse.parse(savedItem));
   } catch (error) {
     req.log.error({ err: error }, "Parts saved cost update failed");
@@ -2897,6 +2904,7 @@ router.patch("/parts/catalog/:partId/details", requireAdmin, async (req, res): P
       res.status(404).json({ error: "Catalog item not found." });
       return;
     }
+    pushRealtimeHint("parts_catalog_items", "UPDATE");
     res.json(UpdatePartsCatalogDetailsResponse.parse(details));
   } catch (error) {
     if (error instanceof BadInputError) {
@@ -3114,6 +3122,7 @@ router.post("/parts/robots", requireAdmin, async (req, res): Promise<void> => {
       res.status(409).json({ error: "A robot with that name already exists." });
       return;
     }
+    pushRealtimeHint("parts_robots", "INSERT");
     res.status(201).json(CreatePartsRobotResponse.parse(mapRobot(result.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -3159,6 +3168,7 @@ router.patch("/parts/robots/:robotId", requireAdmin, async (req, res): Promise<v
       return;
     }
     req.log.error({ err: error, robotId: params.data.robotId }, "Parts robot update failed");
+    pushRealtimeHint("parts_robots", "UPDATE");
     res.status(500).json({ error: "Unable to rename the robot." });
   }
 });

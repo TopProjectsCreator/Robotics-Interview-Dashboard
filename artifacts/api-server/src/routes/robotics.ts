@@ -2643,6 +2643,14 @@ router.patch("/applicants/:id", requireCoordinator, async (req, res): Promise<vo
   if (rest.gender !== undefined) {
     rest.gender = rest.gender === null ? null : normalizeApplicantGender(String(rest.gender));
   }
+  // Recording an interview decision also moves the decision lane, so the
+  // roster the team ranks applicants on always reflects what the interviewer
+  // actually said. An explicit category in the same request wins.
+  const decision = typeof rest.interviewDecision === "string" ? rest.interviewDecision : "";
+  if (decision && rest.category === undefined) {
+    const lane = laneForInterviewDecision(decision);
+    if (lane) rest.category = lane;
+  }
   const [updated] = await db.update(applicantsTable).set({
     ...rest,
     // The score column is an integer 0-100 (or -1 for invalid): normalize
@@ -2704,8 +2712,23 @@ function fallbackRecommendation(score: number): string {
 
 function laneForRecommendation(recommendation: string): string {
   if (recommendation === "Strong Yes" || recommendation === "Yes") return "advance";
-  if (recommendation === "No") return "decline";
+  if (recommendation === "Strong No" || recommendation === "No") return "decline";
+  if (recommendation === "Maybe") return "hold";
   return "hold";
+}
+
+/**
+ * The decision lane an interviewer's decision implies. The decision lane on
+ * /applicants and the decision recorded on the interview card are the same
+ * judgement, so recording one has to move the other. "Undecided" leaves the
+ * lane alone: a coordinator may have placed someone in a lane before the
+ * interview happened, and an undecided answer is not a reason to undo it.
+ */
+function laneForInterviewDecision(decision: string): string | null {
+  if (decision === "Strong Yes" || decision === "Yes") return "advance";
+  if (decision === "Strong No" || decision === "No") return "decline";
+  if (decision === "Maybe") return "hold";
+  return null;
 }
 
 router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): Promise<void> => {
@@ -3005,10 +3028,17 @@ router.post("/queue/advance", requireCoordinator, async (req, res): Promise<void
   }
   const note = parsed.data.note?.trim() ?? "";
   const teamId = await requestTeamId(req);
+  // Only touch `notes` when the caller actually sent one. The interview
+  // screen saves notes with its own PATCH on blur; if this advance also
+  // wrote the column it would write back the snapshot it read at the start
+  // of the request and silently erase a note that landed in between.
+  const notesPatch = note
+    ? { notes: `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` }
+    : {};
   await db.update(applicantsTable).set({
     interviewStatus: "completed",
     callbackRequested: false,
-    notes: note ? `${applicant.notes}${applicant.notes ? "\n\n" : ""}${note}` : applicant.notes,
+    ...notesPatch,
     updatedAt: new Date(),
   }).where(and(eq(applicantsTable.id, applicant.id), teamFilter(applicantsTable.teamId, teamId)));
   pushRealtimeHint("applicants");

@@ -83,24 +83,39 @@ export function ChatParasolidViewer({ name, src }: ChatParasolidViewerProps) {
           // take a while, so we poll for it instead of holding one request
           // open. While it works the message stays informative - never an
           // error the coordinator has to act on.
-          const start = await fetch(`${import.meta.env.BASE_URL}api/storage/cad-preview-from-object`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ objectPath, format: format === "x-t" ? "x_t" : "x_b" }),
-            credentials: "include",
-            signal: controller.signal,
-          });
-          if (!start.ok) throw new Error(`Preview conversion failed (${start.status}).`);
-          const started = (await start.json()) as { jobId?: string };
-          if (!started.jobId) throw new Error("Preview conversion could not start.");
+          const startJob = async (): Promise<string> => {
+            const start = await fetch(`${import.meta.env.BASE_URL}api/storage/cad-preview-from-object`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ objectPath, format: format === "x-t" ? "x_t" : "x_b" }),
+              credentials: "include",
+              signal: controller.signal,
+            });
+            if (!start.ok) throw new Error(`Preview conversion failed (${start.status}).`);
+            const started = (await start.json()) as { jobId?: string };
+            if (!started.jobId) throw new Error("Preview conversion could not start.");
+            return started.jobId;
+          };
+          let jobId = await startJob();
+          let restarts = 0;
           for (;;) {
             if (controller.signal.aborted) return;
             await new Promise((resolve) => setTimeout(resolve, 3000));
             const poll = await fetch(
-              `${import.meta.env.BASE_URL}api/storage/cad-preview-from-object/${encodeURIComponent(started.jobId)}`,
+              `${import.meta.env.BASE_URL}api/storage/cad-preview-from-object/${encodeURIComponent(jobId)}`,
               { credentials: "include", signal: controller.signal },
-            );
-            if (!poll.ok) throw new Error(`Preview conversion failed (${poll.status}).`);
+            ).catch(() => null);
+            // The free instance can restart mid-conversion. That is not the
+            // coordinator's problem: start the job again and keep waiting
+            // rather than showing an error.
+            if (!poll || !poll.ok) {
+              if (restarts >= 5) throw new Error("Preview conversion is taking longer than expected. The file is still safe - try again shortly.");
+              restarts += 1;
+              setStatus("The preview server restarted - resuming the conversion…");
+              await new Promise((resolve) => setTimeout(resolve, 4000));
+              jobId = await startJob();
+              continue;
+            }
             const state = (await poll.json()) as {
               status?: string;
               previewId?: string;

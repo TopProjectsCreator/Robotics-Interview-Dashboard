@@ -168,7 +168,7 @@ export function CadModelPreviewDialog({
                 );
               }}
               disabled={busy}
-              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-base md:text-sm"
               data-testid="cad-preview-location"
             >
               <option value="">Unfiled</option>
@@ -193,7 +193,7 @@ export function CadModelPreviewDialog({
               onChange={(event) => setNotes(event.target.value)}
               rows={2}
               disabled={busy}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-sm"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-base md:text-sm"
               data-testid="cad-preview-notes"
             />
           </label>

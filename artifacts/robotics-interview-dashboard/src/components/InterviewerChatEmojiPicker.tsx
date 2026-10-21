@@ -186,7 +186,7 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
                 maxLength={32}
                 autoComplete="off"
                 data-testid="input-team-emoji-name"
-                className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-xs text-[#183a4b] outline-none focus:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-base md:text-xs text-[#183a4b] outline-none focus:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]"
               />
               <span className="text-xs text-[#71878d]">:</span>
             </div>

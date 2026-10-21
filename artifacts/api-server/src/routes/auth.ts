@@ -1320,19 +1320,28 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
       "presence_heartbeats", "seating_settings", "workspace_settings",
     ];
     const removed: Record<string, number> = {};
-    await pool.query("BEGIN");
+    // A Pool hands out a different client per query, so BEGIN/COMMIT around
+    // pool.query() would land on different connections: the deletes would
+    // autocommit one by one and the COMMIT would have nothing to commit.
+    // Check out a single client and run the whole deletion on it.
+    const client = await pool.connect();
     try {
-      for (const table of tables) {
-        const result = await pool.query(`delete from "${table}" where team_id = $1`, [team.id]);
-        removed[table] = result.rowCount ?? 0;
+      await client.query("BEGIN");
+      try {
+        for (const table of tables) {
+          const result = await client.query(`delete from "${table}" where team_id = $1`, [team.id]);
+          removed[table] = result.rowCount ?? 0;
+        }
+        const accounts = await client.query(`delete from "interviewer_accounts" where team_id = $1 returning id`, [team.id]);
+        removed["interviewer_accounts"] = accounts.rowCount ?? 0;
+        await client.query(`delete from "teams" where id = $1`, [team.id]);
+        await client.query("COMMIT");
+      } catch (txError) {
+        await client.query("ROLLBACK");
+        throw txError;
       }
-      const accounts = await pool.query(`delete from "interviewer_accounts" where team_id = $1 returning id`, [team.id]);
-      removed["interviewer_accounts"] = accounts.rowCount ?? 0;
-      await pool.query(`delete from "teams" where id = $1`, [team.id]);
-      await pool.query("COMMIT");
-    } catch (txError) {
-      await pool.query("ROLLBACK");
-      throw txError;
+    } finally {
+      client.release();
     }
     req.log.info({ team: team.name, removed }, "Team deleted by site owner");
     res.json({ deletedTeamId: team.id, deletedTeamName: team.name, removed });

@@ -274,7 +274,8 @@ export function DocumentEditor({
     <div className="document-editor fixed inset-0 z-[80] flex min-h-[100dvh] flex-col overflow-hidden" role="dialog" aria-modal="true" aria-label="Shared interview document" data-testid="document-editor">
 
       <header className="shrink-0 border-b">
-        <div className="flex min-h-[70px] items-center justify-between gap-4 px-4 py-3 sm:px-7">
+        <div className="flex min-h-[70px] items-center justify-between gap-4 px-4 py-3 sm:px-7"
+          style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sidebar text-sidebar-primary shadow-sm" aria-hidden="true">
               <FileText size={19} />
@@ -326,7 +327,7 @@ export function DocumentEditor({
                   else currentEditor.chain().focus().toggleHeading({ level: Number(value.split("-")[1]) as 1 | 2 | 3 }).run();
                 })}
                 data-testid="select-document-heading"
-                className="document-style-select h-8 appearance-none rounded-lg border-0 bg-transparent py-1 pl-2 pr-7 text-xs font-semibold outline-none"
+                className="document-style-select h-8 appearance-none rounded-lg border-0 bg-transparent py-1 pl-2 pr-7 text-base md:text-xs font-semibold outline-none"
               >
                 <option value="paragraph">Body</option>
                 <option value="heading-1">Heading 1</option>

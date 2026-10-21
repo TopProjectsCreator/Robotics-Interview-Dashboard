@@ -198,7 +198,7 @@ export function ChatMiniTool({ tool }: { tool: ChatMiniToolData }) {
             aria-label={`Decrease ${tool.label}`}
             disabled={count - tool.step < tool.min}
             onClick={() => setCount((current) => Math.max(tool.min, current - tool.step))}
-            className="h-9 w-9 rounded-lg border border-[#dce9e8] bg-white text-lg font-semibold disabled:opacity-40 dark:border-[#395563] dark:bg-[#1b303b]"
+            className="h-11 w-11 rounded-lg border border-[#dce9e8] bg-white text-lg font-semibold disabled:opacity-40 dark:border-[#395563] dark:bg-[#1b303b]"
           >
             −
           </button>
@@ -208,7 +208,7 @@ export function ChatMiniTool({ tool }: { tool: ChatMiniToolData }) {
             aria-label={`Increase ${tool.label}`}
             disabled={count + tool.step > tool.max}
             onClick={() => setCount((current) => Math.min(tool.max, current + tool.step))}
-            className="h-9 w-9 rounded-lg border border-[#dce9e8] bg-white text-lg font-semibold disabled:opacity-40 dark:border-[#395563] dark:bg-[#1b303b]"
+            className="h-11 w-11 rounded-lg border border-[#dce9e8] bg-white text-lg font-semibold disabled:opacity-40 dark:border-[#395563] dark:bg-[#1b303b]"
           >
             +
           </button>

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { currentInstance, type DbInstance } from '@workspace/db';
-import { writeFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -522,6 +522,37 @@ export class ObjectStorageService {
       .slice(0, limit);
   }
 
+  /**
+   * Uploads bytes to an explicit storage path. Used to persist a finished
+   * CAD preview so it survives an instance restart (the preview used to live
+   * only in the process's temp directory).
+   */
+  async uploadToPath(
+    storagePath: string,
+    data: Buffer,
+    contentType: string,
+    instance: StorageInstance = currentInstance(),
+  ): Promise<void> {
+    const { error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
+      .upload(storagePath, data, { contentType, upsert: true });
+    if (error) {
+      throw new Error(`Failed to store ${storagePath}: ${error.message}`);
+    }
+  }
+
+  /** Reads a stored path back as bytes (or null when it is not there). */
+  async readFromPath(
+    storagePath: string,
+    instance: StorageInstance = currentInstance(),
+  ): Promise<{ data: Buffer; contentType: string } | null> {
+    const { data, error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
+      .download(storagePath);
+    if (error || !data) return null;
+    return { data: Buffer.from(await data.arrayBuffer()), contentType: data.type || 'application/octet-stream' };
+  }
+
   async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {
     const id = randomUUID();
     const { instance } = await writeWithFailover("Failed to store generated image", async (target) => {
@@ -602,9 +633,30 @@ export class ObjectStorageService {
     if (error || !data) {
       throw new ObjectNotFoundError();
     }
-    const bytes = Buffer.from(await data.arrayBuffer());
-    await writeFile(targetPath, bytes);
-    return { contentType: data.type || 'application/octet-stream', sizeBytes: bytes.byteLength };
+    // STREAM to disk. Buffering a 166 MB (or larger) model in memory and
+    // then running the converter would need ~500 MB in one process, which
+    // OOMs a 512 MB instance. Piping the body keeps memory flat.
+    const signedUrl = await this.signDownloadUrl(objectPath, 900, instance);
+    const upstream = await fetch(signedUrl);
+    if (!upstream.ok || !upstream.body) {
+      throw new ObjectNotFoundError();
+    }
+    const handle = await open(targetPath, 'w');
+    let sizeBytes = 0;
+    try {
+      const reader = upstream.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          sizeBytes += value.byteLength;
+          await handle.write(value);
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+    return { contentType: data.type || 'application/octet-stream', sizeBytes };
   }
 
   async downloadObject(objectPath: string): Promise<{ data: Buffer; contentType: string }> {

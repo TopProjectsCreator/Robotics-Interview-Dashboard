@@ -193,7 +193,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
       disabled={disabled}
       onMouseDown={(event) => event.preventDefault()}
       onClick={run}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-muted disabled:opacity-40 ${active ? "bg-muted text-primary" : "text-muted-foreground"}`}
+      className={`flex h-11 w-11 items-center justify-center rounded-lg transition hover:bg-muted disabled:opacity-40 ${active ? "bg-muted text-primary" : "text-muted-foreground"}`}
     >
       {icon}
     </button>
@@ -210,14 +210,18 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
         aria-modal="true"
         aria-labelledby="personal-notepad-title"
         className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-2xl"
-        style={{ maxHeight: "min(760px, calc(100dvh - 1.5rem))" }}
+        style={{
+          maxHeight: "min(760px, calc(100dvh - var(--kb-inset, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 1.5rem))",
+          marginTop: "env(safe-area-inset-top)",
+          marginBottom: "env(safe-area-inset-bottom)",
+        }}
       >
         <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3 sm:px-5">
           <div>
             <h2 id="personal-notepad-title" className="text-base font-semibold">Personal notepad</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">Private to your account · saved to the cloud</p>
           </div>
-          <button type="button" onClick={() => void closeNotepad()} aria-label="Close notepad" data-testid="button-close-notepad" className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-muted hover:text-foreground">
+          <button type="button" onClick={() => void closeNotepad()} aria-label="Close notepad" data-testid="button-close-notepad" className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-muted hover:text-foreground">
             <X size={18} />
           </button>
         </header>

@@ -134,11 +134,11 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
     <h4 className="text-sm font-semibold text-[hsl(var(--foreground))]">The workspace agent needs your input</h4>
     {question.questions.map((item) => <fieldset key={item.id} className="space-y-2" data-testid={`agent-question-${item.id}`}>
       <legend className="text-sm font-medium text-[hsl(var(--foreground))]">{item.title}{item.required && <span aria-label="required"> *</span>}</legend>
-      {item.type === "text" && <textarea required={item.required} value={String(values[item.id] ?? "")} onChange={(event) => setValues((old) => ({ ...old, [item.id]: event.target.value }))} placeholder={item.placeholder} rows={3} className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm text-[hsl(var(--foreground))]" data-testid={`input-question-${item.id}`} />}
+      {item.type === "text" && <textarea required={item.required} value={String(values[item.id] ?? "")} onChange={(event) => setValues((old) => ({ ...old, [item.id]: event.target.value }))} placeholder={item.placeholder} rows={3} className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm text-[hsl(var(--foreground))]" data-testid={`input-question-${item.id}`} />}
       {item.type === "singleSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === option} onChange={() => setValues((old) => ({ ...old, [item.id]: option }))} />{option}</label>)}</div>}
       {item.type === "multiSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="checkbox" checked={(values[item.id] as string[] | undefined)?.includes(option) ?? false} onChange={(event) => setValues((old) => { const current = (old[item.id] as string[] | undefined) ?? []; return { ...old, [item.id]: event.target.checked ? [...current, option] : current.filter((value) => value !== option) }; })} />{option}</label>)}</div>}
       {item.type === "boolean" && <div className="flex gap-4">{[["yes", "Yes"], ["no", "No"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === value} onChange={() => setValues((old) => ({ ...old, [item.id]: value }))} />{label}</label>)}</div>}
-      {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm" />}
+      {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm" />}
       {item.type === "fileUpload" && <>
         <input type="file" accept={item.accept ?? ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.css,.js,.ts,image/*"} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
           const selection = Array.from(event.target.files ?? []);
@@ -800,7 +800,7 @@ export function CustomWorkspacesPage() {
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm">
           <label htmlFor="workspace-prompt" className="text-sm font-semibold text-[hsl(var(--foreground))]">What should this workspace do?</label>
           {!canManage && <p className="mt-2 rounded-lg bg-[hsl(var(--muted))] p-2.5 text-xs text-[hsl(var(--foreground))]">Only coordinators can create, revise, publish, or change access for custom apps.</p>}
-          <textarea id="workspace-prompt" disabled={!canManage} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} maxLength={8000} placeholder="Example: Build a parts catalog for our robot. Track part names, suppliers, prices, and stock; let the team search and add records." className="mt-2 w-full resize-y rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-sm text-[hsl(var(--foreground))] outline-none focus:ring-2 focus:ring-[#16869a] disabled:opacity-60" />
+          <textarea id="workspace-prompt" disabled={!canManage} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} maxLength={8000} placeholder="Example: Build a parts catalog for our robot. Track part names, suppliers, prices, and stock; let the team search and add records." className="mt-2 w-full resize-y rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-base md:text-sm text-[hsl(var(--foreground))] outline-none focus:ring-2 focus:ring-[#16869a] disabled:opacity-60" />
           <label className="mt-4 grid gap-1.5 text-xs font-semibold text-[hsl(var(--foreground))]">
             <span>AI model</span>
             <select
@@ -809,7 +809,7 @@ export function CustomWorkspacesPage() {
               value={selectedModel}
               onChange={(event) => chooseModel(event.target.value)}
               disabled={!canManage || modelsLoading || builderModels.length === 0}
-              className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm font-normal text-[hsl(var(--foreground))] disabled:opacity-60"
+              className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-base md:text-sm font-normal text-[hsl(var(--foreground))] disabled:opacity-60"
             >
               {builderModels.length === 0 && <option value="">{modelsLoading ? "Loading models…" : "Default assistant model"}</option>}
               {builderModels.map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
@@ -846,7 +846,7 @@ export function CustomWorkspacesPage() {
           {active && canManage && <div className="flex flex-wrap items-end gap-2">
             <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
               <span>Who can use this app?</span>
-              <select aria-label="Who can use this app?" value={accessMode} disabled={busy} onChange={(event) => setAccessMode(event.target.value as AccessMode)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-sm text-[hsl(var(--foreground))]">
+              <select aria-label="Who can use this app?" value={accessMode} disabled={busy} onChange={(event) => setAccessMode(event.target.value as AccessMode)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-base md:text-sm text-[hsl(var(--foreground))]">
                 <option value="team">Everyone on the team</option>
                 <option value="owner">Only the creator</option>
                 <option value="selected">Choose teammates</option>
@@ -957,7 +957,7 @@ export function CustomWorkspacesPage() {
         {active?.status === "draft" && canManage && <div className="border-t border-[hsl(var(--border))] p-4">
           <label htmlFor="workspace-revision" className="text-sm font-semibold text-[hsl(var(--foreground))]">Revise this draft</label>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <input id="workspace-revision" value={revisionPrompt} onChange={(event) => setRevisionPrompt(event.target.value)} maxLength={4000} placeholder="Describe what to change or add…" className="min-w-0 flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))]" />
+            <input id="workspace-revision" value={revisionPrompt} onChange={(event) => setRevisionPrompt(event.target.value)} maxLength={4000} placeholder="Describe what to change or add…" className="min-w-0 flex-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-base md:text-sm text-[hsl(var(--foreground))]" />
             <button type="button" disabled={busy || !revisionPrompt.trim()} onClick={() => void revise()} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] disabled:opacity-50">Revise</button>
           </div>
         </div>}

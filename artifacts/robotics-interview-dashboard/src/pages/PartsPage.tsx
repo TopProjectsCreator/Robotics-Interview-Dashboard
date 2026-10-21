@@ -473,7 +473,7 @@ function PartCard({
                     String(item.allocations.find((allocation) => allocation.robotId === nextRobotId)?.quantity ?? 0),
                   );
                 }}
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 aria-label={`Choose a robot for ${item.name}`}
                 disabled={robots.length === 0}
               >
@@ -1544,7 +1544,7 @@ export default function PartsPage() {
                         <select
                           value={customVendor}
                           onChange={(event) => setCustomVendor(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
                           <option value="">Choose supplier</option>
                           {VENDOR_GROUPS.map((group) => (
@@ -1665,7 +1665,7 @@ export default function PartsPage() {
                             setInventoryVendor(event.target.value);
                             setPageSize(100);
                           }}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
                           <option value="">All suppliers</option>
                           {VENDOR_GROUPS.map((group) => (

@@ -87,7 +87,7 @@ export function AssistantMcpConnectionPrompt({
               onChange={(event) => onApiKeyChange?.(event.target.value)}
               aria-label="MCP API key"
               data-testid="assistant-mcp-api-key"
-              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-base md:text-sm"
             />
           </label>
           <label className="grid gap-1 text-xs font-medium">
@@ -97,7 +97,7 @@ export function AssistantMcpConnectionPrompt({
               onChange={(event) => onApiKeyHeaderChange?.(event.target.value)}
               aria-label="MCP API key header name"
               data-testid="assistant-mcp-api-key-header"
-              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-base md:text-sm"
             />
           </label>
           <label className="grid gap-1 text-xs font-medium">
@@ -108,7 +108,7 @@ export function AssistantMcpConnectionPrompt({
               aria-label="MCP API key header prefix"
               placeholder="Optional, e.g. Bearer"
               data-testid="assistant-mcp-api-key-prefix"
-              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-base md:text-sm"
             />
           </label>
         </div>

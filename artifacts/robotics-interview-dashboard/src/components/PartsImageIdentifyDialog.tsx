@@ -519,7 +519,7 @@ export function PartsImageIdentifyDialog({
                     <select
                       value={vendorKey}
                       onChange={(event) => setVendorKey(event.target.value)}
-                      className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       required
                     >
                       <option value="">Choose a supported supplier</option>
