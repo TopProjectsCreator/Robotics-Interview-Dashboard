@@ -13,7 +13,7 @@ import {
 } from '@workspace/api-zod';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
 import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable } from '@workspace/db';
 import { materializeChunkedUpload } from '../lib/chunkedUploads';
@@ -879,12 +879,41 @@ function maxPreviewSourceBytes(): number {
   if (Number.isFinite(configured) && configured > 0) {
     return Math.floor(configured * 1024 * 1024);
   }
-  const totalMemory = totalmem();
   const megabyte = 1024 * 1024;
-  if (totalMemory >= 3 * 1024 * megabyte) return 600 * megabyte;
-  if (totalMemory >= 1536 * megabyte) return 200 * megabyte;
+  const available = usableMemoryBytes();
+  if (available === null) {
+    // No limit could be read: assume a small instance rather than trusting
+    // the host's memory, which is what made a 512 MB box look unlimited.
+    return 48 * megabyte;
+  }
+  if (available >= 3 * 1024 * megabyte) return 600 * megabyte;
+  if (available >= 1536 * megabyte) return 200 * megabyte;
   // A 512 MB instance: only small models fit alongside the API process.
   return 48 * megabyte;
+}
+
+/**
+ * The memory this container may actually use.
+ *
+ * `os.totalmem()` inside a container reports the HOST's memory, not the
+ * limit the container is held to, so trusting it made a 512 MB instance look
+ * like it had many gigabytes. The cgroup limit is the real number.
+ */
+function usableMemoryBytes(): number | null {
+  for (const path of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
+    try {
+      const raw = readFileSync(path, "utf8").trim();
+      if (raw === "max") continue;
+      const value = Number(raw);
+      // A cgroup limit of a huge number means "no limit set".
+      if (Number.isFinite(value) && value > 0 && value < Number.MAX_SAFE_INTEGER) {
+        return value;
+      }
+    } catch {
+      // No cgroup file at this path; try the next one.
+    }
+  }
+  return null;
 }
 
 async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat: "x_t" | "x_b"): Promise<void> {
