@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Router as WouterRouter } from "wouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,10 +34,12 @@ function sseResponse(events: unknown[]): Response {
 }
 
 describe("assistant MCP connection prompt", () => {
-  let savedMessages: Array<{ id: string; question: string; answer: string; activities: never[]; createdAt: string }>;
+  let savedMessages: Array<{ id: string; question: string; answer: string; activities: unknown[]; createdAt: string }>;
+  let messageResponses: number;
 
   beforeEach(() => {
     savedMessages = [];
+    messageResponses = 0;
     window.localStorage.clear();
     queryClient.clear();
   });
@@ -71,6 +73,10 @@ describe("assistant MCP connection prompt", () => {
         });
       }
       if (url.pathname === "/api/assistant/conversations/conv-1/messages") {
+        // A real round trip takes longer than the frame in which the stream
+        // ends, so the transcript is reconciled against the stale copy first.
+        await new Promise(resolve => setTimeout(resolve, 100));
+        messageResponses += 1;
         return jsonResponse({ items: savedMessages });
       }
       if (url.pathname === "/api/assistant/config") {
@@ -116,6 +122,9 @@ describe("assistant MCP connection prompt", () => {
     );
 
     await screen.findByTestId("button-assistant-conversation-conv-1");
+    // Wait for the transcript to finish loading so the refetch that follows
+    // the turn is a separate request.
+    await waitFor(() => expect(messageResponses).toBe(1));
     const input = await screen.findByTestId("input-assistant-question");
     fireEvent.change(input, { target: { value: QUESTION } });
     const ask = screen.getByTestId("button-ask-assistant");
@@ -124,6 +133,13 @@ describe("assistant MCP connection prompt", () => {
 
     const prompt = await screen.findByTestId("assistant-mcp-connection-prompt");
     expect(prompt).toHaveTextContent("Connect a custom MCP server?");
+    expect(prompt).toHaveTextContent(ENDPOINT);
+
+    // The transcript is rebuilt from the server copy once the turn is saved.
+    // The prompt belongs to that turn, so it has to survive the rebuild.
+    await waitFor(() => expect(messageResponses).toBe(2));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+    expect(screen.getByTestId("assistant-mcp-connection-prompt")).toBeInTheDocument();
     expect(screen.getByTestId("assistant-mcp-connection-endpoint")).toHaveTextContent(ENDPOINT);
   });
 });

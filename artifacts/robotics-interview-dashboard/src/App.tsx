@@ -7684,19 +7684,31 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
 
   useEffect(() => {
     if (isStreaming || ask.isPending) return;
-    setHistory(current => (activeMessages.data?.items ?? []).map(item => {
-      const existing = current.find(entry =>
-        entry.q === item.question && entry.a === item.answer &&
-        (entry.connectionRequest || entry.connectionRequestDismissed),
-      );
-      return {
-        q: item.question,
-        a: item.answer,
-        activities: item.activities ?? [],
-        ...(existing?.connectionRequest ? { connectionRequest: existing.connectionRequest } : {}),
-        ...(existing?.connectionRequestDismissed ? { connectionRequestDismissed: true } : {}),
-      };
-    }));
+    setHistory(current => {
+      const items = activeMessages.data?.items ?? [];
+      // The server copy of the transcript arrives a beat after the stream ends.
+      // Hold on to the turn that was just streamed until it is saved, so the
+      // answer (and the MCP prompt that belongs to it) never blinks out.
+      const savedQuestions = new Set(items.map(item => item.question));
+      const pending = current.filter(entry => !savedQuestions.has(entry.q));
+      // The server never stores an MCP connection request, so the saved copy
+      // of the turn would come back without it. Carry the request (and the
+      // fact that it was dismissed) over from the streamed turn it replaces.
+      const streamedByQuestion = new Map(current.map(entry => [entry.q, entry] as const));
+      return [
+        ...items.map(item => {
+          const streamed = streamedByQuestion.get(item.question);
+          return {
+            q: item.question,
+            a: item.answer,
+            activities: item.activities ?? [],
+            ...(streamed?.connectionRequest ? { connectionRequest: streamed.connectionRequest } : {}),
+            ...(streamed?.connectionRequestDismissed ? { connectionRequestDismissed: true } : {}),
+          };
+        }),
+        ...pending,
+      ];
+    });
   }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
 
   const attachFile = async (file: File) => {
