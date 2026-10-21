@@ -57,6 +57,7 @@ async function loadStorage(t) {
       pool: {},
       currentInstance: () => "primary",
       chunkedUploadsTable: { uploadId: "upload_id" },
+      cadPreviewJobsTable: { id: "id", status: "status", objectPath: "object_path", format: "format", updatedAt: "updated_at", manifest: "manifest", previewId: "preview_id", error: "error" },
       teamsTable: {},
       DEFAULT_TEAM_ID: "default",
       normalizeTeamName: (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase(),

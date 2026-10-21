@@ -124,6 +124,7 @@ function createHarness(t, {
         delete: () => ({ where: () => Promise.resolve() }),
       },
       chunkedUploadsTable: { uploadId: "upload_id" },
+      cadPreviewJobsTable: { id: "id", status: "status", objectPath: "object_path", format: "format", updatedAt: "updated_at", manifest: "manifest", previewId: "preview_id", error: "error" },
       interviewerAccountsTable: {},
       teamsTable,
       DEFAULT_TEAM_ID,

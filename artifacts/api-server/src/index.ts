@@ -11,6 +11,7 @@ import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/pa
 import { startScheduledChatDispatcher } from "./routes/robotics";
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
+import { resumeStalePreviewJobs } from "./routes/storage";
 
 initRealtime();
 
@@ -529,6 +530,7 @@ async function ensureSchema(): Promise<void> {
     // Feature requests inbox for the site owner (Ishaan Bansal): every
     // team's requests land here. is_site_owner is set once by the migration
     // below; all statements idempotent.
+    `create table if not exists "cad_preview_jobs" ("id" text primary key, "team_id" text, "object_path" text not null, "format" text not null, "status" text not null default 'preparing', "preview_id" text, "error" text, "manifest" jsonb, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "ingested_emails" ("id" text primary key, "team_id" text, "mailbox" text not null, "message_id" text not null, "sender" text not null default '', "subject" text not null default '', "posted_message_id" text, "received_at" timestamptz, "ingested_at" timestamptz not null default now())`,
     `create unique index if not exists "ingested_emails_mailbox_message_unique" on "ingested_emails" ("mailbox", "message_id")`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
@@ -747,6 +749,8 @@ server.listen(port, () => {
       // Team inbox: email forwarded into the team mailbox is posted into the
       // chat. Inert until a mailbox and an allow list are configured.
       startMailboxPoller("default");
+      // Pick up CAD preview conversions that a restart interrupted.
+      void resumeStalePreviewJobs();
       // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
       // The scheduled sync above only runs once a day, which is far too slow to
       // seed a 2,387-product catalog, so this loop owns the long first pass and

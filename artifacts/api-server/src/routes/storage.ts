@@ -15,10 +15,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { currentInstance, db, chunkedUploadsTable } from '@workspace/db';
+import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable } from '@workspace/db';
 import { materializeChunkedUpload } from '../lib/chunkedUploads';
+import { logger } from "../lib/logger";
 import { storageInstanceRestricted } from '../lib/objectStorage';
-import { eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -767,40 +768,61 @@ async function readPersistedPreview(
   return null;
 }
 
-type CadPreviewJob = {
-  status: "preparing" | "ready" | "failed";
-  startedAt: number;
-  previewId?: string;
-  glbBytes?: number;
-  error?: string;
-  instance?: "primary" | "secondary";
-  manifest?: {
-    overviewBytes: number;
-    detailBytes: number;
-    triangles: number;
-    tiles: unknown[];
-  };
+type CadPreviewManifest = {
+  overviewBytes: number;
+  detailBytes: number;
+  triangles: number;
+  tiles: unknown[];
 };
-const cadPreviewJobs = new Map<string, CadPreviewJob>();
 const CAD_PREVIEW_JOB_TTL_MS = 2 * 60 * 60 * 1000;
 
-function pruneCadPreviewJobs(): void {
-  const now = Date.now();
-  for (const [id, job] of cadPreviewJobs) {
-    if (now - job.startedAt > CAD_PREVIEW_JOB_TTL_MS) cadPreviewJobs.delete(id);
-  }
+/**
+ * The job lives in the database, not in process memory: a free instance is
+ * restarted by the platform from time to time, and converting a very large
+ * model takes many minutes. In memory, a restart threw the work away and
+ * the conversion could start over forever. On disk the job survives, and
+ * resumeStalePreviewJobs picks it back up on the next boot.
+ */
+async function readCadPreviewJob(jobId: string) {
+  const [job] = await db.select().from(cadPreviewJobsTable)
+    .where(eq(cadPreviewJobsTable.id, jobId)).limit(1);
+  return job ?? null;
 }
-const cadPreviewJobSweep = setInterval(pruneCadPreviewJobs, 5 * 60 * 1000);
-cadPreviewJobSweep.unref();
+
+async function writeCadPreviewJob(
+  jobId: string,
+  patch: {
+    status?: "preparing" | "ready" | "failed";
+    previewId?: string | null;
+    error?: string | null;
+    manifest?: CadPreviewManifest | null;
+  },
+): Promise<void> {
+  await db.update(cadPreviewJobsTable)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(cadPreviewJobsTable.id, jobId));
+}
+
+async function pruneCadPreviewJobs(): Promise<void> {
+  const cutoff = new Date(Date.now() - CAD_PREVIEW_JOB_TTL_MS);
+  await db.delete(cadPreviewJobsTable)
+    .where(and(
+      lt(cadPreviewJobsTable.updatedAt, cutoff),
+      eq(cadPreviewJobsTable.status, "ready"),
+    ));
+}
 
 router.post(
   '/storage/cad-preview-from-object',
   requireWorkspaceAccessOrCoordinator('cad'),
   async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { objectPath?: unknown; format?: unknown };
+    const teamId = await requestTeamId(req);
     const objectPath = typeof body.objectPath === 'string' ? body.objectPath.trim() : '';
     const formatHeader = typeof body.format === 'string' ? body.format.toLowerCase() : '';
-    const sourceFormat = formatHeader === 'x_t' || formatHeader === 'x-b' ? formatHeader : null;
+    const sourceFormat = formatHeader === 'x_t' || formatHeader === 'x-b'
+      ? (formatHeader === 'x_t' ? 'x_t' : 'x_b')
+      : null;
     if (!objectPath) {
       res.status(400).json({ error: 'An object path is required' });
       return;
@@ -809,13 +831,29 @@ router.post(
       res.status(400).json({ error: 'Parasolid format must be x_t or x_b' });
       return;
     }
-    pruneCadPreviewJobs();
+    await pruneCadPreviewJobs();
     const jobId = randomUUID();
-    const job: CadPreviewJob = { status: 'preparing', startedAt: Date.now() };
-    cadPreviewJobs.set(jobId, job);
+    await db.insert(cadPreviewJobsTable).values({
+      id: jobId,
+      teamId,
+      objectPath,
+      format: sourceFormat,
+      status: 'preparing',
+    }).onConflictDoNothing();
 
     // Run the conversion in the background: a big model can take many
     // minutes, and the browser should never be stuck on one request.
+    void runCadPreviewJob(jobId, objectPath, sourceFormat);
+    res.status(202).json({ jobId, status: 'preparing' });
+  },
+);
+
+/**
+ * Converts one stored CAD file into a progressive preview. Runs in the
+ * background and records its result on the job row, so a restart
+ * mid-conversion loses nothing: the job is picked up again on the next boot.
+ */
+async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat: "x_t" | "x_b"): Promise<void> {
     void (async () => {
       let tempRoot: string | null = null;
       try {
@@ -946,32 +984,52 @@ router.post(
             target,
           );
         } catch (persistError) {
-          req.log.warn({ err: persistError }, 'Could not persist the CAD preview to storage');
+          logger.warn({ err: persistError, jobId }, 'Could not persist the CAD preview to storage');
         }
         tempRoot = null;
-        job.status = 'ready';
-        job.previewId = previewId;
-        job.glbBytes = manifest.overviewBytes;
-        job.instance = currentInstance();
-        job.manifest = {
-          overviewBytes: manifest.overviewBytes,
-          detailBytes: manifest.detailBytes,
-          triangles: manifest.triangles,
-          tiles: manifest.tiles,
-        };
+        await writeCadPreviewJob(jobId, {
+          status: 'ready',
+          previewId,
+          manifest: {
+            overviewBytes: manifest.overviewBytes,
+            detailBytes: manifest.detailBytes,
+            triangles: manifest.triangles,
+            tiles: manifest.tiles,
+          },
+        });
       } catch (error) {
-        req.log.error({ err: error }, 'Stored CAD preview failed');
+        logger.error({ err: error, jobId }, 'Stored CAD preview failed');
         if (tempRoot) {
           await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
         }
-        job.status = 'failed';
-        job.error = 'Could not build a preview for this CAD file.';
+        await writeCadPreviewJob(jobId, {
+          status: 'failed',
+          error: 'Could not build a preview for this CAD file.',
+        });
       }
     })();
+}
 
-    res.status(202).json({ jobId, status: 'preparing' });
-  },
-);
+/**
+ * Restarts conversions that were interrupted by a restart. A job left
+ * "preparing" means the process died mid-conversion, so it is picked back
+ * up here; without this a long conversion on a free instance could restart
+ * forever and never finish.
+ */
+export async function resumeStalePreviewJobs(): Promise<void> {
+  try {
+    const stale = await db.select().from(cadPreviewJobsTable)
+      .where(eq(cadPreviewJobsTable.status, 'preparing'))
+      .limit(10);
+    for (const job of stale) {
+      if (job.format !== 'x_t' && job.format !== 'x_b') continue;
+      logger.warn({ jobId: job.id }, 'Resuming an interrupted CAD preview job');
+      void runCadPreviewJob(job.id, job.objectPath, job.format);
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Could not resume interrupted CAD preview jobs');
+  }
+}
 
 /**
  * GET /storage/cad-preview-from-object/:jobId
@@ -984,7 +1042,7 @@ router.get(
   requireWorkspaceAccessOrCoordinator('cad'),
   async (req: Request, res: Response) => {
     const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : '';
-    const job = cadPreviewJobs.get(jobId);
+    const job = await readCadPreviewJob(jobId);
     if (!job) {
       // The instance may have restarted mid-conversion. A finished preview
       // was persisted to storage, so look there before giving up.
@@ -1001,7 +1059,7 @@ router.get(
       ...(job.previewId ? { previewId: job.previewId } : {}),
       ...(job.manifest ? job.manifest : {}),
       ...(job.error ? { error: job.error } : {}),
-      elapsedMs: Date.now() - job.startedAt,
+      elapsedMs: Date.now() - job.updatedAt.getTime(),
     });
   },
 );
