@@ -60,6 +60,7 @@ import {
   setAdminCookie,
 } from "../middlewares/adminAuth";
 import { deletePresenceHeartbeat } from "./presence";
+import { checkAccountCreationAllowed, validateDisplayName } from "../lib/spamGuard";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
@@ -475,6 +476,18 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
   }
   enterInstance(team.instance);
   const displayName = parsed.data.displayName.trim().replace(/\s+/g, " ");
+  // A display name must look like a person, not an email address or a link.
+  const nameProblem = validateDisplayName(displayName);
+  if (nameProblem) {
+    res.status(400).json({ error: nameProblem });
+    return;
+  }
+  // Cap how many accounts one network can create per hour.
+  const creationVerdict = checkAccountCreationAllowed(req.ip ?? "unknown");
+  if (!creationVerdict.allowed) {
+    res.status(429).json({ error: creationVerdict.error, retryAfter: creationVerdict.retryAfter });
+    return;
+  }
   const normalizedName = normalizeInterviewerName(displayName);
   const existing = await db.select({ id: interviewerAccountsTable.id })
     .from(interviewerAccountsTable).where(and(eq(interviewerAccountsTable.normalizedName, normalizedName), teamFilter(interviewerAccountsTable.teamId, team.id))).limit(1);
@@ -745,6 +758,11 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
   const ownTeam = await requesterTeamId(req);
   if (accountTeamId(account) !== ownTeam) {
     res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const renameProblem = validateDisplayName(displayName);
+  if (renameProblem) {
+    res.status(400).json({ error: renameProblem });
     return;
   }
   const normalizedName = normalizeInterviewerName(displayName);

@@ -138,6 +138,7 @@ import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { authenticatedInterviewerId, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter } from "../lib/teams";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
@@ -4137,6 +4138,25 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: "A chat message is required." });
     return;
   }
+  // Always-on abuse guards. These are not the optional slow mode: they are
+  // the floor that keeps the channel usable even when a team has slow mode
+  // turned off.
+  const postVerdict = checkPostAllowed(account.id);
+  if (!postVerdict.allowed) {
+    res.status(429).json({ error: postVerdict.error, retryAfter: postVerdict.retryAfter });
+    return;
+  }
+  const duplicateVerdict = checkDuplicatePost(account.id, parsed.data.message);
+  if (!duplicateVerdict.allowed) {
+    res.status(429).json({ error: duplicateVerdict.error, retryAfter: duplicateVerdict.retryAfter });
+    return;
+  }
+  const aiVerdict = checkAiMentionAllowed(account.id, parsed.data.message);
+  if (!aiVerdict.allowed) {
+    res.status(429).json({ error: aiVerdict.error, retryAfter: aiVerdict.retryAfter });
+    return;
+  }
+  recordPost(account.id, parsed.data.message);
   const teamId = await requestTeamId(req);
   const conversation = await resolveChatConversation(
     parsed.data.scope,
