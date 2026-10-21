@@ -607,6 +607,43 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const [mailbox, setMailbox] = useState<{ configured: boolean; allowedSenders: number } | null>(null);
+  const [mailboxResult, setMailboxResult] = useState<string | null>(null);
+  const [mailboxBusy, setMailboxBusy] = useState(false);
+  const loadMailbox = async () => {
+    setMailboxBusy(true);
+    try {
+      const token = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox`, {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.ok) setMailbox(await response.json() as { configured: boolean; allowedSenders: number });
+    } catch {
+      // Leave the panel as-is when the check cannot run.
+    } finally {
+      setMailboxBusy(false);
+    }
+  };
+  const syncMailbox = async () => {
+    setMailboxBusy(true);
+    try {
+      const token = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox/sync`, {
+        method: "POST",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const result = await response.json() as { posted?: number; reason?: string };
+      setMailboxResult(result.posted ? `${result.posted} new email(s) posted into the chat.` : result.reason ?? "No new mail.");
+      await loadMailbox();
+    } catch {
+      setMailboxResult("Could not check the inbox right now.");
+    } finally {
+      setMailboxBusy(false);
+    }
+  };
+  useEffect(() => { void loadMailbox(); }, []);
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
@@ -882,6 +919,17 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
+      {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-inbox">
+        <p className={sectionLabel}>Team inbox</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Email sent to the team address is posted into the team chat. Nothing is posted unless the address is set up and the sender is on the allow list.</p>
+        <SettingRow title="Inbox" detail={mailbox === null ? "Checking…" : mailbox.configured ? "Connected — new mail appears in the chat" : "Not set up yet"}>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-semibold ${mailbox?.configured ? "text-[#168069] dark:text-[#6fce8f]" : "text-[#8a8f93]"}`}>{mailbox?.configured ? "Connected" : "Not set up"}</span>
+            <button type="button" disabled={mailboxBusy} onClick={() => void syncMailbox()} data-testid="button-team-inbox-check" className={ghostButton}>{mailboxBusy ? "Checking…" : "Check now"}</button>
+          </div>
+        </SettingRow>
+        {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}
+      </div>}
       {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-branding">
         <p className={sectionLabel}>Team branding</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
@@ -8321,5 +8369,5 @@ function Router() {
   );
 }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
-export { InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
+export { ConversationAssistant, InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;

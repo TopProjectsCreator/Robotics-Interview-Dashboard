@@ -4,6 +4,7 @@ import {
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requestTeamId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
+import { ingestMailboxIntoChat, maildropAllowedSenders, maildropConfigured, maildropMailbox } from "../lib/maildrop";
 import {
   normalizeWorkspaceVisibility,
   readWorkspaceVisibility,
@@ -79,6 +80,23 @@ router.get("/system/usage", requireAdmin, async (req, res): Promise<void> => {
       applicantCount: applicantCount ?? 0,
     }),
   );
+});
+
+// Team inbox status. Admins only: tells them whether email forwarding is
+// wired up, without exposing the mailbox credentials.
+router.get("/system/mailbox", requireAdmin, async (_req, res): Promise<void> => {
+  res.json({
+    configured: maildropConfigured(),
+    mailbox: maildropMailbox() ? "set" : "not set",
+    allowedSenders: maildropAllowedSenders().length,
+  });
+});
+
+// Check the team inbox now instead of waiting for the next poll.
+router.post("/system/mailbox/sync", requireAdmin, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const result = await ingestMailboxIntoChat(teamId);
+  res.json(result);
 });
 
 // Which users can open each workspace (per interviewer account ID, with legacy
