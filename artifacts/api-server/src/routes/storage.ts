@@ -21,7 +21,7 @@ import { logger } from "../lib/logger";
 import { storageInstanceRestricted } from '../lib/objectStorage';
 import { and, eq, lt } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
@@ -768,6 +768,15 @@ async function readPersistedPreview(
   return null;
 }
 
+/** The model is larger than this server can convert; not a failure to hide. */
+class PreviewTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PreviewTooLargeError";
+    Object.setPrototypeOf(this, PreviewTooLargeError.prototype);
+  }
+}
+
 type CadPreviewManifest = {
   overviewBytes: number;
   detailBytes: number;
@@ -853,6 +862,31 @@ router.post(
  * background and records its result on the job row, so a restart
  * mid-conversion loses nothing: the job is picked up again on the next boot.
  */
+/**
+ * How large a source model this server may convert.
+ *
+ * The converter needs roughly three times the source size in memory, and the
+ * API process needs its own share of the box. Converting a model that cannot
+ * fit does not fail politely: the process is killed and the platform restarts
+ * the service, turning one big file into a restart loop. So the size is
+ * checked first and an oversized model is reported instead of attempted.
+ *
+ * The limit scales with the machine: a bigger Render instance converts
+ * bigger models with no code change.
+ */
+function maxPreviewSourceBytes(): number {
+  const configured = Number(process.env.CAD_PREVIEW_MAX_SOURCE_MB);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.floor(configured * 1024 * 1024);
+  }
+  const totalMemory = totalmem();
+  const megabyte = 1024 * 1024;
+  if (totalMemory >= 3 * 1024 * megabyte) return 600 * megabyte;
+  if (totalMemory >= 1536 * megabyte) return 200 * megabyte;
+  // A 512 MB instance: only small models fit alongside the API process.
+  return 48 * megabyte;
+}
+
 async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat: "x_t" | "x_b"): Promise<void> {
     void (async () => {
       let tempRoot: string | null = null;
@@ -879,6 +913,13 @@ async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat:
           );
         } else {
           await objectStorageService.downloadObjectToFile(objectPath, inputPath);
+        }
+        const sourceBytes = (await stat(inputPath)).size;
+        const limit = maxPreviewSourceBytes();
+        if (sourceBytes > limit) {
+          throw new PreviewTooLargeError(
+            `This model is ${Math.round(sourceBytes / (1024 * 1024))} MB; previews on this server are limited to ${Math.round(limit / (1024 * 1024))} MB. Download the file instead.`,
+          );
         }
         const progressiveDir = join(tempRoot, 'progressive');
         const output = await new Promise<string>((resolve, reject) => {
@@ -1004,7 +1045,9 @@ async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat:
         }
         await writeCadPreviewJob(jobId, {
           status: 'failed',
-          error: 'Could not build a preview for this CAD file.',
+          error: error instanceof PreviewTooLargeError
+            ? error.message
+            : 'Could not build a preview for this CAD file.',
         });
       }
     })();
