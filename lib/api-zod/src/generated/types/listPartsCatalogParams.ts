@@ -14,6 +14,10 @@ vendorKey?: string;
  */
 manualOnly?: boolean;
 /**
+ * When true, return manually saved items and supplier catalog items with owned stock or team allocations.
+ */
+inventoryOnly?: boolean;
+/**
  * @minimum 1
  * @maximum 500
  */

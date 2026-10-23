@@ -2542,6 +2542,11 @@ paths:
           schema:
             type: boolean
           description: When true, only return manually saved catalog items, excluding synced supplier feed records.
+        - name: inventoryOnly
+          in: query
+          schema:
+            type: boolean
+          description: When true, return manually saved items and supplier catalog items with owned stock or team allocations.
         - name: limit
           in: query
           schema:

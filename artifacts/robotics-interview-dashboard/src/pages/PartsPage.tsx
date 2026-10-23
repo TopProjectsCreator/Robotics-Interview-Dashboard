@@ -549,7 +549,7 @@ export default function PartsPage() {
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
     vendorKey: inventoryVendor || undefined,
-    manualOnly: true,
+    inventoryOnly: true,
     limit: pageSize,
     offset: 0,
   }, {
@@ -557,7 +557,7 @@ export default function PartsPage() {
       queryKey: getListPartsCatalogQueryKey({
         search: inventorySearch.trim() || undefined,
         vendorKey: inventoryVendor || undefined,
-        manualOnly: true,
+        inventoryOnly: true,
         limit: pageSize,
         offset: 0,
       }),

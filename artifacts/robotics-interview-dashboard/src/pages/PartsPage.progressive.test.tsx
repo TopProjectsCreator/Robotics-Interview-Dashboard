@@ -115,6 +115,10 @@ vi.mock("@workspace/api-client-react", async () => {
             (total, item) => total + Number(item.quantityOwned ?? 0),
             0,
           );
+          const assignedUnits = items.reduce(
+            (total, item) => total + Number(item.quantityAssigned ?? 0),
+            0,
+          );
           return {
             vendors: [testVendor],
             robots: [],
@@ -122,8 +126,8 @@ vi.mock("@workspace/api-client-react", async () => {
               vendorCount: 1,
               catalogItems: items.length,
               ownedUnits,
-              assignedUnits: 0,
-              availableUnits: ownedUnits,
+              assignedUnits,
+              availableUnits: Math.max(0, ownedUnits - assignedUnits),
             },
           };
         },
@@ -133,6 +137,7 @@ vi.mock("@workspace/api-client-react", async () => {
     useListPartsCatalog: (
       params: {
         manualOnly?: boolean;
+        inventoryOnly?: boolean;
         search?: string;
         vendorKey?: string;
         limit?: number;
@@ -146,6 +151,11 @@ vi.mock("@workspace/api-client-react", async () => {
         queryFn: async () => {
           const allItems = mocks.teamInventory.get(teamId) ?? [];
           const items = allItems.filter((item) =>
+            (!params.inventoryOnly ||
+              item.isManual !== false ||
+              Number(item.quantityOwned ?? 0) > 0 ||
+              Number(item.quantityAssigned ?? 0) > 0) &&
+            (!params.manualOnly || item.isManual !== false) &&
             (!params.vendorKey || item.vendorKey === params.vendorKey) &&
             (!params.search || String(item.name).toLowerCase().includes(params.search.toLowerCase())),
           );
@@ -534,6 +544,77 @@ describe("progressive Parts search", () => {
     expect(within(otherTeam.container).queryByText("Photo-added team bracket")).not.toBeInTheDocument();
     expect(within(otherTeam.container).queryByText("Team B private bracket")).toBeInTheDocument();
   }, 15_000);
+
+  it("shows all team-tracked supplier parts in inventory and matches dashboard stock totals", async () => {
+    const item = (
+      id: string,
+      name: string,
+      teamId: string,
+      quantityOwned: number,
+      quantityAssigned: number,
+      isManual: boolean,
+      vendorKey = "andymark",
+    ) => ({
+      id,
+      teamId,
+      vendorKey,
+      vendorName: vendorKey === "andymark" ? "AndyMark" : "FERRA",
+      name,
+      sku: null,
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned,
+      quantityAssigned,
+      quantityAvailable: Math.max(0, quantityOwned - quantityAssigned),
+      allocations: quantityAssigned > 0
+        ? [{ robotId: `${teamId}-robot`, robotName: "Competition robot", quantity: quantityAssigned }]
+        : [],
+      isManual,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    mocks.teamInventory.set("team-a", [
+      item("team-a-gear", "Tracked gear", "team-a", 5, 2, false),
+      item("team-a-bearing", "Tracked bearing", "team-a", 3, 0, false),
+      item("team-a-allocation", "Tracked allocation", "team-a", 1, 1, false),
+      item("team-a-manual", "Manual spare", "team-a", 0, 0, true),
+      item("team-a-untracked", "Supplier catalog only", "team-a", 0, 0, false),
+    ]);
+    mocks.teamInventory.set("team-b", [
+      item("team-b-private", "Other team tracked part", "team-b", 7, 2, false),
+    ]);
+
+    const teamA = await renderPartsPage("team-a");
+    const teamB = await renderPartsPage("team-b");
+    for (const session of [teamA, teamB]) {
+      fireEvent.click(within(session.container).getByRole("tab", { name: "Inventory" }));
+    }
+
+    expect(await within(teamA.container).findByRole("button", { name: "Open details for Tracked gear" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked bearing" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked allocation" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Manual spare" })).toBeInTheDocument();
+    expect(within(teamA.container).queryByText("Supplier catalog only")).not.toBeInTheDocument();
+    expect(within(teamA.container).queryByText("Other team tracked part")).not.toBeInTheDocument();
+    expect(within(teamB.container).getByRole("button", { name: "Open details for Other team tracked part" })).toBeInTheDocument();
+    expect(within(teamB.container).queryByText("Tracked gear")).not.toBeInTheDocument();
+
+    const gearCard = within(teamA.container).getByRole("button", { name: "Open details for Tracked gear" }).closest("article");
+    expect(gearCard).toHaveTextContent("Owned 5");
+    expect(gearCard).toHaveTextContent("Assigned 2");
+    const bearingCard = within(teamA.container).getByRole("button", { name: "Open details for Tracked bearing" }).closest("article");
+    expect(bearingCard).toHaveTextContent("Owned 3");
+    expect(bearingCard).toHaveTextContent("Assigned 0");
+
+    const totals = within(teamA.container).getByLabelText("Parts totals");
+    expect(within(totals).getByText("Owned units").parentElement).toHaveTextContent("9");
+    expect(within(totals).getByText("Assigned units").parentElement).toHaveTextContent("3");
+    expect(within(teamA.container).getByText("4 shown of 4 saved item(s)")).toBeInTheDocument();
+  });
 
   it("opens part details, saves inventory fields separately, and reloads the persisted values", async () => {
     mocks.teamInventory.set("team-a", [{

@@ -3437,6 +3437,7 @@ export const ListPartsCatalogQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "vendorKey": zod.coerce.string().optional(),
   "manualOnly": zod.coerce.boolean().optional().describe('When true, only return manually saved catalog items, excluding synced supplier feed records.'),
+  "inventoryOnly": zod.coerce.boolean().optional().describe('When true, return manually saved items and supplier catalog items with owned stock or team allocations.'),
   "limit": zod.coerce.number().int().min(1).max(listPartsCatalogQueryLimitMax).default(listPartsCatalogQueryLimitDefault),
   "offset": zod.coerce.number().int().min(listPartsCatalogQueryOffsetMin).default(listPartsCatalogQueryOffsetDefault)
 })

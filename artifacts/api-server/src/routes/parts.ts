@@ -469,7 +469,13 @@ async function queryCatalogRows(
   values: unknown[],
   limit: number,
   offset: number,
+  teamId?: string,
 ): Promise<Record<string, unknown>[]> {
+  const teamValue = teamId ? [...values, teamId] : values;
+  const robotTeamCondition = teamId
+    ? `and ${teamSqlCondition('r."team_id"', `$${values.length + 1}`)}`
+    : "";
+  const limitPlaceholder = teamValue.length + 1;
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
@@ -478,23 +484,23 @@ async function queryCatalogRows(
              c."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
             coalesce(i."quantity_owned", 0)::int as "quantityOwned",
-            coalesce(sum(a."quantity"), 0)::int as "quantityAssigned",
+            coalesce(sum(a."quantity") filter (where r."id" is not null), 0)::int as "quantityAssigned",
             coalesce(
               json_agg(json_build_object(
                 'robotId', r."id", 'robotName', r."name",
                 'partId', c."id", 'quantity', a."quantity"
-              ) order by lower(r."name")) filter (where a."id" is not null),
+              ) order by lower(r."name")) filter (where r."id" is not null),
               '[]'::json
             ) as "allocations"
      from "parts_catalog_items" c
      left join "parts_inventory" i on i."part_id" = c."id"
      left join "parts_robot_allocations" a on a."part_id" = c."id"
-     left join "parts_robots" r on r."id" = a."robot_id"
+      left join "parts_robots" r on r."id" = a."robot_id" ${robotTeamCondition}
      ${whereSql}
      group by c."id", i."quantity_owned", i."storage_location", i."inventory_notes"
      order by c."updated_at" desc, lower(c."name"), c."id"
-     limit $${values.length + 1} offset $${values.length + 2}`,
-    [...values, limit, offset],
+      limit $${limitPlaceholder} offset $${limitPlaceholder + 1}`,
+    [...teamValue, limit, offset],
   );
   return result.rows;
 }
@@ -530,7 +536,7 @@ async function searchSyncedCatalog(
       `select count(*)::int as "total" from "parts_catalog_items" c ${whereSql}`,
       scopedValues,
     ),
-    queryCatalogRows(whereSql, scopedValues, limit, offset),
+    queryCatalogRows(whereSql, scopedValues, limit, offset, teamId),
   ]);
   return {
     items: rows.map(mapCatalogRow),
@@ -542,7 +548,7 @@ async function searchSyncedCatalog(
 
 async function getCatalogItem(partId: string, teamId?: string) {
   const scoped = withTeamScope(`where c."id" = $1`, [partId], teamId, "c");
-  const rows = await queryCatalogRows(scoped.whereSql, scoped.values, 1, 0);
+  const rows = await queryCatalogRows(scoped.whereSql, scoped.values, 1, 0, teamId);
   return rows[0] ? mapCatalogRow(rows[0]) : null;
 }
 
@@ -1402,7 +1408,7 @@ export async function runAssistantPartsTool(
       const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 30;
       const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
       const scoped = withTeamScope(clauses.length ? `where ${clauses.join(" and ")}` : "", values, teamId, "c");
-      const rows = await queryCatalogRows(scoped.whereSql, scoped.values, limit, offset);
+      const rows = await queryCatalogRows(scoped.whereSql, scoped.values, limit, offset, teamId);
       const items = rows.map(mapCatalogRow);
       return result(JSON.stringify({ offset, limit, items }), `${items.length} part(s)`);
     }
@@ -2213,7 +2219,9 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
              where ${teamSqlCondition('c."team_id"', "$1")}) as "ownedUnits",
            (select coalesce(sum("quantity"), 0)::int from "parts_robot_allocations" a
              join "parts_robots" r on r."id" = a."robot_id"
-             where ${teamSqlCondition('r."team_id"', "$1")}) as "assignedUnits"`,
+             join "parts_catalog_items" c on c."id" = a."part_id"
+             where ${teamSqlCondition('r."team_id"', "$1")}
+               and ${teamSqlCondition('c."team_id"', "$1")}) as "assignedUnits"`,
         [teamId],
       ),
       readPartsSupplierSyncStates(),
@@ -2256,6 +2264,7 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
   const limit = Number.isInteger(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 100;
   const offset = Number.isInteger(offsetRaw) ? Math.max(0, offsetRaw) : 0;
     const manualOnly = req.query.manualOnly === "true" || req.query.manualOnly === "1";
+    const inventoryOnly = req.query.inventoryOnly === "true" || req.query.inventoryOnly === "1";
     const clauses: string[] = [];
     const values: unknown[] = [];
     if (manualOnly) {
@@ -2276,15 +2285,36 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
           or coalesce(c."description", '') ilike any(${patternArray}))`,
       );
     }
-    const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
     const teamId = await requestTeamId(req);
+    if (inventoryOnly) {
+      values.push(teamId);
+      const teamPlaceholder = `$${values.length}`;
+      clauses.push(
+        `(c."is_manual" = true
+          or exists (
+            select 1 from "parts_inventory" tracked_inventory
+            where tracked_inventory."part_id" = c."id"
+              and tracked_inventory."quantity_owned" > 0
+          )
+          or exists (
+            select 1
+            from "parts_robot_allocations" tracked_allocation
+            join "parts_robots" tracked_robot
+              on tracked_robot."id" = tracked_allocation."robot_id"
+            where tracked_allocation."part_id" = c."id"
+              and tracked_allocation."quantity" > 0
+              and ${teamSqlCondition('tracked_robot."team_id"', teamPlaceholder)}
+          ))`,
+      );
+    }
+    const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
     const scoped = withTeamScope(whereSql, values, teamId, "c");
     const [countResult, rows] = await Promise.all([
       pool.query(
         `select count(*)::int as "total" from "parts_catalog_items" c ${scoped.whereSql}`,
         scoped.values,
       ),
-      queryCatalogRows(scoped.whereSql, scoped.values, limit, offset),
+      queryCatalogRows(scoped.whereSql, scoped.values, limit, offset, teamId),
     ]);
     res.json(
       ListPartsCatalogResponse.parse({
