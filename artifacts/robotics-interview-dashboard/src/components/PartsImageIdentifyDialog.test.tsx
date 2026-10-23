@@ -37,10 +37,11 @@ const identifiedPart = {
 
 const frameBytes = new Uint8Array([0xff, 0xd8, 0xff, 0x42]);
 
-function createStream() {
+function createStream(deviceId = "camera-one") {
   let endedListener: EventListener | undefined;
   const track = {
     stop: vi.fn(),
+    getSettings: () => ({ deviceId }),
     addEventListener: vi.fn((type: string, listener: EventListener) => {
       if (type === "ended") endedListener = listener;
     }),
@@ -85,6 +86,7 @@ async function captureWithButton() {
 }
 
 let getUserMedia: ReturnType<typeof vi.fn>;
+let enumerateDevices: ReturnType<typeof vi.fn>;
 let mediaDevicesDescriptor: PropertyDescriptor | undefined;
 let trackFixture: ReturnType<typeof createStream>;
 
@@ -92,9 +94,14 @@ beforeEach(() => {
   mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
   trackFixture = createStream();
   getUserMedia = vi.fn().mockResolvedValue(trackFixture.stream);
+  enumerateDevices = vi.fn().mockResolvedValue([
+    { kind: "videoinput", deviceId: "camera-one", label: "Front camera" },
+    { kind: "videoinput", deviceId: "camera-two", label: "USB camera" },
+    { kind: "audioinput", deviceId: "microphone-one", label: "Microphone" },
+  ]);
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
-    value: { getUserMedia },
+    value: { getUserMedia, enumerateDevices },
   });
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
@@ -136,6 +143,39 @@ describe("Parts live-camera identification", () => {
     expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
     unmount();
     expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists available cameras after permission and stops the current stream before switching", async () => {
+    const replacement = createStream("camera-two");
+    renderDialog();
+    await waitForCamera();
+
+    const cameraSelect = screen.getByRole("combobox", { name: "Camera" });
+    expect(enumerateDevices).toHaveBeenCalled();
+    expect(cameraSelect).toHaveValue("camera-one");
+    expect(screen.getByRole("option", { name: "Front camera" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "USB camera" })).toBeInTheDocument();
+
+    getUserMedia.mockImplementationOnce(() => {
+      expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+      return Promise.resolve(replacement.stream);
+    });
+    fireEvent.change(cameraSelect, { target: { value: "camera-two" } });
+
+    await waitFor(() => {
+      expect(getUserMedia).toHaveBeenCalledWith({
+        video: { deviceId: { exact: "camera-two" } },
+        audio: false,
+      });
+      expect(cameraSelect).toHaveValue("camera-two");
+    });
+    await waitForCamera();
+    await captureWithButton();
+    expect(await screen.findByDisplayValue("Aluminum channel")).toBeInTheDocument();
+    expect(mocks.identify).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(replacement.track.stop).toHaveBeenCalledTimes(1);
   });
 
   it("captures a bounded JPEG and immediately submits it without saving inventory", async () => {

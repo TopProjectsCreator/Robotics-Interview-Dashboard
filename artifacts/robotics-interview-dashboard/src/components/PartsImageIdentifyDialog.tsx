@@ -159,9 +159,13 @@ export function PartsImageIdentifyDialog({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const cameraRequestId = useRef(0);
+  const cameraDeviceIdRef = useRef("");
   const scanAttempt = useRef(0);
   const scanningRef = useRef(false);
   const [cameraRetry, setCameraRetry] = useState(0);
+  const [cameraSwitch, setCameraSwitch] = useState(0);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>("idle");
   const [cameraError, setCameraError] = useState("");
   const [capturing, setCapturing] = useState(false);
@@ -191,6 +195,7 @@ export function PartsImageIdentifyDialog({
     let active = true;
     let requestedStream: MediaStream | null = null;
     let handleTrackEnded: (() => void) | null = null;
+    let handleDeviceChange: EventListener | null = null;
     setCameraStatus("loading");
     setCameraError("");
 
@@ -204,7 +209,9 @@ export function PartsImageIdentifyDialog({
         }
 
         requestedStream = await mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
+          video: cameraDeviceIdRef.current
+            ? { deviceId: { exact: cameraDeviceIdRef.current } }
+            : { facingMode: { ideal: "environment" } },
           audio: false,
         });
         if (!active || requestId !== cameraRequestId.current) {
@@ -214,6 +221,27 @@ export function PartsImageIdentifyDialog({
 
         const activeStream = requestedStream;
         streamRef.current = activeStream;
+        const refreshCameras = async () => {
+          if (!mediaDevices.enumerateDevices) return;
+          try {
+            const devices = await mediaDevices.enumerateDevices();
+            if (!active || requestId !== cameraRequestId.current) return;
+            const videoInputs = devices.filter((device) => device.kind === "videoinput");
+            setCameras(videoInputs);
+            const activeDeviceId = activeStream.getVideoTracks()[0]?.getSettings().deviceId;
+            const nextSelectedId = activeDeviceId
+              || cameraDeviceIdRef.current
+              || videoInputs[0]?.deviceId
+              || "";
+            cameraDeviceIdRef.current = nextSelectedId;
+            setSelectedCameraId(nextSelectedId);
+          } catch {
+            if (active && requestId === cameraRequestId.current) setCameras([]);
+          }
+        };
+        handleDeviceChange = () => { void refreshCameras(); };
+        mediaDevices.addEventListener?.("devicechange", handleDeviceChange);
+        void refreshCameras();
         handleTrackEnded = () => {
           if (!active || requestId !== cameraRequestId.current) return;
           setCameraError("The camera stopped unexpectedly. Reconnect it, then try again or continue with manual entry.");
@@ -260,13 +288,16 @@ export function PartsImageIdentifyDialog({
           track.removeEventListener("ended", handleTrackEnded as EventListener);
         });
       }
+      if (handleDeviceChange) {
+        navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+      }
       if (requestedStream && streamRef.current === requestedStream) {
         streamRef.current = null;
         stopStream(requestedStream);
       }
       if (videoRef.current?.srcObject === requestedStream) videoRef.current.srcObject = null;
     };
-  }, [open, cameraRetry]);
+  }, [open, cameraRetry, cameraSwitch]);
 
   const reset = () => {
     cameraRequestId.current += 1;
@@ -453,6 +484,29 @@ export function PartsImageIdentifyDialog({
               <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                 {cameraError}
               </div>
+            )}
+            {cameras.length > 1 && (
+              <label className="block text-sm font-medium">
+                Camera
+                <select
+                  aria-label="Camera"
+                  value={selectedCameraId}
+                  onChange={(event) => {
+                    const nextCameraId = event.target.value;
+                    if (!nextCameraId || nextCameraId === cameraDeviceIdRef.current) return;
+                    cameraDeviceIdRef.current = nextCameraId;
+                    setSelectedCameraId(nextCameraId);
+                    setCameraSwitch((version) => version + 1);
+                  }}
+                  className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm"
+                >
+                  {cameras.map((camera, index) => (
+                    <option key={camera.deviceId} value={camera.deviceId}>
+                      {camera.label || `Camera ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             {cameraStatus === "error" && (
               <Button type="button" variant="outline" onClick={() => setCameraRetry((retry) => retry + 1)}>
