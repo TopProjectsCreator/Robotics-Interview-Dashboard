@@ -183,6 +183,79 @@ describe("custom workspace version history", () => {
 });
 
 describe("custom workspace visual publish review", () => {
+  it("automatically runs and verifies the required critique rounds before retrying publish", async () => {
+    const draft = { ...workspace, status: "draft" };
+    const publishedWorkspace = { ...workspace, status: "published" };
+    let publishAttempts = 0;
+    let builderStarted = false;
+    const visualFrames = [
+      { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
+      { type: "complete", workspace: publishedWorkspace },
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") {
+        return Response.json({ run: builderStarted ? {
+          id: "review-run-1",
+          status: "completed",
+          prompt: "Review custom workspace",
+          question: null,
+          answers: {},
+          activities: [{ tool: "critique_custom_workspace", detail: "critique round 1: 10 ranked flaws" }],
+          result: "All five rounds are verified.",
+          error: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: "2026-10-01T00:01:00.000Z",
+        } : null });
+      }
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected", visionModel: "vision" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") {
+        return Response.json({ files: [{ path: "index.html", content: "<main>Current app</main>", updatedAt: "2026-10-01T00:00:00.000Z" }] });
+      }
+      if (path === "/api/assistant/ask/stream") {
+        const { question } = JSON.parse(String(init?.body)) as { question: string };
+        expect(question).toContain("Revise custom workspace draft custom-app-1");
+        expect(question).toContain("exactly five sequential rounds");
+        expect(question).toContain("verify_custom_workspace_fixes");
+        builderStarted = true;
+        return new Response([
+          `data: ${JSON.stringify({ activity: { tool: "critique_custom_workspace", detail: "critique round 1: 10 ranked flaws" } })}\n\n`,
+          `data: ${JSON.stringify({ done: true, answer: "All five rounds are verified." })}\n\n`,
+        ].join(""), { headers: { "Content-Type": "text/event-stream" } });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/publish") {
+        publishAttempts += 1;
+        if (publishAttempts === 1) {
+          return Response.json({
+            error: "Complete and independently verify all five critique rounds before publishing this workspace.",
+          }, { status: 409 });
+        }
+        return new Response(`${visualFrames.map((frame) => JSON.stringify(frame)).join("\n")}\n`, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+    expect(await screen.findByText("Publish workspace")).toBeInTheDocument();
+    expect(await screen.findByText("critique round 1: 10 ranked flaws")).toBeInTheDocument();
+    expect(publishAttempts).toBe(2);
+    expect(fetchMock).toHaveBeenCalledWith("/api/assistant/ask/stream", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+    }));
+  });
+
   it("shows live agent actions and the screenshot reviewed before publishing", async () => {
     let published = false;
     const draft = { ...workspace, status: "draft" };

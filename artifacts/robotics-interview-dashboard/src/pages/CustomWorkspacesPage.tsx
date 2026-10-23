@@ -492,7 +492,7 @@ export function CustomWorkspacesPage() {
     return () => window.removeEventListener("message", onMessage);
   }, [active]);
 
-  const runBuilderAgent = async (question: string, beforeIds: Set<string>) => {
+  const runBuilderAgent = async (question: string, beforeIds: Set<string>): Promise<BuilderRun | null> => {
     const headers = new Headers({ "Content-Type": "application/json" });
     const token = getStoredAuthToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -575,6 +575,7 @@ export function CustomWorkspacesPage() {
       setSourceFiles(fileResult.files);
       setSelectedSourcePath(fileResult.files[0]?.path ?? "");
     }
+    return normalizedRun;
   };
 
   const generate = async () => {
@@ -617,13 +618,18 @@ export function CustomWorkspacesPage() {
   };
   const publish = async () => {
     if (!active) return;
+    if (builderRun && ["running", "waiting_for_answer"].includes(builderRun.status)) {
+      setError("The workspace agent is still running. Wait for it to finish before publishing.");
+      return;
+    }
     setBusy(true);
     setError("");
     setPublishAgentSteps([]);
     setPublishScreenshots({});
     try {
-      const response = await fetch(`${API}/${active.id}/publish`, {
-        method: "POST", body: JSON.stringify({ accessMode, allowedInterviewerIds }),
+      const publishRequest = () => fetch(`${API}/${active.id}/publish`, {
+        method: "POST",
+        body: JSON.stringify({ accessMode, allowedInterviewerIds }),
         credentials: "include",
         headers: (() => {
           const headers = new Headers({ "Content-Type": "application/json" });
@@ -632,9 +638,36 @@ export function CustomWorkspacesPage() {
           return headers;
         })(),
       });
+      let response = await publishRequest();
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(typeof body.error === "string" ? body.error : "Could not publish the workspace.");
+        const message = typeof body.error === "string" ? body.error : "Could not publish the workspace.";
+        if (response.status !== 409 || !message.includes("all five critique rounds")) {
+          throw new Error(message);
+        }
+
+        setPublishAgentSteps([{
+          id: "critique-rounds",
+          label: "Complete required critique rounds",
+          detail: "Starting the independent critique and fix cycle automatically.",
+          status: "running",
+        }]);
+        const reviewRun = await runBuilderAgent(
+          `Revise custom workspace draft ${active.id}. The coordinator clicked Publish, but the server reports that all five mandatory independent critique rounds are incomplete. Continue this existing draft; do not create a duplicate. Inspect its saved source files and use critique_custom_workspace to determine and complete the next required round. Complete exactly five sequential rounds total, independently verifying each round after fixing its eligible findings with verify_custom_workspace_fixes. For rounds 1–4 fix every score above 6 and below 6; for round 5 fix every score above 6. If verification reports unresolved findings, keep fixing and re-verify that same round before advancing. Do not publish from the assistant and do not ask the coordinator to start a round manually. Stop only after all five rounds are independently verified.`,
+          new Set(items.map((item) => item.id)),
+        );
+        if (reviewRun?.status === "waiting_for_answer") {
+          throw new Error("The workspace agent needs your answer before it can finish the critique rounds. Answer its question, then publish again.");
+        }
+        setPublishAgentSteps((steps) => steps.map((step) => step.id === "critique-rounds" && step.status === "running"
+          ? { ...step, status: "done", detail: "The critique agent finished. Starting the publish checks." }
+          : step));
+
+        response = await publishRequest();
+        if (!response.ok) {
+          const retryBody = await response.json().catch(() => ({}));
+          throw new Error(typeof retryBody.error === "string" ? retryBody.error : "Could not publish the workspace.");
+        }
       }
       if (!response.body) throw new Error("The visual review stream is unavailable.");
       const reader = response.body.getReader();
