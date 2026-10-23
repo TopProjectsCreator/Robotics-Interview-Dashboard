@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AssistantModelPicker } from "./AssistantModelPicker";
+import {
+  ALL_ASSISTANT_TOOL_NAMES,
+  ASSISTANT_TOOL_GROUPS,
+  ASSISTANT_TOOLS_STORAGE_KEY,
+} from "./assistantTools";
 
 function renderWithQuery(ui: ReactNode) {
   const queryClient = new QueryClient({
@@ -125,9 +130,10 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(gear);
     expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("46 of 46 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent(`${ALL_ASSISTANT_TOOL_NAMES.length} of ${ALL_ASSISTANT_TOOL_NAMES.length} enabled`);
     expect(screen.getByTestId("toggle-assistant-skills")).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Generate image tool" })).toBeChecked();
   });
 
   it("shows only private MCP connection controls to non-coordinators", async () => {
@@ -175,7 +181,7 @@ describe("AssistantModelPicker", () => {
 
     expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
     expect(webSearchTool).not.toBeChecked();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("45 of 46 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("69 of 70 enabled");
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -195,6 +201,93 @@ describe("AssistantModelPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "Web search tool" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["web_search"]);
+  });
+
+  it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(70);
+    expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
+    const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
+    for (const name of [
+      "generate_image",
+      "create_chat_mini_tool",
+      "get_parts_inventory_details",
+      "update_parts_inventory_details",
+      "list_team_chat_messages",
+      "ask_user",
+      "create_custom_workspace",
+      "list_code_project_files",
+      "write_code_file",
+    ]) {
+      expect(names.has(name), `${name} should have an individual setting`).toBe(true);
+    }
+    expect(ASSISTANT_TOOL_GROUPS.find((group) => group.id === "search")?.tools
+      .find((tool) => tool.name === "generate_image")?.label).toBe("Generate image");
+  });
+
+  it("persists an individual checkbox change in local storage", async () => {
+    window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Generate image tool" }));
+    expect(window.localStorage.getItem(ASSISTANT_TOOLS_STORAGE_KEY)).toBe('["generate_image"]');
+  });
+
+  it("shows connected MCP tools as individual controls and retains disabled selections", async () => {
+    const onDisabledToolsChange = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        disabledTools={[]}
+        onDisabledToolsChange={onDisabledToolsChange}
+        dynamicTools={[
+          { name: "onshape_getDocument", label: "Onshape: Get Document", hint: "Read document", write: true },
+          { name: "custom_mcp_write_file", label: "Custom MCP: Write File", hint: "Write file", write: true },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByTestId("assistant-dynamic-tools")).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("72 of 72 enabled");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Onshape: Get Document tool" }));
+    expect(onDisabledToolsChange).toHaveBeenCalledWith(["onshape_getDocument"]);
+    fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
+    expect(onDisabledToolsChange.mock.lastCall?.[0]).toContain("onshape_getDocument");
+    expect(onDisabledToolsChange.mock.lastCall?.[0]).toContain("custom_mcp_write_file");
+  });
+
+  it("persists a disabled dynamic MCP tool so subsequent assistant requests can carry it", async () => {
+    window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        dynamicTools={[
+          { name: "custom_mcp_write_file", label: "Custom MCP: Write File", hint: "Write file", write: true },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Custom MCP: Write File tool" }));
+    expect(window.localStorage.getItem(ASSISTANT_TOOLS_STORAGE_KEY)).toBe('["custom_mcp_write_file"]');
+    window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
   });
 
   it("lets coordinators disable linked repository reading", async () => {
@@ -301,10 +394,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const gear = screen.getByTestId("assistant-tools-gear");
-    expect(gear).toHaveAttribute("title", expect.stringContaining("45 of 46 tools enabled"));
+    expect(gear).toHaveAttribute("title", expect.stringContaining("69 of 70 tools enabled"));
 
     fireEvent.click(gear);
-    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("45 of 46 enabled");
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("69 of 70 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
     const skillsToggle = screen.getByTestId("toggle-assistant-skills");

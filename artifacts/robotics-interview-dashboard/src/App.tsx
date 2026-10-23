@@ -18,7 +18,7 @@ import {
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
-   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
+   useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
@@ -52,12 +52,13 @@ import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
-import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
+import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { readableBrandForeground } from "./lib/team-branding";
 import { useVisualViewport } from "./hooks/use-visual-viewport";
 import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
+import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
 import { classifyFile } from "./lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
 import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
@@ -7068,24 +7069,6 @@ function Display() { const streamHealthy = useRealtimeHealthy();
   return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark teamName={d.teamName} /><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Robotics team · Live interview operations</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer>{!isPreview && <audio ref={audioRef} preload="none" data-testid="display-announcement-audio" />}</main>;
 }
 
-function ImageStudio() {
-  const generate = useGenerateAssistantImage();
-  const [prompt, setPrompt] = useState("");
-  const [size, setSize] = useState("1024x1024");
-  const [image, setImage] = useState<{ imageUrl: string; prompt: string } | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const value = prompt.trim();
-    if (!value || generate.isPending) return;
-    setLoaded(false);
-    generate.mutate({ data: { prompt: value, size } }, {
-      onSuccess: response => setImage({ imageUrl: response.imageUrl, prompt: response.prompt }),
-    });
-  };
-  return <Section title="Image studio" kicker="Keyless AI images for posters and the big screen" className="order-4"><form onSubmit={submit} className="space-y-2"><textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={3} maxLength={500} placeholder="Describe a poster for your robotics team..." data-testid="input-image-prompt" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><div className="flex items-center gap-2"><select value={size} onChange={event => setSize(event.target.value)} data-testid="select-image-size" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs outline-none focus:border-[#16869a]"><option value="1024x1024">Large 1024</option><option value="512x512">Fast 512</option></select><button disabled={generate.isPending || !prompt.trim()} data-testid="button-generate-image" className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50">{generate.isPending ? "Creating..." : "Generate image"}</button></div></form>{generate.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="image-error">The image could not be created. Try again.</p>}{image && <div className="mt-3 overflow-hidden rounded-xl border border-[#e3ebeb]">{!loaded && <Skeleton className="aspect-square w-full" />}<img src={image.imageUrl} alt={image.prompt} onLoad={() => setLoaded(true)} className={loaded ? "block w-full" : "hidden"} data-testid="generated-image" /><div className="flex items-center justify-between gap-2 p-2"><p className="min-w-0 flex-1 truncate text-[11px] text-[#718189]">{image.prompt}</p><a href={image.imageUrl} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] font-semibold text-[#16869a]">Full size</a></div></div>}<p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Free keyless rendering. Only your prompt is sent — no applicant data. First view develops in ~30s.</p></Section>;
-}
-
 const ACTIVE_CONVERSATION_KEY = "robotics-active-conversation";
 const PARTS_ACTIVE_CONVERSATION_KEY = "robotics-parts-active-conversation";
 const PARTS_CONVERSATION_PREFIX = "[Parts] ";
@@ -7242,6 +7225,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     }
   });
   const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
+  const [dynamicAssistantTools, setDynamicAssistantTools] = useState<AssistantToolItem[]>([]);
+  const [dynamicAssistantToolsError, setDynamicAssistantToolsError] = useState("");
   const rememberDisabledTools = (tools: string[]) => {
     setDisabledTools(tools);
     saveDisabledTools(tools);
@@ -7267,6 +7252,54 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [customMcpApiKeyPrefix, setCustomMcpApiKeyPrefix] = useState("");
   const [customMcpBusy, setCustomMcpBusy] = useState(false);
   const [customMcpError, setCustomMcpError] = useState("");
+  const refreshAssistantToolCatalog = useCallback(async () => {
+    if (!canManageAssistantTools) {
+      setDynamicAssistantTools([]);
+      setDynamicAssistantToolsError("");
+      return;
+    }
+    const requestIdentity = assistantIdentity;
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/tools`, {
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      const result = await response.json() as {
+        tools?: { name?: unknown; description?: unknown }[];
+        errors?: { onshape?: boolean; customMcp?: boolean };
+      };
+      if (!response.ok) throw new Error("Could not load connected assistant tools.");
+      if (assistantIdentityRef.current !== requestIdentity) return;
+      const tools = (result.tools ?? []).filter((tool): tool is { name: string; description?: unknown } =>
+        typeof tool.name === "string" && /^(?:onshape_[a-zA-Z0-9_-]{1,55}|custom_mcp_[a-zA-Z0-9_-]{0,54})$/.test(tool.name),
+      );
+      setDynamicAssistantTools(tools.map((tool) => {
+        const service = tool.name.startsWith("onshape_") ? "Onshape" : "Custom MCP";
+        const operation = tool.name.replace(/^(?:onshape_|custom_mcp_)/, "").replace(/[_-]+/g, " ");
+        const title = operation.replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tool";
+        const description = typeof tool.description === "string" ? tool.description.trim().slice(0, 180) : "";
+        return {
+          name: tool.name,
+          label: `${service}: ${title}`,
+          hint: description || `${service} MCP tool; treated as write-capable.`,
+          write: true,
+        };
+      }));
+      setDynamicAssistantToolsError(
+        result.errors?.onshape || result.errors?.customMcp
+          ? "Some connected MCP tools could not be loaded. Reopen settings to retry."
+          : "",
+      );
+    } catch {
+      if (assistantIdentityRef.current === requestIdentity) {
+        setDynamicAssistantToolsError("Connected MCP tools could not be loaded. Reopen settings to retry.");
+      }
+    }
+  }, [assistantIdentity, canManageAssistantTools]);
+  useEffect(() => {
+    void refreshAssistantToolCatalog();
+  }, [refreshAssistantToolCatalog, onshapeConnected, customMcpConnected]);
   const attachmentUpload = useRequestUploadUrl();
   const attachmentPreview = usePreviewImport();
   const streamAbort = useRef<AbortController | null>(null);
@@ -7970,6 +8003,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onThinkingLevelChange={rememberThinkingLevel}
             disabledTools={disabledTools}
             onDisabledToolsChange={rememberDisabledTools}
+            dynamicTools={dynamicAssistantTools}
+            dynamicToolsError={dynamicAssistantToolsError}
             onshapeConnected={assistantScopeReady && onshapeConnected}
             onshapeBusy={assistantScopeReady && onshapeBusy}
             onshapeError={assistantScopeReady ? onshapeError : ""}
@@ -7993,7 +8028,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </div>
       }
     />
-    <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
+    <div
+      className={assistantWorkspaceGridClass(partsMode && canManageAssistantTools)}
+      data-testid="assistant-workspace-grid"
+    >
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>
         <p className="mono mt-5 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Previous chats</p>
@@ -8063,10 +8101,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             <li>Supplier search is broad discovery, not a complete catalog. No supplier order or payment is submitted.</li>
           </ul>
         </Section>
-      ) : canManageAssistantTools ? (
-        <>
-          <ImageStudio />
-        </>
       ) : null}
     </div>
   </div>;

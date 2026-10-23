@@ -23,6 +23,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "search_skill_repository", label: "Linked skill repository", hint: "Read-only public files", write: false, skillContextOnly: true },
       { name: "python_exec", label: "Python", hint: "Calculations", write: false },
       { name: "generate_image", label: "Generate image", hint: "Posters & graphics", write: false },
+      { name: "create_chat_mini_tool", label: "Interactive mini-tools", hint: "Quizzes, checklists & counters", write: true },
     ],
   },
   {
@@ -85,11 +86,41 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "search_supplier_parts", label: "Search supplier parts", hint: "Verified pages", write: false },
       { name: "list_parts_robots", label: "List robots", hint: "Existing IDs", write: false },
       { name: "list_parts_catalog", label: "List catalog", hint: "Stock & IDs", write: false },
+      { name: "get_parts_inventory_details", label: "Get inventory details", hint: "Cost, notes & quote history", write: false },
+      { name: "update_parts_inventory_details", label: "Update inventory details", hint: "Image, location, cost & notes", write: true },
       { name: "create_parts_robot", label: "Create robot", hint: "Add robot", write: true },
       { name: "rename_parts_robot", label: "Rename robot", hint: "By exact ID", write: true },
       { name: "create_parts_catalog_item", label: "Create catalog item", hint: "Save part", write: true },
       { name: "update_parts_stock", label: "Update stock", hint: "Set quantity", write: true },
       { name: "set_parts_robot_allocation", label: "Set allocation", hint: "Assign to robot", write: true },
+    ],
+  },
+  {
+    id: "workspaces",
+    label: "Workspaces & code",
+    description: "Team chat, CAD library, code projects, and custom apps.",
+    tools: [
+      { name: "list_team_chat_messages", label: "Read team chat", hint: "Recent shared messages", write: false },
+      { name: "send_team_chat_message", label: "Send team chat message", hint: "Post when asked", write: true },
+      { name: "list_cad_library", label: "List CAD library", hint: "Bots, folders & models", write: false },
+      { name: "create_cad_bot", label: "Create CAD bot", hint: "Organize CAD assets", write: true },
+      { name: "create_cad_folder", label: "Create CAD folder", hint: "Organize library files", write: true },
+      { name: "update_cad_model_details", label: "Update CAD model details", hint: "Rename or edit notes", write: true },
+      { name: "list_code_projects", label: "List code projects", hint: "Team projects", write: false },
+      { name: "create_code_project", label: "Create code project", hint: "Start a new project", write: true },
+      { name: "create_custom_workspace", label: "Create custom workspace", hint: "Build a team app draft", write: true },
+      { name: "critique_custom_workspace", label: "Review custom workspace", hint: "Independent design critique", write: true },
+      { name: "verify_custom_workspace_fixes", label: "Verify workspace fixes", hint: "Check critique changes", write: true },
+      { name: "spawn_workspace_subagent", label: "Delegate workspace work", hint: "Work on a focused task", write: true },
+      { name: "ask_user", label: "Ask coordinator", hint: "Request required details", write: true },
+      { name: "list_custom_workspace_files", label: "List custom app files", hint: "Inspect draft source", write: false },
+      { name: "read_custom_workspace_file", label: "Read custom app file", hint: "Inspect draft source", write: false },
+      { name: "create_custom_workspace_file", label: "Create custom app file", hint: "Add draft source", write: true },
+      { name: "write_custom_workspace_file", label: "Edit custom app file", hint: "Replace draft source", write: true },
+      { name: "list_code_project_files", label: "List code files", hint: "Find project sources", write: false },
+      { name: "read_code_file", label: "Read code file", hint: "Inspect project source", write: false },
+      { name: "create_code_file", label: "Create code file", hint: "Add project source", write: true },
+      { name: "write_code_file", label: "Edit code file", hint: "Replace project source", write: true },
     ],
   },
   {
@@ -113,6 +144,11 @@ export const WRITE_TOOL_NAMES = new Set(
 );
 
 export const ASSISTANT_TOOLS_STORAGE_KEY = "robotics-assistant-disabled-tools";
+const DYNAMIC_TOOL_NAME_PATTERNS = [/^onshape_[a-zA-Z0-9_-]{1,55}$/, /^custom_mcp_[a-zA-Z0-9_-]{0,54}$/];
+
+export function isDynamicAssistantToolName(value: string): boolean {
+  return DYNAMIC_TOOL_NAME_PATTERNS.some((pattern) => pattern.test(value));
+}
 
 export function normalizeDisabledTools(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -121,7 +157,7 @@ export function normalizeDisabledTools(value: unknown): string[] {
   for (const entry of value) {
     if (typeof entry !== "string") continue;
     const name = entry.trim();
-    if (!name || !known.has(name) || seen.has(name)) continue;
+    if (!name || (!known.has(name) && !isDynamicAssistantToolName(name)) || seen.has(name)) continue;
     seen.add(name);
   }
   return [...seen].sort();

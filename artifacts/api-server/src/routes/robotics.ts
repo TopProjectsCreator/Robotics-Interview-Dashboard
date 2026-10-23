@@ -242,6 +242,11 @@ import {
   parseAssistantMcpConnectionRequest,
   type AssistantMcpConnectionRequest,
 } from "../lib/assistantMcpConnectionRequest";
+import {
+  filterDisabledAssistantTools,
+  isAssistantToolDisabled,
+  parseDisabledAssistantTools,
+} from "../lib/assistantToolPolicy";
 
 const router: IRouter = Router();
 const pendingAssistantQuestions = new Map<string, {
@@ -994,26 +999,6 @@ async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkill
   }));
 }
 
-function parseDisabledAssistantTools(value: unknown): Set<string> {
-  if (!Array.isArray(value)) return new Set();
-  const disabled = new Set<string>();
-  for (const entry of value) {
-    if (typeof entry !== "string") continue;
-    const name = entry.trim();
-    if (name && ALL_ASSISTANT_TOOL_NAMES.has(name)) disabled.add(name);
-  }
-  return disabled;
-}
-
-function isAssistantToolDisabled(name: string | undefined, disabled: Set<string>): boolean {
-  if (!name || disabled.size === 0) return false;
-  if (disabled.has(name)) return true;
-  if ((name === "python" && disabled.has("python_exec")) || (name === "python_exec" && disabled.has("python"))) return true;
-  if ((name === "rename" && disabled.has("rename_conversation")) || (name === "rename_conversation" && disabled.has("rename"))) return true;
-  if ((name === "web_fetch" || name === "fetch_url") && disabled.has("web_search")) return true;
-  return false;
-}
-
 function assistantToolsForRequest(
   disabled: Set<string>,
   onshapeTools: OnshapeMcpTool[] = [],
@@ -1022,17 +1007,15 @@ function assistantToolsForRequest(
   enableMcpConnectionRequest = false,
   enableQuestionTool = false,
 ) {
-  const enabled = disabled.size === 0
-    ? ASSISTANT_TOOLS
-    : ASSISTANT_TOOLS.filter((tool) => !disabled.has(tool.function.name));
+  const enabled = filterDisabledAssistantTools(ASSISTANT_TOOLS, disabled);
   return [
     ...enabled.filter((tool) =>
       (enableChatMiniTools || tool.function.name !== ASSISTANT_CHAT_MINI_TOOL.function.name) &&
       (enableQuestionTool || tool.function.name !== "ask_user") &&
       (enableMcpConnectionRequest || tool.function.name !== ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name),
     ),
-    ...(onshapeTools as unknown as typeof ASSISTANT_TOOLS),
-    ...(customMcpTools as unknown as typeof ASSISTANT_TOOLS),
+    ...filterDisabledAssistantTools(onshapeTools, disabled) as unknown as typeof ASSISTANT_TOOLS,
+    ...filterDisabledAssistantTools(customMcpTools, disabled) as unknown as typeof ASSISTANT_TOOLS,
   ];
 }
 
@@ -5265,7 +5248,7 @@ async function generateAssistantAnswer(options: {
   log: AssistantAnswerLog;
 }): Promise<{ answer: string; activities: AssistantActivity[]; model: string }> {
   const { teamId, question, authorLabel, sessionHash, log } = options;
-  const disabledTools = parseDisabledAssistantTools(options.disabledTools);
+  const disabledTools = parseDisabledAssistantTools(options.disabledTools, ALL_ASSISTANT_TOOL_NAMES);
   const applicableSkills = options.mcpOnly ? [] : findRelevantAssistantSkills(
     question,
     await getEnabledAssistantSkills(teamId?.trim() ? teamId : DEFAULT_TEAM_ID),
@@ -5297,7 +5280,10 @@ async function generateAssistantAnswer(options: {
     }
   }
   const activeTools = options.mcpOnly
-    ? [...onshapeTools, ...customMcpTools]
+    ? [
+      ...filterDisabledAssistantTools(onshapeTools, disabledTools),
+      ...filterDisabledAssistantTools(customMcpTools, disabledTools),
+    ]
     : [
     ...restrictAssistantToolsToSkills(
       assistantToolsForRequest(disabledTools, onshapeTools, options.chatContext !== undefined, customMcpTools),
@@ -5897,7 +5883,10 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     return;
   }
   const partsMode = conversation.title.startsWith("[Parts] ");
-  const disabledTools = parseDisabledAssistantTools((parsed.data as unknown as Record<string, unknown>).disabledTools);
+  const disabledTools = parseDisabledAssistantTools(
+    (parsed.data as unknown as Record<string, unknown>).disabledTools,
+    ALL_ASSISTANT_TOOL_NAMES,
+  );
   const applicableSkills = mcpOnly ? [] : findRelevantAssistantSkills(
     parsed.data.question,
     await getEnabledAssistantSkills(teamId),
@@ -5933,7 +5922,10 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     req.log.warn({ err: error }, "Custom MCP tools unavailable");
   }
   const activeTools = mcpOnly
-    ? [...onshapeTools, ...customMcpTools]
+    ? [
+      ...filterDisabledAssistantTools(onshapeTools, disabledTools),
+      ...filterDisabledAssistantTools(customMcpTools, disabledTools),
+    ]
     : [
     ...restrictAssistantToolsToSkills(
       assistantToolsForRequest(
@@ -6478,6 +6470,37 @@ router.post("/assistant/images", requireCoordinator, async (req, res): Promise<v
     req.log.warn({ err: error }, "Generated image persist failed, using direct URL");
   }
   res.status(201).json(GenerateAssistantImageResponse.parse({ imageUrl, prompt, seed }));
+});
+
+router.get("/assistant/tools", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  let onshapeTools: OnshapeMcpTool[] = [];
+  let customMcpTools: CustomMcpTool[] = [];
+  const errors: { onshape?: boolean; customMcp?: boolean } = {};
+  try {
+    ({ tools: onshapeTools } = await listOnshapeMcpTools(accountId, teamId));
+  } catch (error) {
+    errors.onshape = true;
+    req.log.warn({ err: error }, "Onshape assistant tool catalog unavailable");
+  }
+  try {
+    ({ tools: customMcpTools } = await listCustomMcpTools(accountId, teamId));
+  } catch (error) {
+    errors.customMcp = true;
+    req.log.warn({ err: error }, "Custom MCP assistant tool catalog unavailable");
+  }
+  res.json({
+    tools: [...onshapeTools, ...customMcpTools].map((tool) => ({
+      name: tool.function.name,
+      description: tool.function.description,
+    })),
+    errors,
+  });
 });
 
 router.get("/onshape-mcp/status", requireAdmin, async (req, res): Promise<void> => {

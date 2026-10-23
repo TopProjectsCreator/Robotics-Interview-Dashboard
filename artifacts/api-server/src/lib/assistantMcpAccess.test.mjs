@@ -87,6 +87,7 @@ test("signed-out MCP management and assistant requests are rejected by authentic
 
 test("MCP routes and MCP-enabled assistant paths use signed-in access, not coordinator access", () => {
   for (const route of [
+    'router.get("/assistant/tools", requireAdmin',
     'router.get("/onshape-mcp/status", requireAdmin',
     'router.get("/onshape-mcp/connect", requireAdmin',
     'router.delete("/onshape-mcp/connection", requireAdmin',
@@ -105,6 +106,8 @@ test("MCP routes and MCP-enabled assistant paths use signed-in access, not coord
   assert.match(routes, /const conversationOwnerId = account\.role === "coordinator" \? null : account\.id/);
   assert.ok(routes.includes("listOnshapeMcpTools(account.id, teamId)"));
   assert.ok(routes.includes("listCustomMcpTools(account.id, teamId)"));
+  assert.ok(routes.includes("listOnshapeMcpTools(accountId, teamId)"));
+  assert.ok(routes.includes("listCustomMcpTools(accountId, teamId)"));
   assert.ok(routes.includes("const activeTools = mcpOnly"));
   assert.match(routes, /mcpOnly && !onshapeBindings\.has\(name \?\? ""\) && !customMcpBindings\.has\(name \?\? ""\)/);
 });
