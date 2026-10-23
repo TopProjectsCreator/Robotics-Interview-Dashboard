@@ -9,6 +9,8 @@ import { chromium, devices } from "playwright";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureUrl = "/browser-tests/parts-camera.html";
+const embeddedOrigin = "https://coordinator.example";
+const apiServer = path.join(appDir, "browser-tests/parts-camera-test-server.ts");
 const identifiedPart = {
   identified: true,
   name: "Aluminum channel",
@@ -29,30 +31,60 @@ const port = await new Promise((resolve, reject) => {
   });
 });
 
-const server = spawn("pnpm", ["exec", "vite", "--config", "vite.config.ts", "--host", "127.0.0.1"], {
-  cwd: appDir,
-  env: { ...process.env, BASE_PATH: "/", PORT: String(port), NODE_ENV: "test" },
-  stdio: ["ignore", "pipe", "pipe"],
-});
 let serverOutput = "";
+const server = spawn(
+  path.resolve(appDir, "node_modules/.bin/tsx"),
+  [apiServer],
+  {
+    cwd: appDir,
+    env: {
+      ...process.env,
+      BASE_PATH: "/",
+      PORT: String(port),
+      NODE_ENV: "test",
+      FRONTEND_DIST_DIR: appDir,
+      ALLOWED_ORIGINS: embeddedOrigin,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
 server.stdout.setEncoding("utf8").on("data", chunk => { serverOutput += chunk; });
 server.stderr.setEncoding("utf8").on("data", chunk => { serverOutput += chunk; });
-
 let browser;
 
-async function startVite(serverUrl) {
+async function startApi(serverUrl) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (server.exitCode !== null) throw new Error(`Vite exited before starting:\n${serverOutput}`);
+    if (server.exitCode !== null) throw new Error(`API test server exited before starting:\n${serverOutput}`);
     try {
-      const response = await fetch(`${serverUrl}${fixtureUrl}`);
-      if (response.ok) return;
+      const dashboardResponse = await fetch(serverUrl);
+      const fixtureResponse = await fetch(`${serverUrl}${fixtureUrl}`);
+      if (dashboardResponse.ok && fixtureResponse.ok) return;
     } catch {
-      // Wait for Vite to bind the selected port.
+      // Wait for the API test server to bind the selected port.
     }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
-  throw new Error(`Vite did not start:\n${serverOutput}`);
+  throw new Error(`API test server did not start:\n${serverOutput}`);
+}
+
+async function verifyServedDashboardPolicy(serverUrl) {
+  const response = await fetch(serverUrl);
+  assert.equal(response.ok, true, "the API app should serve the dashboard document");
+  assert.match(await response.text(), /<title>Robotics Dashboard<\/title>/i, "the API app should serve the dashboard HTML");
+  assert.equal(
+    response.headers.get("permissions-policy"),
+    `camera=(self "${embeddedOrigin}"), microphone=(), geolocation=()`,
+    "the dashboard response should allow camera only for itself and the configured embed origin",
+  );
+
+  const fixtureResponse = await fetch(`${serverUrl}${fixtureUrl}`);
+  assert.equal(fixtureResponse.ok, true, "the API app should serve the camera test page");
+  assert.equal(
+    fixtureResponse.headers.get("permissions-policy"),
+    response.headers.get("permissions-policy"),
+    "the camera test page should receive the same restrictive policy as the dashboard",
+  );
 }
 
 async function installCameraAudit(page, failFirstCameraRequest = false) {
@@ -187,7 +219,8 @@ async function runCaptureAndReview(page, serverUrl, browserMode, requestAudit) {
 
 try {
   const serverUrl = `http://127.0.0.1:${port}`;
-  await startVite(serverUrl);
+  await startApi(serverUrl);
+  await verifyServedDashboardPolicy(serverUrl);
 
   const chromiumPath = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
@@ -278,8 +311,12 @@ try {
   await unavailablePage.waitForFunction(() => window.__partsCameraAudit.stopCount > 0);
   await unavailableContext.close();
 
-  console.log("Parts camera browser checks passed: granted/denied/unavailable permissions, desktop and mobile-emulated capture, JPEG recognition requests, retry, review-before-save, and stream cleanup.");
+  console.log("Parts camera browser checks passed through the API-served dashboard: response policy, granted/denied/unavailable permissions, desktop and mobile-emulated capture, JPEG recognition requests, retry, review-before-save, and stream cleanup.");
 } finally {
   await browser?.close();
-  server.kill("SIGTERM");
+  if (server.exitCode === null) {
+    const stopped = new Promise(resolve => server.once("exit", resolve));
+    server.kill("SIGTERM");
+    await stopped;
+  }
 }

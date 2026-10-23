@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -55,12 +55,16 @@ app.use(cors({
 // no sniffing, no referrer leaking paths, HSTS so browsers never try plain
 // HTTP again, and a content policy that only loads our own scripts.
 const frameAncestors = ["'self'", ...allowedOrigins].join(" ");
-app.use((req, res, next) => {
+const cameraAllowlist = ["self", ...allowedOrigins.map((origin) => JSON.stringify(origin))].join(" ");
+export const securityHeaders: RequestHandler = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader(
+    "Permissions-Policy",
+    `camera=(${cameraAllowlist}), microphone=(), geolocation=()`,
+  );
   res.setHeader(
     "Content-Security-Policy",
     [
@@ -84,7 +88,8 @@ app.use((req, res, next) => {
     ].join("; "),
   );
   next();
-});
+};
+app.use(securityHeaders);
 app.use(cookieParser());
 app.use(attachAdminSession);
 // Shrink JSON over the wire (Render meters every byte out): ~75% off lists
