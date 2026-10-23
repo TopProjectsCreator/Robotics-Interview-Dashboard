@@ -1310,9 +1310,9 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
-          description: Conversation scope. Shared is the team channel; direct requires author and peer.
+          description: Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.
         - name: author
           in: query
           required: false
@@ -1325,6 +1325,12 @@ paths:
           schema:
             type: string
           description: Configured interviewer label for the direct conversation.
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
       responses:
         "200":
           description: Interviewer chat
@@ -1467,7 +1473,7 @@ paths:
     get:
       operationId: getChatConversations
       tags: [queue]
-      summary: List direct conversations involving the current interviewer
+      summary: List direct conversations and channels involving the current interviewer
       responses:
         "200":
           description: Direct conversation summaries, newest activity first
@@ -1475,6 +1481,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatConversationList"
+  /queue/chat/channels:
+    get:
+      operationId: listChatChannels
+      tags: [queue]
+      summary: List invite-only channels visible to the signed-in interviewer
+      description: Members see only their channels; admins (coordinators) see every team channel.
+      responses:
+        "200":
+          description: Channels with members and latest activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannelList"
+    post:
+      operationId: createChatChannel
+      tags: [queue]
+      summary: Create an invite-only channel (admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatChannelInput"
+      responses:
+        "201":
+          description: Channel created; the creating admin is added as a member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannel"
+        "400":
+          description: Missing or invalid name/members
+        "403":
+          description: Admins only
+        "409":
+          description: A channel with that name already exists
+  /queue/chat/channels/{channelId}:
+    patch:
+      operationId: updateChatChannel
+      tags: [queue]
+      summary: Rename a channel and/or replace its invited members (admins only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatChannelUpdateInput"
+      responses:
+        "200":
+          description: Updated channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannel"
+        "404":
+          description: Channel not found
+    delete:
+      operationId: deleteChatChannel
+      tags: [queue]
+      summary: Delete a channel and its messages (admins only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Channel and its messages deleted
+        "404":
+          description: Channel not found
   /queue/chat/{messageId}/poll:
     post:
       operationId: createChatPoll
@@ -1617,7 +1700,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
         - name: author
           in: query
@@ -1629,6 +1712,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Invite-only channel id for channel-scope whiteboards.
       responses:
         "200":
           description: Available interviewer whiteboards
@@ -1669,7 +1758,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
         - name: author
           in: query
@@ -1681,6 +1770,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Invite-only channel id for channel-scope whiteboards.
       responses:
         "200":
           description: Interviewer whiteboard
@@ -5982,12 +6077,16 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label receiving a direct message.
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id receiving the message; only channel members (and admins) may post.
         parentMessageId:
           type: string
           nullable: true
@@ -6020,12 +6119,16 @@ components:
           description: Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label receiving a scheduled direct message.
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to.
         parentMessageId:
           type: string
           nullable: true
@@ -6073,10 +6176,14 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for channel-scope scheduled messages.
         recipient:
           type: string
           nullable: true
@@ -6124,10 +6231,14 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id when scope is channel; peer carries the channel id.
         parentMessageId:
           type: string
           nullable: true
@@ -6187,10 +6298,14 @@ components:
             minLength: 1
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for channel-scope read receipts.
     ChatMessagesReadResult:
       type: object
       required: [recorded]
@@ -6261,7 +6376,7 @@ components:
           type: string
     ChatConversationList:
       type: object
-      required: [items, shared]
+      required: [items, shared, channels]
       properties:
         items:
           type: array
@@ -6272,6 +6387,25 @@ components:
           description: Latest team-channel activity, null when the channel is empty
           allOf:
             - $ref: "#/components/schemas/ChatConversationSummary"
+        channels:
+          type: array
+          description: Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first.
+          items:
+            $ref: "#/components/schemas/ChannelActivity"
+    ChannelActivity:
+      type: object
+      required: [channelId, channelName, lastMessageAt, lastMessageAuthor, lastMessage]
+      properties:
+        channelId:
+          type: string
+        channelName:
+          type: string
+        lastMessageAt:
+          type: string
+        lastMessageAuthor:
+          type: string
+        lastMessage:
+          type: string
     ChatReaction:
       type: object
       required: [emoji, count, authors]
@@ -6284,6 +6418,100 @@ components:
           type: array
           items:
             type: string
+    ChatChannelRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    ChatChannelMember:
+      type: object
+      required: [id, displayName, role]
+      properties:
+        id:
+          type: string
+          description: Interviewer account id.
+        displayName:
+          type: string
+        role:
+          type: string
+          description: "coordinator, treasurer, or interviewer"
+        addedBy:
+          type: string
+          description: Display name of the admin that invited this person.
+    ChatChannel:
+      type: object
+      required: [id, name, createdBy, createdAt, updatedAt, members, youAreMember, canManage]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdBy:
+          type: string
+          description: Display name of the admin that created the channel.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatChannelMember"
+        youAreMember:
+          type: boolean
+          description: True when the signed-in account is invited to this channel.
+        canManage:
+          type: boolean
+          description: True for admins, who can rename, invite, and delete.
+        lastMessageAt:
+          type: [string, "null"]
+          format: date-time
+          description: Newest message time in the channel, null when empty.
+        lastMessageAuthor:
+          type: [string, "null"]
+        lastMessage:
+          type: [string, "null"]
+    ChatChannelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatChannel"
+    ChatChannelInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: Channel display name; must be unique within the team (case-insensitive).
+        memberIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+          description: Interviewer account ids to invite; the creating admin is always included.
+    ChatChannelUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        memberIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+          description: Full replacement of the invited members.
     ChatReactionInput:
       type: object
       required: [emoji, author]
@@ -6332,10 +6560,15 @@ components:
             $ref: "#/components/schemas/InterviewChatMessage"
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channel:
+          type: ["object", "null"]
+          description: Channel details when scope is channel.
+          allOf:
+            - $ref: "#/components/schemas/ChatChannelRef"
     ChatCustomEmoji:
       type: object
       required: [id, name, imagePath, createdBy, createdAt]
@@ -6395,12 +6628,16 @@ components:
           description: Serialized whiteboard scene or collaborative document state
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label for a direct whiteboard
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for a channel whiteboard
     InterviewWhiteboardUpdateInput:
       type: object
       required: [title, data]
@@ -6427,7 +6664,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
@@ -6445,7 +6682,7 @@ components:
             $ref: "#/components/schemas/InterviewWhiteboard"
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
@@ -6545,7 +6782,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: [string, "null"]
         createdAt:
@@ -6564,10 +6801,13 @@ components:
           maxLength: 120
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: [string, "null"]
+        channelId:
+          type: [string, "null"]
+          description: Invite-only channel id for a channel-scope board.
     BoardCardInput:
       type: object
       required: [title]
@@ -6747,7 +6987,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: [string, "null"]
         createdAt:
@@ -6770,10 +7010,13 @@ components:
           maxLength: 120
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: [string, "null"]
+        channelId:
+          type: [string, "null"]
+          description: Invite-only channel id for a channel-scope spreadsheet.
     SpreadsheetUpdateInput:
       type: object
       required: [expectedRevision]

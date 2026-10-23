@@ -12,4 +12,5 @@ export type InterviewWhiteboardListScope = typeof InterviewWhiteboardListScope[k
 export const InterviewWhiteboardListScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

@@ -14,6 +14,8 @@ export interface ScheduledChatInput {
   scope?: ScheduledChatInputScope;
   /** Configured interviewer label receiving a scheduled direct message. */
   recipient?: string | null;
+  /** Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   /** @nullable */
   poll?: ScheduledChatPollInput | null;

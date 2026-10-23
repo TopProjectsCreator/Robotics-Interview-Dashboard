@@ -5,7 +5,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -18,6 +18,7 @@ import {
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
+   useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
@@ -1560,6 +1561,109 @@ function sanitizeSvg(raw: string): string | null {
   }
 }
 
+type ParsedChatIframe =
+  | { ok: true; source: string; src: string; host: string; title: string; width: number | null; height: number | null }
+  | { ok: false; source: string; reason: string };
+
+const CHAT_IFRAME_MAX_WIDTH = 1280;
+const CHAT_IFRAME_MIN_HEIGHT = 160;
+const CHAT_IFRAME_MAX_HEIGHT = 900;
+
+// Chat messages may embed live pages: paste <iframe> HTML into the composer and
+// the rendered message shows the preview. The snippet is parsed for shape only
+// and re-rendered as a React <iframe> — srcdoc, style, and event handlers are
+// ignored, and src must be an absolute cross-origin https link so an embed can
+// never script this app. The same-origin block is why sandbox tokens may
+// include allow-same-origin: the embedded frame stays on its own origin.
+function parseChatIframeEmbed(text: string): ParsedChatIframe {
+  const source = text.replace(/\s+/g, " ").trim();
+  const opener = text.match(/^<iframe\b([^>]*?)>/i)?.[1] ?? "";
+  const attributes: Record<string, string> = {};
+  const attributePattern = /([a-zA-Z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let attribute: RegExpExecArray | null;
+  while ((attribute = attributePattern.exec(opener))) {
+    const key = attribute[1].toLowerCase();
+    const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? "";
+    if (!(key in attributes)) attributes[key] = value;
+  }
+  const rawSrc = (attributes.src ?? "").trim();
+  if (!rawSrc) return { ok: false, source, reason: "the snippet has no src link" };
+  let embedUrl: URL | null = null;
+  try {
+    embedUrl = new URL(rawSrc, window.location.href);
+  } catch {
+    embedUrl = null;
+  }
+  if (!embedUrl || embedUrl.protocol !== "https:") return { ok: false, source, reason: "only https links can be embedded" };
+  if (embedUrl.username || embedUrl.password) return { ok: false, source, reason: "links containing login details cannot be embedded" };
+  if (embedUrl.origin === window.location.origin) return { ok: false, source, reason: "dashboard pages cannot embed themselves" };
+  const host = embedUrl.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.includes(":") || /^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+    return { ok: false, source, reason: "local and internal network links cannot be embedded" };
+  }
+  const dimension = (value: string | undefined): number | null => {
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+  };
+  const title = (attributes.title ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
+  return {
+    ok: true,
+    source,
+    src: embedUrl.toString(),
+    host,
+    title: title || `${host} embed`,
+    width: dimension(attributes.width),
+    height: dimension(attributes.height),
+  };
+}
+
+// ``` fences are documentation rather than embeds: a snippet quoted inside a
+// fence keeps rendering as text.
+function isInsideFencedBlock(source: string, index: number): boolean {
+  const fences = source.slice(0, index).match(/^[ \t]{0,3}```/gm);
+  return (fences?.length ?? 0) % 2 === 1;
+}
+
+function ChatIframeEmbed({ embed }: { embed: ParsedChatIframe }) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (!embed.ok) {
+    return <div className="my-2 space-y-1 rounded-xl border border-[#e0b8b4] bg-[#fff5f3] p-3 text-xs dark:border-[#7d4038] dark:bg-[#22191b]" data-testid="chat-iframe-blocked">
+      <p className="font-semibold text-[#a34d46] dark:text-[#e89087]">Embed not shown — {embed.reason}.</p>
+      <code className="block break-all font-mono text-[10px] leading-4 text-[#8a6257] dark:text-[#c9998f]">{embed.source.slice(0, 300)}{embed.source.length > 300 ? "…" : ""}</code>
+    </div>;
+  }
+  const width = embed.width ? Math.min(embed.width, CHAT_IFRAME_MAX_WIDTH) : null;
+  const height = embed.height ? Math.min(Math.max(embed.height, CHAT_IFRAME_MIN_HEIGHT), CHAT_IFRAME_MAX_HEIGHT) : null;
+  const frameStyle = width && height
+    ? { aspectRatio: `${width} / ${height}`, width: "100%", display: "block", border: "none" }
+    : height
+      ? { height: `${height}px`, width: "100%", display: "block", border: "none" }
+      : { aspectRatio: "16 / 9", width: "100%", display: "block", border: "none" };
+  return <div className="my-2 overflow-hidden rounded-xl border border-[#dce9e8] bg-white dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-iframe-embed">
+    <div className="flex items-center gap-2 border-b border-[#eef3f2] bg-[#f7faf9] px-3 py-1.5 dark:border-[#2a3f52] dark:bg-[#14212a]">
+      <Globe size={13} className="shrink-0 text-[#16869a]" />
+      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[#52666e] dark:text-[#a8bac8]">{embed.title}</span>
+      <a href={embed.src} target="_blank" rel="noreferrer" title={`Open ${embed.host} in a new tab`} aria-label={`Open ${embed.host} in a new tab`} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] dark:text-[#a8bac8] dark:hover:bg-[#1c3542]"><ExternalLink size={13} /></a>
+      <button type="button" onClick={() => setCollapsed(current => !current)} aria-expanded={!collapsed} aria-label={collapsed ? "Show embed" : "Hide embed"} data-testid="chat-iframe-toggle" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] dark:text-[#a8bac8] dark:hover:bg-[#1c3542]"><ChevronDown size={13} className={`transition-transform ${collapsed ? "-rotate-90" : ""}`} /></button>
+    </div>
+    {collapsed
+      ? <button type="button" onClick={() => setCollapsed(false)} data-testid="chat-iframe-restore" className="flex h-24 w-full items-center justify-center gap-2 text-[11px] font-semibold text-[#7c8c91] transition hover:bg-[#edf4f3] dark:text-[#93a8b2] dark:hover:bg-[#1c3542]"><Globe size={13} /> Embed hidden — click to show</button>
+      : <div style={width ? { maxWidth: `${width}px` } : undefined}>
+        <iframe
+          src={embed.src}
+          title={embed.title}
+          loading="lazy"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation allow-modals"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
+          style={frameStyle}
+        />
+      </div>}
+  </div>;
+}
+
 const MARKDOWN_MAX_CHARS = 50000;
 
 function stripMarkdownCell(cell: string): string {
@@ -1644,7 +1748,7 @@ function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right"
   ));
 }
 
-const RAW_BLOCK_TAGS = ["details", "svg"] as const;
+const RAW_BLOCK_TAGS = ["details", "svg", "iframe"] as const;
 
 type RawBlockTag = (typeof RAW_BLOCK_TAGS)[number];
 type RawBlock = { tag: RawBlockTag; text: string };
@@ -1671,6 +1775,12 @@ function findRawBlocks(source: string): RawBlock[] {
   let match: RegExpExecArray | null;
   while ((match = opener.exec(source))) {
     const tag = match[1].toLowerCase() as RawBlockTag;
+    if (match[0].endsWith("/>") && tag === "iframe") {
+      // Self-closing embeds (<iframe … />) are already complete blocks.
+      blocks.push({ tag, text: match[0] });
+      opener.lastIndex = match.index + match[0].length;
+      continue;
+    }
     const close = findRawBlockClose(source, tag, match.index + match[0].length);
     if (close < 0) continue;
     blocks.push({ tag, text: source.slice(match.index, close) });
@@ -1835,6 +1945,12 @@ function MarkdownContent({
     flush();
     if (rawBlock.tag === "details") {
       blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} />);
+    } else if (rawBlock.tag === "iframe") {
+      // A snippet quoted inside a ``` fence is code, not a live embed.
+      const embed = parseChatIframeEmbed(rawBlock.text);
+      blocks.push(isInsideFencedBlock(capped, start)
+        ? <p key={`iframe-${key++}`} className="whitespace-pre-wrap font-mono text-xs">{rawBlock.text.slice(0, 2000)}</p>
+        : <ChatIframeEmbed key={`embed-${key++}`} embed={embed} />);
     } else {
       const cleanSvg = sanitizeSvg(rawBlock.text);
       if (cleanSvg) {
@@ -3056,6 +3172,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     myLabel: session.data?.label ?? "",
     viewingPeer: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer")?.trim() || null,
     viewingShared: shellPathForNotify === "/chat" && !new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer"),
+    viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
     enabled: session.data?.authenticated === true,
   });
   const qc = useQueryClient();
@@ -4884,6 +5001,12 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
   });
+  // Invite-only channels: the strip lists accessible channels plus the
+  // active channel selection (deep linkable via ?channel=).
+  const [conversationChannelId, setConversationChannelId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("channel")?.trim() || null;
+  });
   const activeInterviewer = session.data?.label ?? "Interviewer";
   const dmLastSeenRef = useRef<Record<string, string>>({});
   const [dmLastSeen, setDmLastSeen] = useState<Record<string, string>>({});
@@ -4928,6 +5051,135 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     );
     markDmRead(conversationPeer, item?.lastMessageAt);
   }, [conversationPeer, conversations.data, markDmRead]);
+  const channelsQuery = useListChatChannels({
+    query: { queryKey: getListChatChannelsQueryKey(), refetchInterval: streamHealthy ? false : 5000 },
+  });
+  const channels = useMemo(() => channelsQuery.data?.items ?? [], [channelsQuery.data]);
+  const activeChannel = useMemo(
+    () => channels.find(channel => channel.id === conversationChannelId) ?? null,
+    [channels, conversationChannelId],
+  );
+  const canManageChannels = session.data?.role === "coordinator";
+  const channelLastSeenRef = useRef<Record<string, string>>({});
+  const [channelLastSeen, setChannelLastSeen] = useState<Record<string, string>>({});
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("robotics-channel-last-seen");
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        channelLastSeenRef.current = parsed;
+        setChannelLastSeen(parsed);
+      }
+    } catch { /* private browsing etc. */ }
+  }, []);
+  const markChannelSeen = useCallback((channelId: string, at?: string) => {
+    const stamp = at ?? new Date().toISOString();
+    const next = { ...channelLastSeenRef.current, [channelId]: stamp };
+    channelLastSeenRef.current = next;
+    setChannelLastSeen(next);
+    try {
+      window.localStorage.setItem("robotics-channel-last-seen", JSON.stringify(next));
+    } catch { /* private browsing etc. */ }
+  }, []);
+  const unreadChannels = useMemo(() => {
+    const active = conversationChannelId ?? "";
+    const unread = new Set<string>();
+    for (const item of conversations.data?.channels ?? []) {
+      if (item.channelId === active) continue;
+      if (item.lastMessageAuthor.trim().toLowerCase() === activeInterviewer.trim().toLowerCase()) continue;
+      const seen = channelLastSeen[item.channelId];
+      if (!seen || item.lastMessageAt > seen) unread.add(item.channelId);
+    }
+    return unread;
+  }, [conversations.data, channelLastSeen, conversationChannelId, activeInterviewer]);
+  useEffect(() => {
+    if (!conversationChannelId) return;
+    const activity = (conversations.data?.channels ?? []).find(entry => entry.channelId === conversationChannelId)
+      ?? channels.find(channel => channel.id === conversationChannelId);
+    markChannelSeen(conversationChannelId, activity?.lastMessageAt ?? undefined);
+  }, [conversationChannelId, conversations.data, channels, markChannelSeen]);
+  const channelAccountsQuery = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  const channelAccounts = useMemo(() => channelAccountsQuery.data?.items ?? [], [channelAccountsQuery.data]);
+  const createChannelMutation = useCreateChatChannel();
+  const updateChannelMutation = useUpdateChatChannel();
+  const deleteChannelMutation = useDeleteChatChannel();
+  // "" = create dialog, a channel id = manage that channel.
+  const [channelDialogId, setChannelDialogId] = useState<string | null>(null);
+  const [channelDialogOpen, setChannelDialogOpen] = useState(false);
+  const [channelNameDraft, setChannelNameDraft] = useState("");
+  const [channelMemberIdsDraft, setChannelMemberIdsDraft] = useState<string[]>([]);
+  const [channelDialogError, setChannelDialogError] = useState("");
+  const openCreateChannelDialog = () => {
+    setChannelDialogId("");
+    setChannelNameDraft("");
+    setChannelMemberIdsDraft([]);
+    setChannelDialogError("");
+    setChannelDialogOpen(true);
+  };
+  const openManageChannelDialog = (channelId: string) => {
+    const channel = channels.find(entry => entry.id === channelId);
+    if (!channel) return;
+    setChannelDialogId(channelId);
+    setChannelNameDraft(channel.name);
+    setChannelMemberIdsDraft(channel.members.map(member => member.id));
+    setChannelDialogError("");
+    setChannelDialogOpen(true);
+  };
+  const closeChannelDialog = () => {
+    setChannelDialogOpen(false);
+    setChannelDialogId(null);
+  };
+  const invalidateChannelData = () => {
+    void qc.invalidateQueries({ queryKey: getListChatChannelsQueryKey() });
+    void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
+  };
+  const toggleChannelMemberDraft = (accountId: string) => {
+    setChannelMemberIdsDraft(current => current.includes(accountId)
+      ? current.filter(id => id !== accountId)
+      : [...current, accountId]);
+  };
+  const submitChannelDialog = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = channelNameDraft.trim().replace(/\s+/g, " ");
+    if (!name) { setChannelDialogError("Give the channel a name."); return; }
+    setChannelDialogError("");
+    try {
+      if (channelDialogId) {
+        await updateChannelMutation.mutateAsync({ channelId: channelDialogId, data: { name, memberIds: channelMemberIdsDraft } });
+      } else {
+        const created = await createChannelMutation.mutateAsync({
+          data: { name, memberIds: channelMemberIdsDraft.length ? channelMemberIdsDraft : undefined },
+        });
+        setConversationPeer(null);
+        setConversationChannelId(created.id);
+      }
+      invalidateChannelData();
+      closeChannelDialog();
+    } catch (error) {
+      setChannelDialogError(serverErrorMessage(error, "Couldn't save the channel. Try again."));
+    }
+  };
+  const deleteActiveChannel = async () => {
+    const channelId = channelDialogId;
+    if (!channelId) return;
+    if (!(await confirmAction({
+      title: `Delete ${activeChannel?.name ?? "this channel"}?`,
+      detail: "The channel and every message in it are removed permanently. This cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete channel",
+    }))) return;
+    try {
+      await deleteChannelMutation.mutateAsync({ channelId });
+      invalidateChannelData();
+      if (conversationChannelId === channelId) {
+        setConversationChannelId(null);
+        setConversationPeer(null);
+      }
+      closeChannelDialog();
+    } catch (error) {
+      setChannelDialogError(serverErrorMessage(error, "Couldn't delete the channel. Try again."));
+    }
+  };
   const mentionLabels = useMemo(() => {
     const unique = new Map<string, string>();
     for (const label of [...interviewerLabels, activeInterviewer]) {
@@ -4936,14 +5188,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     }
     return [...unique.values()];
   }, [activeInterviewer, interviewerLabels]);
-  const conversationScope = conversationPeer ? "direct" : "shared";
-  const conversationId = `${conversationScope}:${activeInterviewer}:${conversationPeer ?? ""}`;
+  const conversationScope: "shared" | "direct" | "channel" = conversationChannelId
+    ? "channel"
+    : conversationPeer ? "direct" : "shared";
+  const conversationId = `${conversationScope}:${activeInterviewer}:${conversationChannelId ?? conversationPeer ?? ""}`;
   const chatParams = useMemo(() => ({
     limit: CHAT_PAGE_SIZE,
-    scope: conversationScope as "shared" | "direct",
+    scope: conversationScope,
     author: activeInterviewer,
     ...(conversationPeer ? { peer: conversationPeer } : {}),
-  }), [activeInterviewer, conversationPeer, conversationScope]);
+    ...(conversationChannelId ? { channelId: conversationChannelId } : {}),
+  }), [activeInterviewer, conversationPeer, conversationChannelId, conversationScope]);
+  // Every chat message and shared-workspace create posts the same conversation
+  // targeting; build it once so channels always carry the channelId.
+  const conversationTarget = useMemo(() => ({
+    scope: conversationScope,
+    ...(conversationChannelId
+      ? { channelId: conversationChannelId }
+      : conversationPeer ? { recipient: conversationPeer } : {}),
+  }), [conversationScope, conversationPeer, conversationChannelId]);
   const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
@@ -4970,7 +5233,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
-  const scopedChatItems = chat.data?.scope === conversationScope && chat.data.peer === (conversationPeer ?? null)
+  const scopedChatItems = chat.data && chat.data.scope === conversationScope
+    && (conversationChannelId
+      ? chat.data.channel?.id === conversationChannelId
+      : chat.data.peer === (conversationPeer ?? null))
     ? chat.data.items
     : [];
   const visibleOlderChat = olderChatConversationId === conversationId ? olderChat : [];
@@ -5009,6 +5275,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           messageIds: unreadIds,
           scope: conversationScope,
           ...(conversationPeer ? { peer: conversationPeer } : {}),
+          ...(conversationChannelId ? { channelId: conversationChannelId } : {}),
         },
       }, {
         onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
@@ -5021,7 +5288,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (node) observer.observe(node);
     }
     return () => observer.disconnect();
-  }, [activeInterviewer, chatItems, chatParams, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
+  }, [activeInterviewer, chatItems, chatParams, conversationChannelId, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
   const [pinnedPreviewIndex, setPinnedPreviewIndex] = useState(0);
   const pinnedChatMessages = useMemo(() => chatItems
     .filter(item => Boolean(item.pinnedAt))
@@ -5084,7 +5351,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     if (options.length < 2) { setPollError("Add at least two options."); return; }
     setPollError("");
     try {
-      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), scope: conversationScope, ...(conversationPeer ? { recipient: conversationPeer } : {}), ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
+      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), ...conversationTarget, ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
       await createPollMutation.mutateAsync({ messageId: posted.id, data: { question: question.slice(0, 200), options: options.slice(0, 8) } });
       setPollOpen(false);
       resetPollDraft();
@@ -5192,16 +5459,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [scheduling, setScheduling] = useState(false);
   const scheduledForConversation = useMemo(() => scheduledItems
     .filter(item => (item.status === "pending" || item.status === "sending")
-      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+      && item.scope === conversationScope
+      && (item.channelId ?? null) === (conversationChannelId ?? null)
+      && (item.recipient ?? null) === (conversationPeer ?? null))
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
-    [scheduledItems, conversationScope, conversationPeer]);
+    [scheduledItems, conversationScope, conversationPeer, conversationChannelId]);
   // Dialog list also surfaces failed deliveries (with the error) so they can
   // be dismissed or recreated instead of vanishing silently.
   const scheduledDialogItems = useMemo(() => scheduledItems
     .filter(item => (item.status === "pending" || item.status === "sending" || item.status === "failed")
-      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+      && item.scope === conversationScope
+      && (item.channelId ?? null) === (conversationChannelId ?? null)
+      && (item.recipient ?? null) === (conversationPeer ?? null))
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
-    [scheduledItems, conversationScope, conversationPeer]);
+    [scheduledItems, conversationScope, conversationPeer, conversationChannelId]);
   const openScheduleMenu = () => {
     setScheduleError("");
     setScheduleNotice("");
@@ -5414,8 +5685,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       await createScheduledChat.mutateAsync({
         data: {
           message: body,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
           ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
           ...(pollSpec ? { poll: pollSpec } : {}),
           scheduledAt: target.toISOString(),
@@ -5448,7 +5718,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     answer: string;
     activities: { tool: string; detail: string }[];
     conversationAuthor: string;
-    scope: "shared" | "direct";
+    scope: "shared" | "direct" | "channel";
+    channelId: string | null;
     recipient: string | null;
     idempotencyKey: string;
   } | null>(null);
@@ -5524,7 +5795,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setCreateMenuOpen(false);
     const currentPath = location.split("?")[0];
     const returnPath = currentPath === "/queue" || currentPath === "/chat" ? currentPath : "/chat";
-    const returnTo = conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
+    const selectedConversation = conversationChannelId
+      ? `${returnPath}?channel=${encodeURIComponent(conversationChannelId)}`
+      : conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
+    const returnTo = selectedConversation;
     setLocation(`/spreadsheets/${id}?returnTo=${encodeURIComponent(returnTo)}`);
   };
   const createSharedDocument = async () => {
@@ -5537,8 +5811,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           title: "Untitled document",
           data: JSON.stringify({ kind: "document", elements: [], yState: "" }),
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       setActiveWhiteboardId(saved.id);
@@ -5548,8 +5821,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author: activeInterviewer,
           message: `[[document:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5567,8 +5839,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       const saved = await createBoardMutation.mutateAsync({
         data: {
           title: "Interview coordination board",
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       setActiveBoardId(saved.id);
@@ -5577,8 +5848,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author: activeInterviewer,
           message: `[[board:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5595,16 +5865,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       const saved = await createSpreadsheetMutation.mutateAsync({
         data: {
           title: "Tryout worksheet",
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await sendChat.mutateAsync({
         data: {
           author: activeInterviewer,
           message: `[[spreadsheet:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5623,8 +5891,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             data: {
               title,
               data,
-              scope: conversationScope,
-              ...(conversationPeer ? { recipient: conversationPeer } : {}),
+              ...conversationTarget,
             },
           });
       setActiveWhiteboardId(saved.id);
@@ -5634,8 +5901,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           data: {
             author: activeInterviewer,
             message: `[[whiteboard:${saved.id}]] ${saved.title}`,
-            scope: conversationScope,
-            ...(conversationPeer ? { recipient: conversationPeer } : {}),
+            ...conversationTarget,
           },
         });
         await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5934,6 +6200,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setConversationPeer(null);
     }
   }, [activeInterviewer, conversationPeer, interviewerLabels]);
+  // A channel that disappears (deleted or membership revoked) drops the
+  // viewer back to the team channel instead of a dead 400 conversation.
+  useEffect(() => {
+    if (!conversationChannelId || channelsQuery.isPending) return;
+    if (!channels.some(channel => channel.id === conversationChannelId)) {
+      setConversationChannelId(null);
+      setConversationPeer(null);
+    }
+  }, [channels, channelsQuery.isPending, conversationChannelId]);
   useEffect(() => {
     setOlderChatConversationId(conversationId);
     setOlderChat([]);
@@ -6129,7 +6404,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           conversationAuthor: pendingReply.conversationAuthor,
           message: pendingReply.answer,
           scope: pendingReply.scope,
-          ...(pendingReply.recipient ? { recipient: pendingReply.recipient } : {}),
+          ...(pendingReply.channelId ? { channelId: pendingReply.channelId } : pendingReply.recipient ? { recipient: pendingReply.recipient } : {}),
           activities: pendingReply.activities,
           idempotencyKey: pendingReply.idempotencyKey,
         },
@@ -6138,15 +6413,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         limit: CHAT_PAGE_SIZE,
         scope: pendingReply.scope,
         author: pendingReply.conversationAuthor,
-        ...(pendingReply.scope === "direct" && pendingReply.recipient ? { peer: pendingReply.recipient } : {}),
+        ...(pendingReply.channelId ? { channelId: pendingReply.channelId } : pendingReply.scope === "direct" && pendingReply.recipient ? { peer: pendingReply.recipient } : {}),
       };
       void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(retryChatParams) });
       setFailedAiReply(null);
       setAiReplyRetryError("");
       setAiReplySavedNotice(
-        pendingReply.scope === "direct" && pendingReply.recipient
-          ? `AI reply saved to your direct chat with ${pendingReply.recipient}.`
-          : "AI reply saved to team chat.",
+        pendingReply.scope === "channel" && pendingReply.channelId
+          ? "AI reply saved to the channel."
+          : pendingReply.scope === "direct" && pendingReply.recipient
+            ? `AI reply saved to your direct chat with ${pendingReply.recipient}.`
+            : "AI reply saved to team chat.",
       );
     } catch {
       setAiReplyRetryError("Retry failed: we still couldn't confirm whether the answer was saved. You can retry again safely; it reuses the same key and won't create a duplicate.");
@@ -6183,14 +6460,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author,
           message: submitted,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
           ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
         },
       }), 30000, "send");
       userPosted = true;
       const configuredSlowmode = slowmodeConfig.data?.slowmodeSeconds ?? 0;
-      if (configuredSlowmode > 0 && conversationScope === "shared") startSlowmodeCountdown(configuredSlowmode);
+      if (configuredSlowmode > 0 && (conversationScope === "shared" || conversationScope === "channel")) startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
       if (/@ai\b/i.test(submitted)) {
@@ -6205,7 +6481,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             getInterviewChat({
               limit: CHAT_CONTEXT_MESSAGE_LIMIT,
               scope: conversationScope,
-              ...(conversationPeer ? { peer: conversationPeer } : {}),
+              ...(conversationChannelId ? { channelId: conversationChannelId } : conversationPeer ? { peer: conversationPeer } : {}),
             }),
             15000,
             "history",
@@ -6223,7 +6499,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           activities: response.activities ?? [],
           conversationAuthor: author,
           scope: conversationScope,
-          recipient: conversationPeer,
+          channelId: conversationChannelId,
+          recipient: conversationPeer ?? null,
           idempotencyKey: crypto.randomUUID(),
         };
         setAiReplySavedNotice("");
@@ -6233,8 +6510,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             author: "AI assistant",
             conversationAuthor: assistantReplyForRetry.conversationAuthor,
             message: assistantReplyForRetry.answer,
-            scope: assistantReplyForRetry.scope,
-            ...(assistantReplyForRetry.recipient ? { recipient: assistantReplyForRetry.recipient } : {}),
+            ...conversationTarget,
             activities: assistantReplyForRetry.activities,
             idempotencyKey: assistantReplyForRetry.idempotencyKey,
           },
@@ -6393,8 +6669,29 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     </div>;
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
+   const stripChannels = useMemo(() => {
+     const activityChannels = conversations.data?.channels ?? [];
+     if (activityChannels.length) return activityChannels;
+     // Before the first conversations load, fall back to the channel list so
+     // invites are still shown.
+     return channels.map(channel => ({
+       channelId: channel.id,
+       channelName: channel.name,
+       lastMessageAt: channel.updatedAt,
+       lastMessageAuthor: "",
+       lastMessage: "",
+     }));
+   }, [conversations.data, channels]);
+   // Members of the managed channel missing from the picker list (a removed
+   // account row, for instance) stay visible so nothing silently drops out.
+   const missingChannelAccounts = useMemo(() => {
+     if (!channelDialogId) return [];
+     const known = new Set(channelAccounts.map(account => account.id));
+     return (channels.find(channel => channel.id === channelDialogId)?.members ?? [])
+       .filter(member => !known.has(member.id));
+   }, [channelAccounts, channels, channelDialogId]);
    return <section className="chat-panel relative rounded-3xl border border-[#dce5e5] bg-white p-5">
-      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+      <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : conversationChannelId ? (activeChannel?.name ?? "Channel") : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">{conversationChannelId && activeChannel ? `Invite-only · ${activeChannel.members.length} invited` : <>Type <strong>@ai</strong> for an applicant-aware response.</>}</p></div><Bot size={20} className="text-[#16869a]" /></div>
       {mentionAttention && <button
         type="button"
         onClick={() => {
@@ -6418,10 +6715,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        </div>
        <div className="mt-3 flex flex-wrap items-center gap-2">
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
-         <button type="button" onClick={() => setConversationPeer(null)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
-         {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
+         <button type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(null); }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer && !conversationChannelId ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
+         {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => { setConversationChannelId(null); setConversationPeer(label); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
+         {stripChannels.map(channelItem => { const activeChannelButton = conversationChannelId === channelItem.channelId; const hasUnread = unreadChannels.has(channelItem.channelId); return <button key={`channel-${channelItem.channelId}`} type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(channelItem.channelId); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeChannelButton ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-channel-${channelItem.channelId.slice(0, 8)}`} title={channelItem.lastMessage ? `${channelItem.lastMessageAuthor}: ${channelItem.lastMessage}` : "Invite-only channel"}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`channel-unread-dot-${channelItem.channelId.slice(0, 8)}`} aria-label="Unread" />}<span className="flex items-center gap-1"><UsersRound size={11} className="shrink-0 opacity-70" /><span>{channelItem.channelName}</span></span></button>; })}
+         {canManageChannels && conversationChannelId && <button type="button" onClick={() => openManageChannelDialog(conversationChannelId)} data-testid="button-manage-channel" aria-label="Manage this channel" title="Rename, invite, or delete this channel" className="flex items-center gap-1.5 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#12737d] transition hover:border-[#16869a]"><Settings size={12} /><span>Manage</span></button>}
+         {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /><span>Channel</span></button>}
        </div>
-       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
+       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">{conversationChannelId ? (activeChannel ? `Invite-only — only ${activeChannel.members.length} invited people${canManageChannels ? " (and admins)" : ""} can read or post here.` : "Invite-only channel.") : "Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants."}</p>
      </div>
        <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`chat-message-feed mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form
@@ -6474,7 +6774,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-[#183a4b]">Schedule send</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationChannelId ? `Sends to ${activeChannel?.name ?? "the channel"}` : conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
                 </div>
                 <button type="button" onClick={() => setScheduleOpen(false)} aria-label="Close schedule menu" data-testid="button-close-schedule-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
               </div>
@@ -6535,7 +6835,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
                    placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
                  />
-                {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
+                {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
               <div className="chat-composer-actions" data-testid="chat-composer-actions">
                 
@@ -6559,7 +6859,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">We couldn’t confirm the AI reply to {failedAiReply.scope === "direct" && failedAiReply.recipient ? failedAiReply.recipient : "team chat"}.</p>
+            <p className="font-semibold">We couldn’t confirm the AI reply to {failedAiReply.scope === "channel" && failedAiReply.channelId ? "the channel" : failedAiReply.scope === "direct" && failedAiReply.recipient ? failedAiReply.recipient : "team chat"}.</p>
             <p className="mt-0.5 text-xs">Your prompt is already in chat. Retry will check and save the same answer as {failedAiReply.conversationAuthor} without asking the AI again.</p>
             {aiReplyRetryError && <p className="mt-1 text-xs font-medium" data-testid="ai-reply-retry-error">{aiReplyRetryError}</p>}
           </div>
@@ -6592,6 +6892,59 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
            : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
+       {channelDialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#183a4b]/40 p-4" role="dialog" aria-modal="true" aria-label={channelDialogId ? "Channel settings" : "New invite-only channel"} data-testid="chat-channel-dialog">
+         <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-[#dce5e5] bg-white p-5 shadow-2xl">
+           <div className="flex items-start justify-between gap-3">
+             <div className="min-w-0"><h3 className="font-semibold text-[#385762]">{channelDialogId ? "Channel settings" : "New invite-only channel"}</h3><p className="mt-1 text-xs text-[#7c8c91]">{channelDialogId ? "Rename the channel or change who is invited." : "Only invited people (and admins) can read or post in it."}</p></div>
+             <button type="button" onClick={closeChannelDialog} aria-label="Close channel dialog" data-testid="button-close-channel-dialog" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
+           </div>
+           <form onSubmit={submitChannelDialog} className="mt-4">
+             <label htmlFor="input-channel-name" className="block text-[11px] font-semibold text-[#63747c]">Channel name</label>
+             <input
+               id="input-channel-name"
+               autoFocus
+               value={channelNameDraft}
+               onChange={event => setChannelNameDraft(event.target.value)}
+               maxLength={80}
+               placeholder="e.g. Build captains"
+               data-testid="input-channel-name"
+               className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]"
+             />
+             <div className="mt-3">
+               <p className="text-[11px] font-semibold text-[#63747c]">Invited people</p>
+               <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-1.5" data-testid="channel-member-picker">
+                 {channelAccounts.map(account => {
+                   const checked = channelMemberIdsDraft.includes(account.id);
+                   const roleLabel = account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member";
+                   return <label key={account.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition ${checked ? "bg-[#e3f4f2]" : "hover:bg-white"}`} data-testid={`channel-member-option-${account.id}`}>
+                     <input type="checkbox" checked={checked} onChange={() => toggleChannelMemberDraft(account.id)} className="h-4 w-4 accent-[#16869a]" aria-label={`Invite ${account.displayName}`} />
+                     <span className="min-w-0 flex-1 truncate font-medium text-[#183a4b]">{account.displayName}{session.data?.interviewerId === account.id ? " (you)" : ""}</span>
+                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[.08em] text-[#7c8c91]">{roleLabel}</span>
+                   </label>;
+                 })}
+                 {missingChannelAccounts.map(member => {
+                   const roleLabel = member.role === "coordinator" ? "Admin" : member.role === "treasurer" ? "Treasurer" : "Team member";
+                   return <label key={member.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition bg-[#e3f4f2] hover:bg-[#d9efec]`}>
+                     <input type="checkbox" checked={channelMemberIdsDraft.includes(member.id)} onChange={() => toggleChannelMemberDraft(member.id)} className="h-4 w-4 accent-[#16869a]" aria-label={`Invite ${member.displayName}`} />
+                     <span className="min-w-0 flex-1 truncate font-medium text-[#183a4b]">{member.displayName}</span>
+                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[.08em] text-[#7c8c91]">{roleLabel}</span>
+                   </label>;
+                 })}
+                 {channelAccounts.length === 0 && missingChannelAccounts.length === 0 && <p className="px-2 py-3 text-xs text-[#7c8c91]">{channelAccountsQuery.isPending ? "Loading people…" : "No teammates to invite yet."}</p>}
+               </div>
+             </div>
+             {channelDialogError && <p className="mt-2 text-xs font-semibold text-[#ad4b43]" data-testid="channel-dialog-error">{channelDialogError}</p>}
+             <div className="mt-4 flex gap-2">
+               <button type="submit" disabled={createChannelMutation.isPending || updateChannelMutation.isPending} data-testid="button-save-channel" className="flex-1 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{channelDialogId ? "Save changes" : "Create channel"}</button>
+               <button type="button" onClick={closeChannelDialog} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e]">Cancel</button>
+             </div>
+           </form>
+           {channelDialogId && <div className="mt-4 border-t border-[#edf1f1] pt-3">
+             <button type="button" onClick={() => void deleteActiveChannel()} disabled={deleteChannelMutation.isPending} data-testid="button-delete-channel" aria-label="Delete this channel" className="flex items-center gap-1.5 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={13} /><span>Delete channel</span></button>
+             <p className="mt-1.5 text-[11px] text-[#8a999d]">Deleting removes the channel and every message in it.</p>
+           </div>}
+         </div>
+       </div>}
   </section>;
 }
 function Queue() { const streamHealthy = useRealtimeHealthy();

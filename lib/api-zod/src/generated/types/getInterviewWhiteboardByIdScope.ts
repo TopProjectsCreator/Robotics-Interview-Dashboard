@@ -12,4 +12,5 @@ export type GetInterviewWhiteboardByIdScope = typeof GetInterviewWhiteboardByIdS
 export const GetInterviewWhiteboardByIdScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

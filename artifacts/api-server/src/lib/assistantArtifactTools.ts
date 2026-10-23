@@ -36,7 +36,7 @@ const MAX_ROSTER_ENTRIES = 1_000;
 
 type ArtifactRow = typeof interviewWhiteboardsTable.$inferSelect;
 type ArtifactKind = "whiteboard" | "board" | "document" | "spreadsheet";
-type ArtifactAccessCheck = (row: Pick<ArtifactRow, "conversationScope" | "conversationPeer">) => boolean;
+type ArtifactAccessCheck = (row: Pick<ArtifactRow, "conversationScope" | "conversationPeer">) => boolean | Promise<boolean>;
 
 export const ASSISTANT_ARTIFACT_TOOL_NAMES = new Set([
   "list_collaboration_artifacts",
@@ -366,8 +366,10 @@ async function listArtifacts(
     .where(teamFilter(interviewWhiteboardsTable.teamId, team))
     .orderBy(desc(interviewWhiteboardsTable.updatedAt))
     .limit(200);
-  const items = rows
-    .filter(canAccess)
+  const accessibility = await Promise.all(rows.map(async (row) => ({ row, ok: await canAccess(row) })));
+  const items = accessibility
+    .filter(({ ok }) => ok)
+    .map(({ row }) => row)
     .flatMap((row) => {
       const kind = kindForRow(row);
       if (!kind || (requestedKind && kind !== requestedKind)) return [];
@@ -375,7 +377,9 @@ async function listArtifacts(
         id: row.id,
         kind,
         title: row.title,
-        scope: row.conversationScope === "direct" ? "direct" : "shared",
+        scope: row.conversationScope === "direct"
+          ? "direct"
+          : row.conversationScope === "channel" ? "channel" : "shared",
         updatedAt: row.updatedAt.toISOString(),
       }];
     })
@@ -543,7 +547,8 @@ async function readArtifact(
   const [row] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, id), teamFilter(interviewWhiteboardsTable.teamId, team)))
     .limit(1);
-  if (!row || !canAccess(row)) return toolFailure("Artifact not found or not accessible.");
+  const accessible = await canAccess(row);
+  if (!row || !accessible) return toolFailure("Artifact not found or not accessible.");
 
   const kind = kindForRow(row);
   if (kind === "board") return boardReadView(row, args);
@@ -621,7 +626,8 @@ async function editBoard(
       .where(and(eq(interviewWhiteboardsTable.id, boardId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
-    if (!row || !canAccess(row) || kindForRow(row) !== "board") {
+    const rowAccessible = await canAccess(row);
+    if (!row || !rowAccessible || kindForRow(row) !== "board") {
       return { ok: false as const, error: "Board not found or not accessible." };
     }
     const current = parseBoardData(row.data);
@@ -666,7 +672,8 @@ async function editSpreadsheet(
       .where(and(eq(interviewWhiteboardsTable.id, spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
-    if (!row || !canAccess(row) || !isSpreadsheetRecordData(row.data)) {
+    const rowAccessible = await canAccess(row);
+    if (!row || !rowAccessible || !isSpreadsheetRecordData(row.data)) {
       return { ok: false as const, error: "Spreadsheet not found or not accessible." };
     }
     const current = parseSpreadsheetData(row.data);
@@ -754,7 +761,8 @@ async function editWhiteboard(
       .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, team)))
       .limit(1)
       .for("update");
-    if (!row || !canAccess(row) || kindForRow(row) !== "whiteboard") {
+    const rowAccessible = await canAccess(row);
+    if (!row || !rowAccessible || kindForRow(row) !== "whiteboard") {
       return { ok: false as const, error: "Whiteboard not found or not accessible." };
     }
     let scene: Record<string, unknown>;

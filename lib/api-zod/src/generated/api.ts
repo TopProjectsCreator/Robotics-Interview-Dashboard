@@ -1404,9 +1404,10 @@ export const getInterviewChatQueryScopeDefault = `shared`;
 export const GetInterviewChatQueryParams = zod.object({
   "before": zod.coerce.string().optional().describe('Return messages created before this ISO timestamp (older history page).'),
   "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).'),
-  "scope": zod.enum(['shared', 'direct']).default(getInterviewChatQueryScopeDefault).describe('Conversation scope. Shared is the team channel; direct requires author and peer.'),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(getInterviewChatQueryScopeDefault).describe('Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.'),
   "author": zod.coerce.string().optional().describe('Configured interviewer label used to derive a direct conversation pair.'),
-  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.')
+  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.'),
+  "channelId": zod.coerce.string().optional().describe('Invite-only channel id for the channel conversation; the caller must be a member (or an admin).')
 })
 
 export const GetInterviewChatResponse = zod.object({
@@ -1414,8 +1415,9 @@ export const GetInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
@@ -1450,8 +1452,12 @@ export const GetInterviewChatResponse = zod.object({
 })),
   "createdAt": zod.coerce.date()
 })),
-  "scope": zod.enum(['shared', 'direct']),
-  "peer": zod.string().nullable()
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullable(),
+  "channel": zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}).nullish().describe('Channel details when scope is channel.')
 })
 
 
@@ -1465,8 +1471,9 @@ export const SendInterviewChatBody = zod.object({
   "author": zod.string().describe('Configured interviewer label for direct messages; shared messages retain the existing label behavior.'),
   "conversationAuthor": zod.string().nullish().describe('Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']).default(sendInterviewChatBodyScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(sendInterviewChatBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label receiving a direct message.'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id receiving the message; only channel members (and admins) may post.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
@@ -1481,8 +1488,9 @@ export const SendInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
@@ -1529,8 +1537,9 @@ export const markInterviewChatReadBodyMessageIdsMax = 100;
 
 export const MarkInterviewChatReadBody = zod.object({
   "messageIds": zod.array(zod.string().min(1)).min(1).max(markInterviewChatReadBodyMessageIdsMax),
-  "scope": zod.enum(['shared', 'direct']),
-  "peer": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope read receipts.')
 })
 
 export const MarkInterviewChatReadResponse = zod.object({
@@ -1574,8 +1583,9 @@ export const ListScheduledChatsResponse = zod.object({
   "author": zod.string(),
   "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope scheduled messages.'),
   "recipient": zod.string().nullish(),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
@@ -1603,8 +1613,9 @@ export const createScheduledChatBodyPollOneOptionsMax = 8;
 
 export const CreateScheduledChatBody = zod.object({
   "message": zod.string().describe('Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.'),
-  "scope": zod.enum(['shared', 'direct']).default(createScheduledChatBodyScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createScheduledChatBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label receiving a scheduled direct message.'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to.'),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
   "question": zod.string(),
@@ -1623,8 +1634,9 @@ export const CreateScheduledChatResponse = zod.object({
   "author": zod.string(),
   "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope scheduled messages.'),
   "recipient": zod.string().nullish(),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
@@ -1706,7 +1718,7 @@ export const UploadChatCustomEmojiResponse = zod.object({
 
 
 /**
- * @summary List direct conversations involving the current interviewer
+ * @summary List direct conversations and channels involving the current interviewer
  */
 export const GetChatConversationsResponse = zod.object({
   "items": zod.array(zod.object({
@@ -1720,8 +1732,123 @@ export const GetChatConversationsResponse = zod.object({
   "lastMessageAt": zod.string(),
   "lastMessageAuthor": zod.string(),
   "lastMessage": zod.string()
-}).nullable().describe('Latest team-channel activity, null when the channel is empty')
+}).nullable().describe('Latest team-channel activity, null when the channel is empty'),
+  "channels": zod.array(zod.object({
+  "channelId": zod.string(),
+  "channelName": zod.string(),
+  "lastMessageAt": zod.string(),
+  "lastMessageAuthor": zod.string(),
+  "lastMessage": zod.string()
+})).describe('Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first.')
 })
+
+
+/**
+ * Members see only their channels; admins (coordinators) see every team channel.
+ * @summary List invite-only channels visible to the signed-in interviewer
+ */
+export const ListChatChannelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Create an invite-only channel (admins only)
+ */
+export const createChatChannelBodyNameMax = 80;
+
+export const createChatChannelBodyMemberIdsMax = 100;
+
+
+
+export const CreateChatChannelBody = zod.object({
+  "name": zod.string().min(1).max(createChatChannelBodyNameMax).describe('Channel display name; must be unique within the team (case-insensitive).'),
+  "memberIds": zod.array(zod.string()).max(createChatChannelBodyMemberIdsMax).optional().describe('Interviewer account ids to invite; the creating admin is always included.')
+})
+
+export const CreateChatChannelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+})
+
+
+/**
+ * @summary Rename a channel and/or replace its invited members (admins only)
+ */
+export const UpdateChatChannelParams = zod.object({
+  "channelId": zod.coerce.string()
+})
+
+export const updateChatChannelBodyNameMax = 80;
+
+export const updateChatChannelBodyMemberIdsMax = 100;
+
+
+
+export const UpdateChatChannelBody = zod.object({
+  "name": zod.string().min(1).max(updateChatChannelBodyNameMax).optional(),
+  "memberIds": zod.array(zod.string()).max(updateChatChannelBodyMemberIdsMax).optional().describe('Full replacement of the invited members.')
+})
+
+export const UpdateChatChannelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+})
+
+
+/**
+ * @summary Delete a channel and its messages (admins only)
+ */
+export const DeleteChatChannelParams = zod.object({
+  "channelId": zod.coerce.string()
+})
+
+export const DeleteChatChannelResponse = zod.void()
 
 
 /**
@@ -1843,8 +1970,9 @@ export const UpdateChatMessageResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
@@ -1897,9 +2025,10 @@ export const DeleteChatMessageResponse = zod.void()
 export const listInterviewWhiteboardsQueryScopeDefault = `shared`;
 
 export const ListInterviewWhiteboardsQueryParams = zod.object({
-  "scope": zod.enum(['shared', 'direct']).default(listInterviewWhiteboardsQueryScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(listInterviewWhiteboardsQueryScopeDefault),
   "author": zod.coerce.string().optional(),
-  "peer": zod.coerce.string().optional()
+  "peer": zod.coerce.string().optional(),
+  "channelId": zod.coerce.string().optional()
 })
 
 export const ListInterviewWhiteboardsResponse = zod.object({
@@ -1908,12 +2037,12 @@ export const ListInterviewWhiteboardsResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable()
 })
 
@@ -1930,8 +2059,9 @@ export const createInterviewWhiteboardBodyScopeDefault = `shared`;
 export const CreateInterviewWhiteboardBody = zod.object({
   "title": zod.string().min(1).max(createInterviewWhiteboardBodyTitleMax),
   "data": zod.string().min(createInterviewWhiteboardBodyDataMin).describe('Serialized whiteboard scene or collaborative document state'),
-  "scope": zod.enum(['shared', 'direct']).default(createInterviewWhiteboardBodyScopeDefault),
-  "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard')
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createInterviewWhiteboardBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel whiteboard')
 })
 
 export const CreateInterviewWhiteboardResponse = zod.object({
@@ -1939,7 +2069,7 @@ export const CreateInterviewWhiteboardResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1956,9 +2086,10 @@ export const GetInterviewWhiteboardByIdParams = zod.object({
 export const getInterviewWhiteboardByIdQueryScopeDefault = `shared`;
 
 export const GetInterviewWhiteboardByIdQueryParams = zod.object({
-  "scope": zod.enum(['shared', 'direct']).default(getInterviewWhiteboardByIdQueryScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(getInterviewWhiteboardByIdQueryScopeDefault),
   "author": zod.coerce.string().optional(),
-  "peer": zod.coerce.string().optional()
+  "peer": zod.coerce.string().optional(),
+  "channelId": zod.coerce.string().optional()
 })
 
 export const GetInterviewWhiteboardByIdResponse = zod.object({
@@ -1966,7 +2097,7 @@ export const GetInterviewWhiteboardByIdResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1996,7 +2127,7 @@ export const UpdateInterviewWhiteboardResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -2012,8 +2143,9 @@ export const createBoardBodyScopeDefault = `shared`;
 
 export const CreateBoardBody = zod.object({
   "title": zod.string().min(1).max(createBoardBodyTitleMax),
-  "scope": zod.enum(['shared', 'direct']).default(createBoardBodyScopeDefault),
-  "recipient": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createBoardBodyScopeDefault),
+  "recipient": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel-scope board.')
 })
 
 export const createBoardResponseDataDescriptionMax = 500;
@@ -2070,7 +2202,7 @@ export const CreateBoardResponse = zod.object({
 })).max(createBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2138,7 +2270,7 @@ export const GetBoardResponse = zod.object({
 })).max(getBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2269,7 +2401,7 @@ export const UpdateBoardResponse = zod.object({
 })).max(updateBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2285,8 +2417,9 @@ export const createSpreadsheetBodyScopeDefault = `shared`;
 
 export const CreateSpreadsheetBody = zod.object({
   "title": zod.string().min(1).max(createSpreadsheetBodyTitleMax),
-  "scope": zod.enum(['shared', 'direct']).default(createSpreadsheetBodyScopeDefault),
-  "recipient": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createSpreadsheetBodyScopeDefault),
+  "recipient": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel-scope spreadsheet.')
 })
 
 export const createSpreadsheetResponseDataColumnCountMax = 16384;
@@ -2335,7 +2468,7 @@ export const CreateSpreadsheetResponse = zod.object({
 })).max(createSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2396,7 +2529,7 @@ export const GetSpreadsheetResponse = zod.object({
 })).max(getSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2506,7 +2639,7 @@ export const UpdateSpreadsheetResponse = zod.object({
 })).max(updateSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),

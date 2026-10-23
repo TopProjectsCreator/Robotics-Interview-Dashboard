@@ -1443,6 +1443,7 @@ export type InterviewChatInputScope = typeof InterviewChatInputScope[keyof typeo
 export const InterviewChatInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface AssistantActivity {
@@ -1465,6 +1466,8 @@ export interface InterviewChatInput {
   scope?: InterviewChatInputScope;
   /** Configured interviewer label receiving a direct message. */
   recipient?: string | null;
+  /** Invite-only channel id receiving the message; only channel members (and admins) may post. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: string | null;
   activities?: AssistantActivity[];
@@ -1485,6 +1488,7 @@ export type ScheduledChatInputScope = typeof ScheduledChatInputScope[keyof typeo
 export const ScheduledChatInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface ScheduledChatInput {
@@ -1493,6 +1497,8 @@ export interface ScheduledChatInput {
   scope?: ScheduledChatInputScope;
   /** Configured interviewer label receiving a scheduled direct message. */
   recipient?: string | null;
+  /** Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   /** @nullable */
   poll?: ScheduledChatPollInput | null;
@@ -1523,6 +1529,7 @@ export type ScheduledChatMessageScope = typeof ScheduledChatMessageScope[keyof t
 export const ScheduledChatMessageScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export type ScheduledChatMessageStatus = typeof ScheduledChatMessageStatus[keyof typeof ScheduledChatMessageStatus];
@@ -1543,6 +1550,8 @@ export interface ScheduledChatMessage {
   message: string;
   scope: ScheduledChatMessageScope;
   peer?: string | null;
+  /** Invite-only channel id for channel-scope scheduled messages. */
+  channelId?: string | null;
   recipient?: string | null;
   parentMessageId?: string | null;
   /** @nullable */
@@ -1565,6 +1574,7 @@ export type InterviewChatMessageScope = typeof InterviewChatMessageScope[keyof t
 export const InterviewChatMessageScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface ChatReaction {
@@ -1604,6 +1614,8 @@ export interface InterviewChatMessage {
   message: string;
   scope: InterviewChatMessageScope;
   peer: string | null;
+  /** Invite-only channel id when scope is channel; peer carries the channel id. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: string | null;
   editedAt: string | null;
@@ -1625,6 +1637,7 @@ export type ChatMessagesReadInputScope = typeof ChatMessagesReadInputScope[keyof
 export const ChatMessagesReadInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface ChatMessagesReadInput {
@@ -1636,6 +1649,8 @@ export interface ChatMessagesReadInput {
   messageIds: string[];
   scope: ChatMessagesReadInputScope;
   peer?: string | null;
+  /** Invite-only channel id for channel-scope read receipts. */
+  channelId?: string | null;
 }
 
 export interface ChatMessagesReadResult {
@@ -1665,6 +1680,14 @@ export interface ChatConversationSummary {
   lastMessage: string;
 }
 
+export interface ChannelActivity {
+  channelId: string;
+  channelName: string;
+  lastMessageAt: string;
+  lastMessageAuthor: string;
+  lastMessage: string;
+}
+
 export interface ChatConversationList {
   items: ChatConversationSummary[];
   /**
@@ -1672,6 +1695,77 @@ export interface ChatConversationList {
      * @nullable
      */
   shared: ChatConversationSummary | null;
+  /** Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first. */
+  channels: ChannelActivity[];
+}
+
+export interface ChatChannelRef {
+  id: string;
+  name: string;
+}
+
+export interface ChatChannelMember {
+  /** Interviewer account id. */
+  id: string;
+  displayName: string;
+  /** coordinator, treasurer, or interviewer */
+  role: string;
+  /** Display name of the admin that invited this person. */
+  addedBy?: string;
+}
+
+export interface ChatChannel {
+  id: string;
+  name: string;
+  /** Display name of the admin that created the channel. */
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  members: ChatChannelMember[];
+  /** True when the signed-in account is invited to this channel. */
+  youAreMember: boolean;
+  /** True for admins, who can rename, invite, and delete. */
+  canManage: boolean;
+  /**
+     * Newest message time in the channel, null when empty.
+     * @nullable
+     */
+  lastMessageAt?: string | null;
+  /** @nullable */
+  lastMessageAuthor?: string | null;
+  /** @nullable */
+  lastMessage?: string | null;
+}
+
+export interface ChatChannelList {
+  items: ChatChannel[];
+}
+
+export interface ChatChannelInput {
+  /**
+     * Channel display name; must be unique within the team (case-insensitive).
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /**
+     * Interviewer account ids to invite; the creating admin is always included.
+     * @maxItems 100
+     */
+  memberIds?: string[];
+}
+
+export interface ChatChannelUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name?: string;
+  /**
+     * Full replacement of the invited members.
+     * @maxItems 100
+     */
+  memberIds?: string[];
 }
 
 export interface ChatReactionInput {
@@ -1708,12 +1802,18 @@ export type InterviewChatScope = typeof InterviewChatScope[keyof typeof Intervie
 export const InterviewChatScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface InterviewChat {
   items: InterviewChatMessage[];
   scope: InterviewChatScope;
   peer: string | null;
+  /**
+     * Channel details when scope is channel.
+     * @nullable
+     */
+  channel?: ChatChannelRef | null;
 }
 
 export interface ChatCustomEmoji {
@@ -1767,6 +1867,7 @@ export type InterviewWhiteboardInputScope = typeof InterviewWhiteboardInputScope
 export const InterviewWhiteboardInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface InterviewWhiteboardInput {
@@ -1783,6 +1884,8 @@ export interface InterviewWhiteboardInput {
   scope: InterviewWhiteboardInputScope;
   /** Configured interviewer label for a direct whiteboard */
   recipient?: string | null;
+  /** Invite-only channel id for a channel whiteboard */
+  channelId?: string | null;
 }
 
 export interface InterviewWhiteboardUpdateInput {
@@ -1804,6 +1907,7 @@ export type InterviewWhiteboardScope = typeof InterviewWhiteboardScope[keyof typ
 export const InterviewWhiteboardScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface InterviewWhiteboard {
@@ -1823,6 +1927,7 @@ export type InterviewWhiteboardListScope = typeof InterviewWhiteboardListScope[k
 export const InterviewWhiteboardListScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface InterviewWhiteboardList {
@@ -1914,6 +2019,7 @@ export type BoardScope = typeof BoardScope[keyof typeof BoardScope];
 export const BoardScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface Board {
@@ -1934,6 +2040,7 @@ export type BoardCreateInputScope = typeof BoardCreateInputScope[keyof typeof Bo
 export const BoardCreateInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface BoardCreateInput {
@@ -1945,6 +2052,11 @@ export interface BoardCreateInput {
   scope: BoardCreateInputScope;
   /** @nullable */
   recipient?: string | null;
+  /**
+     * Invite-only channel id for a channel-scope board.
+     * @nullable
+     */
+  channelId?: string | null;
 }
 
 export type BoardCardInputPriority = typeof BoardCardInputPriority[keyof typeof BoardCardInputPriority];
@@ -2133,6 +2245,7 @@ export type SpreadsheetScope = typeof SpreadsheetScope[keyof typeof SpreadsheetS
 export const SpreadsheetScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface Spreadsheet {
@@ -2158,6 +2271,7 @@ export type SpreadsheetCreateInputScope = typeof SpreadsheetCreateInputScope[key
 export const SpreadsheetCreateInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export interface SpreadsheetCreateInput {
@@ -2169,6 +2283,11 @@ export interface SpreadsheetCreateInput {
   scope: SpreadsheetCreateInputScope;
   /** @nullable */
   recipient?: string | null;
+  /**
+     * Invite-only channel id for a channel-scope spreadsheet.
+     * @nullable
+     */
+  channelId?: string | null;
 }
 
 export interface SpreadsheetUpdateInput {
@@ -3158,7 +3277,7 @@ before?: BeforeParameter;
  */
 limit?: ChatLimitParameter;
 /**
- * Conversation scope. Shared is the team channel; direct requires author and peer.
+ * Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.
  */
 scope?: GetInterviewChatScope;
 /**
@@ -3169,6 +3288,10 @@ author?: string;
  * Configured interviewer label for the direct conversation.
  */
 peer?: string;
+/**
+ * Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
+ */
+channelId?: string;
 };
 
 export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof GetInterviewChatScope];
@@ -3177,12 +3300,17 @@ export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof Ge
 export const GetInterviewChatScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export type ListInterviewWhiteboardsParams = {
 scope?: ListInterviewWhiteboardsScope;
 author?: string;
 peer?: string;
+/**
+ * Invite-only channel id for channel-scope whiteboards.
+ */
+channelId?: string;
 };
 
 export type ListInterviewWhiteboardsScope = typeof ListInterviewWhiteboardsScope[keyof typeof ListInterviewWhiteboardsScope];
@@ -3191,12 +3319,17 @@ export type ListInterviewWhiteboardsScope = typeof ListInterviewWhiteboardsScope
 export const ListInterviewWhiteboardsScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export type GetInterviewWhiteboardByIdParams = {
 scope?: GetInterviewWhiteboardByIdScope;
 author?: string;
 peer?: string;
+/**
+ * Invite-only channel id for channel-scope whiteboards.
+ */
+channelId?: string;
 };
 
 export type GetInterviewWhiteboardByIdScope = typeof GetInterviewWhiteboardByIdScope[keyof typeof GetInterviewWhiteboardByIdScope];
@@ -3205,6 +3338,7 @@ export type GetInterviewWhiteboardByIdScope = typeof GetInterviewWhiteboardByIdS
 export const GetInterviewWhiteboardByIdScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
 
 export type GetDisplayStateParams = {

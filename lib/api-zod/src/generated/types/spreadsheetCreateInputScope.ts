@@ -12,4 +12,5 @@ export type SpreadsheetCreateInputScope = typeof SpreadsheetCreateInputScope[key
 export const SpreadsheetCreateInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

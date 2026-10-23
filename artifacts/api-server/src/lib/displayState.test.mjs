@@ -29,6 +29,8 @@ const tableNames = [
   "broadcastAcksTable",
   "broadcastsTable",
   "chatCustomEmojisTable",
+  "chatChannelMembersTable",
+  "chatChannelsTable",
   "chatMessageReadsTable",
   "chatMessageReactionsTable",
   "chatPollsTable",

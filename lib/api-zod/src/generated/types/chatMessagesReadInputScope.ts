@@ -12,4 +12,5 @@ export type ChatMessagesReadInputScope = typeof ChatMessagesReadInputScope[keyof
 export const ChatMessagesReadInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

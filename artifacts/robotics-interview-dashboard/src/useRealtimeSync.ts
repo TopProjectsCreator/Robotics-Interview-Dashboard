@@ -9,6 +9,7 @@ import {
   getGetQueueQueryKey,
   getGetSeatingSettingsQueryKey,
   getListApplicantsQueryKey,
+  getListChatChannelsQueryKey,
   getListScheduledChatsQueryKey,
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
@@ -101,6 +102,15 @@ export function useRealtimeSync(authenticated: boolean) {
         return;
       }
       if (table === "chat_message_reads") {
+        void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+        return;
+      }
+      if (table === "chat_channels") {
+        // Invites, renames, and deletes change the channel strip and can
+        // orphan the open conversation (deleted channel) or unlock messages
+        // (new member) — refresh all of the chat keys.
+        void qc.invalidateQueries({ queryKey: getListChatChannelsQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
         void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
         return;
       }

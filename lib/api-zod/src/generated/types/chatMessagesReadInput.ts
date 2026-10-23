@@ -16,4 +16,6 @@ export interface ChatMessagesReadInput {
   messageIds: string[];
   scope: ChatMessagesReadInputScope;
   peer?: string | null;
+  /** Invite-only channel id for channel-scope read receipts. */
+  channelId?: string | null;
 }

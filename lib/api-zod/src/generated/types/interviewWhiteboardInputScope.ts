@@ -12,4 +12,5 @@ export type InterviewWhiteboardInputScope = typeof InterviewWhiteboardInputScope
 export const InterviewWhiteboardInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
