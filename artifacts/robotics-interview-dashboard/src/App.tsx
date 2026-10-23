@@ -85,6 +85,7 @@ import PartsLanding from "@/pages/parts-landing";
 import CodeLanding from "@/pages/code-landing";
 import CadLanding from "@/pages/cad-landing";
 import PartsPage from "@/pages/PartsPage";
+import { PrivacyPolicy, TermsOfUse } from "@/pages/legal";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 const WhiteboardEditor = lazy(() => import("./components/WhiteboardEditor").then((m) => ({ default: m.WhiteboardEditor })));
@@ -8356,6 +8357,8 @@ function Router() {
         <Route path="/parts-landing" component={PartsLanding} />
         <Route path="/code-landing" component={CodeLanding} />
         <Route path="/cad-landing" component={CadLanding} />
+        <Route path="/privacy" component={PrivacyPolicy} />
+        <Route path="/terms" component={TermsOfUse} />
         <Route path="/auth" component={Login} />
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>

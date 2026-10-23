@@ -38,6 +38,7 @@
 - [Settings app-adjustment requests](settings-app-adjustment-requests.md) — suggestions sent to Ishaan belong in Settings, not ordinary chat; authors need edit/delete controls.
 - [Natural-language scheduled chat times](natural-language-chat-scheduling.md) — interpret schedule phrases with the existing assistant model in the user's local timezone.
 - [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.
+- [Cross-border data disclosures](cross-border-data-disclosures.md) — operator reports US/Canada storage, globally routed Kilo free models, and no minimum age for applicant records.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
 - [App-level MCP connections](app-level-mcp-connections.md) — keep provider credentials and MCP tools scoped to the signed-in account and active team; don't widen unrelated assistant permissions.
