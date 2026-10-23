@@ -31,6 +31,7 @@ export * from './assistantHistoryItemsItem';
 export * from './assistantInput';
 export * from './assistantInputAttachmentsItem';
 export * from './assistantInputChatContextItem';
+export * from './assistantInputMcpContinuation';
 export * from './assistantInputThinkingLevel';
 export * from './assistantModel';
 export * from './assistantModelList';

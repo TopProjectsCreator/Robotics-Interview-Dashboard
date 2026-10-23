@@ -2756,6 +2756,9 @@ export const AskAssistantBody = zod.object({
   "fileName": zod.string(),
   "objectPath": zod.string()
 })).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "mcpContinuation": zod.object({
+  "endpointUrl": zod.string()
+}).optional().describe('Continue a pending coordinator request after its custom MCP endpoint has connected.'),
   "chatContext": zod.array(zod.object({
   "author": zod.string(),
   "message": zod.string()
@@ -3319,6 +3322,9 @@ export const QueueAssistantPromptBody = zod.object({
   "fileName": zod.string(),
   "objectPath": zod.string()
 })).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "mcpContinuation": zod.object({
+  "endpointUrl": zod.string()
+}).optional().describe('Continue a pending coordinator request after its custom MCP endpoint has connected.'),
   "chatContext": zod.array(zod.object({
   "author": zod.string(),
   "message": zod.string()

@@ -245,7 +245,9 @@ import {
 } from "../lib/assistantGitHub";
 import {
   ASSISTANT_MCP_CONNECTION_REQUEST_TOOL,
+  assistantMcpContinuationIsEligible,
   assistantMcpConnectionRequestEnabled,
+  MCP_CONNECTION_PROMPT_ANSWER,
   parseAssistantMcpConnectionRequest,
   type AssistantMcpConnectionRequest,
 } from "../lib/assistantMcpConnectionRequest";
@@ -2480,17 +2482,48 @@ async function runAssistantTools(
   };
 }
 
-async function saveAssistantAnswer(conversationId: string, question: string, applicantIds: string[], answer: string, activities: AssistantActivity[] = [], teamId?: string | null): Promise<void> {
+async function saveAssistantAnswer(
+  conversationId: string,
+  question: string,
+  applicantIds: string[],
+  answer: string,
+  activities: AssistantActivity[] = [],
+  teamId?: string | null,
+  mcpContinuation = false,
+): Promise<void> {
   const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
-  await db.insert(assistantMessagesTable).values({
-    id: randomUUID(),
-    teamId: team,
-    conversationId,
-    question,
-    answer,
-    applicantIds: JSON.stringify(applicantIds),
-    activities: JSON.stringify(activities),
-  });
+  if (mcpContinuation) {
+    const [pendingMessage] = await db.select({ id: assistantMessagesTable.id })
+      .from(assistantMessagesTable)
+      .where(and(
+        eq(assistantMessagesTable.conversationId, conversationId),
+        teamFilter(assistantMessagesTable.teamId, team),
+        eq(assistantMessagesTable.question, question),
+        eq(assistantMessagesTable.answer, MCP_CONNECTION_PROMPT_ANSWER),
+      ))
+      .orderBy(desc(assistantMessagesTable.createdAt))
+      .limit(1);
+    if (!pendingMessage) throw new Error("The original MCP request is no longer available to continue.");
+    const [updated] = await db.update(assistantMessagesTable).set({
+      answer,
+      activities: JSON.stringify(activities),
+      applicantIds: JSON.stringify(applicantIds),
+    }).where(and(
+      eq(assistantMessagesTable.id, pendingMessage.id),
+      eq(assistantMessagesTable.answer, MCP_CONNECTION_PROMPT_ANSWER),
+    )).returning({ id: assistantMessagesTable.id });
+    if (!updated) throw new Error("The original MCP request has already been continued.");
+  } else {
+    await db.insert(assistantMessagesTable).values({
+      id: randomUUID(),
+      teamId: team,
+      conversationId,
+      question,
+      answer,
+      applicantIds: JSON.stringify(applicantIds),
+      activities: JSON.stringify(activities),
+    });
+  }
   // Re-read: a rename_conversation tool call may have titled it mid-answer.
   const [fresh] = await db.select().from(assistantConversationsTable).where(and(eq(assistantConversationsTable.id, conversationId), teamFilter(assistantConversationsTable.teamId, team)));
   const currentTitle = fresh?.title ?? "New conversation";
@@ -6210,6 +6243,15 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     return;
   }
   const partsMode = conversation.title.startsWith("[Parts] ");
+  let continuationConnectedEndpointUrl: string | undefined;
+  if (parsed.data.mcpContinuation) {
+    if (mcpOnly || partsMode) {
+      res.status(400).json({ error: "Only coordinator custom-MCP requests can be continued." });
+      return;
+    }
+    const connection = await customMcpStatus(account.id, teamId);
+    if (connection.connected) continuationConnectedEndpointUrl = connection.endpointUrl;
+  }
   const disabledTools = parseDisabledAssistantTools(
     (parsed.data as unknown as Record<string, unknown>).disabledTools,
     ALL_ASSISTANT_TOOL_NAMES,
@@ -6247,6 +6289,10 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     ({ tools: customMcpTools, bindings: customMcpBindings } = await listCustomMcpTools(account.id, teamId));
   } catch (error) {
     req.log.warn({ err: error }, "Custom MCP tools unavailable");
+    if (parsed.data.mcpContinuation) {
+      res.status(503).json({ error: "The connected MCP tools could not be loaded. Retry the original request." });
+      return;
+    }
   }
   const activeTools = mcpOnly
     ? [
@@ -6283,12 +6329,33 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     category: applicant.category,
     notes: applicant.notes,
   }));
-  const previousMessages = await db.select().from(assistantMessagesTable)
+  let previousMessages = await db.select().from(assistantMessagesTable)
     .where(and(
       eq(assistantMessagesTable.conversationId, conversation.id),
       teamFilter(assistantMessagesTable.teamId, teamId),
     ))
     .orderBy(asc(assistantMessagesTable.createdAt));
+  if (parsed.data.mcpContinuation) {
+    const pendingMessage = previousMessages.at(-1);
+    if (!assistantMcpContinuationIsEligible({
+      coordinator: !mcpOnly,
+      partsMode,
+      connectionConfirmed: continuationConnectedEndpointUrl === parsed.data.mcpContinuation.endpointUrl,
+      endpointUrl: parsed.data.mcpContinuation.endpointUrl,
+      connectedEndpointUrl: continuationConnectedEndpointUrl,
+      question: parsed.data.question,
+      latestQuestion: pendingMessage?.question,
+      latestAnswer: pendingMessage?.answer,
+    })) {
+      res.status(409).json({
+        error: continuationConnectedEndpointUrl === parsed.data.mcpContinuation.endpointUrl
+          ? "The original MCP request is no longer available to continue."
+          : "The requested MCP endpoint is not connected for this account.",
+      });
+      return;
+    }
+    previousMessages = previousMessages.slice(0, -1);
+  }
   const requestedModel = parsed.data.model?.trim();
   let model = requestedModel || TEXT_MODEL;
   let freeModelIds: string[] = [];
@@ -6812,6 +6879,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         answer,
         activities,
         teamId,
+        Boolean(parsed.data.mcpContinuation),
       );
     } catch (saveError) {
       if (!builderRunId) throw saveError;

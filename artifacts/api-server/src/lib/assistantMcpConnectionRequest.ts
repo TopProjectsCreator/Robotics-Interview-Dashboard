@@ -3,6 +3,27 @@ export type AssistantMcpConnectionRequest = {
   endpointUrl: string;
 };
 
+export const MCP_CONNECTION_PROMPT_ANSWER =
+  "Review the proposed destination below. The server will only be contacted if you choose Connect.";
+
+export function assistantMcpContinuationIsEligible(input: {
+  coordinator: boolean;
+  partsMode: boolean;
+  connectionConfirmed: boolean;
+  endpointUrl: string;
+  connectedEndpointUrl?: string;
+  question: string;
+  latestQuestion?: string;
+  latestAnswer?: string;
+}): boolean {
+  return input.coordinator &&
+    !input.partsMode &&
+    input.connectionConfirmed &&
+    input.connectedEndpointUrl === input.endpointUrl &&
+    input.latestQuestion === input.question &&
+    input.latestAnswer === MCP_CONNECTION_PROMPT_ANSWER;
+}
+
 export function assistantMcpConnectionRequestEnabled(input: {
   coordinator: boolean;
   partsMode: boolean;

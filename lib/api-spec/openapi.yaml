@@ -7097,6 +7097,13 @@ components:
                 type: string
               objectPath:
                 type: string
+        mcpContinuation:
+          type: object
+          description: "Continue a pending coordinator request after its custom MCP endpoint has connected."
+          required: [endpointUrl]
+          properties:
+            endpointUrl:
+              type: string
         chatContext:
           type: array
           description: "Recent interviewer chat messages for conversational context."

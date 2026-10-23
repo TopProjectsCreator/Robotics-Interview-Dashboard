@@ -9,6 +9,8 @@ type AssistantMcpConnectionPromptProps = {
   request: AssistantMcpConnectionRequest;
   connected?: boolean;
   busy?: boolean;
+  continuing?: boolean;
+  continuationError?: string;
   apiKeyRequired?: boolean;
   apiKey?: string;
   apiKeyHeader?: string;
@@ -18,6 +20,7 @@ type AssistantMcpConnectionPromptProps = {
   onApiKeyHeaderChange?: (value: string) => void;
   onApiKeyPrefixChange?: (value: string) => void;
   onConnect: (endpointUrl: string) => void;
+  onResume?: () => void;
   onDismiss: () => void;
 };
 
@@ -25,6 +28,8 @@ export function AssistantMcpConnectionPrompt({
   request,
   connected = false,
   busy = false,
+  continuing = false,
+  continuationError = "",
   apiKeyRequired = false,
   apiKey = "",
   apiKeyHeader = "X-API-Key",
@@ -34,6 +39,7 @@ export function AssistantMcpConnectionPrompt({
   onApiKeyHeaderChange,
   onApiKeyPrefixChange,
   onConnect,
+  onResume,
   onDismiss,
 }: AssistantMcpConnectionPromptProps) {
   return (
@@ -52,7 +58,11 @@ export function AssistantMcpConnectionPrompt({
           </h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             {connected
-              ? "The assistant can use this server's available tools in later turns."
+              ? continuing
+                ? "Connected. The assistant is continuing your original request with this server's tools."
+                : continuationError
+                  ? "The server is connected. Your original request is ready to retry."
+                  : "The assistant can use this server's available tools in later turns."
               : "Review the destination. Nothing is contacted unless you choose Connect."}
           </p>
           <p
@@ -115,6 +125,20 @@ export function AssistantMcpConnectionPrompt({
       )}
 
       {error && <p className="mt-3 text-sm text-destructive" role="alert">{error}</p>}
+      {continuationError && <p className="mt-3 text-sm text-destructive" role="alert" data-testid="assistant-mcp-continuation-error">{continuationError}</p>}
+      {connected && continuationError && onResume && (
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onResume}
+            disabled={continuing || busy}
+            className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+            data-testid="button-retry-assistant-mcp-continuation"
+          >
+            {continuing ? "Continuing…" : "Retry original request"}
+          </button>
+        </div>
+      )}
       {!connected && (
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
@@ -132,7 +156,7 @@ export function AssistantMcpConnectionPrompt({
             className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
             data-testid="button-connect-assistant-mcp"
           >
-            {busy ? "Connecting…" : apiKeyRequired ? "Retry connection" : "Connect"}
+            {busy ? "Connecting…" : apiKeyRequired || error ? "Retry connection" : "Connect"}
           </button>
         </div>
       )}

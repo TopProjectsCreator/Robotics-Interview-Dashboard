@@ -61,7 +61,7 @@ import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
 import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
 import { classifyFile } from "./lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AssistantInput, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
@@ -7092,6 +7092,14 @@ function conversationTitleForWorkspace(title: string, partsMode: boolean): strin
     : title;
 }
 
+function sameCustomMcpEndpoint(left: string, right: string): boolean {
+  try {
+    return new URL(left).toString() === new URL(right).toString();
+  } catch {
+    return false;
+  }
+}
+
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return "";
@@ -7201,10 +7209,30 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     activities: AssistantActivity[];
     connectionRequest?: AssistantMcpConnectionRequest;
     connectionRequestDismissed?: boolean;
+    continuationToken?: string;
   }[]>([]);
   const assistantScopeReady = conversationScopeIdentity === assistantIdentity;
   const visibleHistory = assistantScopeReady ? history : [];
   const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode, assistantIdentity));
+  const activeConversationIdRef = useRef(activeConversationId);
+  activeConversationIdRef.current = activeConversationId;
+  const pendingMcpContinuationRef = useRef<{
+    token: string;
+    identity: string;
+    conversationId: string;
+    endpointUrl: string;
+    payload: AssistantInput;
+  } | null>(null);
+  const [mcpContinuationView, setMcpContinuationView] = useState<{
+    token: string;
+    question: string;
+    endpointUrl: string;
+    status: "ready" | "connecting" | "continuing" | "failed";
+    error: string;
+  } | null>(null);
+  const activeStreamKindRef = useRef<"normal" | "mcp-continuation">("normal");
+  const currentAssistantSessionRef = useRef(assistantIdentity);
+  currentAssistantSessionRef.current = assistantIdentity;
   const [renamingId, setRenamingId] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [selectedModel, setSelectedModel] = useState<string>(() => {
@@ -7410,7 +7438,25 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     setCustomMcpApiKeyPrefix("");
     setCustomMcpError("");
     setConversationScopeIdentity(assistantIdentity);
+    pendingMcpContinuationRef.current = null;
+    continuationLaunchTokenRef.current = null;
+    setMcpContinuationView(null);
   }, [assistantIdentity, partsMode]);
+
+  useEffect(() => {
+    const pending = pendingMcpContinuationRef.current;
+    if (
+      pending &&
+      (pending.identity !== assistantIdentity || pending.conversationId !== activeConversationId)
+    ) {
+      pendingMcpContinuationRef.current = null;
+      continuationLaunchTokenRef.current = null;
+      setMcpContinuationView(null);
+      if (activeStreamKindRef.current === "mcp-continuation") {
+        streamAbort.current?.abort();
+      }
+    }
+  }, [activeConversationId, assistantIdentity]);
 
   useEffect(() => {
     if (!assistantSession.data?.interviewerId) return;
@@ -7453,7 +7499,34 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     return () => { active = false; };
   }, [assistantIdentity]);
 
+  const confirmCustomMcpConnection = async (endpointUrl: string, authToken: string | null) => {
+    const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
+      credentials: "include",
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) return null;
+    const connection = await response.json() as { connected?: boolean; endpointUrl?: string };
+    return connection.connected && typeof connection.endpointUrl === "string" &&
+      sameCustomMcpEndpoint(connection.endpointUrl, endpointUrl)
+      ? connection.endpointUrl
+      : null;
+  };
+
   const connectCustomMcp = async (endpointUrl = customMcpEndpoint) => {
+    const pending = pendingMcpContinuationRef.current;
+    const continuation = pending &&
+      pending.identity === currentAssistantSessionRef.current &&
+      pending.conversationId === activeConversationIdRef.current &&
+      sameCustomMcpEndpoint(pending.endpointUrl, endpointUrl)
+      ? pending
+      : null;
+    if (continuation) setMcpContinuationView({
+      token: continuation.token,
+      question: continuation.payload.question,
+      endpointUrl: continuation.endpointUrl,
+      status: "connecting",
+      error: "",
+    });
     setCustomMcpBusy(true);
     setCustomMcpError("");
     const usesApiKey = customMcpApiKeyRequired && endpointUrl === customMcpEndpoint;
@@ -7470,6 +7543,9 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     if (!usesApiKey && !popup) {
       setCustomMcpError("Allow pop-ups to sign in to this MCP server.");
       setCustomMcpBusy(false);
+      if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+        ? { ...current, status: "ready" }
+        : current);
       return;
     }
     try {
@@ -7493,12 +7569,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       };
       if (!response.ok) throw new Error(result.error || "Could not connect to the MCP server.");
       if (result.connected) {
+        const confirmedEndpoint = await confirmCustomMcpConnection(result.endpointUrl ?? endpointUrl, authToken);
+        if (!confirmedEndpoint) throw new Error("The MCP connection could not be confirmed. You can retry the connection.");
         setCustomMcpConnected(true);
         setCustomMcpApiKeyRequired(false);
         setCustomMcpApiKey("");
-        setCustomMcpEndpoint(result.endpointUrl ?? endpointUrl);
+        setCustomMcpEndpoint(confirmedEndpoint);
         popup?.close();
         setCustomMcpBusy(false);
+        if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
         return;
       }
       if (result.apiKeyRequired) {
@@ -7515,52 +7594,56 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       if (!popup) throw new Error("Allow pop-ups to sign in to this MCP server.");
       popup.location.href = result.authorizationUrl;
       let checks = 0;
+      let checking = false;
       const poll = window.setInterval(async () => {
+        if (checking) return;
+        checking = true;
         checks += 1;
-        if (popup.closed) {
-          try {
-            const status = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
-              credentials: "include",
-              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-            });
-            const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-            if (status.ok && connection.connected && connection.endpointUrl === endpointUrl) {
-              setCustomMcpConnected(true);
-              setCustomMcpEndpoint(connection.endpointUrl ?? endpointUrl);
-            } else {
-              setCustomMcpError("MCP sign-in was not completed. You can retry the connection.");
-            }
-          } catch {
-            setCustomMcpError("Could not check the MCP connection status. You can retry the connection.");
-          }
-          window.clearInterval(poll);
-          setCustomMcpBusy(false);
-          return;
-        }
-        if (checks > 180) {
-          window.clearInterval(poll);
-          setCustomMcpError("MCP sign-in is taking too long. Check the sign-in window or retry.");
-          setCustomMcpBusy(false);
-          return;
-        }
         try {
-          const status = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
-            credentials: "include",
-            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-          });
-          const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-          if (status.ok && connection.connected && connection.endpointUrl === endpointUrl) {
+          const confirmedEndpoint = await confirmCustomMcpConnection(endpointUrl, authToken);
+          if (confirmedEndpoint) {
             setCustomMcpConnected(true);
-            setCustomMcpEndpoint(connection.endpointUrl ?? endpointUrl);
+            setCustomMcpEndpoint(confirmedEndpoint);
             setCustomMcpBusy(false);
             window.clearInterval(poll);
+            if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
+            return;
           }
-        } catch { /* wait for OAuth callback */ }
+          if (popup.closed) {
+            setCustomMcpError("MCP sign-in was not completed. You can retry the connection.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          } else if (checks > 180) {
+            setCustomMcpError("MCP sign-in is taking too long. Check the sign-in window or retry.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          }
+        } catch {
+          if (popup.closed) {
+            setCustomMcpError("Could not confirm the MCP connection. You can retry the connection.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          }
+        } finally {
+          checking = false;
+        }
       }, 1500);
     } catch (error) {
       popup?.close();
       setCustomMcpError(error instanceof Error ? error.message : "Could not connect to this MCP server.");
       setCustomMcpBusy(false);
+      if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+        ? { ...current, status: "ready" }
+        : current);
     }
   };
 
@@ -7741,16 +7824,22 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // The server never stores an MCP connection request, so the saved copy
       // of the turn would come back without it. Carry the request (and the
       // fact that it was dismissed) over from the streamed turn it replaces.
-      const streamedByQuestion = new Map(current.map(entry => [entry.q, entry] as const));
+      const streamedByQuestion = new Map<string, typeof current>();
+      for (const entry of current) {
+        const matching = streamedByQuestion.get(entry.q) ?? [];
+        matching.push(entry);
+        streamedByQuestion.set(entry.q, matching);
+      }
       return [
         ...items.map(item => {
-          const streamed = streamedByQuestion.get(item.question);
+          const streamed = streamedByQuestion.get(item.question)?.shift();
           return {
             q: item.question,
             a: item.answer,
             activities: item.activities ?? [],
             ...(streamed?.connectionRequest ? { connectionRequest: streamed.connectionRequest } : {}),
             ...(streamed?.connectionRequestDismissed ? { connectionRequestDismissed: true } : {}),
+            ...(streamed?.continuationToken ? { continuationToken: streamed.continuationToken } : {}),
           };
         }),
         ...pending,
@@ -7801,18 +7890,283 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     }
   };
 
+  const continuationLaunchTokenRef = useRef<string | null>(null);
+  const runAssistantStream = async (
+    payload: AssistantInput,
+    requestIdentity: string,
+    continuation?: { token: string; endpointUrl: string },
+  ): Promise<boolean> => {
+    const q = payload.question;
+    const conversationId = payload.conversationId ?? "";
+    const requestPayload: AssistantInput = { ...payload };
+    const controller = new AbortController();
+    activeStreamKindRef.current = continuation ? "mcp-continuation" : "normal";
+    setStreamError("");
+    setStreamingText("");
+    setLiveActivities([]);
+    liveActivitiesRef.current = [];
+    streamAbort.current?.abort();
+    streamAbort.current = controller;
+    setIsStreaming(true);
+    const authToken = getStoredAuthToken();
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/ask/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+        body: JSON.stringify(requestPayload),
+        credentials: "include",
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(`Stream failed with status ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalAnswer = "";
+      let connectionRequest: AssistantMcpConnectionRequest | undefined;
+      let serverError = "";
+      let serverCancelled = false;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.split("\n").find(entry => entry.startsWith("data:"));
+          if (!line) continue;
+          let message: {
+            delta?: string;
+            done?: boolean;
+            answer?: string;
+            model?: string;
+            activities?: AssistantActivity[];
+            activity?: AssistantActivity;
+            connectionRequest?: AssistantMcpConnectionRequest;
+            error?: string;
+            cancelled?: boolean;
+          } | null = null;
+          try {
+            message = JSON.parse(line.slice(5).trim()) as {
+              delta?: string;
+              done?: boolean;
+              answer?: string;
+              model?: string;
+              activities?: AssistantActivity[];
+              activity?: AssistantActivity;
+              connectionRequest?: AssistantMcpConnectionRequest;
+              error?: string;
+              cancelled?: boolean;
+            };
+          } catch {
+            continue;
+          }
+          if (!message) continue;
+          if (message.cancelled) serverCancelled = true;
+          if (
+            message.connectionRequest?.type === "custom_mcp_connection" &&
+            typeof message.connectionRequest.endpointUrl === "string"
+          ) {
+            connectionRequest = message.connectionRequest;
+          }
+          if (typeof message.model === "string" && message.model) {
+            rememberModel(message.model);
+            requestPayload.model = message.model;
+          }
+          if (typeof message.delta === "string" && message.delta) {
+            finalAnswer += message.delta;
+            setStreamingText(current => current + (message.delta as string));
+          } else if (message.error) {
+            serverError = message.error;
+          } else if (message.activity) {
+            liveActivitiesRef.current = [...liveActivitiesRef.current, message.activity];
+            setLiveActivities(liveActivitiesRef.current);
+          } else if (message.done) {
+            if (typeof message.answer === "string" && message.answer) finalAnswer = message.answer;
+            if (Array.isArray(message.activities)) {
+              liveActivitiesRef.current = message.activities;
+              setLiveActivities(message.activities);
+            }
+          }
+        }
+      }
+      if (serverError) throw new Error(serverError);
+      if (
+        assistantIdentityRef.current !== requestIdentity ||
+        activeConversationIdRef.current !== conversationId
+      ) return false;
+      if (continuation && pendingMcpContinuationRef.current?.token !== continuation.token) return false;
+      if (serverCancelled) {
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(conversationId) });
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+        if (continuation) {
+          continuationLaunchTokenRef.current = null;
+          setMcpContinuationView({
+            token: continuation.token,
+            question: q,
+            endpointUrl: continuation.endpointUrl,
+            status: "failed",
+            error: "The assistant stopped before finishing. Retry the original request.",
+          });
+        }
+        return false;
+      }
+      const answer = finalAnswer.trim() || "I could not produce an answer for that question.";
+      if (continuation) {
+        setHistory(current => current.map(entry =>
+          entry.continuationToken === continuation.token
+            ? { ...entry, a: answer, activities: liveActivitiesRef.current }
+            : entry,
+        ));
+        pendingMcpContinuationRef.current = null;
+        continuationLaunchTokenRef.current = null;
+        setMcpContinuationView(null);
+      } else {
+        const continuationToken = connectionRequest && !partsMode && canManageAssistantTools
+          ? crypto.randomUUID()
+          : undefined;
+        setHistory(current => [...current, {
+          q,
+          a: answer,
+          activities: liveActivitiesRef.current,
+          ...(connectionRequest ? { connectionRequest } : {}),
+          ...(continuationToken ? { continuationToken } : {}),
+        }]);
+        if (connectionRequest && !partsMode && canManageAssistantTools) {
+          const token = continuationToken!;
+          const resumePayload = { ...requestPayload };
+          delete resumePayload.mcpContinuation;
+          pendingMcpContinuationRef.current = {
+            token,
+            identity: requestIdentity,
+            conversationId,
+            endpointUrl: connectionRequest.endpointUrl,
+            payload: resumePayload,
+          };
+          setMcpContinuationView({
+            token,
+            question: q,
+            endpointUrl: connectionRequest.endpointUrl,
+            status: "ready",
+            error: "",
+          });
+        }
+      }
+      setAttachments([]);
+      void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+      void queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+      if (partsMode) {
+        void queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
+        void queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
+      }
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return false;
+      if (assistantIdentityRef.current !== requestIdentity || activeConversationIdRef.current !== conversationId) return false;
+      if (continuation) {
+        const message = serverErrorMessage(
+          error,
+          "The response stream disconnected. Your original request is ready to retry.",
+        );
+        continuationLaunchTokenRef.current = null;
+        setMcpContinuationView({
+          token: continuation.token,
+          question: q,
+          endpointUrl: continuation.endpointUrl,
+          status: "failed",
+          error: message,
+        });
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+      } else {
+        questionDraftRef.current = questionDraftRef.current || q;
+        setQuestion(current => current || q);
+        setStreamError(serverErrorMessage(
+          error,
+          "The response stream disconnected. The server may still be processing this prompt; check its status before retrying.",
+        ));
+      }
+      void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(conversationId) });
+      return false;
+    } finally {
+      if (streamAbort.current === controller) {
+        setIsStreaming(false);
+        setStreamingText("");
+        activeStreamKindRef.current = "normal";
+        if (assistantIdentityRef.current === requestIdentity) void refreshOnshapeStatus(true);
+      }
+    }
+  };
+
+  const resumeMcpContinuation = async (
+    pending: NonNullable<typeof pendingMcpContinuationRef.current>,
+    confirmedEndpointUrl?: string,
+  ) => {
+    if (
+      pendingMcpContinuationRef.current?.token !== pending.token ||
+      currentAssistantSessionRef.current !== pending.identity ||
+      activeConversationIdRef.current !== pending.conversationId ||
+      continuationLaunchTokenRef.current === pending.token ||
+      isStreaming
+    ) return;
+    // Reserve this turn before the confirmation request so double clicks or
+    // duplicate completion signals cannot race into two assistant streams.
+    continuationLaunchTokenRef.current = pending.token;
+    setMcpContinuationView({
+      token: pending.token,
+      question: pending.payload.question,
+      endpointUrl: pending.endpointUrl,
+      status: "continuing",
+      error: "",
+    });
+    const authToken = getStoredAuthToken();
+    const confirmedEndpoint = confirmedEndpointUrl ??
+      await confirmCustomMcpConnection(pending.endpointUrl, authToken).catch(() => null);
+    if (
+      pendingMcpContinuationRef.current?.token !== pending.token ||
+      continuationLaunchTokenRef.current !== pending.token ||
+      currentAssistantSessionRef.current !== pending.identity ||
+      activeConversationIdRef.current !== pending.conversationId
+    ) return;
+    if (!confirmedEndpoint || !sameCustomMcpEndpoint(confirmedEndpoint, pending.endpointUrl)) {
+      continuationLaunchTokenRef.current = null;
+      setMcpContinuationView({
+        token: pending.token,
+        question: pending.payload.question,
+        endpointUrl: pending.endpointUrl,
+        status: "failed",
+        error: "The MCP connection could not be confirmed. Retry the connection to continue.",
+      });
+      return;
+    }
+    await runAssistantStream({
+      ...pending.payload,
+      mcpContinuation: { endpointUrl: confirmedEndpoint },
+    }, pending.identity, { token: pending.token, endpointUrl: pending.endpointUrl });
+  };
+
+  const invalidatePendingMcpContinuation = () => {
+    pendingMcpContinuationRef.current = null;
+    continuationLaunchTokenRef.current = null;
+    setMcpContinuationView(null);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!question.trim() || !activeConversationId) return;
     const requestIdentity = assistantIdentity;
     const q = question.trim();
+    // A new manual turn takes precedence over an unstarted MCP continuation.
+    invalidatePendingMcpContinuation();
     const hasPersistedWork = (assistantPromptQueue.data?.items ?? []).some(item =>
       item.status === "queued" || item.status === "running",
     );
     if (isStreaming || hasPersistedWork) {
       if (queuePrompt.isPending || stopPrompt.isPending) return;
       const queuedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-      const queuedPayload = {
+      const queuedPayload: AssistantInput = {
         question: q,
         model: availableModel || undefined,
         ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
@@ -7841,139 +8195,16 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     questionDraftRef.current = "";
     setQuestion("");
     setStreamError("");
-    setStreamingText("");
-    setLiveActivities([]);
-    liveActivitiesRef.current = [];
-    streamAbort.current?.abort();
-    const controller = new AbortController();
-    streamAbort.current = controller;
-    setIsStreaming(true);
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}), conversationId: activeConversationId, ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
-    const authToken = getStoredAuthToken();
-    void (async () => {
-      try {
-        const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/ask/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-          body: JSON.stringify(payload),
-          credentials: "include",
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) throw new Error(`Stream failed with status ${response.status}`);
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let finalAnswer = "";
-        let connectionRequest: AssistantMcpConnectionRequest | undefined;
-        let serverError = "";
-        let serverCancelled = false;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-          for (const part of parts) {
-            const line = part.split("\n").find(entry => entry.startsWith("data:"));
-            if (!line) continue;
-            let message: {
-              delta?: string;
-              done?: boolean;
-              answer?: string;
-              model?: string;
-              activities?: AssistantActivity[];
-              activity?: AssistantActivity;
-              connectionRequest?: AssistantMcpConnectionRequest;
-              error?: string;
-              cancelled?: boolean;
-            } | null = null;
-            try {
-              message = JSON.parse(line.slice(5).trim()) as {
-                delta?: string;
-                done?: boolean;
-                answer?: string;
-                model?: string;
-                activities?: AssistantActivity[];
-                activity?: AssistantActivity;
-                connectionRequest?: AssistantMcpConnectionRequest;
-                error?: string;
-                cancelled?: boolean;
-              };
-            } catch {
-              continue;
-            }
-            if (!message) continue;
-            if (message.cancelled) serverCancelled = true;
-            if (
-              message.connectionRequest?.type === "custom_mcp_connection" &&
-              typeof message.connectionRequest.endpointUrl === "string"
-            ) {
-              connectionRequest = message.connectionRequest;
-            }
-            if (typeof message.model === "string" && message.model) {
-              rememberModel(message.model);
-              payload.model = message.model;
-            }
-            if (typeof message.delta === "string" && message.delta) {
-              finalAnswer += message.delta;
-              setStreamingText(current => current + (message.delta as string));
-            } else if (message.error) {
-              serverError = message.error;
-            } else if (message.activity) {
-              const activity = message.activity;
-              liveActivitiesRef.current = [...liveActivitiesRef.current, activity];
-              setLiveActivities(liveActivitiesRef.current);
-            } else if (message.done) {
-              if (typeof message.answer === "string" && message.answer) finalAnswer = message.answer;
-              if (Array.isArray(message.activities)) {
-                liveActivitiesRef.current = message.activities;
-                setLiveActivities(message.activities);
-              }
-            }
-          }
-        }
-        if (serverError) throw new Error(serverError);
-        if (assistantIdentityRef.current !== requestIdentity) return;
-        if (serverCancelled) {
-          void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
-          void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-          return;
-        }
-        setHistory(current => [...current, {
-          q,
-          a: finalAnswer.trim() || "I could not produce an answer for that question.",
-          activities: liveActivitiesRef.current,
-          ...(connectionRequest ? { connectionRequest } : {}),
-        }]);
-        setAttachments([]);
-        queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
-        if (partsMode) {
-          queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (assistantIdentityRef.current !== requestIdentity) return;
-        questionDraftRef.current = questionDraftRef.current || q;
-        setQuestion(current => current || q);
-        setStreamError(serverErrorMessage(
-          error,
-          "The response stream disconnected. The server may still be processing this prompt; check its status before retrying.",
-        ));
-        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
-        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-      } finally {
-        setIsStreaming(false);
-        setStreamingText("");
-        void refreshOnshapeStatus(true);
-      }
-    })();
+    const payload: AssistantInput = {
+      question: q,
+      model: availableModel || undefined,
+      ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+      conversationId: activeConversationId,
+      ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}),
+      ...(disabledTools.length ? { disabledTools } : {}),
+    };
+    void runAssistantStream(payload, requestIdentity);
   };
 
   const newConversation = () => {
@@ -8094,7 +8325,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onCustomMcpApiKeyPrefixChange={setCustomMcpApiKeyPrefix}
             customMcpBusy={assistantScopeReady && customMcpBusy}
             customMcpError={assistantScopeReady ? customMcpError : ""}
-            onConnectCustomMcp={connectCustomMcp}
+            onConnectCustomMcp={() => void connectCustomMcp()}
             onDisconnectCustomMcp={disconnectCustomMcp}
           />
         </div>
@@ -8121,20 +8352,34 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           {!activeMessages.isLoading && !visibleHistory.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
           {visibleHistory.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} />{assistantScopeReady && !partsMode && item.connectionRequest && <AssistantMcpConnectionPrompt
             request={item.connectionRequest}
-            connected={customMcpConnected && customMcpEndpoint === item.connectionRequest.endpointUrl}
-            busy={customMcpBusy && customMcpEndpoint === item.connectionRequest.endpointUrl}
-            apiKeyRequired={customMcpApiKeyRequired && customMcpEndpoint === item.connectionRequest.endpointUrl}
-            apiKey={customMcpEndpoint === item.connectionRequest.endpointUrl ? customMcpApiKey : ""}
+            connected={customMcpConnected && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            busy={customMcpBusy && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            continuing={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "continuing"}
+            continuationError={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "failed" ? mcpContinuationView.error : ""}
+            apiKeyRequired={customMcpApiKeyRequired && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            apiKey={sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl) ? customMcpApiKey : ""}
             apiKeyHeader={customMcpApiKeyHeader}
             apiKeyPrefix={customMcpApiKeyPrefix}
-            error={customMcpEndpoint === item.connectionRequest.endpointUrl ? customMcpError : ""}
+            error={sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl) ? customMcpError : ""}
             onApiKeyChange={setCustomMcpApiKey}
             onApiKeyHeaderChange={setCustomMcpApiKeyHeader}
             onApiKeyPrefixChange={setCustomMcpApiKeyPrefix}
             onConnect={(endpointUrl) => void connectCustomMcp(endpointUrl)}
-            onDismiss={() => setHistory(current => current.map((entry, index) =>
-              index === i ? { ...entry, connectionRequest: undefined, connectionRequestDismissed: true } : entry,
-            ))}
+            onResume={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "failed"
+              ? () => {
+                const pending = pendingMcpContinuationRef.current;
+                if (pending) void resumeMcpContinuation(pending);
+              }
+              : undefined}
+            onDismiss={() => {
+              const pending = pendingMcpContinuationRef.current;
+              if (pending?.token === item.continuationToken) {
+                invalidatePendingMcpContinuation();
+              }
+              setHistory(current => current.map((entry, index) =>
+                index === i ? { ...entry, connectionRequest: undefined, connectionRequestDismissed: true } : entry,
+              ));
+            }}
           />}</div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-100 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
           {promptRuns.length > 0 && <section
             aria-label="Assistant prompt queue"
@@ -8162,7 +8407,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             })}
           </section>}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
-          {isStreaming && assistantScopeReady && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
+          {isStreaming && assistantScopeReady && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{activeStreamKindRef.current === "mcp-continuation" && <p className="mb-2 text-xs font-semibold text-[#16869a]" data-testid="assistant-mcp-continuing">Continuing your original request with the connected MCP tools…</p>}{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>{activeStreamKindRef.current === "mcp-continuation" ? "Continuing your request…" : "Reading the field..."}</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
           {streamError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
           {assistantScopeReady && onshapeReconnectRequired && !onshapeConnected && (

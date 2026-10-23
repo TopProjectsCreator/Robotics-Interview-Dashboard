@@ -2355,6 +2355,13 @@ export type AssistantInputAttachmentsItem = {
   objectPath: string;
 };
 
+/**
+ * Continue a pending coordinator request after its custom MCP endpoint has connected.
+ */
+export type AssistantInputMcpContinuation = {
+  endpointUrl: string;
+};
+
 export type AssistantInputChatContextItem = {
   author: string;
   message: string;
@@ -2375,6 +2382,8 @@ export interface AssistantInput {
   disabledTools?: string[];
   /** Files attached in chat (already uploaded to storage). */
   attachments?: AssistantInputAttachmentsItem[];
+  /** Continue a pending coordinator request after its custom MCP endpoint has connected. */
+  mcpContinuation?: AssistantInputMcpContinuation;
   /** Recent interviewer chat messages for conversational context. */
   chatContext?: AssistantInputChatContextItem[];
 }
