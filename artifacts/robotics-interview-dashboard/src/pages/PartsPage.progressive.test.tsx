@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   consumeSearch: vi.fn(),
   createItem: vi.fn(),
+  getDetails: vi.fn(),
   identifyImage: vi.fn(),
   sessionTeams: new WeakMap<object, string>(),
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
@@ -88,18 +89,7 @@ vi.mock("@workspace/api-client-react", async () => {
       const teamId = getTeamId();
       return useQuery({
         queryKey: options?.query?.queryKey ?? ["/parts/catalog", partId, "details"],
-        queryFn: async () => {
-          const items = mocks.teamInventory.get(teamId) ?? [];
-          const item = items.find((candidate) => candidate.id === partId);
-          if (!item) throw new Error("Catalog item not found.");
-          return {
-            item,
-            priceSnapshots: [testPriceSnapshot],
-            locations: [...new Set(items
-              .map((candidate) => candidate.storageLocation)
-              .filter((location): location is string => typeof location === "string" && Boolean(location)))],
-          };
-        },
+        queryFn: () => mocks.getDetails(partId, teamId),
         ...options?.query,
       });
     },
@@ -198,6 +188,19 @@ vi.mock("@/components/PartsRobotDetailsDialog", () => ({
 
 import PartsPage from "./PartsPage";
 
+async function loadMockPartDetails(partId: string, teamId: string) {
+  const items = mocks.teamInventory.get(teamId) ?? [];
+  const item = items.find((candidate) => candidate.id === partId);
+  if (!item) throw new Error("Catalog item not found.");
+  return {
+    item,
+    priceSnapshots: [testPriceSnapshot],
+    locations: [...new Set(items
+      .map((candidate) => candidate.storageLocation)
+      .filter((location): location is string => typeof location === "string" && Boolean(location)))],
+  };
+}
+
 const earlyProduct = {
   vendorKey: "andymark",
   vendorName: "AndyMark",
@@ -277,6 +280,7 @@ describe("progressive Parts search", () => {
     mocks.teamInventory.clear();
     mocks.teamInventory.set("team-a", []);
     mocks.teamInventory.set("team-b", []);
+    mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
@@ -693,5 +697,116 @@ describe("progressive Parts search", () => {
     expect(screen.getByDisplayValue("CAD")).toBeInTheDocument();
     expect(screen.getByDisplayValue("https://images.example.test/bracket-v2.png")).toBeInTheDocument();
     expect(reloadedDialog.getByText("Supplier description for the bracket.")).toBeInTheDocument();
+  });
+
+  it("retries a temporary part-details failure in the open dialog", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-retry-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Retryable bracket",
+      sku: "RETRY-1",
+      category: "Structure",
+      description: "Saved supplier details.",
+      productUrl: "https://www.andymark.com/products/retryable-bracket",
+      imageUrl: null,
+      storageLocation: "Shelf B",
+      inventoryNotes: "Team-specific note.",
+      quantityOwned: 2,
+      quantityAssigned: 0,
+      quantityAvailable: 2,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset()
+      .mockRejectedValueOnce(Object.assign(new Error("Service unavailable"), { status: 503 }))
+      .mockImplementationOnce(loadMockPartDetails);
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Retryable bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Retryable bracket" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The saved part details couldn’t be loaded. Check your connection and try again.",
+    );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry loading details for Retryable bracket" }));
+    expect(await within(dialog).findByLabelText("Storage location")).toHaveValue("Shelf B");
+    expect(within(dialog).getByText("Saved supplier details.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Team-specific note.")).toBeInTheDocument();
+    expect(mocks.getDetails).toHaveBeenCalledTimes(2);
+  });
+
+  it("explains when a saved part is missing or belongs to another team without offering a misleading retry", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-missing-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Unavailable bracket",
+      sku: "GONE-1",
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 1,
+      quantityAssigned: 0,
+      quantityAvailable: 1,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset().mockRejectedValue(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Unavailable bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "This part is no longer available in your team’s inventory. It may have been removed or belong to another team.",
+    );
+    expect(within(dialog).queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it("asks the user to sign in again when authorization has expired", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-auth-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Protected bracket",
+      sku: "AUTH-1",
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 1,
+      quantityAssigned: 0,
+      quantityAvailable: 1,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset().mockRejectedValue(
+      Object.assign(new Error("Authentication required"), { status: 401 }),
+    );
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Protected bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Your session has expired. Sign in again to view this part’s details.",
+    );
+    expect(within(dialog).queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

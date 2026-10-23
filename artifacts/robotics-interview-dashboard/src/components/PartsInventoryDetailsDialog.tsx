@@ -34,6 +34,41 @@ function formatDate(value: string | Date): string {
   return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString();
 }
 
+function getDetailsLoadError(error: unknown): { message: string; retryable: boolean } {
+  const status = error && typeof error === "object" && "status" in error
+    ? Number((error as { status?: unknown }).status)
+    : null;
+
+  if (status === 401) {
+    return {
+      message: "Your session has expired. Sign in again to view this part’s details.",
+      retryable: false,
+    };
+  }
+  if (status === 403) {
+    return {
+      message: "You don’t have permission to view this part’s details.",
+      retryable: false,
+    };
+  }
+  if (status === 404) {
+    return {
+      message: "This part is no longer available in your team’s inventory. It may have been removed or belong to another team.",
+      retryable: false,
+    };
+  }
+  if (status !== null && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return {
+      message: "The saved part details could not be requested. Check the part and try again later.",
+      retryable: false,
+    };
+  }
+  return {
+    message: "The saved part details couldn’t be loaded. Check your connection and try again.",
+    retryable: true,
+  };
+}
+
 export function PartsInventoryDetailsDialog({
   item,
   onClose,
@@ -55,6 +90,9 @@ export function PartsInventoryDetailsDialog({
   const updateMutation = useUpdatePartsCatalogDetails();
   const details = detailsQuery.data;
   const current = details?.item ?? item;
+  const detailsLoadError = detailsQuery.isError
+    ? getDetailsLoadError(detailsQuery.error)
+    : null;
   const [imageUrl, setImageUrl] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [costCurrency, setCostCurrency] = useState("");
@@ -121,14 +159,28 @@ export function PartsInventoryDetailsDialog({
             </DialogHeader>
 
             {detailsQuery.isLoading ? (
-              <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <div role="status" aria-live="polite" className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
                 <Loader2 className="animate-spin" size={16} aria-hidden="true" />
                 Loading part details…
               </div>
             ) : detailsQuery.isError ? (
-              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                Could not load the saved part details. Close and reopen this dialog to try again.
-              </p>
+              <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+                <p role="alert" className="text-sm text-destructive">
+                  {detailsLoadError?.message}
+                </p>
+                {detailsLoadError?.retryable && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void detailsQuery.refetch()}
+                    disabled={detailsQuery.isFetching}
+                    aria-label={`Retry loading details for ${current.name}`}
+                  >
+                    {detailsQuery.isFetching && <Loader2 className="animate-spin" size={16} aria-hidden="true" />}
+                    Try again
+                  </Button>
+                )}
+              </div>
             ) : details ? (
               <>
                 <section className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
