@@ -2,16 +2,6 @@ import { BrandMark } from "@/components/BrandMark";
 
 const updatedDate = "October 22, 2026";
 
-function LegalNotice() {
-  return (
-    <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-      These are draft, informational policies and are not legal advice. Have a
-      qualified lawyer review them for the operator’s location and the people
-      whose information is handled before relying on them.
-    </div>
-  );
-}
-
 function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-background px-4 py-6 text-foreground sm:px-6 sm:py-10">
@@ -27,7 +17,6 @@ function LegalShell({ title, children }: { title: string; children: React.ReactN
           <a href="/auth" className="text-sm font-semibold text-primary underline-offset-4 hover:underline">Open the workspace</a>
         </header>
 
-        <LegalNotice />
         <article className="prose prose-slate max-w-none dark:prose-invert prose-headings:scroll-mt-8 prose-a:text-primary prose-li:marker:text-muted-foreground">
           <p className="not-prose mono text-xs uppercase tracking-[.15em] text-muted-foreground">Last updated {updatedDate}</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">{title}</h1>
@@ -122,7 +111,8 @@ export function PrivacyPolicy() {
       </p>
       <ul>
         <li><strong>Supabase:</strong> database and file storage for team records and uploaded files.</li>
-        <li><strong>Replit:</strong> application hosting and runtime infrastructure; server location may vary.</li>
+        <li><strong>Railway and Render:</strong> production application hosting and runtime infrastructure; server location may vary.</li>
+        <li><strong>Replit and GitHub:</strong> development/build workflow and source-code hosting. They are not the production runtime hosts.</li>
         <li><strong>Kilo and the selected upstream model provider:</strong> AI prompts, relevant context, and files needed to generate a response.</li>
         <li><strong>Pollinations:</strong> image-generation prompts when that feature is used.</li>
         <li><strong>User-connected services:</strong> a connected MCP server or other integration receives information needed for the action a user requests.</li>
