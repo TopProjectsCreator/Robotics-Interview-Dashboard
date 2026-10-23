@@ -38,7 +38,10 @@ import type {
   AssistantInput,
   AssistantModelList,
   AssistantPendingQuestionsResponse,
+  AssistantPromptQueue,
+  AssistantPromptRun,
   AssistantQuestionAnswersInput,
+  AssistantQueueInput,
   AssistantResponse,
   AssistantSkill,
   AssistantSkillInput,
@@ -9579,6 +9582,226 @@ export function useGetAssistantConversationMessages<TData = Awaited<ReturnType<t
 
 
 
+
+export const getGetAssistantPromptQueueUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/queue`
+}
+
+/**
+ * @summary Get persisted prompt run and queue statuses
+ */
+export const getAssistantPromptQueue = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantPromptQueue> => {
+
+  return customFetch<AssistantPromptQueue>(getGetAssistantPromptQueueUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantPromptQueueQueryKey = (conversationId: string,) => {
+    return [
+    `/api/assistant/conversations/${conversationId}/queue`
+    ] as const;
+    }
+
+
+export const getGetAssistantPromptQueueQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantPromptQueue>>, TError = ErrorType<void>>(conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantPromptQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantPromptQueueQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantPromptQueue>>> = ({ signal }) => getAssistantPromptQueue(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantPromptQueue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantPromptQueueQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantPromptQueue>>>
+export type GetAssistantPromptQueueQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get persisted prompt run and queue statuses
+ */
+
+export function useGetAssistantPromptQueue<TData = Awaited<ReturnType<typeof getAssistantPromptQueue>>, TError = ErrorType<void>>(
+ conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantPromptQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantPromptQueueQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getQueueAssistantPromptUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/queue`
+}
+
+/**
+ * @summary Queue an assistant prompt behind the active run
+ */
+export const queueAssistantPrompt = async (conversationId: string,
+    assistantQueueInput: AssistantQueueInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantPromptRun> => {
+
+  return customFetch<AssistantPromptRun>(getQueueAssistantPromptUrl(conversationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantQueueInput)
+  }
+);}
+
+
+
+
+
+export const getQueueAssistantPromptMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queueAssistantPrompt>>, TError,{conversationId: string;data: BodyType<AssistantQueueInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof queueAssistantPrompt>>, TError,{conversationId: string;data: BodyType<AssistantQueueInput>}, TContext> => {
+
+const mutationKey = ['queueAssistantPrompt'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof queueAssistantPrompt>>, {conversationId: string;data: BodyType<AssistantQueueInput>}> = (props) => {
+          const {conversationId,data} = props ?? {};
+
+          return  queueAssistantPrompt(conversationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QueueAssistantPromptMutationResult = NonNullable<Awaited<ReturnType<typeof queueAssistantPrompt>>>
+    export type QueueAssistantPromptMutationBody = BodyType<AssistantQueueInput>
+    export type QueueAssistantPromptMutationError = ErrorType<void>
+
+    /**
+ * @summary Queue an assistant prompt behind the active run
+ */
+export const useQueueAssistantPrompt = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queueAssistantPrompt>>, TError,{conversationId: string;data: BodyType<AssistantQueueInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof queueAssistantPrompt>>,
+        TError,
+        {conversationId: string;data: BodyType<AssistantQueueInput>},
+        TContext
+      > => {
+      return useMutation(getQueueAssistantPromptMutationOptions(options));
+    }
+
+export const getStopAssistantPromptUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/stop`
+}
+
+/**
+ * @summary Stop the active assistant prompt
+ */
+export const stopAssistantPrompt = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantPromptQueue> => {
+
+  return customFetch<AssistantPromptQueue>(getStopAssistantPromptUrl(conversationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getStopAssistantPromptMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAssistantPrompt>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopAssistantPrompt>>, TError,{conversationId: string}, TContext> => {
+
+const mutationKey = ['stopAssistantPrompt'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopAssistantPrompt>>, {conversationId: string}> = (props) => {
+          const {conversationId} = props ?? {};
+
+          return  stopAssistantPrompt(conversationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopAssistantPromptMutationResult = NonNullable<Awaited<ReturnType<typeof stopAssistantPrompt>>>
+
+    export type StopAssistantPromptMutationError = ErrorType<void>
+
+    /**
+ * @summary Stop the active assistant prompt
+ */
+export const useStopAssistantPrompt = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAssistantPrompt>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopAssistantPrompt>>,
+        TError,
+        {conversationId: string},
+        TContext
+      > => {
+      return useMutation(getStopAssistantPromptMutationOptions(options));
+    }
 
 export const getGetPartsDashboardUrl = () => {
 

@@ -9,12 +9,12 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
-  useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
+   useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
@@ -7363,9 +7363,22 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       refetchInterval: streamHealthy ? false : (3000),
     },
   });
+  const assistantPromptQueue = useGetAssistantPromptQueue(activeConversationId, {
+    query: {
+      queryKey: [...getGetAssistantPromptQueueQueryKey(activeConversationId), assistantIdentity],
+      enabled: Boolean(activeConversationId && assistantSession.data?.interviewerId),
+      refetchInterval: query =>
+        isStreaming || query.state.data?.isRunning ||
+        query.state.data?.items.some(item => item.status === "queued")
+          ? 1500
+          : false,
+    },
+  });
   const createConversation = useCreateAssistantConversation();
   const renameConversation = useRenameAssistantConversation();
   const deleteConversation = useDeleteAssistantConversation();
+  const queuePrompt = useQueueAssistantPrompt();
+  const stopPrompt = useStopAssistantPrompt();
   const prompts = !canManageAssistantTools
     ? ["What can my connected Onshape MCP do?", "Summarize information from my custom MCP server.", "Use my connected MCP tools to answer a question."]
     : partsMode
@@ -7745,6 +7758,27 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     });
   }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
 
+  const completedPromptIds = useRef(new Set<string>());
+  useEffect(() => {
+    const newlyCompleted = (assistantPromptQueue.data?.items ?? []).some(item => {
+      if (item.status !== "completed" || completedPromptIds.current.has(item.id)) return false;
+      completedPromptIds.current.add(item.id);
+      return true;
+    });
+    if (!newlyCompleted || !activeConversationId) return;
+    void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
+    void queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+    if (partsMode) {
+      void queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
+    }
+    void refreshOnshapeStatus(true);
+  }, [activeConversationId, assistantPromptQueue.data?.items, partsMode]);
+
   const attachFile = async (file: File) => {
     setAttachError("");
     const isExcel = /\.xlsx?$/i.test(file.name);
@@ -7769,9 +7803,40 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!question.trim() || !activeConversationId || isStreaming) return;
+    if (!question.trim() || !activeConversationId) return;
     const requestIdentity = assistantIdentity;
     const q = question.trim();
+    const hasPersistedWork = (assistantPromptQueue.data?.items ?? []).some(item =>
+      item.status === "queued" || item.status === "running",
+    );
+    if (isStreaming || hasPersistedWork) {
+      if (queuePrompt.isPending || stopPrompt.isPending) return;
+      const queuedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
+      const queuedPayload = {
+        question: q,
+        model: availableModel || undefined,
+        ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+        conversationId: activeConversationId,
+        ...(canManageAssistantTools && queuedFiles.length ? { attachments: queuedFiles } : {}),
+        ...(disabledTools.length ? { disabledTools } : {}),
+      };
+      queuePrompt.mutate({ conversationId: activeConversationId, data: queuedPayload }, {
+        onSuccess: () => {
+          if (assistantIdentityRef.current !== requestIdentity) return;
+          questionDraftRef.current = "";
+          setQuestion("");
+          setAttachments([]);
+          setStreamError("");
+          void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+        },
+        onError: error => {
+          if (assistantIdentityRef.current !== requestIdentity) return;
+          setStreamError(serverErrorMessage(error, "Could not queue this prompt. Your text is still here so you can retry."));
+        },
+      });
+      return;
+    }
+    if (ask.isPending) return;
     onshapeRetryQuestionRef.current = q;
     questionDraftRef.current = "";
     setQuestion("");
@@ -7802,6 +7867,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         let finalAnswer = "";
         let connectionRequest: AssistantMcpConnectionRequest | undefined;
         let serverError = "";
+        let serverCancelled = false;
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -7820,6 +7886,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               activity?: AssistantActivity;
               connectionRequest?: AssistantMcpConnectionRequest;
               error?: string;
+              cancelled?: boolean;
             } | null = null;
             try {
               message = JSON.parse(line.slice(5).trim()) as {
@@ -7831,11 +7898,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
                 activity?: AssistantActivity;
                 connectionRequest?: AssistantMcpConnectionRequest;
                 error?: string;
+                cancelled?: boolean;
               };
             } catch {
               continue;
             }
             if (!message) continue;
+            if (message.cancelled) serverCancelled = true;
             if (
               message.connectionRequest?.type === "custom_mcp_connection" &&
               typeof message.connectionRequest.endpointUrl === "string"
@@ -7866,6 +7935,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         }
         if (serverError) throw new Error(serverError);
         if (assistantIdentityRef.current !== requestIdentity) return;
+        if (serverCancelled) {
+          void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+          void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
+          return;
+        }
         setHistory(current => [...current, {
           q,
           a: finalAnswer.trim() || "I could not produce an answer for that question.",
@@ -7885,31 +7959,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        // Streaming failed mid-flight; fall back to the classic request.
-        ask.mutate({ data: payload }, {
-          onSuccess: response => {
-            if (assistantIdentityRef.current !== requestIdentity) return;
-            if (response.model) rememberModel(response.model);
-            setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
-            setAttachments([]);
-            void refreshOnshapeStatus(true);
-            queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-            queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
-            if (partsMode) {
-              queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
-              queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
-            }
-          },
-          onError: fallback => {
-            if (assistantIdentityRef.current !== requestIdentity) return;
-            setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again."));
-            void refreshOnshapeStatus(true);
-          },
-        });
+        if (assistantIdentityRef.current !== requestIdentity) return;
+        questionDraftRef.current = questionDraftRef.current || q;
+        setQuestion(current => current || q);
+        setStreamError(serverErrorMessage(
+          error,
+          "The response stream disconnected. The server may still be processing this prompt; check its status before retrying.",
+        ));
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
       } finally {
         setIsStreaming(false);
         setStreamingText("");
@@ -7964,6 +8022,20 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     });
   };
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
+  const promptRuns = assistantPromptQueue.data?.items ?? [];
+  const assistantIsWorking = isStreaming || promptRuns.some(item =>
+    item.status === "queued" || item.status === "running",
+  );
+  const stopAssistant = () => {
+    if (!activeConversationId || stopPrompt.isPending) return;
+    stopPrompt.mutate({ conversationId: activeConversationId }, {
+      onSuccess: () => {
+        setStreamError("");
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+      },
+      onError: error => setStreamError(serverErrorMessage(error, "Could not stop the assistant. Try again.")),
+    });
+  };
   const assistantHeading = canManageAssistantTools
     ? {
       eyebrow: partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace",
@@ -8064,6 +8136,31 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               index === i ? { ...entry, connectionRequest: undefined, connectionRequestDismissed: true } : entry,
             ))}
           />}</div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-100 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
+          {promptRuns.length > 0 && <section
+            aria-label="Assistant prompt queue"
+            aria-live="polite"
+            data-testid="assistant-prompt-queue"
+            className="space-y-2 rounded-xl border border-border bg-card p-3 text-card-foreground"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt status</p>
+            {promptRuns.map(run => {
+              const statusLabel = run.status === "running" ? "Running" :
+                run.status === "queued" ? "Queued" :
+                run.status === "completed" ? "Completed" :
+                run.status === "failed" ? "Failed" :
+                run.status === "cancelled" ? "Stopped" : "Interrupted";
+              const isFailure = run.status === "failed" || run.status === "interrupted";
+              return <div
+                key={run.id}
+                data-testid={`assistant-prompt-run-${run.id}`}
+                className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-xs"
+              >
+                <span className="min-w-0 flex-1 whitespace-pre-wrap">{run.prompt}</span>
+                <span className={isFailure ? "font-semibold text-destructive" : "font-semibold text-muted-foreground"}>{statusLabel}</span>
+                {run.error && <p className="w-full text-destructive" role={isFailure ? "alert" : undefined}>{run.error}</p>}
+              </div>;
+            })}
+          </section>}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
           {isStreaming && assistantScopeReady && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
           {ask.isError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
@@ -8090,7 +8187,21 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         </div>
         {assistantScopeReady && canManageAssistantTools && attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
         {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
-        <form onSubmit={submit} className="flex w-full min-w-0 gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 w-0 min-w-0 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-base md:text-sm outline-none focus:border-[#16869a]" /><button disabled={!assistantScopeReady || ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5"><ArrowRight size={16} /> Ask</button></form>
+        <form onSubmit={submit} className="flex w-full min-w-0 gap-2 border-t border-[#edf1f1] pt-4">
+          {!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}
+          <input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 w-0 min-w-0 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-base md:text-sm outline-none focus:border-[#16869a]" />
+          {assistantIsWorking ? question.trim() ? (
+            <button type="submit" disabled={!assistantScopeReady || queuePrompt.isPending || !activeConversationId} data-testid="button-queue-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5">
+              <Send size={16} /> {queuePrompt.isPending ? "Queueing…" : "Queue"}
+            </button>
+          ) : (
+            <button type="button" onClick={stopAssistant} disabled={!assistantScopeReady || stopPrompt.isPending || !activeConversationId} aria-label="Stop assistant" data-testid="button-stop-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-45 sm:px-5">
+              <X size={16} /> {stopPrompt.isPending ? "Stopping…" : "Stop"}
+            </button>
+          ) : (
+            <button type="submit" disabled={!assistantScopeReady || ask.isPending || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5"><ArrowRight size={16} /> Ask</button>
+          )}
+        </form>
         {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
       {partsMode && canManageAssistantTools ? (

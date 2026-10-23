@@ -8,7 +8,7 @@ import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
-import { startScheduledChatDispatcher } from "./routes/robotics";
+import { startAssistantPromptDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
@@ -102,6 +102,7 @@ async function ensureSchema(): Promise<void> {
     "application_imports",
     "assistant_conversations",
     "assistant_messages",
+    "assistant_prompt_runs",
     "assistant_skills",
     "audit_logs",
     "broadcast_acks",
@@ -549,6 +550,24 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "assistant_conversations" add column if not exists "owner_id" text`,
     `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_prompt_runs" (
+       "id" text primary key,
+       "team_id" text not null,
+       "conversation_id" text not null,
+       "owner_id" text,
+       "account_id" text not null,
+       "prompt" text not null,
+       "payload" jsonb not null,
+       "status" text not null check ("status" in ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
+       "answer" text,
+       "error" text,
+       "activities" text not null default '[]',
+       "cancel_requested" boolean not null default false,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "assistant_prompt_runs_conversation_created_idx" on "assistant_prompt_runs" ("team_id", "conversation_id", "created_at")`,
+    `create unique index if not exists "assistant_prompt_runs_one_running_per_conversation" on "assistant_prompt_runs" ("team_id", "conversation_id") where "status" = 'running'`,
     `create table if not exists "assistant_skills" (
        "id" text primary key,
        "team_id" text not null,
@@ -746,6 +765,8 @@ server.listen(port, () => {
       // Server-side scheduled chat delivery: posts due messages even when no
       // browser is open.
       startScheduledChatDispatcher();
+      // Persisted assistant prompts continue independently of the browser tab.
+      startAssistantPromptDispatcher();
       // Team inbox: email forwarded into the team mailbox is posted into the
       // chat. Inert until a mailbox and an allow list are configured.
       startMailboxPoller("default");

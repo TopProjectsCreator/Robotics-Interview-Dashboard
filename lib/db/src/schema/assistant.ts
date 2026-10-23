@@ -1,5 +1,6 @@
 import { createInsertSchema } from "drizzle-zod";
-import { boolean, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 
 export const assistantConversationsTable = pgTable("assistant_conversations", {
@@ -21,6 +22,28 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   activities: text("activities").notNull().default("[]"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const assistantPromptRunsTable = pgTable("assistant_prompt_runs", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  conversationId: text("conversation_id").notNull(),
+  ownerId: text("owner_id"),
+  accountId: text("account_id").notNull(),
+  prompt: text("prompt").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  status: text("status").notNull(),
+  answer: text("answer"),
+  error: text("error"),
+  activities: text("activities").notNull().default("[]"),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_prompt_runs_conversation_created_idx").on(table.teamId, table.conversationId, table.createdAt),
+  uniqueIndex("assistant_prompt_runs_one_running_per_conversation")
+    .on(table.teamId, table.conversationId)
+    .where(sql`${table.status} = 'running'`),
+]);
 
 export const assistantBuilderRunsTable = pgTable("assistant_builder_runs", {
   id: text("id").primaryKey(),

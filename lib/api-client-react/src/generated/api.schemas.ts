@@ -2379,6 +2379,39 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export type AssistantQueueInput = AssistantInput;
+
+export type AssistantPromptRunStatus = typeof AssistantPromptRunStatus[keyof typeof AssistantPromptRunStatus];
+
+
+export const AssistantPromptRunStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
+} as const;
+
+export interface AssistantPromptRun {
+  id: string;
+  conversationId: string;
+  prompt: string;
+  status: AssistantPromptRunStatus;
+  /** @nullable */
+  answer?: string | null;
+  /** @nullable */
+  error?: string | null;
+  activities?: AssistantActivity[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssistantPromptQueue {
+  items: AssistantPromptRun[];
+  isRunning: boolean;
+}
+
 export type AssistantQuestionAnswersInputAnswers = { [key: string]: unknown };
 
 export interface AssistantQuestionAnswersInput {

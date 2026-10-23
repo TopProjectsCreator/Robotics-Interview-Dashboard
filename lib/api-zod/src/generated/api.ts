@@ -3270,6 +3270,108 @@ export const GetAssistantConversationMessagesResponse = zod.object({
 
 
 /**
+ * @summary Get persisted prompt run and queue statuses
+ */
+export const GetAssistantPromptQueueParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const GetAssistantPromptQueueResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "isRunning": zod.boolean()
+})
+
+
+/**
+ * @summary Queue an assistant prompt behind the active run
+ */
+export const QueueAssistantPromptParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const queueAssistantPromptBodyOneModelMax = 200;
+
+
+
+export const QueueAssistantPromptBody = zod.object({
+  "question": zod.string(),
+  "model": zod.string().max(queueAssistantPromptBodyOneModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
+  "thinkingLevel": zod.enum(['low', 'medium', 'high']).optional().describe('Optional model-supported reasoning effort. Omit for automatic\/default reasoning.'),
+  "conversationId": zod.string().optional(),
+  "applicantIds": zod.array(zod.string()).optional(),
+  "disabledTools": zod.array(zod.string()).optional().describe('Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called.'),
+  "attachments": zod.array(zod.object({
+  "fileName": zod.string(),
+  "objectPath": zod.string()
+})).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "chatContext": zod.array(zod.object({
+  "author": zod.string(),
+  "message": zod.string()
+})).optional().describe('Recent interviewer chat messages for conversational context.')
+})
+
+export const QueueAssistantPromptResponse = zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Stop the active assistant prompt
+ */
+export const StopAssistantPromptParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const StopAssistantPromptResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "isRunning": zod.boolean()
+})
+
+
+/**
  * @summary Get parts dashboard totals, vendors, and robots
  */
 export const getPartsDashboardResponseVendorsItemLastSyncOneItemCountMin = 0;

@@ -1,9 +1,16 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantSkillsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, hasSecondary, runWithInstance, type DbInstance } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
+  GetAssistantPromptQueueParams,
+  GetAssistantPromptQueueResponse,
+  QueueAssistantPromptParams,
+  QueueAssistantPromptBody,
+  QueueAssistantPromptResponse,
+  StopAssistantPromptParams,
+  StopAssistantPromptResponse,
   InterpretApplicantSearchBody,
   InterpretApplicantSearchResponse,
   AdvanceQueueBody,
@@ -142,7 +149,7 @@ import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResu
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
-import { authenticatedInterviewerId, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
@@ -259,6 +266,8 @@ const pendingAssistantQuestions = new Map<string, {
   builderRunId?: string;
 }>();
 const activeBuilderRuns = new Set<string>();
+const activeAssistantPromptControllers = new Map<string, AbortController>();
+let assistantPromptDispatcherStarted = false;
 const BUILDER_RUN_HEARTBEAT_MS = 10_000;
 const BUILDER_RUN_STALE_MS = 45_000;
 const objectStorageService = new ObjectStorageService();
@@ -277,6 +286,199 @@ function assistantConversationOwnerFilter(account: { id: string; role: string })
   return account.role === "coordinator"
     ? isNull(assistantConversationsTable.ownerId)
     : eq(assistantConversationsTable.ownerId, account.id);
+}
+
+function assistantPromptRunResponse(run: typeof assistantPromptRunsTable.$inferSelect) {
+  return {
+    id: run.id,
+    conversationId: run.conversationId,
+    prompt: run.prompt,
+    status: run.status,
+    answer: run.answer,
+    error: run.error,
+    activities: parseStoredActivities(run.activities),
+    createdAt: run.createdAt.toISOString(),
+    updatedAt: run.updatedAt.toISOString(),
+  };
+}
+
+async function assistantPromptQueueResponse(conversationId: string, teamId: string) {
+  const items = await db.select().from(assistantPromptRunsTable).where(and(
+    eq(assistantPromptRunsTable.conversationId, conversationId),
+    eq(assistantPromptRunsTable.teamId, teamId),
+  )).orderBy(desc(assistantPromptRunsTable.createdAt), desc(assistantPromptRunsTable.id)).limit(100);
+  items.reverse();
+  const result = items.map(assistantPromptRunResponse);
+  return GetAssistantPromptQueueResponse.parse({
+    items: result,
+    isRunning: result.some((item) => item.status === "running"),
+  });
+}
+
+const ASSISTANT_PROMPT_STALE_MS = 60_000;
+const ASSISTANT_PROMPT_INSTANCE_RETRY_MS = 15_000;
+const assistantPromptInstanceRetryAfter = new Map<DbInstance, number>();
+
+function assistantPromptWorkerProof(runId: string, teamId: string, accountId: string): string {
+  const secret = process.env.SESSION_SECRET || "development-session-secret";
+  return createHmac("sha256", secret).update(`assistant-prompt:${teamId}:${accountId}:${runId}`).digest("hex");
+}
+
+async function claimQueuedAssistantPrompt(): Promise<{
+  id: string;
+  teamId: string;
+  accountId: string;
+  payload: Record<string, unknown>;
+  instance: DbInstance;
+} | undefined> {
+  const instances: DbInstance[] = hasSecondary() ? ["primary", "secondary"] : ["primary"];
+  for (const instance of instances) {
+    if ((assistantPromptInstanceRetryAfter.get(instance) ?? 0) > Date.now()) continue;
+    try {
+      const claimed = await runWithInstance(instance, async () => {
+        const result = await pool.query<{
+          id: string;
+          team_id: string;
+          account_id: string;
+          payload: Record<string, unknown>;
+        }>(
+          `update "assistant_prompt_runs"
+            set "status" = 'running', "updated_at" = now(), "cancel_requested" = false
+          where "id" = (
+            select queued."id"
+              from "assistant_prompt_runs" queued
+             where queued."status" = 'queued'
+               and not exists (
+                 select 1 from "assistant_prompt_runs" active
+                  where active."team_id" = queued."team_id"
+                    and active."conversation_id" = queued."conversation_id"
+                    and active."status" = 'running'
+               )
+             order by queued."created_at", queued."id"
+             limit 1
+             for update skip locked
+          )
+            and "status" = 'queued'
+          returning "id", "team_id", "account_id", "payload"`,
+        );
+        return result.rows[0];
+      });
+      assistantPromptInstanceRetryAfter.delete(instance);
+      if (claimed) {
+        return {
+          id: claimed.id,
+          teamId: claimed.team_id,
+          accountId: claimed.account_id,
+          payload: claimed.payload,
+          instance,
+        };
+      }
+    } catch (error) {
+      assistantPromptInstanceRetryAfter.set(instance, Date.now() + ASSISTANT_PROMPT_INSTANCE_RETRY_MS);
+      logger.warn({ err: error, instance }, "Assistant prompt queue database is unavailable; retrying later");
+    }
+  }
+  return undefined;
+}
+
+async function setAssistantPromptRunFailure(runId: string, instance: DbInstance, message: string): Promise<void> {
+  await runWithInstance(instance, () => db.update(assistantPromptRunsTable).set({
+    status: "failed",
+    error: message,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(assistantPromptRunsTable.id, runId),
+    eq(assistantPromptRunsTable.status, "running"),
+  )));
+}
+
+async function executeQueuedAssistantPrompt(run: {
+  id: string;
+  teamId: string;
+  accountId: string;
+  payload: Record<string, unknown>;
+  instance: DbInstance;
+}): Promise<void> {
+  const port = Number.parseInt(process.env.PORT || "5000", 10);
+  const token = createInterviewerSession(run.accountId, run.instance);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/assistant/ask/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "x-assistant-run-id": run.id,
+        "x-assistant-run-proof": assistantPromptWorkerProof(run.id, run.teamId, run.accountId),
+      },
+      body: JSON.stringify(run.payload),
+    });
+    if (!response.ok || !response.body) {
+      await setAssistantPromptRunFailure(run.id, run.instance, "The queued prompt could not start after the server reconnected.");
+      return;
+    }
+    const reader = response.body.getReader();
+    try {
+      while (!(await reader.read()).done) {
+        // Drain the SSE response to keep the worker-owned request alive.
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    await runWithInstance(run.instance, async () => {
+      const [latest] = await db.select({ status: assistantPromptRunsTable.status })
+        .from(assistantPromptRunsTable)
+        .where(eq(assistantPromptRunsTable.id, run.id)).limit(1);
+      if (latest?.status === "running") {
+        await setAssistantPromptRunFailure(run.id, run.instance, "The assistant stopped before saving this queued prompt.");
+      }
+    });
+  } catch (error) {
+    logger.error({ err: error, runId: run.id, teamId: run.teamId }, "Queued assistant prompt execution failed");
+    await setAssistantPromptRunFailure(run.id, run.instance, "The queued prompt could not finish. Later prompts remain queued and will continue.");
+  }
+}
+
+async function recoverStaleAssistantPromptRuns(instance: DbInstance): Promise<void> {
+  if ((assistantPromptInstanceRetryAfter.get(instance) ?? 0) > Date.now()) return;
+  try {
+    await runWithInstance(instance, () => db.update(assistantPromptRunsTable).set({
+      status: "interrupted",
+      error: "The server restarted during this prompt. It was not retried to avoid repeating completed tool actions.",
+      updatedAt: new Date(),
+    }).where(and(
+      eq(assistantPromptRunsTable.status, "running"),
+      lt(assistantPromptRunsTable.updatedAt, new Date(Date.now() - ASSISTANT_PROMPT_STALE_MS)),
+    )));
+    assistantPromptInstanceRetryAfter.delete(instance);
+  } catch (error) {
+    assistantPromptInstanceRetryAfter.set(instance, Date.now() + ASSISTANT_PROMPT_INSTANCE_RETRY_MS);
+    logger.warn({ err: error, instance }, "Assistant prompt recovery database is unavailable; retrying later");
+  }
+}
+
+export function startAssistantPromptDispatcher(): void {
+  if (assistantPromptDispatcherStarted) return;
+  assistantPromptDispatcherStarted = true;
+  let dispatching = false;
+  const dispatch = async () => {
+    if (dispatching) return;
+    dispatching = true;
+    try {
+      const instances: DbInstance[] = hasSecondary() ? ["primary", "secondary"] : ["primary"];
+      for (const instance of instances) {
+        await recoverStaleAssistantPromptRuns(instance);
+      }
+      const run = await claimQueuedAssistantPrompt();
+      if (run) await executeQueuedAssistantPrompt(run);
+    } catch (error) {
+      logger.error({ err: error }, "Assistant prompt queue polling failed");
+    } finally {
+      dispatching = false;
+    }
+  };
+  const timer = setInterval(() => { void dispatch(); }, 1500);
+  timer.unref();
+  void dispatch();
 }
 
 async function assistantAccountForRequest(req: Request, res: ExpressResponse) {
@@ -5854,6 +6056,108 @@ router.post("/assistant/questions/:questionId/answer", requireCoordinator, async
   res.json({ submitted: true, resumed: !isStale, status: isStale ? "interrupted" : "running" });
 });
 
+router.get("/assistant/conversations/:conversationId/queue", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetAssistantPromptQueueParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  res.json(await assistantPromptQueueResponse(conversation.id, teamId));
+});
+
+router.post("/assistant/conversations/:conversationId/queue", requireAdmin, async (req, res): Promise<void> => {
+  const params = QueueAssistantPromptParams.safeParse(req.params);
+  const body = QueueAssistantPromptBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    const message = !params.success ? params.error.message : !body.success ? body.error.message : "Invalid queue prompt.";
+    res.status(400).json({ error: message });
+    return;
+  }
+  if (body.data.conversationId && body.data.conversationId !== params.data.conversationId) {
+    res.status(400).json({ error: "The prompt must target this conversation." });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const conversationOwnerId = account.role === "coordinator" ? null : account.id;
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const id = randomUUID();
+  const payload = { ...body.data, conversationId: conversation.id };
+  const [run] = await db.insert(assistantPromptRunsTable).values({
+    id,
+    teamId,
+    conversationId: conversation.id,
+    ownerId: conversationOwnerId,
+    accountId: account.id,
+    prompt: body.data.question,
+    payload,
+    status: "queued",
+    activities: "[]",
+  }).returning();
+  if (!run) {
+    res.status(503).json({ error: "The prompt could not be queued. Try again." });
+    return;
+  }
+  res.status(201).json(QueueAssistantPromptResponse.parse(assistantPromptRunResponse(run)));
+});
+
+router.post("/assistant/conversations/:conversationId/stop", requireAdmin, async (req, res): Promise<void> => {
+  const params = StopAssistantPromptParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const [activeRun] = await db.update(assistantPromptRunsTable).set({
+    cancelRequested: true,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(assistantPromptRunsTable.conversationId, conversation.id),
+    eq(assistantPromptRunsTable.teamId, teamId),
+    eq(assistantPromptRunsTable.status, "running"),
+  )).returning({ id: assistantPromptRunsTable.id });
+  if (activeRun) activeAssistantPromptControllers.get(activeRun.id)?.abort();
+  res.json(await assistantPromptQueueResponse(conversation.id, teamId));
+});
+
 // NOTE: Orval cannot express SSE token streams; the /assistant page uses a manual fetch reader.
 router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<void> => {
   const parsed = AskAssistantBody.safeParse(req.body);
@@ -5868,6 +6172,29 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     return;
   }
   const teamId = await requestTeamId(req);
+  const delegatedRunId = req.get("x-assistant-run-id")?.trim();
+  let delegatedRun: typeof assistantPromptRunsTable.$inferSelect | undefined;
+  if (delegatedRunId) {
+    [delegatedRun] = await db.select().from(assistantPromptRunsTable).where(and(
+      eq(assistantPromptRunsTable.id, delegatedRunId),
+      eq(assistantPromptRunsTable.teamId, teamId),
+      eq(assistantPromptRunsTable.accountId, account.id),
+      eq(assistantPromptRunsTable.status, "running"),
+    )).limit(1);
+    const proof = req.get("x-assistant-run-proof") ?? "";
+    const expectedProof = delegatedRun
+      ? assistantPromptWorkerProof(delegatedRun.id, delegatedRun.teamId, delegatedRun.accountId)
+      : "";
+    const proofBuffer = Buffer.from(proof);
+    const expectedProofBuffer = Buffer.from(expectedProof);
+    const proofMatches = proofBuffer.length === expectedProofBuffer.length &&
+      timingSafeEqual(proofBuffer, expectedProofBuffer);
+    if (!delegatedRun || delegatedRun.prompt !== parsed.data.question ||
+      delegatedRun.conversationId !== parsed.data.conversationId || !proofMatches) {
+      res.status(404).json({ error: "Queued assistant prompt not found." });
+      return;
+    }
+  }
   const mcpOnly = account.role !== "coordinator";
   const isCustomWorkspaceBuilderRun = !mcpOnly &&
     /^(Build a custom workspace app for the team\.|Revise custom workspace draft )/i.test(parsed.data.question);
@@ -6032,6 +6359,56 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     (error as { status: unknown }).status === 429;
   let builderHeartbeat: ReturnType<typeof setInterval> | undefined;
   let builderRunCompleted = false;
+  const promptRunId = delegatedRun?.id ?? randomUUID();
+  if (!delegatedRun) {
+    try {
+      await db.insert(assistantPromptRunsTable).values({
+        id: promptRunId,
+        teamId,
+        conversationId: conversation.id,
+        ownerId: conversationOwnerId,
+        accountId: account.id,
+        prompt: parsed.data.question,
+        payload: parsed.data,
+        status: "running",
+        activities: "[]",
+      });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+        res.status(409).json({ error: "An assistant prompt is already running. Queue this prompt instead." });
+        return;
+      }
+      throw error;
+    }
+  }
+  const promptAbort = new AbortController();
+  activeAssistantPromptControllers.set(promptRunId, promptAbort);
+  const promptHeartbeat = setInterval(() => {
+    void db.select({ cancelRequested: assistantPromptRunsTable.cancelRequested })
+      .from(assistantPromptRunsTable)
+      .where(and(
+        eq(assistantPromptRunsTable.id, promptRunId),
+        eq(assistantPromptRunsTable.teamId, teamId),
+        eq(assistantPromptRunsTable.status, "running"),
+      )).limit(1)
+      .then(async ([run]) => {
+        if (!run || run.cancelRequested) {
+          promptAbort.abort();
+          return;
+        }
+        await db.update(assistantPromptRunsTable)
+          .set({ updatedAt: new Date() })
+          .where(and(
+            eq(assistantPromptRunsTable.id, promptRunId),
+            eq(assistantPromptRunsTable.teamId, teamId),
+            eq(assistantPromptRunsTable.status, "running"),
+          ));
+      })
+      .catch((error) => {
+        req.log.warn({ err: error }, "Assistant prompt heartbeat could not be confirmed");
+        promptAbort.abort();
+      });
+  }, BUILDER_RUN_HEARTBEAT_MS);
   if (builderRunId) {
     await db.insert(assistantBuilderRunsTable).values({
       id: builderRunId,
@@ -6142,7 +6519,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
             : "auto" as const,
         } : {}),
         stream: true,
-      });
+      }, { signal: promptAbort.signal });
       let text = "";
       let reasoning = "";
       const slots: { id: string; function: { name: string; arguments: string } }[] = [];
@@ -6210,6 +6587,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     let streamCalls = first.calls;
     let streamRound = 0;
     while (streamCalls.length > 0) {
+      if (promptAbort.signal.aborted) break;
       send({ status: "working" });
       const executed = await runAssistantTools(streamCalls, JSON.stringify(context), {
         renameConversation: async (title: string) => {
@@ -6240,6 +6618,14 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         send({ model });
       }
       activities.push(...executed.activities);
+      await db.update(assistantPromptRunsTable).set({
+        activities: JSON.stringify(activities),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantPromptRunsTable.id, promptRunId),
+        eq(assistantPromptRunsTable.teamId, teamId),
+        eq(assistantPromptRunsTable.status, "running"),
+      ));
       if (builderRunId) {
         await db.update(assistantBuilderRunsTable).set({
           activities: JSON.stringify(activities),
@@ -6254,6 +6640,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       for (const connectionRequest of executed.connectionRequests) {
         send({ connectionRequest });
       }
+      if (promptAbort.signal.aborted) break;
       if (executed.connectionRequests.length > 0) {
         if (!answer.trim()) {
           answer = "Review the proposed destination below. The server will only be contacted if you choose Connect.";
@@ -6339,6 +6726,14 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
           send({ model });
         }
         activities.push(...executed.activities);
+        await db.update(assistantPromptRunsTable).set({
+          activities: JSON.stringify(activities),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(assistantPromptRunsTable.id, promptRunId),
+          eq(assistantPromptRunsTable.teamId, teamId),
+          eq(assistantPromptRunsTable.status, "running"),
+        ));
         if (builderRunId) {
           await db.update(assistantBuilderRunsTable).set({
             activities: JSON.stringify(activities),
@@ -6350,6 +6745,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
           ));
         }
         for (const activity of executed.activities) send({ activity });
+      if (promptAbort.signal.aborted) throw new Error("Assistant prompt stopped by the user.");
         if (executed.outgoingCalls.length > 0) {
           send({ status: "working" });
           const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
@@ -6368,6 +6764,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         }
       }
     }
+    if (promptAbort.signal.aborted) throw new Error("Assistant prompt stopped by the user.");
     answer = stripPseudoToolCalls(answer);
     if (!answer.trim() && activities.length > 0) {
       try {
@@ -6420,11 +6817,44 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       if (!builderRunId) throw saveError;
       req.log.warn({ err: saveError }, "Builder result is saved, but assistant history could not be updated");
     }
+    await db.update(assistantPromptRunsTable).set({
+      status: "completed",
+      answer,
+      error: null,
+      activities: JSON.stringify(activities),
+      updatedAt: new Date(),
+    }).where(and(
+      eq(assistantPromptRunsTable.id, promptRunId),
+      eq(assistantPromptRunsTable.teamId, teamId),
+      eq(assistantPromptRunsTable.status, "running"),
+    ));
     send({ done: true, answer, activities, model });
     res.end();
   } catch (error) {
     const limited = isRateLimit(error);
-    req.log.error({ err: error }, "Assistant stream failed");
+    const cancelled = promptAbort.signal.aborted;
+    if (cancelled) {
+      await db.update(assistantPromptRunsTable).set({
+        status: "cancelled",
+        error: "Stopped by the user.",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantPromptRunsTable.id, promptRunId),
+        eq(assistantPromptRunsTable.teamId, teamId),
+        eq(assistantPromptRunsTable.status, "running"),
+      ));
+    } else {
+      await db.update(assistantPromptRunsTable).set({
+        status: "failed",
+        error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantPromptRunsTable.id, promptRunId),
+        eq(assistantPromptRunsTable.teamId, teamId),
+        eq(assistantPromptRunsTable.status, "running"),
+      ));
+    }
+    if (!cancelled) req.log.error({ err: error }, "Assistant stream failed");
     if (builderRunId && !builderRunCompleted) {
       await db.update(assistantBuilderRunsTable).set({
         status: "failed",
@@ -6436,9 +6866,12 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         eq(assistantBuilderRunsTable.coordinatorId, account.id),
       )).catch((saveError) => req.log.warn({ err: saveError }, "Builder failure status could not be saved"));
     }
-    send({ error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
+    if (cancelled) send({ cancelled: true });
+    else send({ error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
     res.end();
   } finally {
+    clearInterval(promptHeartbeat);
+    activeAssistantPromptControllers.delete(promptRunId);
     if (builderHeartbeat) clearInterval(builderHeartbeat);
     if (builderRunId) activeBuilderRuns.delete(builderRunId);
   }
@@ -6948,6 +7381,31 @@ router.delete("/assistant/conversations/:conversationId", requireAdmin, async (r
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
+  const activeRuns = await db.select({ id: assistantPromptRunsTable.id })
+    .from(assistantPromptRunsTable)
+    .where(and(
+      eq(assistantPromptRunsTable.conversationId, conversation.id),
+      eq(assistantPromptRunsTable.teamId, teamId),
+      eq(assistantPromptRunsTable.status, "running"),
+    ));
+  for (const run of activeRuns) activeAssistantPromptControllers.get(run.id)?.abort();
+  await db.update(assistantPromptRunsTable).set({
+    cancelRequested: true,
+    updatedAt: new Date(),
+  }).where(and(
+    eq(assistantPromptRunsTable.conversationId, conversation.id),
+    eq(assistantPromptRunsTable.teamId, teamId),
+    eq(assistantPromptRunsTable.status, "running"),
+  ));
+  await db.update(assistantPromptRunsTable).set({
+    status: "cancelled",
+    error: "The conversation was deleted before this prompt ran.",
+    updatedAt: new Date(),
+  }).where(and(
+    eq(assistantPromptRunsTable.conversationId, conversation.id),
+    eq(assistantPromptRunsTable.teamId, teamId),
+    eq(assistantPromptRunsTable.status, "queued"),
+  ));
   await db.delete(assistantMessagesTable).where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)));
   await db.delete(assistantConversationsTable).where(and(
     eq(assistantConversationsTable.id, conversation.id),

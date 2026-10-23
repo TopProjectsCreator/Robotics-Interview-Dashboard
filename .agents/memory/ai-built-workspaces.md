@@ -9,6 +9,12 @@ Custom workspaces should support arbitrary interactive apps, while generated cod
 
 Workspace-builder and `/assistant` agent runs must continue on the server after the browser tab closes, and their tool activity must be reviewable when the user returns.
 
+On server restart, resume prompts that are still queued, but mark an already-running prompt interrupted instead of replaying it. Tool side effects may have completed before their progress was persisted.
+
+**Why:** Re-running an in-flight assistant prompt can repeat external or workspace changes that already succeeded.
+
+**How to apply:** Only make interrupted runs automatically retryable after the involved actions have durable checkpoints or idempotency protection.
+
 Generated workspace apps must follow the host Robotics dashboard's shared visual style, including its palette, compact typography, card treatment, and light/dark themes; they should not invent a separate brand or duplicate the global navigation.
 
 Before a custom workspace is reported finished or published, an independent critique agent must complete exactly five sequential rounds, each returning exactly 10 ranked actionable flaws with 1–10 scores. A second independent reviewer must verify every required fix; unresolved findings block the next round and publishing.

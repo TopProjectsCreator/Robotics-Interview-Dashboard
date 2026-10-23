@@ -2460,6 +2460,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantHistory"
+  /assistant/conversations/{conversationId}/queue:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    get:
+      operationId: getAssistantPromptQueue
+      tags: [assistant]
+      summary: Get persisted prompt run and queue statuses
+      responses:
+        "200":
+          description: Prompt runs for the authorized conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptQueue"
+        "404":
+          description: Conversation not found
+    post:
+      operationId: queueAssistantPrompt
+      tags: [assistant]
+      summary: Queue an assistant prompt behind the active run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQueueInput"
+      responses:
+        "201":
+          description: Prompt added to the conversation queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptRun"
+        "404":
+          description: Conversation not found
+  /assistant/conversations/{conversationId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    post:
+      operationId: stopAssistantPrompt
+      tags: [assistant]
+      summary: Stop the active assistant prompt
+      responses:
+        "200":
+          description: Stop requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptQueue"
+        "404":
+          description: Conversation not found
   /parts/dashboard:
     get:
       operationId: getPartsDashboard
@@ -7052,6 +7103,45 @@ components:
                 type: string
               message:
                 type: string
+    AssistantQueueInput:
+      allOf:
+        - $ref: "#/components/schemas/AssistantInput"
+      required: [question]
+    AssistantPromptRun:
+      type: object
+      required: [id, conversationId, prompt, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled, interrupted]
+        answer:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    AssistantPromptQueue:
+      type: object
+      required: [items, isRunning]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantPromptRun"
+        isRunning:
+          type: boolean
     AssistantQuestionAnswersInput:
       type: object
       required: [answers]
