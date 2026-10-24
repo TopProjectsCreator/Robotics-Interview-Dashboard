@@ -145,7 +145,7 @@ export function DialogHost() {
       backdropClassName="bg-[#112433]/55 dark:bg-[#050d13]/80"
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]"
+        className="mx-auto w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]"
         data-testid="app-dialog-panel"
       >
         <div className="flex items-start justify-between gap-3">
