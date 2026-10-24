@@ -182,6 +182,58 @@ describe("custom workspace version history", () => {
   });
 });
 
+describe("automatic custom workspace critiques", () => {
+  it("starts the critique agent after generation without waiting for Publish", async () => {
+    const draft = {
+      ...workspace,
+      status: "draft",
+      critiqueRounds: 0,
+      verifiedCritiqueRounds: 0,
+    };
+    let streamCalls = 0;
+    let critiquePrompt = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") {
+        return Response.json({
+          workspaces: streamCalls > 0
+            ? [{ ...draft, critiqueRounds: streamCalls > 1 ? 5 : 0, verifiedCritiqueRounds: streamCalls > 1 ? 5 : 0 }]
+            : [],
+        });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/assistant/ask/stream") {
+        streamCalls += 1;
+        const { question } = JSON.parse(String(init?.body)) as { question: string };
+        if (streamCalls === 2) critiquePrompt = question;
+        return new Response(`data: ${JSON.stringify({ done: true, answer: "Build step complete." })}\n\n`, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+      target: { value: "Create a team planner" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+
+    await waitFor(() => expect(streamCalls).toBe(2));
+    expect(critiquePrompt).toContain("Revise custom workspace draft custom-app-1");
+    expect(critiquePrompt).toContain("do not wait for Publish");
+    expect(critiquePrompt).toContain("verify_custom_workspace_fixes");
+    expect(screen.getByText("Complete critique round 1 of 5")).toBeInTheDocument();
+  });
+});
+
 describe("custom workspace visual publish review", () => {
   it("automatically runs and verifies the required critique rounds before retrying publish", async () => {
     const draft = { ...workspace, status: "draft" };

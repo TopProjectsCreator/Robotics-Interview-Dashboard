@@ -7920,6 +7920,14 @@ components:
         updatedAt:
           type: string
           format: date-time
+        critiqueRounds:
+          type: integer
+          minimum: 0
+          maximum: 5
+        verifiedCritiqueRounds:
+          type: integer
+          minimum: 0
+          maximum: 5
     CustomWorkspaceEnvelope:
       type: object
       required: [workspace]

@@ -329,6 +329,8 @@ type WorkspaceRow = {
   allowedInterviewerIds: string[];
   createdAt: Date | string;
   updatedAt: Date | string;
+  critiqueRounds: number;
+  verifiedCritiqueRounds: number;
 };
 
 function bodyObject(value: unknown): Record<string, unknown> {
@@ -400,7 +402,8 @@ async function accessibleWorkspace(
   const result = await pool.query<WorkspaceRow>(
     `select "id", "title", "description", "html", "capabilities", "status",
             "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
-            "created_at" as "createdAt",
+            "created_at" as "createdAt", "critique_rounds" as "critiqueRounds",
+            "verified_critique_rounds" as "verifiedCritiqueRounds",
             "updated_at" as "updatedAt"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
@@ -448,7 +451,9 @@ router.get("/custom-workspaces", requireCustomWorkspaceAdmin, async (req, res): 
   const result = await pool.query(
     `select "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
             "allowed_interviewer_ids" as "allowedInterviewerIds",
-            "created_at" as "createdAt", "updated_at" as "updatedAt"
+            "created_at" as "createdAt", "updated_at" as "updatedAt",
+            "critique_rounds" as "critiqueRounds",
+            "verified_critique_rounds" as "verifiedCritiqueRounds"
        from "custom_workspaces"
       where ${teamSqlCondition('"team_id"', "$1")}
         and (("status" = 'published' and (

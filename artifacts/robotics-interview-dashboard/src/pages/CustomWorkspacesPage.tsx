@@ -7,7 +7,7 @@ import { getStoredAuthToken } from "../authSession";
 import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 
 type Capability = CustomWorkspace["capabilities"][number];
-type Workspace = CustomWorkspace;
+type Workspace = CustomWorkspace & { critiqueRounds?: number; verifiedCritiqueRounds?: number };
 type Version = CustomWorkspaceVersion;
 type WorkspaceSourceFile = { path: string; content: string };
 type VersionPreview = Version & { html: string; capabilities: Capability[]; sourceFiles: WorkspaceSourceFile[] };
@@ -177,6 +177,8 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
 }
 
 const API = "/api/custom-workspaces";
+const critiqueContinuationPrompt = (workspaceId: string) =>
+  `Revise custom workspace draft ${workspaceId}. The initial build is saved. Start or continue the mandatory five-round independent critique now; do not wait for Publish. Inspect the current saved source, call critique_custom_workspace for rounds 1 through 5 in order, and call verify_custom_workspace_fixes after fixing each round's eligible findings. For rounds 1–4 fix every score above 6 and below 6; for round 5 fix every score above 6. If a critique or verification call fails, returns invalid output, or reports unresolved findings, keep editing the saved draft and retry that same critique/verification automatically until it passes. Do not stop between rounds, ask the coordinator to click Publish, create a duplicate, or publish automatically. Stop only when all five rounds are independently verified.`;
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
 const BRIDGE = `<script>
 (() => {
@@ -586,7 +588,45 @@ export function CustomWorkspacesPage() {
     try {
       const beforeIds = new Set(items.map((item) => item.id));
       const capabilityText = capabilities.length ? capabilities.join(", ") : "none";
-      await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nOnly grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
+      await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nOnly grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
+      const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
+      const draft = workspaces.find((workspace) => !beforeIds.has(workspace.id) && workspace.status === "draft");
+      if (draft) {
+        let verifiedRounds = 0;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const { workspaces: latest } = await request<{ workspaces: Workspace[] }>(API);
+          const current = latest.find((workspace) => workspace.id === draft.id);
+          if (!current) throw new Error("The new draft could not be reloaded to verify its critique progress.");
+          const completed = Number(current.critiqueRounds ?? 0);
+          verifiedRounds = Number(current.verifiedCritiqueRounds ?? 0);
+          if (completed >= 5 && verifiedRounds >= 5) break;
+          const nextRound = Math.min(completed, verifiedRounds) + 1;
+          setPublishAgentSteps((steps) => [
+            ...steps.map((step) => step.status === "running" ? { ...step, status: "done" as const } : step),
+            {
+              id: `automatic-critique-${attempt + 1}`,
+              label: `Complete critique round ${nextRound} of 5`,
+              detail: "The builder continues automatically; no Publish action is needed to start reviews.",
+              status: "running",
+            },
+          ]);
+          const reviewRun = await runBuilderAgent(
+            critiqueContinuationPrompt(draft.id),
+            new Set(latest.map((workspace) => workspace.id)),
+          );
+          if (reviewRun?.status === "waiting_for_answer") {
+            throw new Error("The workspace agent needs your answer before it can finish the critique rounds. Answer its question to continue.");
+          }
+          if (reviewRun?.status === "failed" || reviewRun?.status === "interrupted") {
+            throw new Error("The workspace agent stopped before completing all critique rounds. The draft is saved; continue the builder to resume.");
+          }
+        }
+        const { workspaces: verified } = await request<{ workspaces: Workspace[] }>(API);
+        const finalDraft = verified.find((workspace) => workspace.id === draft.id);
+        if (Number(finalDraft?.critiqueRounds ?? 0) < 5 || Number(finalDraft?.verifiedCritiqueRounds ?? 0) < 5) {
+          throw new Error("The draft is saved, but the agent stopped before all five critique rounds were verified. Continue the builder to resume.");
+        }
+      }
       setPrompt("");
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Agent turn complete." } : step));
     } catch (err) {

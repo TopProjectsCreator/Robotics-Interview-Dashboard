@@ -3009,6 +3009,16 @@ export interface CustomWorkspace {
   allowedInterviewerIds: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  critiqueRounds?: number;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  verifiedCritiqueRounds?: number;
 }
 
 export interface CustomWorkspaceEnvelope {

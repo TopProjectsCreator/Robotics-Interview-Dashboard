@@ -4986,6 +4986,14 @@ export const SetPartsRobotAllocationResponse = zod.object({
 /**
  * @summary List custom workspaces available to the current team
  */
+export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax = 5;
+
+export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const ListCustomWorkspacesResponse = zod.object({
   "workspaces": zod.array(zod.object({
   "id": zod.string(),
@@ -4997,7 +5005,9 @@ export const ListCustomWorkspacesResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax).optional()
 }))
 })
 
@@ -5025,6 +5035,14 @@ export const GenerateCustomWorkspaceBody = zod.object({
   "capabilities": zod.array(zod.enum(['data', 'llm']))
 })
 
+export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const GenerateCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -5036,7 +5054,9 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
@@ -5047,6 +5067,14 @@ export const GenerateCustomWorkspaceResponse = zod.object({
 export const GetCustomWorkspaceParams = zod.object({
   "workspaceId": zod.coerce.string()
 })
+
+export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
 
 export const GetCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
@@ -5059,7 +5087,9 @@ export const GetCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
@@ -5081,6 +5111,14 @@ export const PublishCustomWorkspaceBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(publishCustomWorkspaceBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const PublishCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -5092,7 +5130,9 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
@@ -5114,6 +5154,14 @@ export const UpdateCustomWorkspaceAccessBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin = 0;
+export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -5125,7 +5173,9 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
@@ -5145,6 +5195,14 @@ export const ReviseCustomWorkspaceBody = zod.object({
   "prompt": zod.string().min(1).max(reviseCustomWorkspaceBodyPromptMax)
 })
 
+export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const ReviseCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -5156,7 +5214,9 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
@@ -5211,6 +5271,14 @@ export const RestoreCustomWorkspaceVersionParams = zod.object({
   "versionId": zod.coerce.string()
 })
 
+export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin = 0;
+export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -5222,7 +5290,9 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax).optional(),
+  "verifiedCritiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax).optional()
 })
 })
 
