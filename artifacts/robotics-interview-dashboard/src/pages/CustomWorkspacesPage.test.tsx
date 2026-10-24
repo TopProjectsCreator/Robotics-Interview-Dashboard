@@ -400,7 +400,26 @@ describe("custom workspace visual publish review", () => {
   });
 
   it("builds through the streamed assistant tool loop and displays the saved file tree", async () => {
-    const draft = { ...workspace, id: "new-workspace", title: "Parts tracker", status: "draft" };
+    const draft = {
+      id: "new-workspace",
+      title: "Parts tracker",
+      description: "Track parts and stock",
+      capabilities: ["data", "llm"],
+      status: "draft",
+      accessMode: "team",
+      allowedInterviewerIds: [],
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const savedFiles = [
+      {
+        path: "index.html",
+        content: '<!doctype html><html><head><link rel="stylesheet" href="./styles.css"><script src="./app.js"></script></head><body><main>Generated Parts tracker</main></body></html>',
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      },
+      { path: "styles.css", content: ".generated-preview { color: rgb(1, 2, 3); }", updatedAt: "2026-10-01T00:00:00.000Z" },
+      { path: "app.js", content: "window.generatedPreview = true;", updatedAt: "2026-10-01T00:00:00.000Z" },
+    ];
     window.localStorage.setItem("robotics-assistant-model", "openrouter/free");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -416,7 +435,7 @@ describe("custom workspace visual publish review", () => {
         workspaces: [draft],
       });
       if (path === "/api/custom-workspaces/new-workspace/files") {
-        return Response.json({ files: [{ path: "index.html", content: "<main>Parts tracker</main>", updatedAt: "2026-10-01T00:00:00.000Z" }] });
+        return Response.json({ files: savedFiles });
       }
       if (path === "/api/assistant/ask/stream") {
         const body = JSON.parse(String(init?.body));
@@ -448,9 +467,73 @@ describe("custom workspace visual publish review", () => {
     const preview = await screen.findByTitle("Parts tracker preview");
     expect(preview.getAttribute("srcdoc")).toContain("--workspace-teal: #16869a");
     expect(preview.getAttribute("srcdoc")).toContain(":root.dark");
+    expect(preview.getAttribute("srcdoc")).toContain("Generated Parts tracker");
+    expect(preview.getAttribute("srcdoc")).toContain(".generated-preview { color: rgb(1, 2, 3); }");
+    expect(preview.getAttribute("srcdoc")).toContain("window.generatedPreview = true;");
+    expect(draft).not.toHaveProperty("html");
     fireEvent.click(screen.getAllByText("Tool call details")[1]);
     expect(await screen.findByText('{"path":"index.html"}')).toBeInTheDocument();
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();
+  });
+
+  it("clears the previous workspace preview and source files when the selected draft has no entry file", async () => {
+    const firstWorkspace = {
+      ...workspace,
+      id: "workspace-with-files",
+      title: "Workspace with files",
+      status: "draft",
+    };
+    const emptyWorkspace = {
+      id: "empty-workspace",
+      title: "Empty draft",
+      description: "No saved entry file",
+      capabilities: [],
+      status: "draft",
+      accessMode: "team",
+      allowedInterviewerIds: [],
+      createdAt: "2026-10-02T00:00:00.000Z",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [firstWorkspace, emptyWorkspace] });
+      if (path === "/api/custom-workspaces/workspace-with-files/versions" || path === "/api/custom-workspaces/empty-workspace/versions") {
+        return Response.json({ versions: [] });
+      }
+      if (path === "/api/custom-workspaces/workspace-with-files/files") {
+        return Response.json({ files: [{
+          path: "index.html",
+          content: "<main>First workspace preview</main>",
+          updatedAt: "2026-10-01T00:00:00.000Z",
+        }] });
+      }
+      if (path === "/api/custom-workspaces/empty-workspace/files") return Response.json({ files: [] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+
+    await waitFor(() => expect(screen.getByTitle("Workspace with files preview")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("First workspace preview"),
+    ));
+    fireEvent.click(screen.getByRole("button", { name: /Empty draftdraft/ }));
+
+    expect(await screen.findByRole("heading", { name: "Empty draft" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTitle("Empty draft preview")).not.toBeInTheDocument();
+      expect(screen.getByTestId("workspace-source-tree"))
+        .toHaveTextContent("No source files have been saved for this workspace yet.");
+    });
+    expect(screen.getByText("This workspace has no previewable index.html yet.")).toBeInTheDocument();
+    expect(screen.queryByText("First workspace preview")).not.toBeInTheDocument();
   });
 
   it("collects a batch of agent questions and lets the coordinator inspect and remove an uploaded file", async () => {

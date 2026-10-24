@@ -7888,7 +7888,7 @@ components:
           maxLength: 200000
     CustomWorkspace:
       type: object
-      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt]
+      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt, critiqueRounds, verifiedCritiqueRounds]
       properties:
         id:
           type: string

@@ -307,8 +307,10 @@ export function CustomWorkspacesPage() {
   const [revisionPrompt, setRevisionPrompt] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
   const [sourceFiles, setSourceFiles] = useState<WorkspaceFile[]>([]);
+  const [sourceFilesWorkspaceId, setSourceFilesWorkspaceId] = useState<string | null>(null);
   const [selectedSourcePath, setSelectedSourcePath] = useState("index.html");
   const [previewVersion, setPreviewVersion] = useState<VersionPreview | null>(null);
+  const [previewVersionWorkspaceId, setPreviewVersionWorkspaceId] = useState<string | null>(null);
   const [accessMode, setAccessMode] = useState<AccessMode>("team");
   const [allowedInterviewerIds, setAllowedInterviewerIds] = useState<string[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -431,25 +433,43 @@ export function CustomWorkspacesPage() {
   }, [canManage]);
   useEffect(() => {
     setPreviewVersion(null);
+    setPreviewVersionWorkspaceId(null);
     if (!active || !canManage) {
       setVersions([]);
       return;
     }
+    let current = true;
     void request<{ versions: Version[] }>(`${API}/${active.id}/versions`)
-      .then((result) => setVersions(result.versions))
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load version history."));
+      .then((result) => { if (current) setVersions(result.versions); })
+      .catch((err) => { if (current) setError(err instanceof Error ? err.message : "Could not load version history."); });
+    return () => { current = false; };
   }, [active?.id, active?.status, canManage]);
   useEffect(() => {
     if (!active || !canManage) {
       setSourceFiles([]);
+      setSourceFilesWorkspaceId(null);
+      setSelectedSourcePath("");
       return;
     }
+    let current = true;
+    setSourceFiles([]);
+    setSourceFilesWorkspaceId(null);
+    setSelectedSourcePath("index.html");
     void request<{ files: WorkspaceFile[] }>(`${API}/${active.id}/files`)
       .then(({ files }) => {
+        if (!current) return;
         setSourceFiles(files);
+        setSourceFilesWorkspaceId(active.id);
         setSelectedSourcePath((current) => files.some((file) => file.path === current) ? current : files[0]?.path ?? "");
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load the source files."));
+      .catch((err) => {
+        if (!current) return;
+        setSourceFiles([]);
+        setSourceFilesWorkspaceId(active.id);
+        setSelectedSourcePath("");
+        setError(err instanceof Error ? err.message : "Could not load the source files.");
+      });
+    return () => { current = false; };
   }, [active?.id, active?.status, canManage]);
 
   useEffect(() => {
@@ -571,11 +591,12 @@ export function CustomWorkspacesPage() {
     const created = result.workspaces.find((workspace) => !beforeIds.has(workspace.id));
     if (created) setSelected(created);
     else if (active) setSelected(result.workspaces.find((workspace) => workspace.id === active.id) ?? active);
-    const files = created ?? active;
-    if (files) {
-      const fileResult = await request<{ files: WorkspaceFile[] }>(`${API}/${files.id}/files`);
-      setSourceFiles(fileResult.files);
-      setSelectedSourcePath(fileResult.files[0]?.path ?? "");
+    const target = created ?? active;
+    if (target) {
+      const { files } = await request<{ files: WorkspaceFile[] }>(`${API}/${target.id}/files`);
+      setSourceFiles(files);
+      setSourceFilesWorkspaceId(target.id);
+      setSelectedSourcePath((current) => files.some((file) => file.path === current) ? current : files[0]?.path ?? "");
     }
     return normalizedRun;
   };
@@ -809,10 +830,12 @@ export function CustomWorkspacesPage() {
       setSelected(result.workspace);
       const files = await request<{ files: WorkspaceFile[] }>(`${API}/${active.id}/files`);
       setSourceFiles(files.files);
+      setSourceFilesWorkspaceId(active.id);
       setSelectedSourcePath((current) => files.files.some((file) => file.path === current) ? current : files.files[0]?.path ?? "");
       const history = await request<{ versions: Version[] }>(`${API}/${active.id}/versions`);
       setVersions(history.versions);
       setPreviewVersion(null);
+      setPreviewVersionWorkspaceId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore the selected version.");
     } finally {
@@ -832,6 +855,7 @@ export function CustomWorkspacesPage() {
           : [{ path: "index.html", content: result.version.html }],
       };
       setPreviewVersion(savedVersion);
+      setPreviewVersionWorkspaceId(active.id);
       setSelectedSourcePath((current) =>
         savedVersion.sourceFiles.some((file) => file.path === current)
           ? current
@@ -854,10 +878,12 @@ export function CustomWorkspacesPage() {
       if (model) window.localStorage.setItem("robotics-assistant-model", model);
     } catch {}
   };
-  const visibleSourceFiles = previewVersion?.sourceFiles ?? sourceFiles;
-  const previewHtml = previewVersion
-    ? compileWorkspaceSourceFiles(previewVersion.sourceFiles) ?? previewVersion.html
-    : active?.html ?? "";
+  const currentPreviewVersion = previewVersionWorkspaceId === active?.id ? previewVersion : null;
+  const currentSourceFiles = sourceFilesWorkspaceId === active?.id ? sourceFiles : [];
+  const visibleSourceFiles = currentPreviewVersion?.sourceFiles ?? currentSourceFiles;
+  const previewHtml = currentPreviewVersion
+    ? compileWorkspaceSourceFiles(currentPreviewVersion.sourceFiles) || currentPreviewVersion.html
+    : compileWorkspaceSourceFiles(currentSourceFiles) || active?.html || "";
 
   return <main className="mx-auto w-full max-w-7xl p-4 md:p-8">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -914,7 +940,7 @@ export function CustomWorkspacesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] p-4">
           <div className="min-w-0">
             <h2 className="truncate font-semibold text-[hsl(var(--foreground))]">{active?.title ?? "Preview"}</h2>
-            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{previewVersion ? `Previewing saved version · ${previewVersion.message}` : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
+            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{currentPreviewVersion ? `Previewing saved version · ${currentPreviewVersion.message}` : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
           </div>
           {active && canManage && <div className="flex flex-wrap items-end gap-2">
             <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
@@ -990,7 +1016,7 @@ export function CustomWorkspacesPage() {
         </section>}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
-          {previewVersion && <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Showing files from the selected saved version.</p>}
+          {currentPreviewVersion && <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Showing files from the selected saved version.</p>}
           {!visibleSourceFiles.length
             ? <p className="mt-2 text-xs text-[#60757c] dark:text-[#b3c3cb]">No source files have been saved for this workspace yet.</p>
             : <div className="mt-2 grid gap-3 md:grid-cols-[minmax(160px,240px)_minmax(0,1fr)]">
@@ -1020,13 +1046,13 @@ export function CustomWorkspacesPage() {
               : <p className="mt-3 text-sm text-[#60757c] dark:text-[#b3c3cb]">{teamMembersLoading ? "Loading team members…" : "No teammates are available."}</p>}
           </fieldset>
         </div>}
-        {previewVersion && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 py-2">
-          <span className="text-xs text-[hsl(var(--foreground))]">Saved {new Date(previewVersion.createdAt).toLocaleString()} · capabilities at save: {previewVersion.capabilities.join(" · ") || "none"}</span>
+        {currentPreviewVersion && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-4 py-2">
+          <span className="text-xs text-[hsl(var(--foreground))]">Saved {new Date(currentPreviewVersion.createdAt).toLocaleString()} · capabilities at save: {currentPreviewVersion.capabilities.join(" · ") || "none"}</span>
           <button type="button" data-testid="button-return-current-app" disabled={busy} onClick={() => setPreviewVersion(null)} className="rounded-md border border-[hsl(var(--border))] px-2 py-1 text-xs font-semibold text-[hsl(var(--foreground))]">Return to current app</button>
         </div>}
         {previewHtml
-          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${previewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewHtml, resolvedTheme === "dark")} className="h-[70vh] min-h-[520px] w-full bg-white dark:bg-[#0b141b]" />
-          : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />Describe a workspace to generate its first draft.</div></div>}
+          ? <iframe ref={frame} title={`${active?.title ?? "Workspace"} ${currentPreviewVersion ? "saved version" : "preview"}`} sandbox="allow-scripts" srcDoc={sandboxDocument(previewHtml, resolvedTheme === "dark")} className="h-[70vh] min-h-[520px] w-full bg-white dark:bg-[#0b141b]" />
+          : <div className="grid min-h-[520px] place-items-center p-8 text-center text-sm text-[#60757c] dark:text-[#b3c3cb]"><div><Plus size={28} className="mx-auto mb-3 opacity-50" />{active ? "This workspace has no previewable index.html yet." : "Describe a workspace to generate its first draft."}</div></div>}
         {active?.status === "draft" && canManage && <div className="border-t border-[hsl(var(--border))] p-4">
           <label htmlFor="workspace-revision" className="text-sm font-semibold text-[hsl(var(--foreground))]">Revise this draft</label>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
