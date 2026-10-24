@@ -17,6 +17,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 // use a harmless example segment so each <loc> is a valid absolute URL.
 export const FRONTEND_PATHS = [
   "/",
+  "/about",
   "/interview-landing",
   "/chat-landing",
   "/parts-landing",

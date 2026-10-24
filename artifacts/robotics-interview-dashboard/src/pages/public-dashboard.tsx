@@ -132,6 +132,14 @@ export default function PublicDashboard() {
               Capabilities
             </a>
             <Link
+              href="/about"
+              onClick={closeMenu}
+              className="rounded-lg px-3 py-2 text-xs font-semibold text-[#43616a] hover:text-[#168b94] dark:text-[#b6ceca] dark:hover:text-[#7edbd0]"
+              data-testid="link-public-about"
+            >
+              About
+            </Link>
+            <Link
               href="/auth"
               onClick={closeMenu}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#153642] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
@@ -453,6 +461,11 @@ export default function PublicDashboard() {
 
         <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[11px] sm:text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
           <span>Robotics team workspace</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link href="/about" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-about">About</Link>
+            <Link href="/privacy" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-privacy">Privacy</Link>
+            <Link href="/terms" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-terms">Terms</Link>
+          </div>
         </footer>
       </div>
     </main>
