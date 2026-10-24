@@ -12,4 +12,5 @@ export type BoardScope = typeof BoardScope[keyof typeof BoardScope];
 export const BoardScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

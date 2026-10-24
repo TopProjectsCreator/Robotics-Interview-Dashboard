@@ -17,6 +17,8 @@ export interface InterviewChatMessage {
   message: string;
   scope: InterviewChatMessageScope;
   peer: string | null;
+  /** Invite-only channel id when scope is channel; peer carries the channel id. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: Date | null;
   editedAt: Date | null;

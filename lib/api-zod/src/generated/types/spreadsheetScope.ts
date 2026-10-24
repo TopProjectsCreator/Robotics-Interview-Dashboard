@@ -12,4 +12,5 @@ export type SpreadsheetScope = typeof SpreadsheetScope[keyof typeof SpreadsheetS
 export const SpreadsheetScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

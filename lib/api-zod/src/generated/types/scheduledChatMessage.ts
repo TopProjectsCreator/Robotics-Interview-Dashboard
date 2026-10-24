@@ -17,6 +17,8 @@ export interface ScheduledChatMessage {
   message: string;
   scope: ScheduledChatMessageScope;
   peer?: string | null;
+  /** Invite-only channel id for channel-scope scheduled messages. */
+  channelId?: string | null;
   recipient?: string | null;
   parentMessageId?: string | null;
   /** @nullable */

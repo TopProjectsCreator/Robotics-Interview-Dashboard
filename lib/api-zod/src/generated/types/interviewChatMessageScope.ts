@@ -12,4 +12,5 @@ export type InterviewChatMessageScope = typeof InterviewChatMessageScope[keyof t
 export const InterviewChatMessageScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

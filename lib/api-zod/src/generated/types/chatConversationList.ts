@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChannelActivity } from './channelActivity';
 import type { ChatConversationSummary } from './chatConversationSummary';
 
 export interface ChatConversationList {
@@ -14,4 +15,6 @@ export interface ChatConversationList {
      * @nullable
      */
   shared: ChatConversationSummary | null;
+  /** Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first. */
+  channels: ChannelActivity[];
 }

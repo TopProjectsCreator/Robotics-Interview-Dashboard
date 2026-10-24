@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, hasSecondary, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, hasSecondary, runWithInstance, type DbInstance } from "@workspace/db";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -45,6 +45,13 @@ import {
   MarkInterviewChatReadBody,
   MarkInterviewChatReadResponse,
   GetChatConversationsResponse,
+  ListChatChannelsResponse,
+  CreateChatChannelBody,
+  CreateChatChannelResponse,
+  UpdateChatChannelBody,
+  UpdateChatChannelParams,
+  UpdateChatChannelResponse,
+  DeleteChatChannelParams,
   CreateChatPollBody,
   CreateChatPollResponse,
   CreateScheduledChatBody,
@@ -1515,6 +1522,7 @@ async function runAssistantTools(
   mcpOnly = false,
   allowMcpConnectionRequest = false,
   askCoordinator?: (questions: AssistantQuestion[]) => Promise<Record<string, unknown>>,
+  viewer: ChannelViewer | null = null,
 ): Promise<{
   toolMessages: { role: "tool"; content: string; tool_call_id: string }[];
   outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[];
@@ -2316,7 +2324,9 @@ async function runAssistantTools(
         name ?? "",
         args,
         requesterDisplayName,
-        (row) => whiteboardConversationForAccount(row, requesterDisplayName) !== null,
+        // Ask the live conversation scope: channel-scoped artifacts are
+        // member-only, so the assistant must never quote them indirectly.
+        async (row) => (await whiteboardConversationForAccount(row, requesterDisplayName, viewer, team)) !== null,
         team,
       );
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
@@ -3375,11 +3385,25 @@ router.post("/queue/settings", requireCoordinator, async (req, res): Promise<voi
 });
 
 type ReactionGroup = { emoji: string; count: number; authors: string[] };
-type ChatConversationScope = "shared" | "direct";
+type ChatConversationScope = "shared" | "direct" | "channel";
 type ChatConversation = {
   scope: ChatConversationScope;
   peer: string | null;
   key: string | null;
+  // Channel id and name when scope is "channel", otherwise null.
+  channelId: string | null;
+  channelName: string | null;
+};
+
+const SHARED_CONVERSATION: ChatConversation = { scope: "shared", peer: null, key: null, channelId: null, channelName: null };
+
+/** Per-channel activity reported by the conversations endpoint. */
+type ChannelActivityItem = {
+  channelId: string;
+  channelName: string;
+  lastMessageAt: string;
+  lastMessageAuthor: string;
+  lastMessage: string;
 };
 
 function canonicalInterviewerLabel(labels: string[], value: unknown): string | null {
@@ -3394,21 +3418,98 @@ function canonicalInterviewerPair(left: string, right: string): string {
     .join("\u001f");
 }
 
+type ChatChannelRow = typeof chatChannelsTable.$inferSelect;
+type ChatChannelMemberRow = typeof chatChannelMembersTable.$inferSelect;
+type ChannelViewer = { id: string; role: string; displayName: string };
+
+/** The signed-in viewer in the shape chat-channel checks expect. */
+function channelViewerFor(account: { id: string; role: string; displayName: string }): ChannelViewer {
+  return { id: account.id, role: account.role, displayName: account.displayName };
+}
+
+function normalizeChannelName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim().replace(/\s+/g, " ").slice(0, 80);
+  return name || null;
+}
+
+function normalizeChannelKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+async function chatChannelById(channelId: string, teamId: string): Promise<ChatChannelRow | undefined> {
+  const [channel] = await db.select().from(chatChannelsTable)
+    .where(and(eq(chatChannelsTable.id, channelId), teamFilter(chatChannelsTable.teamId, teamId)))
+    .limit(1);
+  return channel;
+}
+
+async function chatChannelMembership(channelId: string, memberId: string): Promise<ChatChannelMemberRow | undefined> {
+  const [member] = await db.select().from(chatChannelMembersTable)
+    .where(and(eq(chatChannelMembersTable.channelId, channelId), eq(chatChannelMembersTable.memberId, memberId)))
+    .limit(1);
+  return member;
+}
+
+async function isChatChannelMember(channelId: string, memberId: string): Promise<boolean> {
+  return Boolean(await chatChannelMembership(channelId, memberId));
+}
+
+/** Channel ids the account may see: every team channel for admins, invited ones otherwise. */
+async function accessibleChatChannelIds(teamId: string, viewer: ChannelViewer | undefined): Promise<string[] | null> {
+  if (!viewer) return [];
+  const channels = await db.select({ id: chatChannelsTable.id })
+    .from(chatChannelsTable)
+    .where(teamFilter(chatChannelsTable.teamId, teamId))
+    .orderBy(desc(chatChannelsTable.updatedAt));
+  if (viewer.role === "coordinator") return channels.map((channel) => channel.id);
+  const memberships = await db.select({ channelId: chatChannelMembersTable.channelId })
+    .from(chatChannelMembersTable)
+    .where(and(eq(chatChannelMembersTable.memberId, viewer.id), teamFilter(chatChannelMembersTable.teamId, teamId)));
+  const invited = new Set(memberships.map((row) => row.channelId));
+  return channels.filter((channel) => invited.has(channel.id)).map((channel) => channel.id);
+}
+
 async function resolveChatConversation(
   scopeValue: unknown,
   peerValue: unknown,
   author: string,
   teamId?: string | null,
+  options: { channelId?: unknown; viewer?: ChannelViewer | null } = {},
 ): Promise<ChatConversation | { error: string }> {
   const scope = scopeValue === undefined || scopeValue === "" ? "shared" : scopeValue;
-  if (scope !== "shared" && scope !== "direct") {
-    return { error: "Chat scope must be shared or direct." };
+  if (scope !== "shared" && scope !== "direct" && scope !== "channel") {
+    return { error: "Chat scope must be shared, direct, or channel." };
   }
   if (scope === "shared") {
+    const unwantedPeer = typeof peerValue === "string" && peerValue.trim();
+    if (unwantedPeer || typeof options.channelId === "string" && options.channelId.trim()) {
+      return { error: "A direct recipient requires the direct chat scope." };
+    }
+    return SHARED_CONVERSATION;
+  }
+  if (scope === "channel") {
+    const channelId = typeof options.channelId === "string" ? options.channelId.trim() : "";
+    if (!channelId) return { error: "A channel conversation requires a channelId." };
     if (typeof peerValue === "string" && peerValue.trim()) {
       return { error: "A direct recipient requires the direct chat scope." };
     }
-    return { scope: "shared", peer: null, key: null };
+    if (!teamId) return { error: "That channel was not found." };
+    const channel = await chatChannelById(channelId, teamId);
+    if (!channel) return { error: "That channel was not found." };
+    const viewer = options.viewer;
+    const isAdmin = viewer?.role === "coordinator";
+    const isInvited = viewer ? await isChatChannelMember(channelId, viewer.id) : false;
+    if (!viewer || (!isAdmin && !isInvited)) {
+      return { error: "You are not a member of that channel." };
+    }
+    return {
+      scope: "channel",
+      peer: channel.id,
+      key: channel.id,
+      channelId: channel.id,
+      channelName: channel.name,
+    };
   }
   const labels = await getInterviewSettings(teamId);
   const peer = canonicalInterviewerLabel(labels, peerValue);
@@ -3416,7 +3517,7 @@ async function resolveChatConversation(
   if (author.toLowerCase() === peer.toLowerCase()) {
     return { error: "You cannot start a direct conversation with yourself." };
   }
-  return { scope: "direct", peer, key: canonicalInterviewerPair(author, peer) };
+  return { scope: "direct", peer, key: canonicalInterviewerPair(author, peer), channelId: null, channelName: null };
 }
 
 type ChatPollPayload = {
@@ -3501,6 +3602,7 @@ function chatResponse(
     message: message.message,
     scope: conversation.scope,
     peer: conversation.peer,
+    channelId: conversation.channelId,
     parentMessageId: message.parentMessageId,
     pinnedAt: message.pinnedAt?.toISOString() ?? null,
     editedAt: message.editedAt?.toISOString() ?? null,
@@ -3643,15 +3745,32 @@ function spreadsheetResponse(
   };
 }
 
-function whiteboardConversationForAccount(
+async function whiteboardConversationForAccount(
   whiteboard: { conversationScope: string; conversationPeer: string | null },
   displayName: string,
-): ChatConversation | null {
-  if (whiteboard.conversationScope !== "direct") return { scope: "shared", peer: null, key: null };
+  viewer?: ChannelViewer | null,
+  teamId?: string | null,
+): Promise<ChatConversation | null> {
+  if (whiteboard.conversationScope === "channel") {
+    // Channel-scoped artifacts stay invite-only: members see them, admins
+    // see every team channel, everyone else gets nothing.
+    const channelId = whiteboard.conversationPeer ?? "";
+    if (!channelId) return null;
+    const team = teamId?.trim() ? teamId : undefined;
+    const channel = team ? await chatChannelById(channelId, team) : undefined;
+    if (!channel) return null;
+    if (viewer?.role === "coordinator") {
+      return { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
+    }
+    const memberId = viewer?.id ? viewer.id : "";
+    if (!memberId || !(await isChatChannelMember(channelId, memberId))) return null;
+    return { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
+  }
+  if (whiteboard.conversationScope !== "direct") return SHARED_CONVERSATION;
   const labels = (whiteboard.conversationPeer ?? "").split("\u001f").filter(Boolean);
   if (!labels.some((label) => label.toLowerCase() === displayName.toLowerCase())) return null;
   const peer = labels.find((label) => label.toLowerCase() !== displayName.toLowerCase()) ?? null;
-  return { scope: "direct", peer, key: whiteboard.conversationPeer };
+  return { scope: "direct", peer, key: whiteboard.conversationPeer, channelId: null, channelName: null };
 }
 
 router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
@@ -3661,7 +3780,10 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   const parsedQuery = ListInterviewWhiteboardsQueryParams.safeParse(req.query);
   if (!parsedQuery.success) { res.status(400).json({ error: "Invalid whiteboard conversation." }); return; }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(parsedQuery.data.scope, parsedQuery.data.peer, account.displayName, teamId);
+  const conversation = await resolveChatConversation(parsedQuery.data.scope, parsedQuery.data.peer, account.displayName, teamId, {
+    channelId: parsedQuery.data.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const filters = [
     teamFilter(interviewWhiteboardsTable.teamId, teamId),
@@ -3699,7 +3821,10 @@ router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> 
     return;
   }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId, {
+    channelId: parsed.data.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const [whiteboard] = await db.insert(interviewWhiteboardsTable).values({
     id: randomUUID(),
@@ -3722,7 +3847,10 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
   const query = GetInterviewWhiteboardByIdQueryParams.safeParse(req.query);
   if (!params.success || !query.success) { res.status(400).json({ error: "Invalid whiteboard request." }); return; }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName, teamId);
+  const conversation = await resolveChatConversation(query.data.scope, query.data.peer, account.displayName, teamId, {
+    channelId: query.data.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   try {
     const [versionRow] = await db.select({ u: interviewWhiteboardsTable.updatedAt }).from(interviewWhiteboardsTable).where(and(
@@ -3767,7 +3895,9 @@ router.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res):
   const [existing] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, params.data.whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
-  const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+  const conversation = existing
+    ? await whiteboardConversationForAccount(existing, account.displayName, channelViewerFor(account), teamId)
+    : null;
   if (!existing || !conversation || isSpreadsheetRecordData(existing.data)) { res.status(404).json({ error: "Whiteboard not found." }); return; }
   const mergedData = mergeWhiteboardDataForSave(existing.id, data, teamId);
   const [whiteboard] = await db.update(interviewWhiteboardsTable)
@@ -3814,7 +3944,10 @@ router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
   const title = parsed.data.title.trim();
   if (!title) { res.status(400).json({ error: "Board name cannot be empty." }); return; }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId, {
+    channelId: parsed.data.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
 
   const [board] = await db.insert(interviewWhiteboardsTable).values({
@@ -3850,7 +3983,9 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
   const [board] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
-  const conversation = board ? whiteboardConversationForAccount(board, account.displayName) : null;
+  const conversation = board
+    ? await whiteboardConversationForAccount(board, account.displayName, channelViewerFor(account), teamId)
+    : null;
   if (!board || !conversation || !parseBoardData(board.data)) {
     res.status(404).json({ error: "Board not found." });
     return;
@@ -3875,7 +4010,9 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
       .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .limit(1)
       .for("update");
-    const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+    const conversation = existing
+    ? await whiteboardConversationForAccount(existing, account.displayName, channelViewerFor(account), teamId)
+    : null;
     const current = existing ? parseBoardData(existing.data) : null;
     if (!existing || !conversation || !current) {
       return { ok: false as const, status: 404, error: "Board not found." };
@@ -3916,7 +4053,10 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
   const title = parsed.data.title.trim();
   if (!title) { res.status(400).json({ error: "Spreadsheet title cannot be empty." }); return; }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId);
+  const conversation = await resolveChatConversation(parsed.data.scope, parsed.data.recipient, account.displayName, teamId, {
+    channelId: parsed.data.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
   const data = JSON.stringify(initialSpreadsheetData());
   if (Buffer.byteLength(data, "utf8") > MAX_SPREADSHEET_DATA_BYTES) {
@@ -3956,7 +4096,9 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   const [spreadsheet] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
     .limit(1);
-  const conversation = spreadsheet ? whiteboardConversationForAccount(spreadsheet, account.displayName) : null;
+  const conversation = spreadsheet
+    ? await whiteboardConversationForAccount(spreadsheet, account.displayName, channelViewerFor(account), teamId)
+    : null;
   if (!spreadsheet || !conversation || !parseSpreadsheetData(spreadsheet.data)) {
     res.status(404).json({ error: "Spreadsheet not found." });
     return;
@@ -3992,7 +4134,9 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
       .where(and(eq(interviewWhiteboardsTable.id, params.data.spreadsheetId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .limit(1)
       .for("update");
-    const conversation = existing ? whiteboardConversationForAccount(existing, account.displayName) : null;
+    const conversation = existing
+    ? await whiteboardConversationForAccount(existing, account.displayName, channelViewerFor(account), teamId)
+    : null;
     const currentData = existing ? parseSpreadsheetData(existing.data) : null;
     if (!existing || !conversation || !currentData) {
       return { ok: false as const, status: 404, error: "Spreadsheet not found." };
@@ -4143,10 +4287,8 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   try {
-    // One row per direct thread, newest message wins. Threads are keyed by a
-    // sorted "labelA<US>labelB" pair, so match on the current label appearing
-    // anywhere in the key.
     const teamId = await requestTeamId(req);
+    const accessibleIds = (await accessibleChatChannelIds(teamId, channelViewerFor(account))) ?? [];
     try {
       const { rows: versionRows } = await pool.query(
         `select count(*)::int as n, max(created_at) as m, max(edited_at) as e, max(deleted_at) as d
@@ -4156,7 +4298,20 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
         [account.displayName, teamId],
       );
       const versionRow = versionRows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null };
-      const tag = `dm${versionRow.n}|${versionRow.m ? new Date(versionRow.m).getTime() : 0}|${versionRow.e ? new Date(versionRow.e).getTime() : 0}|${versionRow.d ? new Date(versionRow.d).getTime() : 0}`;
+      let channelVersion: { n: number; m: Date | null } = { n: 0, m: null };
+      if (accessibleIds.length) {
+        const { rows: channelVersionRows } = await pool.query(
+          `select count(*)::int as n, max(created_at) as m
+             from interview_chat_messages
+            where conversation_scope = 'channel' and conversation_peer = any($1::text[])
+              and (team_id = $2 or ($2 = 'default' and team_id is null))`,
+          [accessibleIds, teamId],
+        );
+        channelVersion = channelVersionRows[0] as { n: number; m: Date | null };
+      }
+      const t = (value: Date | null) => (value ? new Date(value).getTime() : 0);
+      const tag = `dm${versionRow.n}|${t(versionRow.m)}|${t(versionRow.e)}|${t(versionRow.d)}`
+        + `|chan${channelVersion.n}|${channelVersion.n}|${t(channelVersion.m)}`;
       if (await notModified(req, res, tag)) return;
     } catch {
       // Version check is best-effort; fall through to the full load.
@@ -4188,6 +4343,41 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
       })
       .filter((item) => item.peer)
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+    const channelModifications = accessibleIds.length
+      ? (await pool.query(
+          `select distinct on (conversation_peer)
+                  conversation_peer as "channelId",
+                  author, message, created_at, deleted_at
+             from interview_chat_messages
+            where conversation_scope = 'channel'
+              and conversation_peer = any($1::text[])
+              and (team_id = $2 or ($2 = 'default' and team_id is null))
+            order by conversation_peer, created_at desc`,
+          [accessibleIds, teamId],
+        )).rows as { channelId: string; author: string; message: string; created_at: Date; deleted_at: Date | null }[]
+      : [];
+    const lastByChannel = new Map(channelModifications.map((row) => [String(row.channelId), row]));
+    // Channel rows with no messages yet still need a name and a sortable time.
+    const channels = ([] as ChannelActivityItem[]);
+    if (accessibleIds.length) {
+      const channelRows = await db.select({ id: chatChannelsTable.id, name: chatChannelsTable.name, updatedAt: chatChannelsTable.updatedAt, createdAt: chatChannelsTable.createdAt })
+        .from(chatChannelsTable)
+        .where(and(inArray(chatChannelsTable.id, accessibleIds), teamFilter(chatChannelsTable.teamId, teamId)));
+      for (const channel of channelRows) {
+        const last = lastByChannel.get(channel.id);
+        const lastMessageAt = last ? new Date(last.created_at).toISOString() : channel.updatedAt.toISOString();
+        channels.push({
+          channelId: channel.id,
+          channelName: channel.name,
+          lastMessageAt,
+          lastMessageAuthor: last ? String(last.author) : "",
+          lastMessage: last
+            ? (last.deleted_at ? "This message was deleted" : String(last.message ?? "").slice(0, 140))
+            : "",
+        });
+      }
+      channels.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+    }
     // Also report the latest team-channel message so the client can notify
     // about chat activity even when the chat panel is not on screen.
     const sharedResult = await pool.query(
@@ -4208,11 +4398,298 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
            lastMessage: sharedRowValue.deleted_at ? "This message was deleted" : String(sharedRowValue.message ?? "").slice(0, 140),
         }
       : null;
-    res.json(GetChatConversationsResponse.parse({ items, shared }));
+    res.json(GetChatConversationsResponse.parse({ items, shared, channels }));
   } catch (error) {
     req.log.error({ err: error }, "Direct conversation list failed");
     res.status(500).json({ error: "Unable to load your direct messages." });
   }
+});
+
+// --- Invite-only chat channels ----------------------------------------------
+
+type ChannelLastActivity = { lastMessageAt: string; lastMessageAuthor: string; lastMessage: string };
+
+/** Newest message per channel id, one query for many channels. */
+async function lastChannelActivity(
+  channelIds: string[],
+  teamId: string,
+): Promise<Map<string, ChannelLastActivity>> {
+  const result = new Map<string, ChannelLastActivity>();
+  if (!channelIds.length) return result;
+  const { rows } = await pool.query(
+    `select distinct on (conversation_peer)
+            conversation_peer as "channelId", author, message, created_at, deleted_at
+       from interview_chat_messages
+      where conversation_scope = 'channel'
+        and conversation_peer = any($1::text[])
+        and (team_id = $2 or ($2 = 'default' and team_id is null))
+      order by conversation_peer, created_at desc`,
+    [channelIds, teamId],
+  );
+  for (const row of rows as { channelId: string; author: string; message: string; created_at: Date; deleted_at: Date | null }[]) {
+    result.set(String(row.channelId), {
+      lastMessageAt: new Date(row.created_at).toISOString(),
+      lastMessageAuthor: String(row.author),
+      lastMessage: row.deleted_at ? "This message was deleted" : String(row.message ?? "").slice(0, 140),
+    });
+  }
+  return result;
+}
+
+function chatChannelResponse(
+  channel: ChatChannelRow,
+  memberRows: ChatChannelMemberRow[],
+  accountsById: Map<string, { id: string; role: string; displayName: string }>,
+  viewer: ChannelViewer,
+  last: ChannelLastActivity | null,
+) {
+  return {
+    id: channel.id,
+    name: channel.name,
+    createdBy: channel.createdBy,
+    createdAt: channel.createdAt,
+    updatedAt: channel.updatedAt,
+    members: memberRows
+      .slice()
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((member) => {
+        const account = accountsById.get(member.memberId);
+        return {
+          id: member.memberId,
+          displayName: account?.displayName ?? member.memberName,
+          role: account?.role ?? "",
+          addedBy: member.addedBy,
+        };
+      }),
+    // Admins see every channel but "youAreMember" stays honest about invites.
+    youAreMember: memberRows.some((member) => member.memberId === viewer.id),
+    canManage: viewer.role === "coordinator",
+    lastMessageAt: last?.lastMessageAt ?? null,
+    lastMessageAuthor: last?.lastMessageAuthor ?? null,
+    lastMessage: last?.lastMessage ?? null,
+  };
+}
+
+/** Resolve invite member ids to real team accounts. Unknown ids fail loudly. */
+async function resolveChannelMembers(
+  memberIds: string[],
+  teamId: string,
+): Promise<(typeof interviewerAccountsTable.$inferSelect)[] | null> {
+  if (!memberIds.length) return [];
+  const accounts = await db.select().from(interviewerAccountsTable)
+    .where(and(inArray(interviewerAccountsTable.id, memberIds), teamFilter(interviewerAccountsTable.teamId, teamId)));
+  if (accounts.length !== memberIds.length) return null;
+  return accounts;
+}
+
+router.get("/queue/chat/channels", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  try {
+    const teamId = await requestTeamId(req);
+    const viewer = channelViewerFor(account);
+    const accessible = (await accessibleChatChannelIds(teamId, viewer)) ?? [];
+    if (!accessible.length) {
+      res.json(ListChatChannelsResponse.parse({ items: [] }));
+      return;
+    }
+    const channels = await db.select().from(chatChannelsTable)
+      .where(and(inArray(chatChannelsTable.id, accessible), teamFilter(chatChannelsTable.teamId, teamId)))
+      .orderBy(desc(chatChannelsTable.updatedAt));
+    const memberRows = await db.select().from(chatChannelMembersTable)
+      .where(and(inArray(chatChannelMembersTable.channelId, accessible), teamFilter(chatChannelMembersTable.teamId, teamId)));
+    const accountIds = [...new Set(memberRows.map((member) => member.memberId))];
+    const accounts = accountIds.length
+      ? await db.select().from(interviewerAccountsTable).where(inArray(interviewerAccountsTable.id, accountIds))
+      : [];
+    const accountsById = new Map(accounts.map((row) => [row.id, row]));
+    const last = await lastChannelActivity(accessible, teamId);
+    res.json(ListChatChannelsResponse.parse({
+      items: channels.map((channel) => chatChannelResponse(
+        channel,
+        memberRows.filter((member) => member.channelId === channel.id),
+        accountsById,
+        viewer,
+        last.get(channel.id) ?? null,
+      )),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Chat channel list failed");
+    res.status(500).json({ error: "Unable to load chat channels." });
+  }
+});
+
+router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const parsed = CreateChatChannelBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "A channel name is required." }); return; }
+  const name = normalizeChannelName(parsed.data.name);
+  if (!name) { res.status(400).json({ error: "A channel name is required." }); return; }
+  const teamId = await requestTeamId(req);
+  const normalizedName = normalizeChannelKey(name);
+  const [duplicate] = await db.select({ id: chatChannelsTable.id }).from(chatChannelsTable)
+    .where(and(teamFilter(chatChannelsTable.teamId, teamId), eq(chatChannelsTable.normalizedName, normalizedName)))
+    .limit(1);
+  if (duplicate) {
+    res.status(409).json({ error: "A channel with that name already exists." });
+    return;
+  }
+  // Never trust member ids directly: resolve each one to a team account.
+  const requestedMemberIds = [...new Set((parsed.data.memberIds ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean))]
+    .filter((id) => id !== account.id);
+  const invited = await resolveChannelMembers(requestedMemberIds, teamId);
+  if (!invited) {
+    res.status(400).json({ error: "One or more invited people could not be found." });
+    return;
+  }
+  const viewer = channelViewerFor(account);
+  const [channel] = await db.insert(chatChannelsTable).values({
+    id: randomUUID(),
+    teamId,
+    name,
+    normalizedName,
+    createdBy: account.displayName,
+  }).returning();
+  // The creating admin is always a member so they can post to their own channel.
+  const members = await db.insert(chatChannelMembersTable).values([
+    {
+      id: randomUUID(),
+      teamId,
+      channelId: channel.id,
+      memberId: account.id,
+      memberName: account.displayName,
+      addedBy: account.displayName,
+    },
+    ...invited.map((member) => ({
+      id: randomUUID(),
+      teamId,
+      channelId: channel.id,
+      memberId: member.id,
+      memberName: member.displayName,
+      addedBy: account.displayName,
+    })),
+  ]).returning();
+  pushRealtimeHint("chat_channels", "INSERT");
+  const accountsById = new Map([account, ...invited].map((row) => [row.id, row]));
+  res.status(201).json(CreateChatChannelResponse.parse(chatChannelResponse(channel, members, accountsById, viewer, null)));
+});
+
+router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = UpdateChatChannelParams.safeParse(req.params);
+  const parsed = UpdateChatChannelBody.safeParse(req.body);
+  if (!params.success || !parsed.success) { res.status(400).json({ error: "Invalid channel update." }); return; }
+  const newName = parsed.data.name === undefined || parsed.data.name === null
+    ? null
+    : normalizeChannelName(parsed.data.name);
+  if (parsed.data.name !== undefined && parsed.data.name !== null && !newName) {
+    res.status(400).json({ error: "A channel name is required." });
+    return;
+  }
+  const memberIdsReplace = parsed.data.memberIds === undefined
+    ? null
+    : [...new Set(parsed.data.memberIds
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean))];
+  if (!newName && memberIdsReplace === null) {
+    res.status(400).json({ error: "Provide a new channel name or invited members." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const channel = await chatChannelById(params.data.channelId, teamId);
+  if (!channel) { res.status(404).json({ error: "Channel not found." }); return; }
+  if (newName) {
+    const newKey = normalizeChannelKey(newName);
+    if (newKey !== channel.normalizedName) {
+      const [duplicate] = await db.select({ id: chatChannelsTable.id }).from(chatChannelsTable)
+        .where(and(teamFilter(chatChannelsTable.teamId, teamId), eq(chatChannelsTable.normalizedName, newKey)))
+        .limit(1);
+      if (duplicate) {
+        res.status(409).json({ error: "A channel with that name already exists." });
+        return;
+      }
+    }
+  }
+  if (memberIdsReplace !== null) {
+    const invited = await resolveChannelMembers(memberIdsReplace, teamId);
+    if (!invited) {
+      res.status(400).json({ error: "One or more invited people could not be found." });
+      return;
+    }
+    // Full replacement: the request describes exactly who is invited.
+    await db.delete(chatChannelMembersTable).where(eq(chatChannelMembersTable.channelId, channel.id));
+    if (invited.length) {
+      await db.insert(chatChannelMembersTable).values(invited.map((member) => ({
+        id: randomUUID(),
+        teamId,
+        channelId: channel.id,
+        memberId: member.id,
+        memberName: member.displayName,
+        addedBy: account.displayName,
+      })));
+    }
+  }
+  if (newName) {
+    await db.update(chatChannelsTable)
+      .set({ name: newName, normalizedName: normalizeChannelKey(newName) })
+      .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)));
+  }
+  // Member changes alone from a fresh drizzle set() would skip $onUpdate; the
+  // channel list is sorted by updatedAt, so bump it deliberately here.
+  await db.update(chatChannelsTable)
+    .set({ updatedAt: new Date() })
+    .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)));
+  pushRealtimeHint("chat_channels");
+  const [updated] = await db.select().from(chatChannelsTable)
+    .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)))
+    .limit(1);
+  const memberRows = await db.select().from(chatChannelMembersTable)
+    .where(eq(chatChannelMembersTable.channelId, channel.id));
+  const accountIds = memberRows.map((member) => member.memberId);
+  const accounts = accountIds.length
+    ? await db.select().from(interviewerAccountsTable).where(inArray(interviewerAccountsTable.id, accountIds))
+    : [];
+  const accountsById = new Map(accounts.map((row) => [row.id, row]));
+  const lastActivity = (await lastChannelActivity([channel.id], teamId)).get(channel.id) ?? null;
+  res.json(UpdateChatChannelResponse.parse(chatChannelResponse(updated, memberRows, accountsById, channelViewerFor(account), lastActivity)));
+});
+
+router.delete("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const params = DeleteChatChannelParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid channel id." }); return; }
+  const teamId = await requestTeamId(req);
+  const channel = await chatChannelById(params.data.channelId, teamId);
+  if (!channel) { res.status(404).json({ error: "Channel not found." }); return; }
+  await db.transaction(async (tx) => {
+    const messageFilter = and(
+      teamFilter(interviewChatMessagesTable.teamId, teamId),
+      eq(interviewChatMessagesTable.conversationScope, "channel"),
+      eq(interviewChatMessagesTable.conversationPeer, channel.id),
+    );
+    const messageIds = tx.select({ id: interviewChatMessagesTable.id })
+      .from(interviewChatMessagesTable)
+      .where(messageFilter);
+    await tx.delete(chatMessageReactionsTable).where(inArray(chatMessageReactionsTable.messageId, messageIds));
+    await tx.delete(chatMessageReadsTable).where(inArray(chatMessageReadsTable.messageId, messageIds));
+    await tx.delete(chatPollVotesTable).where(inArray(chatPollVotesTable.messageId, messageIds));
+    await tx.delete(chatPollsTable).where(inArray(chatPollsTable.messageId, messageIds));
+    await tx.delete(interviewChatMessagesTable).where(messageFilter);
+    await tx.delete(chatChannelsTable)
+      .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)));
+  });
+  pushRealtimeHint("chat_channels", "DELETE");
+  pushRealtimeHint("interview_chat_messages", "DELETE");
+  res.status(204).end();
 });
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
@@ -4220,7 +4697,10 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const account = accountId ? await accountById(accountId) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
-  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName, teamId);
+  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName, teamId, {
+    channelId: req.query.channelId,
+    viewer: channelViewerFor(account),
+  });
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
     return;
@@ -4228,7 +4708,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const { limit, before } = pageWindow(req.query);
   const peerCondition = conversation.key === null
     ? "m.conversation_peer is null"
-    : "m.conversation_peer = $4";
+    : "m.conversation_peer = $3";
   const peerParams = conversation.key === null ? [] : [conversation.key];
   // Idle polls 304 on counts/max timestamps (messages, reactions, polls,
   // votes) instead of re-transferring the thread. History scrollback
@@ -4294,6 +4774,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       )),
       scope: conversation.scope,
       peer: conversation.peer,
+      channel: conversation.channelId ? { id: conversation.channelId, name: conversation.channelName ?? "" } : null,
     });
   });
 });
@@ -4311,6 +4792,7 @@ router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> =>
     parsed.data.peer,
     account.displayName,
     teamId,
+    { channelId: parsed.data.channelId, viewer: channelViewerFor(account) },
   );
   if ("error" in conversation) { res.status(400).json({ error: conversation.error }); return; }
 
@@ -4419,14 +4901,16 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     parsed.data.recipient,
     account.displayName,
     teamId,
+    { channelId: parsed.data.channelId, viewer: channelViewerFor(account) },
   );
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
     return;
   }
 
-  // Discord-style slow mode, enforced server-side on the team channel only.
-  if (conversation.scope === "shared") {
+  // Discord-style slow mode, enforced server-side on the team channel and
+  // every invite-only channel (slow mode is a team-wide setting).
+  if (conversation.scope === "shared" || conversation.scope === "channel") {
     const slowmodeSeconds = await chatSlowmodeSeconds(teamId);
     if (slowmodeSeconds > 0) {
       const [lastMessage] = await db
@@ -4435,8 +4919,10 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
         .where(and(
           teamFilter(interviewChatMessagesTable.teamId, teamId),
           eq(interviewChatMessagesTable.author, account.displayName),
-          eq(interviewChatMessagesTable.conversationScope, "shared"),
-          isNull(interviewChatMessagesTable.conversationPeer),
+          eq(interviewChatMessagesTable.conversationScope, conversation.scope),
+          conversation.key === null
+            ? isNull(interviewChatMessagesTable.conversationPeer)
+            : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
         ))
         .orderBy(desc(interviewChatMessagesTable.createdAt))
         .limit(1);
@@ -4764,19 +5250,35 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
         return;
       }
     }
+    if (existing.conversationScope === "channel"
+      && !(await isChatChannelMember(existing.conversationPeer ?? "", account.id))) {
+      res.status(403).json({ error: "You are not a member of that channel." });
+      return;
+    }
   }
   const [updated] = await db.update(interviewChatMessagesTable)
     .set({ message: message.slice(0, CHAT_MESSAGE_MAX_CHARS), editedAt: new Date() })
     .where(and(eq(interviewChatMessagesTable.id, messageId), isNull(interviewChatMessagesTable.deletedAt), teamFilter(interviewChatMessagesTable.teamId, teamId)))
     .returning();
-  const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
-  const conversation: ChatConversation = updated.conversationScope === "direct"
-    ? {
-        scope: "direct",
-        peer: participants.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? null,
-        key: updated.conversationPeer,
-      }
-    : { scope: "shared", peer: null, key: null };
+  let conversation: ChatConversation;
+  if (updated.conversationScope === "channel") {
+    // The editor needs the live channel name; a deleted channel orphans the
+    // message, so respond 404 instead of reporting a broken conversation.
+    const channel = await chatChannelById(updated.conversationPeer ?? "", teamId);
+    if (!channel) { res.status(404).json({ error: "That channel was not found." }); return; }
+    conversation = { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
+  } else if (updated.conversationScope === "direct") {
+    const participants = (updated.conversationPeer ?? "").split("\u001f").filter(Boolean);
+    conversation = {
+      scope: "direct",
+      peer: participants.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? null,
+      key: updated.conversationPeer,
+      channelId: null,
+      channelName: null,
+    };
+  } else {
+    conversation = SHARED_CONVERSATION;
+  }
   pushRealtimeHint("interview_chat_messages");
   const editedPolls = await pollsForMessages([updated.id], account.displayName, teamId);
   const editedReceipts = await readReceiptsForMessages([updated.id], teamId);
@@ -4821,6 +5323,11 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
         return;
       }
     }
+    if (existingMessage.conversationScope === "channel"
+      && !(await isChatChannelMember(existingMessage.conversationPeer ?? "", account.id))) {
+      res.status(403).json({ error: "You are not a member of that channel." });
+      return;
+    }
   }
   await db.delete(chatMessageReactionsTable).where(and(eq(chatMessageReactionsTable.messageId, messageId), teamFilter(chatMessageReactionsTable.teamId, teamId)));
   await db.delete(chatMessageReadsTable).where(and(eq(chatMessageReadsTable.messageId, messageId), teamFilter(chatMessageReadsTable.teamId, teamId)));
@@ -4841,6 +5348,7 @@ function scheduledChatResponse(row: typeof scheduledChatMessagesTable.$inferSele
     message: row.message,
     scope: row.conversationScope,
     peer: row.conversationPeer,
+    channelId: row.conversationScope === "channel" ? row.conversationPeer : null,
     recipient: row.recipient,
     parentMessageId: row.parentMessageId,
     poll: row.pollQuestion
@@ -4939,6 +5447,7 @@ router.post("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<voi
     parsed.data.recipient,
     account.displayName,
     teamId,
+    { channelId: parsed.data.channelId, viewer: channelViewerFor(account) },
   );
   if ("error" in conversation) {
     res.status(400).json({ error: conversation.error });
@@ -5070,7 +5579,7 @@ async function deliverDueScheduledChats(): Promise<void> {
     teamId: typeof r.team_id === "string" ? r.team_id : null,
     author: String(r.author ?? ""),
     createdBy: String(r.created_by ?? ""),
-    conversationScope: r.conversation_scope === "direct" ? "direct" : "shared",
+    conversationScope: r.conversation_scope === "direct" ? "direct" : r.conversation_scope === "channel" ? "channel" : "shared",
     conversationPeer: typeof r.conversation_peer === "string" ? r.conversation_peer : null,
     recipient: typeof r.recipient === "string" ? r.recipient : null,
     message: String(r.message ?? ""),
@@ -5113,7 +5622,11 @@ async function deliverScheduledChat(row: typeof scheduledChatMessagesTable.$infe
   };
   try {
     // Re-resolve the conversation: interviewer labels may have changed since scheduling.
-    let scope: "shared" | "direct" = row.conversationScope === "direct" ? "direct" : "shared";
+    let scope: "shared" | "direct" | "channel" = row.conversationScope === "direct"
+      ? "direct"
+      : row.conversationScope === "channel"
+        ? "channel"
+        : "shared";
     let key: string | null = null;
     if (scope === "direct") {
       const labels = await getInterviewSettings(team);
@@ -5121,6 +5634,17 @@ async function deliverScheduledChat(row: typeof scheduledChatMessagesTable.$infe
       if (!peer) throw new Error("The direct-message recipient is no longer a configured interviewer.");
       scope = "direct";
       key = canonicalInterviewerPair(row.author, peer);
+    }
+    if (scope === "channel") {
+      // The channel must still exist and the scheduler must still be a member,
+      // otherwise a removed member could surreptitiously post later.
+      const scheduledChannelId = row.conversationPeer ?? "";
+      const channel = scheduledChannelId ? await chatChannelById(scheduledChannelId, team) : undefined;
+      if (!channel) throw new Error("That channel was not found.");
+      key = channel.id;
+      if (!(await isChatChannelMember(channel.id, row.createdBy))) {
+        throw new Error("The scheduler is no longer a member of that channel.");
+      }
     }
     // A deleted reply target degrades to a plain message instead of failing delivery.
     let parentMessageId: string | null = null;
@@ -5481,8 +6005,10 @@ async function generateAssistantAnswer(options: {
   mcpOnly?: boolean;
   sessionHash: string;
   log: AssistantAnswerLog;
+  requestViewer?: ChannelViewer | null;
 }): Promise<{ answer: string; activities: AssistantActivity[]; model: string }> {
   const { teamId, question, authorLabel, sessionHash, log } = options;
+  const viewer = options.requestViewer ?? null;
   const disabledTools = parseDisabledAssistantTools(options.disabledTools, ALL_ASSISTANT_TOOL_NAMES);
   const applicableSkills = options.mcpOnly ? [] : findRelevantAssistantSkills(
     question,
@@ -5711,6 +6237,9 @@ async function generateAssistantAnswer(options: {
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
+      false,
+      undefined,
+      viewer,
     );
     if (executed.model) model = executed.model;
     activities.push(...executed.activities);
@@ -5802,9 +6331,12 @@ async function generateAssistantAnswer(options: {
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
-      );
-      if (executed.model) model = executed.model;
-      activities.push(...executed.activities);
+      false,
+      undefined,
+      viewer,
+    );
+    if (executed.model) model = executed.model;
+    activities.push(...executed.activities);
       if (executed.outgoingCalls.length > 0) {
         const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
         const repair = await openai.chat.completions.create({
@@ -5909,6 +6441,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
       chatContext: parsed.data.chatContext,
       authorLabel: account.displayName,
       accountId: account.id,
+      requestViewer: { id: account.id, role: account.role, displayName: account.displayName },
       conversationOwnerId: account.role === "coordinator" ? null : account.id,
       mcpOnly: account.role !== "coordinator",
       sessionHash: presenceSessionHash(requestAdminSession(req)),
@@ -6252,7 +6785,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     const connection = await customMcpStatus(account.id, teamId);
     if (connection.connected) continuationConnectedEndpointUrl = connection.endpointUrl;
   }
-  const disabledTools = parseDisabledAssistantTools(
+    const disabledTools = parseDisabledAssistantTools(
     (parsed.data as unknown as Record<string, unknown>).disabledTools,
     ALL_ASSISTANT_TOOL_NAMES,
   );
@@ -6679,6 +7212,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       mcpOnly,
       mcpConnectionRequestEnabled,
       askCoordinator,
+      { id: account.id, role: account.role, displayName: account.displayName },
       );
       if (executed.model) {
         model = executed.model;
@@ -6787,6 +7321,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       mcpOnly,
       mcpConnectionRequestEnabled,
       askCoordinator,
+      { id: account.id, role: account.role, displayName: account.displayName },
       );
         if (executed.model) {
           model = executed.model;

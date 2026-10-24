@@ -16,4 +16,9 @@ export interface BoardCreateInput {
   scope: BoardCreateInputScope;
   /** @nullable */
   recipient?: string | null;
+  /**
+     * Invite-only channel id for a channel-scope board.
+     * @nullable
+     */
+  channelId?: string | null;
 }

@@ -48,6 +48,7 @@ function fire(title: string, body: string, tag: string): void {
  * conversation summary endpoint and notifies for:
  *   - a new direct message from someone else
  *   - a new team-channel message from someone else
+ *   - a new message in an invite-only channel the account belongs to
  * "seen" watermarks live in localStorage, so switching tabs or pages never
  * re-notifies, and marking a DM read (red dot cleared) marks it seen.
  */
@@ -55,10 +56,11 @@ export function useGlobalChatNotifications(options: {
   myLabel: string;
   viewingPeer: string | null;
   viewingShared: boolean;
+  viewingChannel: string | null;
   enabled: boolean;
 }): void {
   const qc = useQueryClient();
-  const { myLabel, viewingPeer, viewingShared, enabled } = options;
+  const { myLabel, viewingPeer, viewingShared, viewingChannel, enabled } = options;
   const seenRef = useRef<Record<string, string> | null>(null);
   const primedRef = useRef(false);
   const markSeen = useCallback((key: string, at: string) => {
@@ -103,12 +105,14 @@ export function useGlobalChatNotifications(options: {
     // the whole app down with it.
     const items = Array.isArray(data.items) ? data.items : [];
     const shared = data.shared ?? null;
+    const channelItems = Array.isArray(data.channels) ? data.channels : [];
 
     if (!primedRef.current) {
       // First poll after load: record watermarks without firing a backlog.
       primedRef.current = true;
       for (const item of items) markSeen(`dm:${item.peer.trim().toLowerCase()}`, item.lastMessageAt);
       if (shared) markSeen("shared", shared.lastMessageAt);
+      for (const channel of channelItems) markSeen(`channel:${channel.channelId}`, channel.lastMessageAt);
       return;
     }
 
@@ -146,7 +150,27 @@ export function useGlobalChatNotifications(options: {
         }
       }
     }
-  }, [conversations.data, enabled, markSeen, myLabel, viewingPeer, viewingShared]);
+
+    for (const channel of channelItems) {
+      const key = `channel:${channel.channelId}`;
+      const seenAt = seenRef.current?.[key];
+      if (channel.lastMessageAuthor.trim().toLowerCase() === me) {
+        markSeen(key, channel.lastMessageAt);
+        continue;
+      }
+      const viewingThisChannel = (viewingChannel ?? "").trim() === channel.channelId.trim();
+      if (viewingThisChannel) {
+        markSeen(key, channel.lastMessageAt);
+        continue;
+      }
+      if (!seenAt || channel.lastMessageAt > seenAt) {
+        markSeen(key, channel.lastMessageAt);
+        if (document.visibilityState === "hidden" || !viewingShared) {
+          fire(`${channel.lastMessageAuthor} · ${channel.channelName}`, channel.lastMessage || "New channel message", key);
+        }
+      }
+    }
+  }, [conversations.data, enabled, markSeen, myLabel, viewingPeer, viewingShared, viewingChannel]);
 
   // Keep the conversations cache warm for the chat panel's unread dots.
   useEffect(() => {

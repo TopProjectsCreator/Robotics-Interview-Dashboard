@@ -12,4 +12,5 @@ export type ScheduledChatInputScope = typeof ScheduledChatInputScope[keyof typeo
 export const ScheduledChatInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

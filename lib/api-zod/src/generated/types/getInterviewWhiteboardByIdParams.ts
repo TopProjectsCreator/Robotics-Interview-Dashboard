@@ -11,4 +11,8 @@ export type GetInterviewWhiteboardByIdParams = {
 scope?: GetInterviewWhiteboardByIdScope;
 author?: string;
 peer?: string;
+/**
+ * Invite-only channel id for channel-scope whiteboards.
+ */
+channelId?: string;
 };

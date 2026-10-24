@@ -81,6 +81,10 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
       // API calls and realtime websockets.
       "connect-src 'self' https: wss:",
       "worker-src 'self' blob:",
+      // Chat messages can embed a live page (pasted <iframe> HTML). frame-src
+      // otherwise falls back to default-src 'self', which would block embed
+      // hosts; chat rendering itself only accepts cross-origin https srcs.
+      "frame-src 'self' https:",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

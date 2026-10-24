@@ -12,4 +12,5 @@ export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof Ge
 export const GetInterviewChatScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

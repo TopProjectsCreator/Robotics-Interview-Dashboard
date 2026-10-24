@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const interviewQueueTable = pgTable("interview_queue", {
@@ -61,6 +61,45 @@ export const chatSettingsTable = pgTable("chat_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+// Invite-only chat channels. Admins (coordinator accounts) create, rename,
+// and manage them; only invited accounts may read or post. Channel messages
+// reuse interview_chat_messages with conversation_scope='channel' and
+// conversation_peer=<channel id>, so every existing filter keeps working.
+export const chatChannelsTable = pgTable("chat_channels", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  name: text("name").notNull(),
+  // Case-insensitive uniqueness key for names within one team.
+  normalizedName: text("normalized_name").notNull(),
+  // Interviewer display name that created the channel.
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex("chat_channels_team_name_unique").on(table.teamId, table.normalizedName),
+]);
+
+// Membership is per interviewer account id (never trusted from the client;
+// resolved from the signed session), with a display-name snapshot for lists.
+export const chatChannelMembersTable = pgTable("chat_channel_members", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  channelId: text("channel_id")
+    .notNull()
+    .references(() => chatChannelsTable.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull(),
+  memberName: text("member_name").notNull(),
+  // Display name of the admin that invited this member.
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("chat_channel_members_channel_member_unique").on(table.channelId, table.memberId),
+  index("chat_channel_members_member_idx").on(table.memberId),
+]);
 
 export const chunkedUploadsTable = pgTable("chunked_uploads", {
   uploadId: text("upload_id").primaryKey(),
@@ -178,3 +217,5 @@ export type ScheduledChatMessage = typeof scheduledChatMessagesTable.$inferSelec
 export type InsertScheduledChatMessage = z.infer<typeof insertScheduledChatMessageSchema>;
 export type ApplicationImport = typeof importsTable.$inferSelect;
 export type InsertApplicationImport = z.infer<typeof insertImportSchema>;
+export type ChatChannel = typeof chatChannelsTable.$inferSelect;
+export type ChatChannelMember = typeof chatChannelMembersTable.$inferSelect;

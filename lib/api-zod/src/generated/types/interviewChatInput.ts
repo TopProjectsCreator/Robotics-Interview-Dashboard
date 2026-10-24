@@ -19,6 +19,8 @@ export interface InterviewChatInput {
   scope?: InterviewChatInputScope;
   /** Configured interviewer label receiving a direct message. */
   recipient?: string | null;
+  /** Invite-only channel id receiving the message; only channel members (and admins) may post. */
+  channelId?: string | null;
   parentMessageId?: string | null;
   pinnedAt?: Date | null;
   activities?: AssistantActivity[];

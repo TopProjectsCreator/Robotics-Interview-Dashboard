@@ -310,7 +310,16 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "chat_message_reads" ("id" text primary key, "team_id" text, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "reader_id" text not null, "reader_name" text not null, "read_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
-    `create table if not exists "chat_settings" ("id" text primary key default '1', "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    // Invite-only chat channels. Admins (coordinators) create, rename, and
+    // manage them; membership gates every read and write. Messages reuse
+    // interview_chat_messages with conversation_scope='channel'.
+    `create table if not exists "chat_channels" ("id" text primary key, "team_id" text not null, "name" text not null, "normalized_name" text not null, "created_by" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_channels_team_name_unique" on "chat_channels" ("team_id", "normalized_name")`,
+    `create index if not exists "chat_channels_team_updated_idx" on "chat_channels" ("team_id", "updated_at" desc)`,
+    `create table if not exists "chat_channel_members" ("id" text primary key, "team_id" text not null, "channel_id" text not null references "chat_channels"("id") on delete cascade, "member_id" text not null, "member_name" text not null, "added_by" text not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_channel_members_channel_member_unique" on "chat_channel_members" ("channel_id", "member_id")`,
+    `create index if not exists "chat_channel_members_member_idx" on "chat_channel_members" ("member_id")`,
     `create table if not exists "chunked_uploads" ("upload_id" text primary key, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "total_parts" integer not null, "part_size_bytes" integer not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,

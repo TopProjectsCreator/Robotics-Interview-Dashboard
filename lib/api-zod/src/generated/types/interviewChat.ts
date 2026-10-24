@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatChannelRef } from './chatChannelRef';
 import type { InterviewChatMessage } from './interviewChatMessage';
 import type { InterviewChatScope } from './interviewChatScope';
 
@@ -12,4 +13,9 @@ export interface InterviewChat {
   items: InterviewChatMessage[];
   scope: InterviewChatScope;
   peer: string | null;
+  /**
+     * Channel details when scope is channel.
+     * @nullable
+     */
+  channel?: ChatChannelRef | null;
 }

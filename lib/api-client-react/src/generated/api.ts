@@ -68,6 +68,10 @@ import type {
   CadModelUpdateInput,
   CadModelUpload,
   CadStorageStatus,
+  ChatChannel,
+  ChatChannelInput,
+  ChatChannelList,
+  ChatChannelUpdateInput,
   ChatConversationList,
   ChatCustomEmoji,
   ChatCustomEmojiInput,
@@ -5665,7 +5669,7 @@ export const getGetChatConversationsUrl = () => {
 }
 
 /**
- * @summary List direct conversations involving the current interviewer
+ * @summary List direct conversations and channels involving the current interviewer
  */
 export const getChatConversations = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatConversationList> => {
 
@@ -5712,7 +5716,7 @@ export type GetChatConversationsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List direct conversations involving the current interviewer
+ * @summary List direct conversations and channels involving the current interviewer
  */
 
 export function useGetChatConversations<TData = Awaited<ReturnType<typeof getChatConversations>>, TError = ErrorType<unknown>>(
@@ -5732,6 +5736,298 @@ export function useGetChatConversations<TData = Awaited<ReturnType<typeof getCha
 
 
 
+
+export const getListChatChannelsUrl = () => {
+
+
+
+
+  return `/api/queue/chat/channels`
+}
+
+/**
+ * Members see only their channels; admins (coordinators) see every team channel.
+ * @summary List invite-only channels visible to the signed-in interviewer
+ */
+export const listChatChannels = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatChannelList> => {
+
+  return customFetch<ChatChannelList>(getListChatChannelsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListChatChannelsQueryKey = () => {
+    return [
+    `/api/queue/chat/channels`
+    ] as const;
+    }
+
+
+export const getListChatChannelsQueryOptions = <TData = Awaited<ReturnType<typeof listChatChannels>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatChannels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListChatChannelsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChatChannels>>> = ({ signal }) => listChatChannels({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChatChannels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListChatChannelsQueryResult = NonNullable<Awaited<ReturnType<typeof listChatChannels>>>
+export type ListChatChannelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List invite-only channels visible to the signed-in interviewer
+ */
+
+export function useListChatChannels<TData = Awaited<ReturnType<typeof listChatChannels>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatChannels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListChatChannelsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateChatChannelUrl = () => {
+
+
+
+
+  return `/api/queue/chat/channels`
+}
+
+/**
+ * @summary Create an invite-only channel (admins only)
+ */
+export const createChatChannel = async (chatChannelInput: ChatChannelInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatChannel> => {
+
+  return customFetch<ChatChannel>(getCreateChatChannelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatChannelInput)
+  }
+);}
+
+
+
+
+
+export const getCreateChatChannelMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatChannel>>, TError,{data: BodyType<ChatChannelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createChatChannel>>, TError,{data: BodyType<ChatChannelInput>}, TContext> => {
+
+const mutationKey = ['createChatChannel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createChatChannel>>, {data: BodyType<ChatChannelInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createChatChannel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateChatChannelMutationResult = NonNullable<Awaited<ReturnType<typeof createChatChannel>>>
+    export type CreateChatChannelMutationBody = BodyType<ChatChannelInput>
+    export type CreateChatChannelMutationError = ErrorType<void>
+
+    /**
+ * @summary Create an invite-only channel (admins only)
+ */
+export const useCreateChatChannel = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createChatChannel>>, TError,{data: BodyType<ChatChannelInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createChatChannel>>,
+        TError,
+        {data: BodyType<ChatChannelInput>},
+        TContext
+      > => {
+      return useMutation(getCreateChatChannelMutationOptions(options));
+    }
+
+export const getUpdateChatChannelUrl = (channelId: string,) => {
+
+
+
+
+  return `/api/queue/chat/channels/${channelId}`
+}
+
+/**
+ * @summary Rename a channel and/or replace its invited members (admins only)
+ */
+export const updateChatChannel = async (channelId: string,
+    chatChannelUpdateInput: ChatChannelUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatChannel> => {
+
+  return customFetch<ChatChannel>(getUpdateChatChannelUrl(channelId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatChannelUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateChatChannelMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatChannel>>, TError,{channelId: string;data: BodyType<ChatChannelUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateChatChannel>>, TError,{channelId: string;data: BodyType<ChatChannelUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateChatChannel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateChatChannel>>, {channelId: string;data: BodyType<ChatChannelUpdateInput>}> = (props) => {
+          const {channelId,data} = props ?? {};
+
+          return  updateChatChannel(channelId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateChatChannelMutationResult = NonNullable<Awaited<ReturnType<typeof updateChatChannel>>>
+    export type UpdateChatChannelMutationBody = BodyType<ChatChannelUpdateInput>
+    export type UpdateChatChannelMutationError = ErrorType<void>
+
+    /**
+ * @summary Rename a channel and/or replace its invited members (admins only)
+ */
+export const useUpdateChatChannel = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatChannel>>, TError,{channelId: string;data: BodyType<ChatChannelUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateChatChannel>>,
+        TError,
+        {channelId: string;data: BodyType<ChatChannelUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateChatChannelMutationOptions(options));
+    }
+
+export const getDeleteChatChannelUrl = (channelId: string,) => {
+
+
+
+
+  return `/api/queue/chat/channels/${channelId}`
+}
+
+/**
+ * @summary Delete a channel and its messages (admins only)
+ */
+export const deleteChatChannel = async (channelId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteChatChannelUrl(channelId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteChatChannelMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteChatChannel>>, TError,{channelId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteChatChannel>>, TError,{channelId: string}, TContext> => {
+
+const mutationKey = ['deleteChatChannel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteChatChannel>>, {channelId: string}> = (props) => {
+          const {channelId} = props ?? {};
+
+          return  deleteChatChannel(channelId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteChatChannelMutationResult = NonNullable<Awaited<ReturnType<typeof deleteChatChannel>>>
+
+    export type DeleteChatChannelMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a channel and its messages (admins only)
+ */
+export const useDeleteChatChannel = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteChatChannel>>, TError,{channelId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteChatChannel>>,
+        TError,
+        {channelId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteChatChannelMutationOptions(options));
+    }
 
 export const getCreateChatPollUrl = (messageId: string,) => {
 

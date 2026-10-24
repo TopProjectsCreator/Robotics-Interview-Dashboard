@@ -19,7 +19,7 @@ before?: BeforeParameter;
  */
 limit?: ChatLimitParameter;
 /**
- * Conversation scope. Shared is the team channel; direct requires author and peer.
+ * Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.
  */
 scope?: GetInterviewChatScope;
 /**
@@ -30,4 +30,8 @@ author?: string;
  * Configured interviewer label for the direct conversation.
  */
 peer?: string;
+/**
+ * Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
+ */
+channelId?: string;
 };

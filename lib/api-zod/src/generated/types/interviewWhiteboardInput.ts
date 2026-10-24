@@ -21,4 +21,6 @@ export interface InterviewWhiteboardInput {
   scope: InterviewWhiteboardInputScope;
   /** Configured interviewer label for a direct whiteboard */
   recipient?: string | null;
+  /** Invite-only channel id for a channel whiteboard */
+  channelId?: string | null;
 }

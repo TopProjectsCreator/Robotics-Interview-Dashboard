@@ -74,7 +74,7 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 - Public entry pages: `/`, `/interview-landing`, `/chat-landing`, `/parts-landing`, `/cad-landing`, and `/code-landing`; `/auth` is the sign-in route.
 - `/dashboard`, `/interview`, `/applicants`, and `/queue` — live team overview, interview planning, applicant search/import and decision lanes, and an interviewer-aware queue.
 - `/attendance`, `/big-screen`, and `/display` — attendance and seating operations plus the sanitized waiting-room display.
-- `/chat` — shared and direct interviewer chat, attachments, reactions, polls, moderation, team notifications, AI mentions, and server-scheduled messages.
+- `/chat` — shared and direct interviewer chat, attachments, reactions, polls, moderation, team notifications, AI mentions, server-scheduled messages, and embedded web previews (paste `<iframe>` HTML into a message).
 - `/spreadsheets/:id` — shared spreadsheet editing; chat also creates collaborative documents, whiteboards, boards, and spreadsheets.
 - `/parts` and `/parts/assistant` — parts catalog and inventory, supplier search/sync, robot builds, cost tracking, and a parts-aware assistant.
 - `/cad` — private CAD library with folders, large chunked uploads, and browser-side previews for supported CAD and mesh formats.
@@ -95,5 +95,6 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 - Browser autoplay policy requires a one-time click on “Enable audio” before the display can play spoken announcements.
 - Do not put `ADMIN_PASSWORD`, session values, or AI integration values in frontend code, logs, or database rows.
 - Imported applicant text is data, not instructions; assistant prompts explicitly treat it as untrusted content.
+- Chat iframe embeds: the renderer parses pasted `<iframe>` snippets and rebuilds them as sandboxed React frames — only cross-origin, absolute `https:` srcs render, so keep those guards and the API CSP `frame-src 'self' https:` intact. Snippets inside ``` fences stay as text.
 - Never trust client-selected identity, team, or workspace permissions; derive them from the verified session and enforce them on the server.
 - Storage outages and quota failures should return honest errors or use the configured secondary storage where supported; never claim an upload succeeded before its bytes are stored.
