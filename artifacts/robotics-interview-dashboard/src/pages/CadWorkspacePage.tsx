@@ -34,6 +34,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { CadModelPreviewDialog } from "@/components/CadModelPreviewDialog";
+import { CadReadmePreview } from "@/components/CadReadmePreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CAD_ACCEPT, cadFormatLabel, cadRenderFormat } from "@/lib/cadFormats";
@@ -226,6 +227,21 @@ export function CadWorkspacePage() {
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [models, location, search, descendantIdsByFolder]);
+
+  const readmeModel = useMemo(
+    () =>
+      models.find((model) => {
+        if (model.fileName.toLowerCase() !== "readme.md") return false;
+        if (location.kind === "unfiled") {
+          return model.botId === null && model.folderId === null;
+        }
+        if (location.kind === "bot") {
+          return model.botId === location.botId && model.folderId === null;
+        }
+        return model.folderId === location.folderId;
+      }),
+    [models, location],
+  );
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>, successMessage?: string) => {
@@ -848,6 +864,7 @@ export function CadWorkspacePage() {
               })}
             </ul>
           )}
+          {readmeModel && <CadReadmePreview key={readmeModel.id} model={readmeModel} />}
         </section>
       </div>
 

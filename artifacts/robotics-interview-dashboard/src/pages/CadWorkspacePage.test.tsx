@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CadStorageStatus } from "@workspace/api-client-react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CadWorkspacePage } from "./CadWorkspacePage";
 
@@ -162,6 +162,10 @@ beforeEach(() => {
     sizeBytes: 10,
   });
   mocks.uploadChunked.mockResolvedValue("/objects/chunk/upload-1");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("CAD workspace tree", () => {
@@ -422,5 +426,175 @@ describe("CAD workspace preview", () => {
         expect.objectContaining({ name: "Arm bracket v2" }),
       );
     });
+  });
+});
+
+describe("CAD README preview", () => {
+  function readme(
+    id: string,
+    folderId: string | null,
+    fileName = "README.md",
+    objectPath = `/objects/${id}`,
+    botId: string | null = bot.id,
+  ) {
+    return model({
+      id,
+      name: fileName,
+      fileName,
+      contentType: "text/markdown",
+      objectPath,
+      sizeBytes: 128,
+      botId,
+      folderId,
+    });
+  }
+
+  it("automatically renders a case-insensitive location README safely with theme styles", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () =>
+        "# Build notes\n\nUse **M3 screws** and `threadlocker`.\n\n| Part | Count |\n| --- | ---: |\n| Spacer | 4 |\n\n<img src=x onerror=\"alert(1)\">\n\n[unsafe](javascript:alert(1))",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder, chassisFolder],
+      models: [model(), readme("readme-intake", intakeFolder.id, "ReadMe.MD")],
+    });
+
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+
+    const preview = await screen.findByTestId("cad-readme-preview");
+    expect(await within(preview).findByRole("heading", { name: "Build notes" })).toBeInTheDocument();
+    expect(preview).toHaveTextContent("M3 screws");
+    expect(preview).toHaveTextContent("threadlocker");
+    expect(within(preview).getByRole("table")).toBeInTheDocument();
+    expect(preview).toHaveTextContent("Spacer");
+    expect(preview.querySelector("img")).toBeNull();
+    expect(within(preview).queryByRole("link", { name: "unsafe" })).not.toBeInTheDocument();
+    expect(preview).toHaveClass("border-border", "bg-background", "text-foreground");
+    expect(preview.querySelector(".dark\\:prose-invert")).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/storage/objects/readme-intake",
+      { credentials: "include" },
+    );
+  });
+
+  it("switches to the exact selected folder README and does not show unrelated locations", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      text: async () => String(input).includes("readme-intake") ? "# Intake notes" : "# Chassis notes",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder, chassisFolder],
+      models: [
+        readme("readme-intake", intakeFolder.id),
+        readme("readme-chassis", chassisFolder.id),
+      ],
+    });
+
+    expect(screen.queryByTestId("cad-readme-preview")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("cad-bot-bot-1"));
+    expect(screen.queryByTestId("cad-readme-preview")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("cad-folder-folder-intake"));
+    const preview = await screen.findByTestId("cad-readme-preview");
+    expect(await within(preview).findByRole("heading", { name: "Intake notes" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/storage/objects/readme-intake");
+
+    fireEvent.click(screen.getByTestId("cad-folder-folder-chassis"));
+    const updatedPreview = await screen.findByTestId("cad-readme-preview");
+    expect(await within(updatedPreview).findByRole("heading", { name: "Chassis notes" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/storage/objects/readme-chassis");
+  });
+
+  it("switches between bot-root READMEs without selecting a folder README", async () => {
+    const secondBot = { ...bot, id: "bot-2", name: "Rover" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      text: async () => String(input).includes("readme-scout") ? "# Scout root" : "# Rover root",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot, secondBot],
+      folders: [intakeFolder],
+      models: [
+        readme("readme-scout", null, "README.md", "/objects/readme-scout", bot.id),
+        readme("readme-rover", null, "README.md", "/objects/readme-rover", secondBot.id),
+        readme("readme-folder", intakeFolder.id),
+      ],
+    });
+
+    fireEvent.click(await screen.findByTestId("cad-bot-bot-1"));
+    expect(await screen.findByRole("heading", { name: "Scout root" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("cad-bot-bot-2"));
+    expect(await screen.findByRole("heading", { name: "Rover root" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "/api/storage/objects/readme-scout",
+      "/api/storage/objects/readme-rover",
+    ]);
+  });
+
+  it("shows a loading state while the protected README request is pending", async () => {
+    let finishFetch: ((response: { ok: boolean; status: number; text: () => Promise<string> }) => void) | undefined;
+    const fetchMock = vi.fn(
+      () => new Promise<{ ok: boolean; status: number; text: () => Promise<string> }>((resolve) => {
+        finishFetch = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder],
+      models: [readme("readme-intake", intakeFolder.id)],
+    });
+
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+    expect(await screen.findByTestId("cad-readme-loading")).toHaveTextContent("Loading README");
+    finishFetch?.({ ok: true, status: 200, text: async () => "# Loaded" });
+    expect(await screen.findByRole("heading", { name: "Loaded" })).toBeInTheDocument();
+  });
+
+  it("shows a recoverable error and retries a failed protected README request", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => "# Back online" });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder],
+      models: [readme("readme-intake", intakeFolder.id)],
+    });
+
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+    const retry = await screen.findByTestId("cad-readme-retry");
+    expect(screen.getByTestId("cad-readme-error")).toHaveTextContent("README could not be loaded");
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole("heading", { name: "Back online" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not render an empty README panel when the active location has no README", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder],
+      models: [model(), readme("readme-intake", intakeFolder.id)],
+    });
+
+    expect(screen.queryByTestId("cad-readme-preview")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("cad-bot-bot-1"));
+    expect(screen.queryByTestId("cad-readme-preview")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

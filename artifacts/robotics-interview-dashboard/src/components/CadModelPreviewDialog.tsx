@@ -13,6 +13,12 @@ import {
 
 import { CadModelViewer, describeCadModel } from "./CadModelViewer";
 
+export function storageUrl(objectPath: string): string {
+  const base = String(import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
+  const path = objectPath.startsWith("/") ? objectPath : `/${objectPath}`;
+  return `${base}/api/storage${path}`;
+}
+
 type CadModelPreviewDialogProps = {
   model: CadModel;
   bots: CadBot[];
@@ -20,12 +26,6 @@ type CadModelPreviewDialogProps = {
   onClose: () => void;
   onChanged: () => void;
 };
-
-export function storageUrl(objectPath: string): string {
-  const base = String(import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "");
-  const path = objectPath.startsWith("/") ? objectPath : `/${objectPath}`;
-  return `${base}/api/storage${path}`;
-}
 
 function errorMessage(error: unknown, fallback: string): string {
   // ApiError keeps the parsed error body on `data`; `response` is the raw
