@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { pool } from "@workspace/db";
+import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import { applyCodeFileContent } from "./codeCollaboration";
 import { pushRealtimeHint } from "./realtime";
 import { teamSqlCondition } from "./teams";
@@ -64,9 +64,17 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
     { limit: { type: "integer", minimum: 1, maximum: 50 } },
   ),
   tool(
+    "list_team_chat_channels",
+    "List names of team chat channels this signed-in account can access. Direct messages and inaccessible channels are never included.",
+    {},
+  ),
+  tool(
     "send_team_chat_message",
-    "Post a message to the shared team Chat channel as AI assistant. Use only when the user explicitly asks you to share or send something to the team.",
-    { message: { type: "string", minLength: 1, maxLength: 4000 } },
+    "Post a message as AI assistant only when the user explicitly asks you to share or send it. Omit channelName for the shared main team Chat channel; otherwise use the exact name of an accessible channel.",
+    {
+      message: { type: "string", minLength: 1, maxLength: 4000 },
+      channelName: { type: "string", minLength: 1, maxLength: 80 },
+    },
     ["message"],
   ),
   tool(
@@ -279,6 +287,34 @@ async function canUseWorkspace(context: ToolContext, workspace: WorkspaceKey): P
   return userCanSeeWorkspace(visibility, context.accountId, account.role, workspace);
 }
 
+async function chatAccountInTeam(context: ToolContext) {
+  if (!context.accountId) return undefined;
+  const account = await accountById(context.accountId);
+  if (!account) return undefined;
+  if (account.teamId && account.teamId !== context.teamId) return undefined;
+  if (!account.teamId && context.teamId !== DEFAULT_TEAM_ID) return undefined;
+  return account;
+}
+
+async function accessibleTeamChatChannels(context: ToolContext, accountId: string, role: string) {
+  return pool.query<{ id: string; name: string }>(
+    `select c."id", c."name"
+       from "chat_channels" c
+      where ${teamSqlCondition('c."team_id"', "$1")}
+        and (
+          $2 = 'coordinator'
+          or exists (
+            select 1 from "chat_channel_members" m
+             where m."channel_id" = c."id"
+               and ${teamSqlCondition('m."team_id"', "$1")}
+               and m."member_id" = $3
+          )
+        )
+      order by lower(c."name"), c."name"`,
+    [context.teamId, role, accountId],
+  );
+}
+
 function cleanCodePath(path: string): string | null {
   const cleaned = path.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   if (
@@ -324,7 +360,7 @@ export async function runAssistantWorkspaceTool(
   context: ToolContext,
 ): Promise<{ content: string; detail: string }> {
   const workspace: WorkspaceKey =
-    name === "list_team_chat_messages" || name === "send_team_chat_message"
+    name === "list_team_chat_messages" || name === "list_team_chat_channels" || name === "send_team_chat_message"
       ? "chat"
       : name.includes("cad_")
         ? "cad"
@@ -359,18 +395,64 @@ export async function runAssistantWorkspaceTool(
     return { content: JSON.stringify(messages), detail: `read ${messages.length} shared chat messages` };
   }
 
+  if (name === "list_team_chat_channels") {
+    const account = await chatAccountInTeam(context);
+    if (!account) return { content: "Authentication is required to list chat channels.", detail: "access denied" };
+    const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+    return {
+      content: JSON.stringify(channels.rows.map((channel) => channel.name)),
+      detail: `listed ${channels.rows.length} accessible team chat channels`,
+    };
+  }
+
   if (name === "send_team_chat_message") {
     const message = textArg(args, "message", 4000);
     if (!message) return { content: "A non-empty message is required.", detail: "no message sent" };
+    let scope = "shared";
+    let peer: string | null = null;
+    let destination = "the shared main team Chat channel";
+    if (args.channelName !== undefined) {
+      const rawChannelName = args.channelName;
+      const requestedName = typeof rawChannelName === "string"
+        ? rawChannelName.trim().replace(/\s+/g, " ")
+        : "";
+      if (!requestedName || requestedName.length > 80) {
+        return {
+          content: "A valid channel name of up to 80 characters is required when specifying a destination.",
+          detail: "invalid channel name",
+        };
+      }
+      const account = await chatAccountInTeam(context);
+      if (!account) return { content: "Authentication is required to post to a channel.", detail: "access denied" };
+      const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+      const matches = channels.rows.filter((channel) =>
+        channel.name.trim().replace(/\s+/g, " ").toLowerCase() === requestedName.toLowerCase(),
+      );
+      if (matches.length === 0) {
+        return {
+          content: "No accessible team chat channel with that name was found.",
+          detail: "channel not found or access denied",
+        };
+      }
+      if (matches.length > 1) {
+        return {
+          content: `More than one accessible team chat channel is named "${requestedName}". Choose an unambiguous channel name.`,
+          detail: "ambiguous channel name",
+        };
+      }
+      scope = "channel";
+      peer = matches[0].id;
+      destination = `the "${matches[0].name}" channel`;
+    }
     const id = randomUUID();
     await pool.query(
       `insert into "interview_chat_messages"
         ("id", "team_id", "author", "message", "conversation_scope", "conversation_peer", "activities")
-       values ($1, $2, 'AI assistant', $3, 'shared', null, '[]')`,
-      [id, context.teamId, message],
+       values ($1, $2, 'AI assistant', $3, $4, $5, '[]')`,
+      [id, context.teamId, message, scope, peer],
     );
     pushRealtimeHint("interview_chat_messages", "INSERT");
-    return { content: `Posted to the shared team Chat channel (message ${id}).`, detail: "posted team chat message" };
+    return { content: `Posted to ${destination} (message ${id}).`, detail: `posted team chat message to ${destination}` };
   }
 
   if (name === "list_cad_library") {

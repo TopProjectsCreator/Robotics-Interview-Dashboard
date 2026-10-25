@@ -543,7 +543,7 @@ async function createHarness(t) {
     next();
   };
 
-  mock.module("@workspace/db", { namedExports: { pool } });
+  mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool } });
   mock.module("@workspace/integrations-openai-ai-server", {
     namedExports: {
       openai: {

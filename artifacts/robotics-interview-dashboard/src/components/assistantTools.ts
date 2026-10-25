@@ -101,6 +101,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
     description: "Team chat, CAD library, code projects, and custom apps.",
     tools: [
       { name: "list_team_chat_messages", label: "Read team chat", hint: "Recent shared messages", write: false },
+      { name: "list_team_chat_channels", label: "List team chat channels", hint: "Accessible channels", write: false },
       { name: "send_team_chat_message", label: "Send team chat message", hint: "Post when asked", write: true },
       { name: "list_cad_library", label: "List CAD library", hint: "Bots, folders & models", write: false },
       { name: "create_cad_bot", label: "Create CAD bot", hint: "Organize CAD assets", write: true },
