@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Bot, Settings, Sparkles } from "lucide-react";
+import { AlarmClock, Bot, Settings, Sparkles } from "lucide-react";
+import { Link } from "wouter";
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ type AssistantModelPickerProps = {
   loading: boolean;
   error: boolean;
   onChange: (model: string) => void;
+  showRecurringTasks?: boolean;
   canManageAssistantTools?: boolean;
   thinkingLevel?: AssistantThinkingLevel;
   onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
@@ -68,6 +70,7 @@ export function AssistantModelPicker({
   loading,
   error,
   onChange,
+  showRecurringTasks = false,
   canManageAssistantTools = true,
   thinkingLevel = "auto",
   onThinkingLevelChange,
@@ -210,6 +213,17 @@ export function AssistantModelPicker({
             ))}
           </SelectContent>
         </Select>
+        {showRecurringTasks && (
+          <Link
+            href="/assistant/scheduled-tasks"
+            aria-label="Recurring tasks"
+            title="Recurring tasks"
+            data-testid="assistant-scheduled-tasks-link"
+            className="assistant-scheduled-tasks-link"
+          >
+            <AlarmClock size={17} aria-hidden="true" />
+          </Link>
+        )}
         <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
           <PopoverTrigger asChild>
             <button

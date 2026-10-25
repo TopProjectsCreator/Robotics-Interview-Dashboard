@@ -62,6 +62,7 @@ const WORKSPACE_RETURN_PATHS = new Set([
   "/cad",
   "/code",
   "/assistant",
+  "/assistant/scheduled-tasks",
 ]);
 
 export function getSafeAuthReturnPath(value: string | null | undefined): string {

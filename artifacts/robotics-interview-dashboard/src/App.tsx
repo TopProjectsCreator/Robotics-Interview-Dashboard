@@ -79,6 +79,7 @@ import NotFound from "@/pages/not-found";
 const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
 const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
 const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").then((m) => ({ default: m.CustomWorkspacesPage })));
+const RecurringTasksPage = lazy(() => import("@/pages/RecurringTasksPage").then((m) => ({ default: m.RecurringTasksPage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
@@ -3361,7 +3362,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
             const active = kind === "workspace"
               ? workspaceArea === workspace
               : location === href ||
-                location.startsWith(`${href}/`) ||
+                (href !== "/assistant" && location.startsWith(`${href}/`)) ||
                 (href === "/chat" && location.startsWith("/spreadsheets/"));
             return (
               <Link
@@ -8652,6 +8653,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             loading={assistantModels.isLoading}
             error={assistantModels.isError}
             onChange={rememberModel}
+            showRecurringTasks={!partsMode}
             canManageAssistantTools={canManageAssistantTools}
             thinkingLevel={thinkingLevel}
             onThinkingLevelChange={rememberThinkingLevel}
@@ -9108,6 +9110,7 @@ function Router() {
         <Route path="/applicants"><Shell><Applicants /></Shell></Route>
         <Route path="/queue"><Shell><Queue /></Shell></Route>
         <Route path="/chat"><Shell><ChatPage /></Shell></Route>
+        <Route path="/assistant/scheduled-tasks"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><RecurringTasksPage /></Suspense></Shell></Route>
         <Route path="/spreadsheets/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><SpreadsheetEditor spreadsheetId={id} /></Suspense></Shell>}</Route>
         <Route path="/attendance"><Shell><AttendancePage /></Shell></Route>
         <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>

@@ -39,7 +39,7 @@ describe("workspace navigation", () => {
   });
 
   it("keeps team chat, the assistant, and chat documents in the chat area", () => {
-    for (const path of ["/chat", "/assistant", "/spreadsheets/board-1"]) {
+    for (const path of ["/chat", "/assistant", "/assistant/scheduled-tasks", "/spreadsheets/board-1"]) {
       expect(workspaceAreaForPath(path)).toBe("chat");
     }
     expect(getWorkspaceNavigation("chat").map(({ label }) => label)).toEqual([
@@ -52,6 +52,8 @@ describe("workspace navigation", () => {
     ]);
     expect(getWorkspaceNavigation("chat").find(({ label }) => label === "AI assistant")?.href)
       .toBe("/assistant");
+    expect(getWorkspaceNavigation("chat").map(({ label }) => label))
+      .not.toContain("Recurring tasks");
   });
 
   it("keeps parts, CAD, and code routes in their own workspaces", () => {

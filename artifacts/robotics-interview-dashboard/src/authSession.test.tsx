@@ -4,7 +4,13 @@ import {
   getGetSessionQueryKey,
   getListInterviewersQueryKey,
 } from "@workspace/api-client-react";
-import { clearUserScopedRecords } from "./authSession";
+import { clearUserScopedRecords, getSafeAuthReturnPath } from "./authSession";
+
+describe("getSafeAuthReturnPath", () => {
+  it("preserves a return to the recurring task owner page", () => {
+    expect(getSafeAuthReturnPath("/assistant/scheduled-tasks")).toBe("/assistant/scheduled-tasks");
+  });
+});
 
 describe("clearUserScopedRecords", () => {
   let queryClient: QueryClient;

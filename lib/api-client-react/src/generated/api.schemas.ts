@@ -2523,6 +2523,158 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export type AssistantTaskRecurrenceFrequency = typeof AssistantTaskRecurrenceFrequency[keyof typeof AssistantTaskRecurrenceFrequency];
+
+
+export const AssistantTaskRecurrenceFrequency = {
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export interface AssistantTaskRecurrence {
+  frequency: AssistantTaskRecurrenceFrequency;
+  /**
+     * @minimum 0
+     * @maximum 23
+     */
+  hour: number;
+  /**
+     * @minimum 0
+     * @maximum 59
+     */
+  minute: number;
+  /**
+     * @items.minimum 0
+     * @items.maximum 6
+     */
+  daysOfWeek: number[];
+}
+
+export type AssistantScheduledTaskRunStatus = typeof AssistantScheduledTaskRunStatus[keyof typeof AssistantScheduledTaskRunStatus];
+
+
+export const AssistantScheduledTaskRunStatus = {
+  running: 'running',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  interrupted: 'interrupted',
+  cancelled: 'cancelled',
+} as const;
+
+export interface AssistantScheduledTaskRun {
+  id: string;
+  scheduledFor: string;
+  status: AssistantScheduledTaskRunStatus;
+  attempt: number;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  result: string | null;
+  /** @nullable */
+  error: string | null;
+}
+
+export type AssistantScheduledTaskStatus = typeof AssistantScheduledTaskStatus[keyof typeof AssistantScheduledTaskStatus];
+
+
+export const AssistantScheduledTaskStatus = {
+  draft: 'draft',
+  active: 'active',
+  paused: 'paused',
+  cancelled: 'cancelled',
+} as const;
+
+export interface AssistantScheduledTask {
+  id: string;
+  prompt: string;
+  status: AssistantScheduledTaskStatus;
+  recurrence: AssistantTaskRecurrence;
+  timeZone: string;
+  /** @nullable */
+  destinationChannel: string | null;
+  /** @nullable */
+  nextRunAt: string | null;
+  /** @nullable */
+  lastRunAt: string | null;
+  /** @nullable */
+  lastError: string | null;
+  createdAt: string;
+  runs: AssistantScheduledTaskRun[];
+}
+
+export interface AssistantScheduledTaskList {
+  items: AssistantScheduledTask[];
+}
+
+export type AssistantScheduledTaskActionInputAction = typeof AssistantScheduledTaskActionInputAction[keyof typeof AssistantScheduledTaskActionInputAction];
+
+
+export const AssistantScheduledTaskActionInputAction = {
+  pause: 'pause',
+  resume: 'resume',
+  edit: 'edit',
+  cancel: 'cancel',
+} as const;
+
+export type AssistantScheduledTaskActionInputFrequency = typeof AssistantScheduledTaskActionInputFrequency[keyof typeof AssistantScheduledTaskActionInputFrequency];
+
+
+export const AssistantScheduledTaskActionInputFrequency = {
+  daily: 'daily',
+  weekly: 'weekly',
+} as const;
+
+export interface AssistantScheduledTaskActionInput {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  taskId: string;
+  action: AssistantScheduledTaskActionInputAction;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  prompt?: string;
+  frequency?: AssistantScheduledTaskActionInputFrequency;
+  /**
+     * @minimum 0
+     * @maximum 23
+     */
+  hour?: number;
+  /**
+     * @minimum 0
+     * @maximum 59
+     */
+  minute?: number;
+  /**
+     * @items.minimum 0
+     * @items.maximum 6
+     */
+  daysOfWeek?: number[];
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  timeZone?: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  channelName?: string;
+  /**
+     * @maxItems 300
+     * @items.maxLength 100
+     */
+  disabledTools?: string[];
+}
+
+export interface AssistantScheduledTaskActionResult {
+  message: string;
+}
+
 export type AssistantQueueInput = AssistantInput;
 
 export type AssistantPromptRunStatus = typeof AssistantPromptRunStatus[keyof typeof AssistantPromptRunStatus];

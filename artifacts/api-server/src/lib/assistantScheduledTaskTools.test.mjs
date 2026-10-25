@@ -23,6 +23,7 @@ const accounts = new Map([
   ["other-team", { id: "other-team", teamId: "team-b", role: "coordinator", displayName: "Other Team" }],
 ]);
 const tasks = new Map();
+const runsByTask = new Map();
 const queries = [];
 let channelMembers = [];
 let channelMessages = [];
@@ -67,7 +68,10 @@ const pool = {
       const rows = [...tasks.values()].filter((row) => row.team_id === values[0] && row.owner_id === values[1]);
       return { rows, rowCount: rows.length };
     }
-    if (statement.includes('from "assistant_scheduled_task_runs"')) return { rows: [], rowCount: 0 };
+    if (statement.includes('from "assistant_scheduled_task_runs"')) {
+      const rows = runsByTask.get(values[0]) ?? [];
+      return { rows: rows.slice(0, 5), rowCount: rows.length };
+    }
     if (statement.startsWith('update "assistant_scheduled_tasks"')) {
       const row = tasks.get(values[0]);
       if (row && row.team_id === values[1] && row.owner_id === values[2]) {
@@ -212,6 +216,55 @@ test("another team cannot inspect a task and team members cannot create channels
   }, baseContext);
   assert.equal(denied.detail, "access denied");
   assert.equal(channelMembers.length, 0);
+});
+
+test("recurring task lists include recent results only for the signed-in owner", async () => {
+  tasks.clear();
+  runsByTask.clear();
+  const create = (prompt) => runAssistantWorkspaceTool("create_scheduled_assistant_task", {
+    prompt,
+    frequency: "daily",
+    hour: 8,
+    minute: 15,
+    daysOfWeek: [],
+    timeZone: "America/Los_Angeles",
+  }, baseContext);
+  const ownDraft = JSON.parse((await create("Read team updates.")).content);
+  const anotherOwnerDraft = JSON.parse((await runAssistantWorkspaceTool(
+    "create_scheduled_assistant_task",
+    {
+      prompt: "Read private updates.",
+      frequency: "weekly",
+      hour: 9,
+      minute: 0,
+      daysOfWeek: [1],
+      timeZone: "UTC",
+    },
+    { ...baseContext, accountId: "member-b" },
+  )).content);
+  runsByTask.set(ownDraft.id, [{
+    id: "run-failed",
+    scheduledFor: new Date("2026-10-20T15:15:00Z"),
+    status: "failed",
+    attempt: 1,
+    startedAt: new Date("2026-10-20T15:15:02Z"),
+    finishedAt: new Date("2026-10-20T15:15:05Z"),
+    result: null,
+    error: "Provider unavailable",
+  }]);
+
+  const listed = JSON.parse((await runAssistantWorkspaceTool(
+    "list_scheduled_assistant_tasks",
+    {},
+    baseContext,
+  )).content);
+
+  assert.equal(tasks.has(anotherOwnerDraft.id), true);
+  assert.deepEqual(listed.map((task) => task.id), [ownDraft.id]);
+  assert.equal(listed[0].runs[0].status, "failed");
+  assert.equal(listed[0].runs[0].error, "Provider unavailable");
+  const runsQuery = queries.findLast((query) => query.statement.includes('from "assistant_scheduled_task_runs"'));
+  assert.deepEqual(runsQuery.values, [ownDraft.id, "team-a", "member-a"]);
 });
 
 test("coordinator channel creation can invite only members of the current team", async () => {

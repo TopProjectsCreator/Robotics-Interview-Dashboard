@@ -2924,6 +2924,95 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * @summary List recurring assistant tasks owned by the signed-in account
+ */
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceHourMin = 0;
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceHourMax = 23;
+
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceMinuteMin = 0;
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceMinuteMax = 59;
+
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceDaysOfWeekItemMin = 0;
+export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceDaysOfWeekItemMax = 6;
+
+
+
+export const ListOwnedAssistantScheduledTasksResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['draft', 'active', 'paused', 'cancelled']),
+  "recurrence": zod.object({
+  "frequency": zod.enum(['daily', 'weekly']),
+  "hour": zod.number().int().min(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceHourMin).max(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceHourMax),
+  "minute": zod.number().int().min(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceMinuteMin).max(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceMinuteMax),
+  "daysOfWeek": zod.array(zod.number().int().min(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceDaysOfWeekItemMin).max(listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceDaysOfWeekItemMax))
+}),
+  "timeZone": zod.string(),
+  "destinationChannel": zod.string().nullable(),
+  "nextRunAt": zod.coerce.date().nullable(),
+  "lastRunAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "runs": zod.array(zod.object({
+  "id": zod.string(),
+  "scheduledFor": zod.coerce.date(),
+  "status": zod.enum(['running', 'succeeded', 'failed', 'interrupted', 'cancelled']),
+  "attempt": zod.number().int(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable()
+}))
+}))
+})
+
+
+/**
+ * @summary Manage one of the signed-in account's recurring assistant tasks
+ */
+export const manageOwnedAssistantScheduledTaskBodyTaskIdMax = 128;
+
+export const manageOwnedAssistantScheduledTaskBodyPromptMax = 8000;
+
+export const manageOwnedAssistantScheduledTaskBodyHourMin = 0;
+export const manageOwnedAssistantScheduledTaskBodyHourMax = 23;
+
+export const manageOwnedAssistantScheduledTaskBodyMinuteMin = 0;
+export const manageOwnedAssistantScheduledTaskBodyMinuteMax = 59;
+
+export const manageOwnedAssistantScheduledTaskBodyDaysOfWeekItemMin = 0;
+export const manageOwnedAssistantScheduledTaskBodyDaysOfWeekItemMax = 6;
+
+export const manageOwnedAssistantScheduledTaskBodyTimeZoneMax = 100;
+
+export const manageOwnedAssistantScheduledTaskBodyChannelNameMax = 80;
+
+export const manageOwnedAssistantScheduledTaskBodyDisabledToolsItemMax = 100;
+
+export const manageOwnedAssistantScheduledTaskBodyDisabledToolsMax = 300;
+
+
+
+export const ManageOwnedAssistantScheduledTaskBody = zod.object({
+  "taskId": zod.string().min(1).max(manageOwnedAssistantScheduledTaskBodyTaskIdMax),
+  "action": zod.enum(['pause', 'resume', 'edit', 'cancel']),
+  "prompt": zod.string().min(1).max(manageOwnedAssistantScheduledTaskBodyPromptMax).optional(),
+  "frequency": zod.enum(['daily', 'weekly']).optional(),
+  "hour": zod.number().int().min(manageOwnedAssistantScheduledTaskBodyHourMin).max(manageOwnedAssistantScheduledTaskBodyHourMax).optional(),
+  "minute": zod.number().int().min(manageOwnedAssistantScheduledTaskBodyMinuteMin).max(manageOwnedAssistantScheduledTaskBodyMinuteMax).optional(),
+  "daysOfWeek": zod.array(zod.number().int().min(manageOwnedAssistantScheduledTaskBodyDaysOfWeekItemMin).max(manageOwnedAssistantScheduledTaskBodyDaysOfWeekItemMax)).optional(),
+  "timeZone": zod.string().min(1).max(manageOwnedAssistantScheduledTaskBodyTimeZoneMax).optional(),
+  "channelName": zod.string().min(1).max(manageOwnedAssistantScheduledTaskBodyChannelNameMax).optional(),
+  "disabledTools": zod.array(zod.string().max(manageOwnedAssistantScheduledTaskBodyDisabledToolsItemMax)).max(manageOwnedAssistantScheduledTaskBodyDisabledToolsMax).optional()
+})
+
+export const ManageOwnedAssistantScheduledTaskResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary Submit answers to a pending assistant question
  */
 export const AnswerAssistantQuestionParams = zod.object({

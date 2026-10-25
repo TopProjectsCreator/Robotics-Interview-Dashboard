@@ -43,6 +43,9 @@ import type {
   AssistantQuestionAnswersInput,
   AssistantQueueInput,
   AssistantResponse,
+  AssistantScheduledTaskActionInput,
+  AssistantScheduledTaskActionResult,
+  AssistantScheduledTaskList,
   AssistantSkill,
   AssistantSkillInput,
   AssistantSkillList,
@@ -7877,6 +7880,154 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
+    }
+
+export const getListOwnedAssistantScheduledTasksUrl = () => {
+
+
+
+
+  return `/api/assistant/scheduled-tasks`
+}
+
+/**
+ * @summary List recurring assistant tasks owned by the signed-in account
+ */
+export const listOwnedAssistantScheduledTasks = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantScheduledTaskList> => {
+
+  return customFetch<AssistantScheduledTaskList>(getListOwnedAssistantScheduledTasksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOwnedAssistantScheduledTasksQueryKey = () => {
+    return [
+    `/api/assistant/scheduled-tasks`
+    ] as const;
+    }
+
+
+export const getListOwnedAssistantScheduledTasksQueryOptions = <TData = Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOwnedAssistantScheduledTasksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>> = ({ signal }) => listOwnedAssistantScheduledTasks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListOwnedAssistantScheduledTasksQueryResult = NonNullable<Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>>
+export type ListOwnedAssistantScheduledTasksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recurring assistant tasks owned by the signed-in account
+ */
+
+export function useListOwnedAssistantScheduledTasks<TData = Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOwnedAssistantScheduledTasks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListOwnedAssistantScheduledTasksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getManageOwnedAssistantScheduledTaskUrl = () => {
+
+
+
+
+  return `/api/assistant/scheduled-tasks/actions`
+}
+
+/**
+ * @summary Manage one of the signed-in account's recurring assistant tasks
+ */
+export const manageOwnedAssistantScheduledTask = async (assistantScheduledTaskActionInput: AssistantScheduledTaskActionInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantScheduledTaskActionResult> => {
+
+  return customFetch<AssistantScheduledTaskActionResult>(getManageOwnedAssistantScheduledTaskUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantScheduledTaskActionInput)
+  }
+);}
+
+
+
+
+
+export const getManageOwnedAssistantScheduledTaskMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>, TError,{data: BodyType<AssistantScheduledTaskActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>, TError,{data: BodyType<AssistantScheduledTaskActionInput>}, TContext> => {
+
+const mutationKey = ['manageOwnedAssistantScheduledTask'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>, {data: BodyType<AssistantScheduledTaskActionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  manageOwnedAssistantScheduledTask(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ManageOwnedAssistantScheduledTaskMutationResult = NonNullable<Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>>
+    export type ManageOwnedAssistantScheduledTaskMutationBody = BodyType<AssistantScheduledTaskActionInput>
+    export type ManageOwnedAssistantScheduledTaskMutationError = ErrorType<void>
+
+    /**
+ * @summary Manage one of the signed-in account's recurring assistant tasks
+ */
+export const useManageOwnedAssistantScheduledTask = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>, TError,{data: BodyType<AssistantScheduledTaskActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof manageOwnedAssistantScheduledTask>>,
+        TError,
+        {data: BodyType<AssistantScheduledTaskActionInput>},
+        TContext
+      > => {
+      return useMutation(getManageOwnedAssistantScheduledTaskMutationOptions(options));
     }
 
 export const getAnswerAssistantQuestionUrl = (questionId: string,) => {

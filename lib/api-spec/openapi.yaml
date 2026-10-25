@@ -2085,6 +2085,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/scheduled-tasks:
+    get:
+      operationId: listOwnedAssistantScheduledTasks
+      tags: [assistant]
+      summary: List recurring assistant tasks owned by the signed-in account
+      responses:
+        "200":
+          description: Owned recurring tasks with their recent run history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantScheduledTaskList"
+  /assistant/scheduled-tasks/actions:
+    post:
+      operationId: manageOwnedAssistantScheduledTask
+      tags: [assistant]
+      summary: Manage one of the signed-in account's recurring assistant tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantScheduledTaskActionInput"
+      responses:
+        "200":
+          description: The requested task action result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantScheduledTaskActionResult"
+        "400":
+          description: Invalid action or task update
+        "403":
+          description: The requested assistant tool is disabled
+        "404":
+          description: Task not found for this account
   /assistant/questions/{questionId}/answer:
     post:
       operationId: answerAssistantQuestion
@@ -7372,6 +7408,144 @@ components:
                 type: string
               message:
                 type: string
+    AssistantTaskRecurrence:
+      type: object
+      required: [frequency, hour, minute, daysOfWeek]
+      properties:
+        frequency:
+          type: string
+          enum: [daily, weekly]
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        minute:
+          type: integer
+          minimum: 0
+          maximum: 59
+        daysOfWeek:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+    AssistantScheduledTaskRun:
+      type: object
+      required: [id, scheduledFor, status, attempt, startedAt, finishedAt, result, error]
+      properties:
+        id:
+          type: string
+        scheduledFor:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [running, succeeded, failed, interrupted, cancelled]
+        attempt:
+          type: integer
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        result:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+    AssistantScheduledTask:
+      type: object
+      required: [id, prompt, status, recurrence, timeZone, destinationChannel, nextRunAt, lastRunAt, lastError, createdAt, runs]
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, paused, cancelled]
+        recurrence:
+          $ref: "#/components/schemas/AssistantTaskRecurrence"
+        timeZone:
+          type: string
+        destinationChannel:
+          type: ["string", "null"]
+        nextRunAt:
+          type: ["string", "null"]
+          format: date-time
+        lastRunAt:
+          type: ["string", "null"]
+          format: date-time
+        lastError:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantScheduledTaskRun"
+    AssistantScheduledTaskList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantScheduledTask"
+    AssistantScheduledTaskActionInput:
+      type: object
+      required: [taskId, action]
+      properties:
+        taskId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        action:
+          type: string
+          enum: [pause, resume, edit, cancel]
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        frequency:
+          type: string
+          enum: [daily, weekly]
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        minute:
+          type: integer
+          minimum: 0
+          maximum: 59
+        daysOfWeek:
+          type: array
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+        timeZone:
+          type: string
+          minLength: 1
+          maxLength: 100
+        channelName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        disabledTools:
+          type: array
+          maxItems: 300
+          items:
+            type: string
+            maxLength: 100
+    AssistantScheduledTaskActionResult:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
     AssistantQueueInput:
       allOf:
         - $ref: "#/components/schemas/AssistantInput"

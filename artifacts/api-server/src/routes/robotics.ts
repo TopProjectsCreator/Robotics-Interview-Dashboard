@@ -4,6 +4,9 @@ import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessag
 import {
   AskAssistantBody,
   AskAssistantResponse,
+  ListOwnedAssistantScheduledTasksResponse,
+  ManageOwnedAssistantScheduledTaskBody,
+  ManageOwnedAssistantScheduledTaskResponse,
   GetAssistantPromptQueueParams,
   GetAssistantPromptQueueResponse,
   QueueAssistantPromptParams,
@@ -6731,6 +6734,116 @@ async function dispatchAssistantScheduledTasks(): Promise<void> {
     assistantScheduledTaskDispatching = false;
   }
 }
+
+router.get("/assistant/scheduled-tasks", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const result = await runAssistantWorkspaceTool("list_scheduled_assistant_tasks", {}, {
+    accountId,
+    teamId,
+    authorName: "",
+  });
+  if (result.detail === "access denied") {
+    res.status(403).json({ error: result.content });
+    return;
+  }
+  const rows = JSON.parse(result.content) as Record<string, unknown>[];
+  const asDate = (value: unknown) => value == null ? null : value instanceof Date ? value : new Date(String(value));
+  res.json(ListOwnedAssistantScheduledTasksResponse.parse({
+    items: rows.map((task) => ({
+      id: task.id,
+      prompt: task.prompt,
+      status: task.status,
+      recurrence: task.recurrence,
+      timeZone: task.time_zone,
+      destinationChannel: task.destination_channel,
+      nextRunAt: asDate(task.next_run_at),
+      lastRunAt: asDate(task.last_run_at),
+      lastError: task.last_error,
+      createdAt: asDate(task.created_at),
+      runs: Array.isArray(task.runs) ? task.runs.map((run) => {
+        const item = run as Record<string, unknown>;
+        return {
+          ...item,
+          scheduledFor: asDate(item.scheduledFor),
+          startedAt: asDate(item.startedAt),
+          finishedAt: asDate(item.finishedAt),
+        };
+      }) : [],
+    })),
+  }));
+});
+
+router.post("/assistant/scheduled-tasks/actions", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = ManageOwnedAssistantScheduledTaskBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const accountId = authenticatedInterviewerId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const toolByAction = {
+    pause: "pause_scheduled_assistant_task",
+    resume: "resume_scheduled_assistant_task",
+    edit: "update_scheduled_assistant_task",
+    cancel: "cancel_scheduled_assistant_task",
+  } as const;
+  const toolName = toolByAction[parsed.data.action];
+  const disabledTools = parseDisabledAssistantTools(parsed.data.disabledTools, ALL_ASSISTANT_TOOL_NAMES);
+  const enabledToolNames = new Set(assistantToolsForRequest(disabledTools).map((tool) => tool.function.name));
+  if (!enabledToolNames.has(toolName)) {
+    res.status(403).json({ error: `The ${parsed.data.action} recurring-task tool is disabled.` });
+    return;
+  }
+  const args: Record<string, unknown> = { taskId: parsed.data.taskId };
+  if (parsed.data.action === "edit") {
+    for (const key of ["prompt", "frequency", "hour", "minute", "daysOfWeek", "timeZone", "channelName"] as const) {
+      if (parsed.data[key] !== undefined) args[key] = parsed.data[key];
+    }
+    if (!Object.keys(args).some((key) => key !== "taskId")) {
+      res.status(400).json({ error: "Provide at least one schedule field to update." });
+      return;
+    }
+  }
+  const result = await runAssistantWorkspaceTool(toolName, args, {
+    accountId,
+    teamId: await requestTeamId(req),
+    authorName: "",
+    disabledTools: [...disabledTools],
+    allowedToolNames: [toolName],
+  });
+  if (result.detail === "access denied") {
+    res.status(403).json({ error: result.content });
+    return;
+  }
+  if (result.detail === "task not found") {
+    res.status(404).json({ error: result.content });
+    return;
+  }
+  const successful = result.detail === "task paused" ||
+    result.detail === "task resumed" ||
+    result.detail === "task cancelled" ||
+    result.detail === "task already cancelled" ||
+    result.detail.startsWith("updated recurring assistant task ");
+  if (!successful) {
+    res.status(400).json({ error: result.content });
+    return;
+  }
+  const messages = {
+    pause: "Recurring task paused.",
+    resume: "Recurring task resumed.",
+    edit: "Recurring task updated.",
+    cancel: "Recurring task cancelled. Its run history is retained.",
+  } as const;
+  res.json(ManageOwnedAssistantScheduledTaskResponse.parse({ message: messages[parsed.data.action] }));
+});
 
 router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   const parsed = AskAssistantBody.safeParse(req.body);

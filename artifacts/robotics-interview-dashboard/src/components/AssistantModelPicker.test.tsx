@@ -20,6 +20,22 @@ function renderWithQuery(ui: ReactNode) {
 }
 
 describe("AssistantModelPicker", () => {
+  it("shows the recurring task alarm shortcut when requested", () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        showRecurringTasks
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Recurring tasks" }))
+      .toHaveAttribute("href", "/assistant/scheduled-tasks");
+  });
+
   it("shows the provider catalog name for the selected MiniMax default", () => {
     renderWithQuery(
       <AssistantModelPicker
