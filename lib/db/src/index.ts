@@ -86,7 +86,19 @@ export function hasSecondary(): boolean {
   return secondaryUrl() !== null;
 }
 
-export const primaryPool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Keep database sessions bounded: API instances should not reserve the
+// node-postgres default of 10 connections for each Supabase project.
+const DATABASE_POOL_MAX = 4;
+const DATABASE_POOL_OPTIONS = {
+  max: DATABASE_POOL_MAX,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+};
+
+export const primaryPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ...DATABASE_POOL_OPTIONS,
+});
 export const primaryDb = drizzle(primaryPool, { schema });
 
 let secondaryPoolValue: InstanceType<typeof Pool> | null = null;
@@ -96,7 +108,10 @@ export function secondaryPool(): InstanceType<typeof Pool> | null {
   const url = secondaryUrl();
   if (!url) return null;
   if (!secondaryPoolValue) {
-    secondaryPoolValue = new Pool({ connectionString: url });
+    secondaryPoolValue = new Pool({
+      connectionString: url,
+      ...DATABASE_POOL_OPTIONS,
+    });
   }
   return secondaryPoolValue;
 }

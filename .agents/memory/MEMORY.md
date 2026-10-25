@@ -2,6 +2,7 @@
 - [Embedded authentication](embedded-authentication.md) — iframe login needs included credentials and secure SameSite=None cookies when served over HTTPS.
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
 - [External database ownership](external-database-ownership.md) — verify database hosts and preserve the configured secondary Supabase routing.
+- [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
 - [Supabase server-only table policies](supabase-server-only-table-policies.md) — private API tables need restrictive client-deny policies; verify the server role bypasses RLS.
 - [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
