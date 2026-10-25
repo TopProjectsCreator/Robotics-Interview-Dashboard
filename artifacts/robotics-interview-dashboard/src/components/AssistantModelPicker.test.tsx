@@ -387,6 +387,30 @@ describe("AssistantModelPicker", () => {
     expect(onConnectCustomMcp).toHaveBeenCalledOnce();
   });
 
+  it("shows each connected custom MCP server and disconnects only the selected one", async () => {
+    const onDisconnectCustomMcp = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        customMcpConnections={[
+          { id: "server-one", endpointUrl: "https://one.example/mcp" },
+          { id: "server-two", endpointUrl: "https://two.example/mcp" },
+        ]}
+        onDisconnectCustomMcp={onDisconnectCustomMcp}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByText("2 connected")).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-custom-mcp-connection-server-one")).toHaveTextContent("https://one.example/mcp");
+    expect(screen.getByTestId("assistant-custom-mcp-connection-server-two")).toHaveTextContent("https://two.example/mcp");
+    fireEvent.click(screen.getByTestId("assistant-custom-mcp-disconnect-server-two"));
+    expect(onDisconnectCustomMcp).toHaveBeenCalledWith("server-two");
+  });
+
   it("shows MCP API-key fields only after the server requires an API key", async () => {
     const props = {
       model: "openrouter/free",

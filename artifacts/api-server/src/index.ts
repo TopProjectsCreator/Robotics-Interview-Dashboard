@@ -724,7 +724,23 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "onshape_mcp_connections" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "access_token" jsonb not null, "refresh_token" jsonb, "expires_at" timestamptz not null, "scopes" text not null default '', "updated_at" timestamptz not null default now())`,
     `create table if not exists "onshape_mcp_oauth_states" ("id" text primary key, "state_hash" text not null unique, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "redirect_uri" text not null, "code_verifier" jsonb not null, "return_origin" text not null, "created_at" timestamptz not null default now())`,
     `create index if not exists "onshape_mcp_oauth_states_created_idx" on "onshape_mcp_oauth_states" ("created_at")`,
-    `create table if not exists "custom_mcp_connections" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "endpoint_url" text not null, "access_token" jsonb, "refresh_token" jsonb, "client_id" text, "token_endpoint" text, "expires_at" timestamptz, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "custom_mcp_connections" ("id" text primary key, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "endpoint_url" text not null, "access_token" jsonb, "refresh_token" jsonb, "client_id" text, "token_endpoint" text, "expires_at" timestamptz, "updated_at" timestamptz not null default now())`,
+    `alter table "custom_mcp_connections" add column if not exists "id" text`,
+    `update "custom_mcp_connections" set "id" = gen_random_uuid()::text where "id" is null`,
+    `alter table "custom_mcp_connections" alter column "id" set not null`,
+    `do $custom_mcp_connection_key$
+       begin
+         if not exists (
+           select 1 from pg_constraint
+            where conrelid = '"custom_mcp_connections"'::regclass
+              and contype = 'p'
+              and pg_get_constraintdef(oid) = 'PRIMARY KEY (id)'
+         ) then
+           alter table "custom_mcp_connections" drop constraint if exists "custom_mcp_connections_pkey";
+           alter table "custom_mcp_connections" add constraint "custom_mcp_connections_pkey" primary key ("id");
+         end if;
+       end
+     $custom_mcp_connection_key$`,
     `alter table "custom_mcp_connections" add column if not exists "refresh_token" jsonb`,
     `alter table "custom_mcp_connections" add column if not exists "client_id" text`,
     `alter table "custom_mcp_connections" add column if not exists "token_endpoint" text`,
@@ -732,8 +748,10 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_mcp_connections" add column if not exists "api_key" jsonb`,
     `alter table "custom_mcp_connections" add column if not exists "api_key_header" text`,
     `alter table "custom_mcp_connections" add column if not exists "api_key_prefix" text`,
-    `create table if not exists "custom_mcp_oauth_states" ("id" text primary key, "state_hash" text not null unique, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "endpoint_url" text not null, "resource_uri" text not null, "client_id" text not null, "token_endpoint" text not null, "authorization_endpoint" text not null, "redirect_uri" text not null, "code_verifier" jsonb not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "custom_mcp_connections_account_team_endpoint_unique" on "custom_mcp_connections" ("account_id", "team_id", "endpoint_url")`,
+    `create table if not exists "custom_mcp_oauth_states" ("id" text primary key, "connection_id" text, "state_hash" text not null unique, "account_id" text not null references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "endpoint_url" text not null, "resource_uri" text not null, "client_id" text not null, "token_endpoint" text not null, "authorization_endpoint" text not null, "redirect_uri" text not null, "code_verifier" jsonb not null, "created_at" timestamptz not null default now())`,
     `alter table "custom_mcp_oauth_states" add column if not exists "resource_uri" text not null default ''`,
+    `alter table "custom_mcp_oauth_states" add column if not exists "connection_id" text`,
     `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,
     `create table if not exists "broadcast_acks" ("broadcast_id" text not null, "session_hash" text not null, "acked_at" timestamptz not null default now())`,
     // One ack per (broadcast, session). Acks were written without a unique

@@ -8,7 +8,14 @@
 
 export interface CustomMcpConnectResult {
   connected: boolean;
+  /** @nullable */
+  connectionId?: string | null;
   endpointUrl: string;
+  apiKeyRequired?: boolean;
+  /** @nullable */
+  apiKeyHeader?: string | null;
+  /** @nullable */
+  apiKeyPrefix?: string | null;
   /** @nullable */
   authorizationUrl?: string | null;
   /** @nullable */

@@ -227,6 +227,10 @@ button { cursor: pointer; }
 .assistant-onshape-setting-action:hover:not(:disabled) { border-color: hsl(var(--primary) / .55); background: hsl(var(--accent)); }
 .assistant-onshape-setting-action:disabled { cursor: wait; opacity: .6; }
 .assistant-onshape-setting-error { grid-column: 1 / -1; color: hsl(var(--destructive)); font-size: 11px; line-height: 1.4; }
+.assistant-custom-mcp-connections { border-bottom: 1px solid hsl(var(--border)); }
+.assistant-custom-mcp-add { display: grid; gap: 7px; padding: 11px 14px; }
+.assistant-mcp-endpoint-label { overflow-wrap: anywhere; }
+.assistant-custom-mcp-add .assistant-onshape-setting-action { justify-self: end; }
 .assistant-mcp-endpoint { grid-column: 1 / -1; width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 7px; background: hsl(var(--background)); padding: 7px 9px; color: hsl(var(--foreground)); font-size: 12px; }
 .assistant-mcp-endpoint:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .assistant-mcp-api-key-fields { grid-column: 1 / -1; display: grid; gap: 8px; }

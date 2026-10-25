@@ -114,8 +114,8 @@ import type {
   CreateInterviewerInput,
   CreatePartsCatalogItemInput,
   CustomMcpConnectResult,
-  CustomMcpConnection,
   CustomMcpConnectionInput,
+  CustomMcpConnections,
   CustomWorkspaceAccessInput,
   CustomWorkspaceDataInput,
   CustomWorkspaceDataList,
@@ -135,6 +135,7 @@ import type {
   DashboardSummary,
   DeleteCadBotParams,
   DeleteCustomWorkspaceRecord200,
+  DisconnectCustomMcpParams,
   DisplaySettings,
   DisplaySettingsInput,
   DisplayState,
@@ -8556,11 +8557,11 @@ export const getGetCustomMcpConnectionUrl = () => {
 }
 
 /**
- * @summary Get the signed-in interviewer's custom MCP connection
+ * @summary List the signed-in interviewer's custom MCP connections
  */
-export const getCustomMcpConnection = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnection> => {
+export const getCustomMcpConnection = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnections> => {
 
-  return customFetch<CustomMcpConnection>(getGetCustomMcpConnectionUrl(),
+  return customFetch<CustomMcpConnections>(getGetCustomMcpConnectionUrl(),
   {
     ...options,
     method: 'GET'
@@ -8603,7 +8604,7 @@ export type GetCustomMcpConnectionQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get the signed-in interviewer's custom MCP connection
+ * @summary List the signed-in interviewer's custom MCP connections
  */
 
 export function useGetCustomMcpConnection<TData = Awaited<ReturnType<typeof getCustomMcpConnection>>, TError = ErrorType<unknown>>(
@@ -8695,20 +8696,27 @@ export const useConnectCustomMcp = <TError = ErrorType<ErrorResponse>,
       return useMutation(getConnectCustomMcpMutationOptions(options));
     }
 
-export const getDisconnectCustomMcpUrl = () => {
+export const getDisconnectCustomMcpUrl = (params: DisconnectCustomMcpParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/assistant/custom-mcp/connection`
+  return stringifiedParams.length > 0 ? `/api/assistant/custom-mcp/connection?${stringifiedParams}` : `/api/assistant/custom-mcp/connection`
 }
 
 /**
- * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ * @summary Disconnect one of the signed-in interviewer's custom MCP endpoints
  */
-export const disconnectCustomMcp = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnection> => {
+export const disconnectCustomMcp = async (params: DisconnectCustomMcpParams, options?: Parameters<typeof customFetch>[1]): Promise<CustomMcpConnections> => {
 
-  return customFetch<CustomMcpConnection>(getDisconnectCustomMcpUrl(),
+  return customFetch<CustomMcpConnections>(getDisconnectCustomMcpUrl(params),
   {
     ...options,
     method: 'DELETE'
@@ -8721,9 +8729,9 @@ export const disconnectCustomMcp = async ( options?: Parameters<typeof customFet
 
 
 
-export const getDisconnectCustomMcpMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext> => {
+export const getDisconnectCustomMcpMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,{params: DisconnectCustomMcpParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,{params: DisconnectCustomMcpParams}, TContext> => {
 
 const mutationKey = ['disconnectCustomMcp'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -8735,10 +8743,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectCustomMcp>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectCustomMcp>>, {params: DisconnectCustomMcpParams}> = (props) => {
+          const {params} = props ?? {};
 
-
-          return  disconnectCustomMcp(requestOptions)
+          return  disconnectCustomMcp(params,requestOptions)
         }
 
 
@@ -8750,17 +8758,17 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DisconnectCustomMcpMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectCustomMcp>>>
 
-    export type DisconnectCustomMcpMutationError = ErrorType<unknown>
+    export type DisconnectCustomMcpMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ * @summary Disconnect one of the signed-in interviewer's custom MCP endpoints
  */
-export const useDisconnectCustomMcp = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useDisconnectCustomMcp = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectCustomMcp>>, TError,{params: DisconnectCustomMcpParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof disconnectCustomMcp>>,
         TError,
-        void,
+        {params: DisconnectCustomMcpParams},
         TContext
       > => {
       return useMutation(getDisconnectCustomMcpMutationOptions(options));

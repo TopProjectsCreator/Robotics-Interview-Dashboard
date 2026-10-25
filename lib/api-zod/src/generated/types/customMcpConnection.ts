@@ -7,6 +7,6 @@
  */
 
 export interface CustomMcpConnection {
-  connected: boolean;
+  id: string;
   endpointUrl: string;
 }

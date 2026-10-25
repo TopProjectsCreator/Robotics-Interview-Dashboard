@@ -9,4 +9,8 @@
 export interface CustomMcpConnectionInput {
   /** @maxLength 2048 */
   endpointUrl: string;
+  /** @maxLength 8192 */
+  apiKey?: string;
+  apiKeyHeader?: string;
+  apiKeyPrefix?: string;
 }

@@ -6,18 +6,33 @@
  * OpenAPI spec version: 0.1.0
  */
 export interface CustomMcpConnection {
-  connected: boolean;
+  id: string;
   endpointUrl: string;
+}
+
+export interface CustomMcpConnections {
+  connections: CustomMcpConnection[];
 }
 
 export interface CustomMcpConnectionInput {
   /** @maxLength 2048 */
   endpointUrl: string;
+  /** @maxLength 8192 */
+  apiKey?: string;
+  apiKeyHeader?: string;
+  apiKeyPrefix?: string;
 }
 
 export interface CustomMcpConnectResult {
   connected: boolean;
+  /** @nullable */
+  connectionId?: string | null;
   endpointUrl: string;
+  apiKeyRequired?: boolean;
+  /** @nullable */
+  apiKeyHeader?: string | null;
+  /** @nullable */
+  apiKeyPrefix?: string | null;
   /** @nullable */
   authorizationUrl?: string | null;
   /** @nullable */
@@ -3570,6 +3585,13 @@ eventPassword?: string;
 
 export type AnswerAssistantQuestion200 = {
   submitted: boolean;
+};
+
+export type DisconnectCustomMcpParams = {
+/**
+ * @maxLength 128
+ */
+connectionId: string;
 };
 
 export type GetAssistantConversationMessagesParams = {

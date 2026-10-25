@@ -28,6 +28,7 @@ export type AssistantModelOption = {
 };
 
 export type AssistantThinkingLevel = "auto" | "low" | "medium" | "high";
+export type CustomMcpConnectionItem = { id: string; endpointUrl: string };
 
 type AssistantModelPickerProps = {
   model: string;
@@ -49,7 +50,8 @@ type AssistantModelPickerProps = {
   onConnectOnshape?: () => void;
   onDisconnectOnshape?: () => void;
   customMcpEndpoint?: string;
-  customMcpConnected?: boolean;
+  customMcpConnections?: CustomMcpConnectionItem[];
+  customMcpConnectionsLoading?: boolean;
   customMcpApiKeyRequired?: boolean;
   customMcpApiKey?: string;
   customMcpApiKeyHeader?: string;
@@ -61,7 +63,7 @@ type AssistantModelPickerProps = {
   onCustomMcpApiKeyHeaderChange?: (value: string) => void;
   onCustomMcpApiKeyPrefixChange?: (value: string) => void;
   onConnectCustomMcp?: () => void;
-  onDisconnectCustomMcp?: () => void;
+  onDisconnectCustomMcp?: (connectionId: string) => void;
 };
 
 export function AssistantModelPicker({
@@ -84,7 +86,8 @@ export function AssistantModelPicker({
   onConnectOnshape,
   onDisconnectOnshape,
   customMcpEndpoint = "",
-  customMcpConnected = false,
+  customMcpConnections = [],
+  customMcpConnectionsLoading = false,
   customMcpApiKeyRequired = false,
   customMcpApiKey = "",
   customMcpApiKeyHeader = "X-API-Key",
@@ -299,23 +302,43 @@ export function AssistantModelPicker({
                 {onshapeError && <p className="assistant-onshape-setting-error" role="alert">{onshapeError}</p>}
               </section>
             )}
-            <section className="assistant-onshape-setting" aria-label="Custom MCP connection" data-testid="assistant-custom-mcp-setting">
-              <div className="assistant-onshape-setting-copy">
-                <p className="assistant-onshape-setting-title">Custom MCP server</p>
-                <p className="assistant-onshape-setting-status" role="status">
-                  {customMcpBusy ? "Connecting…" : customMcpConnected ? "Connected" : customMcpApiKeyRequired ? "API key required" : "Enter an HTTPS endpoint"}
-                </p>
+            <section className="assistant-custom-mcp-connections" aria-label="Custom MCP servers" data-testid="assistant-custom-mcp-setting">
+              <div className="assistant-tools-head">
+                <div>
+                  <p className="assistant-onshape-setting-title">Custom MCP servers</p>
+                  <p className="assistant-onshape-setting-status" role="status">
+                    {customMcpConnectionsLoading
+                      ? "Loading connections…"
+                      : customMcpConnections.length
+                        ? `${customMcpConnections.length} connected`
+                        : "No custom servers connected"}
+                  </p>
+                </div>
               </div>
-              <button
-                type="button"
-                className="assistant-onshape-setting-action"
-                onClick={customMcpConnected ? onDisconnectCustomMcp : onConnectCustomMcp}
-                disabled={customMcpBusy || (!customMcpConnected && (!customMcpEndpoint.trim() || (customMcpApiKeyRequired && !customMcpApiKey.trim())))}
-                data-testid="assistant-custom-mcp-toggle"
-              >
-                {customMcpBusy ? "Connecting…" : customMcpConnected ? "Disconnect" : "Connect"}
-              </button>
-              {!customMcpConnected && (
+              {customMcpConnections.map((connection) => (
+                <div className="assistant-onshape-setting" key={connection.id} data-testid={`assistant-custom-mcp-connection-${connection.id}`}>
+                  <div className="assistant-onshape-setting-copy">
+                    <p className="assistant-onshape-setting-title">Custom MCP server</p>
+                    <p className="assistant-onshape-setting-status" role="status">Connected</p>
+                    <p className="assistant-onshape-setting-status assistant-mcp-endpoint-label">{connection.endpointUrl}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="assistant-onshape-setting-action"
+                    onClick={() => onDisconnectCustomMcp?.(connection.id)}
+                    disabled={customMcpBusy}
+                    aria-label={`Disconnect ${connection.endpointUrl}`}
+                    data-testid={`assistant-custom-mcp-disconnect-${connection.id}`}
+                  >
+                    {customMcpBusy ? "Disconnecting…" : "Disconnect"}
+                  </button>
+                </div>
+              ))}
+              <div className="assistant-custom-mcp-add">
+                <p className="assistant-onshape-setting-title">Add a custom MCP server</p>
+                <p className="assistant-onshape-setting-status" role="status">
+                  {customMcpBusy ? "Connecting…" : customMcpApiKeyRequired ? "API key required" : "Enter an HTTPS endpoint"}
+                </p>
                 <input
                   type="url"
                   value={customMcpEndpoint}
@@ -325,8 +348,7 @@ export function AssistantModelPicker({
                   data-testid="assistant-custom-mcp-endpoint"
                   className="assistant-mcp-endpoint"
                 />
-              )}
-              {!customMcpConnected && customMcpApiKeyRequired && (
+                {customMcpApiKeyRequired && (
                 <div className="assistant-mcp-api-key-fields">
                   <label>
                     API key
@@ -365,6 +387,16 @@ export function AssistantModelPicker({
                   </label>
                 </div>
               )}
+                <button
+                  type="button"
+                  className="assistant-onshape-setting-action"
+                  onClick={onConnectCustomMcp}
+                  disabled={customMcpBusy || !customMcpEndpoint.trim() || (customMcpApiKeyRequired && !customMcpApiKey.trim())}
+                  data-testid="assistant-custom-mcp-toggle"
+                >
+                  {customMcpBusy ? "Connecting…" : "Connect"}
+                </button>
+              </div>
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
             {canManageAssistantTools && <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />}

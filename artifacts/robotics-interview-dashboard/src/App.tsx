@@ -50,7 +50,7 @@ import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
-import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
+import { AssistantModelPicker, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
@@ -7626,14 +7626,16 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [onshapeReconnectRequired, setOnshapeReconnectRequired] = useState(false);
   const [onshapeBusy, setOnshapeBusy] = useState(false);
   const [onshapeError, setOnshapeError] = useState("");
+  const [customMcpConnections, setCustomMcpConnections] = useState<CustomMcpConnectionItem[]>([]);
+  const [customMcpConnectionsLoading, setCustomMcpConnectionsLoading] = useState(false);
   const [customMcpEndpoint, setCustomMcpEndpoint] = useState("");
-  const [customMcpConnected, setCustomMcpConnected] = useState(false);
   const [customMcpApiKeyRequired, setCustomMcpApiKeyRequired] = useState(false);
   const [customMcpApiKey, setCustomMcpApiKey] = useState("");
   const [customMcpApiKeyHeader, setCustomMcpApiKeyHeader] = useState("X-API-Key");
   const [customMcpApiKeyPrefix, setCustomMcpApiKeyPrefix] = useState("");
   const [customMcpBusy, setCustomMcpBusy] = useState(false);
   const [customMcpError, setCustomMcpError] = useState("");
+  const customMcpConnectionKey = customMcpConnections.map((connection) => connection.id).join(",");
   const refreshAssistantToolCatalog = useCallback(async () => {
     if (!canManageAssistantTools) {
       setDynamicAssistantTools([]);
@@ -7656,9 +7658,33 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       const tools = (result.tools ?? []).filter((tool): tool is { name: string; description?: unknown } =>
         typeof tool.name === "string" && /^(?:onshape_[a-zA-Z0-9_-]{1,55}|custom_mcp_[a-zA-Z0-9_-]{0,54})$/.test(tool.name),
       );
+      const customToolNames = tools
+        .map((tool) => tool.name)
+        .filter((name) => name.startsWith("custom_mcp_"));
+      setDisabledTools((current) => {
+        const next = new Set(current);
+        let changed = false;
+        for (const legacyName of current.filter((name) => name.startsWith("custom_mcp_"))) {
+          if (customToolNames.includes(legacyName)) continue;
+          const oldSuffix = legacyName.slice("custom_mcp_".length);
+          const replacementNames = customToolNames.filter((name) => name.endsWith(`_${oldSuffix}`));
+          if (!replacementNames.length) continue;
+          replacementNames.forEach((name) => next.add(name));
+          next.delete(legacyName);
+          changed = true;
+        }
+        if (!changed) return current;
+        const normalized = [...next];
+        saveDisabledTools(normalized);
+        return normalized;
+      });
       setDynamicAssistantTools(tools.map((tool) => {
         const service = tool.name.startsWith("onshape_") ? "Onshape" : "Custom MCP";
-        const operation = tool.name.replace(/^(?:onshape_|custom_mcp_)/, "").replace(/[_-]+/g, " ");
+        const operation = tool.name
+          .replace(/^onshape_/, "")
+          .replace(/^custom_mcp_[a-f0-9]{32}_/, "")
+          .replace(/^custom_mcp_/, "")
+          .replace(/[_-]+/g, " ");
         const title = operation.replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tool";
         const description = typeof tool.description === "string" ? tool.description.trim().slice(0, 180) : "";
         return {
@@ -7681,7 +7707,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   }, [assistantIdentity, canManageAssistantTools]);
   useEffect(() => {
     void refreshAssistantToolCatalog();
-  }, [refreshAssistantToolCatalog, onshapeConnected, customMcpConnected]);
+  }, [refreshAssistantToolCatalog, onshapeConnected, customMcpConnectionKey]);
   const attachmentUpload = useRequestUploadUrl();
   const attachmentPreview = usePreviewImport();
   const streamAbort = useRef<AbortController | null>(null);
@@ -7784,7 +7810,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     setOnshapeConnected(false);
     setOnshapeReconnectRequired(false);
     setOnshapeError("");
-    setCustomMcpConnected(false);
+    setCustomMcpConnections([]);
+    setCustomMcpConnectionsLoading(false);
     setCustomMcpEndpoint("");
     setCustomMcpApiKeyRequired(false);
     setCustomMcpApiKey("");
@@ -7835,35 +7862,52 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     return () => { active = false; };
   }, [assistantIdentity]);
 
+  const refreshCustomMcpConnections = useCallback(async () => {
+    if (!assistantSession.data?.interviewerId) return [];
+    const requestIdentity = assistantIdentity;
+    setCustomMcpConnectionsLoading(true);
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      if (!response.ok) throw new Error("Could not load custom MCP connections.");
+      const result = await response.json() as { connections?: CustomMcpConnectionItem[] };
+      const connections = Array.isArray(result.connections)
+        ? result.connections.filter((item) => typeof item?.id === "string" && typeof item?.endpointUrl === "string")
+        : [];
+      if (assistantIdentityRef.current === requestIdentity) setCustomMcpConnections(connections);
+      return connections;
+    } catch {
+      return [];
+    } finally {
+      if (assistantIdentityRef.current === requestIdentity) setCustomMcpConnectionsLoading(false);
+    }
+  }, [assistantIdentity, assistantSession.data?.interviewerId]);
+
   useEffect(() => {
     if (!assistantSession.data?.interviewerId) return;
-    let active = true;
-    const authToken = getStoredAuthToken();
-    void fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
-      credentials: "include",
-      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-    }).then(async (response) => {
-      if (!response.ok) return;
-      const result = await response.json() as { connected?: boolean; endpointUrl?: string };
-      if (active) {
-        setCustomMcpConnected(result.connected === true);
-        setCustomMcpEndpoint(result.endpointUrl ?? "");
-      }
-    }).catch(() => undefined);
-    return () => { active = false; };
-  }, [assistantIdentity]);
+    void refreshCustomMcpConnections();
+  }, [assistantIdentity, assistantSession.data?.interviewerId, refreshCustomMcpConnections]);
 
-  const confirmCustomMcpConnection = async (endpointUrl: string, authToken: string | null) => {
+  const confirmCustomMcpConnection = async (
+    endpointUrl: string,
+    authToken: string | null,
+    expectedConnectionId?: string,
+  ) => {
     const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
       credentials: "include",
       headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
     });
     if (!response.ok) return null;
-    const connection = await response.json() as { connected?: boolean; endpointUrl?: string };
-    return connection.connected && typeof connection.endpointUrl === "string" &&
-      sameCustomMcpEndpoint(connection.endpointUrl, endpointUrl)
-      ? connection.endpointUrl
-      : null;
+    const result = await response.json() as { connections?: CustomMcpConnectionItem[] };
+    const connection = result.connections?.find((item) =>
+      typeof item.endpointUrl === "string" &&
+      (!expectedConnectionId || item.id === expectedConnectionId) &&
+      sameCustomMcpEndpoint(item.endpointUrl, endpointUrl),
+    );
+    return connection?.endpointUrl ?? null;
   };
 
   const connectCustomMcp = async (endpointUrl = customMcpEndpoint) => {
@@ -7884,9 +7928,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     setCustomMcpBusy(true);
     setCustomMcpError("");
     const usesApiKey = customMcpApiKeyRequired && endpointUrl === customMcpEndpoint;
-    const alreadyConnectedToTarget = customMcpConnected && endpointUrl === customMcpEndpoint;
     setCustomMcpEndpoint(endpointUrl);
-    if (!alreadyConnectedToTarget) setCustomMcpConnected(false);
     if (!usesApiKey) {
       setCustomMcpApiKeyRequired(false);
       setCustomMcpApiKey("");
@@ -7918,17 +7960,21 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         }),
       });
       const result = await response.json() as {
-        connected?: boolean; endpointUrl?: string; authorizationUrl?: string; error?: string;
+        connected?: boolean; connectionId?: string; endpointUrl?: string; authorizationUrl?: string; error?: string;
         apiKeyRequired?: boolean; apiKeyHeader?: string; apiKeyPrefix?: string;
       };
       if (!response.ok) throw new Error(result.error || "Could not connect to the MCP server.");
       if (result.connected) {
-        const confirmedEndpoint = await confirmCustomMcpConnection(result.endpointUrl ?? endpointUrl, authToken);
+        const confirmedEndpoint = await confirmCustomMcpConnection(
+          result.endpointUrl ?? endpointUrl,
+          authToken,
+          result.connectionId,
+        );
         if (!confirmedEndpoint) throw new Error("The MCP connection could not be confirmed. You can retry the connection.");
-        setCustomMcpConnected(true);
+        await refreshCustomMcpConnections();
         setCustomMcpApiKeyRequired(false);
         setCustomMcpApiKey("");
-        setCustomMcpEndpoint(confirmedEndpoint);
+        setCustomMcpEndpoint("");
         popup?.close();
         setCustomMcpBusy(false);
         if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
@@ -7954,10 +8000,12 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         checking = true;
         checks += 1;
         try {
-          const confirmedEndpoint = await confirmCustomMcpConnection(endpointUrl, authToken);
+          const confirmedEndpoint = await confirmCustomMcpConnection(endpointUrl, authToken, result.connectionId);
           if (confirmedEndpoint) {
-            setCustomMcpConnected(true);
-            setCustomMcpEndpoint(confirmedEndpoint);
+            await refreshCustomMcpConnections();
+            setCustomMcpEndpoint("");
+            setCustomMcpApiKeyRequired(false);
+            setCustomMcpApiKey("");
             setCustomMcpBusy(false);
             window.clearInterval(poll);
             if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
@@ -8001,21 +8049,19 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     }
   };
 
-  const disconnectCustomMcp = async () => {
+  const disconnectCustomMcp = async (connectionId: string) => {
     setCustomMcpBusy(true);
     setCustomMcpError("");
     try {
       const authToken = getStoredAuthToken();
-      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection?connectionId=${encodeURIComponent(connectionId)}`, {
         method: "DELETE",
         credentials: "include",
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
       if (!response.ok) throw new Error("Could not disconnect this MCP server.");
-      setCustomMcpConnected(false);
-      setCustomMcpEndpoint("");
-      setCustomMcpApiKeyRequired(false);
-      setCustomMcpApiKey("");
+      await refreshCustomMcpConnections();
+      await refreshAssistantToolCatalog();
     } catch (error) {
       setCustomMcpError(error instanceof Error ? error.message : "Could not disconnect this MCP server.");
     } finally { setCustomMcpBusy(false); }
@@ -8670,7 +8716,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onDisconnectOnshape={disconnectOnshape}
             customMcpEndpoint={assistantScopeReady ? customMcpEndpoint : ""}
             onCustomMcpEndpointChange={updateCustomMcpEndpoint}
-            customMcpConnected={assistantScopeReady && customMcpConnected}
+            customMcpConnections={assistantScopeReady ? customMcpConnections : []}
+            customMcpConnectionsLoading={assistantScopeReady && customMcpConnectionsLoading}
             customMcpApiKeyRequired={assistantScopeReady && customMcpApiKeyRequired}
             customMcpApiKey={assistantScopeReady ? customMcpApiKey : ""}
             customMcpApiKeyHeader={assistantScopeReady ? customMcpApiKeyHeader : "X-API-Key"}
@@ -8707,7 +8754,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
           {!activeMessages.isLoading && !visibleHistory.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
           {visibleHistory.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} />{assistantScopeReady && !partsMode && item.connectionRequest && <AssistantMcpConnectionPrompt
             request={item.connectionRequest}
-            connected={customMcpConnected && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            connected={customMcpConnections.some((connection) => sameCustomMcpEndpoint(connection.endpointUrl, item.connectionRequest?.endpointUrl ?? ""))}
             busy={customMcpBusy && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
             continuing={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "continuing"}
             continuationError={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "failed" ? mcpContinuationView.error : ""}

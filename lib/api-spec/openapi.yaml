@@ -2279,14 +2279,14 @@ paths:
     get:
       operationId: getCustomMcpConnection
       tags: [assistant]
-      summary: Get the signed-in interviewer's custom MCP connection
+      summary: List the signed-in interviewer's custom MCP connections
       responses:
         "200":
-          description: Current MCP endpoint connection
+          description: Custom MCP endpoint connections for the signed-in interviewer
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CustomMcpConnection"
+                $ref: "#/components/schemas/CustomMcpConnections"
     post:
       operationId: connectCustomMcp
       tags: [assistant]
@@ -2313,14 +2313,27 @@ paths:
     delete:
       operationId: disconnectCustomMcp
       tags: [assistant]
-      summary: Disconnect the signed-in interviewer's custom MCP endpoint
+      summary: Disconnect one of the signed-in interviewer's custom MCP endpoints
+      parameters:
+        - name: connectionId
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 128
       responses:
         "200":
-          description: Connection removed
+          description: Remaining connections after removing the selected connection
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CustomMcpConnection"
+                $ref: "#/components/schemas/CustomMcpConnections"
+        "400":
+          description: No connection was selected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/images:
     post:
       operationId: generateAssistantImage
@@ -4326,12 +4339,20 @@ components:
   schemas:
     CustomMcpConnection:
       type: object
-      required: [connected, endpointUrl]
+      required: [id, endpointUrl]
       properties:
-        connected:
-          type: boolean
+        id:
+          type: string
         endpointUrl:
           type: string
+    CustomMcpConnections:
+      type: object
+      required: [connections]
+      properties:
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomMcpConnection"
     CustomMcpConnectionInput:
       type: object
       required: [endpointUrl]
@@ -4340,14 +4361,29 @@ components:
           type: string
           format: uri
           maxLength: 2048
+        apiKey:
+          type: string
+          maxLength: 8192
+        apiKeyHeader:
+          type: string
+        apiKeyPrefix:
+          type: string
     CustomMcpConnectResult:
       type: object
       required: [connected, endpointUrl]
       properties:
         connected:
           type: boolean
+        connectionId:
+          type: ["string", "null"]
         endpointUrl:
           type: string
+        apiKeyRequired:
+          type: boolean
+        apiKeyHeader:
+          type: ["string", "null"]
+        apiKeyPrefix:
+          type: ["string", "null"]
         authorizationUrl:
           type: ["string", "null"]
         toolCount:

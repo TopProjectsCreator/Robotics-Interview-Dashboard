@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
 
@@ -34,6 +35,20 @@ const {
   startCustomMcpConnection,
   validateCustomMcpEndpoint,
 } = await import("./customMcp.ts");
+
+test("the legacy connection migration assigns IDs in place without removing encrypted credentials", async () => {
+  const schemaSource = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+  const start = schemaSource.indexOf('`create table if not exists "custom_mcp_connections"');
+  const end = schemaSource.indexOf('`create table if not exists "custom_mcp_oauth_states"', start);
+  const migration = schemaSource.slice(start, end);
+  assert.ok(start >= 0 && end > start, "custom MCP migration statements should be present in ensureSchema");
+  assert.match(migration, /add column if not exists "id" text/);
+  assert.match(migration, /set "id" = gen_random_uuid\(\)::text where "id" is null/);
+  assert.match(migration, /drop constraint if exists "custom_mcp_connections_pkey"/);
+  assert.match(migration, /add constraint "custom_mcp_connections_pkey" primary key \("id"\)/);
+  assert.match(migration, /create unique index if not exists "custom_mcp_connections_account_team_endpoint_unique"/);
+  assert.doesNotMatch(migration, /delete from "custom_mcp_connections"/i);
+});
 
 test("rejects non-HTTPS MCP endpoints before making a request", async () => {
   await assert.rejects(validateCustomMcpEndpoint("http://example.com/mcp"), /must use HTTPS/);
@@ -146,9 +161,11 @@ test("API-key challenge can be retried with the explicit key and remains account
       apiKey: "correct-test-key",
       apiKeyHeader: "X-API-Key",
     });
-    assert.deepEqual(connected, { connected: true, endpointUrl, toolCount: 0 });
+    assert.equal(connected.connected, true);
+    assert.equal(typeof connected.connectionId, "string");
+    assert.deepEqual({ endpointUrl: connected.endpointUrl, toolCount: connected.toolCount }, { endpointUrl, toolCount: 0 });
     const saved = poolQueries.find(({ text }) => text.includes("insert into custom_mcp_connections"));
-    assert.deepEqual(saved.params.slice(0, 2), ["account-a", "team-a"]);
+    assert.deepEqual(saved.params.slice(1, 3), ["account-a", "team-a"]);
     assert.equal(JSON.stringify(poolQueries).includes("correct-test-key"), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -201,7 +218,7 @@ test("OAuth discovery returns an authorization URL and stores its state for the 
     assert.equal(new URL(result.authorizationUrl).searchParams.get("client_id"), "test-client");
     assert.ok(new URL(result.authorizationUrl).searchParams.get("state"));
     const savedState = poolQueries.find(({ text }) => text.includes("insert into custom_mcp_oauth_states"));
-    assert.deepEqual(savedState.params.slice(2, 4), ["account-b", "team-b"]);
+    assert.deepEqual(savedState.params.slice(3, 5), ["account-b", "team-b"]);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalSecret === undefined) delete process.env.SESSION_SECRET;
@@ -210,11 +227,11 @@ test("OAuth discovery returns an authorization URL and stores its state for the 
 });
 
 test("custom MCP status lookup is isolated by both signed-in account and active team", async () => {
-  poolRows = [{ endpoint_url: "https://tools.example/mcp" }];
+  poolRows = [{ id: "connection-c", endpoint_url: "https://tools.example/mcp" }];
   poolQueries.length = 0;
   try {
     const status = await customMcpStatus("account-c", "team-c");
-    assert.deepEqual(status, { connected: true, endpointUrl: "https://tools.example/mcp" });
+    assert.deepEqual(status, { connections: [{ id: "connection-c", endpointUrl: "https://tools.example/mcp" }] });
     assert.deepEqual(poolQueries.at(-1).params, ["account-c", "team-c"]);
     assert.match(poolQueries.at(-1).text, /where account_id = \$1 and team_id = \$2/);
   } finally {

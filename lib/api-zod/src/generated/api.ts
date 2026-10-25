@@ -3195,11 +3195,13 @@ export const DeleteAssistantSkillResponse = zod.void()
 
 
 /**
- * @summary Get the signed-in interviewer's custom MCP connection
+ * @summary List the signed-in interviewer's custom MCP connections
  */
 export const GetCustomMcpConnectionResponse = zod.object({
-  "connected": zod.boolean(),
+  "connections": zod.array(zod.object({
+  "id": zod.string(),
   "endpointUrl": zod.string()
+}))
 })
 
 
@@ -3208,26 +3210,45 @@ export const GetCustomMcpConnectionResponse = zod.object({
  */
 export const connectCustomMcpBodyEndpointUrlMax = 2048;
 
+export const connectCustomMcpBodyApiKeyMax = 8192;
+
 
 
 export const ConnectCustomMcpBody = zod.object({
-  "endpointUrl": zod.string().url().max(connectCustomMcpBodyEndpointUrlMax)
+  "endpointUrl": zod.string().url().max(connectCustomMcpBodyEndpointUrlMax),
+  "apiKey": zod.string().max(connectCustomMcpBodyApiKeyMax).optional(),
+  "apiKeyHeader": zod.string().optional(),
+  "apiKeyPrefix": zod.string().optional()
 })
 
 export const ConnectCustomMcpResponse = zod.object({
   "connected": zod.boolean(),
+  "connectionId": zod.string().nullish(),
   "endpointUrl": zod.string(),
+  "apiKeyRequired": zod.boolean().optional(),
+  "apiKeyHeader": zod.string().nullish(),
+  "apiKeyPrefix": zod.string().nullish(),
   "authorizationUrl": zod.string().nullish(),
   "toolCount": zod.number().int().nullish()
 })
 
 
 /**
- * @summary Disconnect the signed-in interviewer's custom MCP endpoint
+ * @summary Disconnect one of the signed-in interviewer's custom MCP endpoints
  */
+export const disconnectCustomMcpQueryConnectionIdMax = 128;
+
+
+
+export const DisconnectCustomMcpQueryParams = zod.object({
+  "connectionId": zod.coerce.string().max(disconnectCustomMcpQueryConnectionIdMax)
+})
+
 export const DisconnectCustomMcpResponse = zod.object({
-  "connected": zod.boolean(),
+  "connections": zod.array(zod.object({
+  "id": zod.string(),
   "endpointUrl": zod.string()
+}))
 })
 
 

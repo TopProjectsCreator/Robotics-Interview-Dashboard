@@ -1240,6 +1240,16 @@ function assistantToolsForRequest(
   ];
 }
 
+function retainLegacyCustomMcpDisables(
+  disabledTools: Set<string>,
+  bindings: Map<string, CustomMcpToolBinding>,
+): void {
+  for (const [publishedName, binding] of bindings) {
+    const legacyName = `custom_mcp_${binding.toolName.replace(/[^a-zA-Z0-9_-]/g, "_")}`.slice(0, 64);
+    if (disabledTools.has(legacyName)) disabledTools.add(publishedName);
+  }
+}
+
 function disabledAssistantToolsNotice(disabled: Set<string>): string {
   if (disabled.size === 0) return "";
   return `The admin disabled these tools for this chat (${[...disabled].sort().join(", ")}). Do not call them, work around them, or claim they ran. If the request needs one, briefly say it is disabled and offer to enable it via the gear menu.`;
@@ -1692,9 +1702,15 @@ async function runAssistantTools(
     } else if (customMcpBinding) {
       outgoingCalls.push({ id: call.id, type: "function", function: { name: name!, arguments: call.function.arguments } });
       try {
-        const result = await callCustomMcpTool(customMcpAccountId, team, customMcpBinding.serverName, args);
+        const result = await callCustomMcpTool(
+          customMcpAccountId,
+          team,
+          customMcpBinding.connectionId,
+          customMcpBinding.toolName,
+          args,
+        );
         toolMessages.push({ role: "tool", content: result || "MCP completed the tool call without returning text.", tool_call_id: call.id });
-        activities.push({ tool: name!, detail: customMcpBinding.serverName });
+        activities.push({ tool: name!, detail: customMcpBinding.toolName });
       } catch (error) {
         toolMessages.push({ role: "tool", content: `MCP tool failed: ${error instanceof Error ? error.message : "Unknown error"}`, tool_call_id: call.id });
       }
@@ -6129,6 +6145,7 @@ async function generateAssistantAnswer(options: {
     }
     try {
       ({ tools: customMcpTools, bindings: customMcpBindings } = await listCustomMcpTools(options.accountId, teamId));
+      retainLegacyCustomMcpDisables(disabledTools, customMcpBindings);
     } catch (error) {
       log.warn({ err: error }, "Custom MCP tools unavailable");
     }
@@ -7212,8 +7229,16 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       res.status(400).json({ error: "Only coordinator custom-MCP requests can be continued." });
       return;
     }
-    const connection = await customMcpStatus(account.id, teamId);
-    if (connection.connected) continuationConnectedEndpointUrl = connection.endpointUrl;
+    const connections = await customMcpStatus(account.id, teamId);
+    const expectedEndpoint = parsed.data.mcpContinuation.endpointUrl;
+    const connection = connections.connections.find((item) => {
+      try {
+        return new URL(item.endpointUrl).toString() === new URL(expectedEndpoint).toString();
+      } catch {
+        return false;
+      }
+    });
+    if (connection) continuationConnectedEndpointUrl = connection.endpointUrl;
   }
     const disabledTools = parseDisabledAssistantTools(
     (parsed.data as unknown as Record<string, unknown>).disabledTools,
@@ -7250,6 +7275,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   }
   try {
     ({ tools: customMcpTools, bindings: customMcpBindings } = await listCustomMcpTools(account.id, teamId));
+    retainLegacyCustomMcpDisables(disabledTools, customMcpBindings);
   } catch (error) {
     req.log.warn({ err: error }, "Custom MCP tools unavailable");
     if (parsed.data.mcpContinuation) {
@@ -7966,7 +7992,9 @@ router.get("/assistant/tools", requireAdmin, async (req, res): Promise<void> => 
     req.log.warn({ err: error }, "Onshape assistant tool catalog unavailable");
   }
   try {
-    ({ tools: customMcpTools } = await listCustomMcpTools(accountId, teamId));
+    const result = await listCustomMcpTools(accountId, teamId);
+    customMcpTools = result.tools;
+    errors.customMcp = result.hasErrors;
   } catch (error) {
     errors.customMcp = true;
     req.log.warn({ err: error }, "Custom MCP assistant tool catalog unavailable");
@@ -8018,8 +8046,14 @@ router.post("/assistant/custom-mcp/connection", requireAdmin, async (req, res): 
 router.delete("/assistant/custom-mcp/connection", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   if (!accountId) { res.status(401).json({ error: "Authentication required" }); return; }
-  await disconnectCustomMcp(accountId, await requestTeamId(req));
-  res.json({ connected: false, endpointUrl: "" });
+  const connectionId = typeof req.query.connectionId === "string" ? req.query.connectionId : "";
+  if (!connectionId || connectionId.length > 128) {
+    res.status(400).json({ error: "Choose a custom MCP server to disconnect." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  await disconnectCustomMcp(accountId, teamId, connectionId);
+  res.json(await customMcpStatus(accountId, teamId));
 });
 
 router.get("/assistant/custom-mcp/callback", async (req, res): Promise<void> => {

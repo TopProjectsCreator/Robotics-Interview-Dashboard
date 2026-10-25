@@ -78,7 +78,7 @@ export type CustomMcpTool = {
   type: "function";
   function: { name: string; description: string; parameters: Record<string, unknown> };
 };
-export type CustomMcpToolBinding = { serverName: string };
+export type CustomMcpToolBinding = { connectionId: string; toolName: string };
 
 function key(): Buffer {
   const secret = process.env.SESSION_SECRET;
@@ -338,6 +338,7 @@ async function listAt(endpoint: string, token: string | undefined, extraHeaders?
 }
 
 type ConnectionRow = {
+  id: string;
   endpoint_url: string;
   access_token: EncryptedValue | string | null;
   api_key: EncryptedValue | string | null;
@@ -348,11 +349,20 @@ type ConnectionRow = {
   token_endpoint: string | null;
   expires_at: Date | string | null;
 };
-async function connection(accountId: string, teamId: string): Promise<ConnectionRow | undefined> {
+async function connections(accountId: string, teamId: string): Promise<ConnectionRow[]> {
   const result = await pool.query(
-    `select endpoint_url, access_token, api_key, api_key_header, api_key_prefix, refresh_token, client_id, token_endpoint, expires_at
-       from custom_mcp_connections where account_id = $1 and team_id = $2`,
+    `select id, endpoint_url, access_token, api_key, api_key_header, api_key_prefix, refresh_token, client_id, token_endpoint, expires_at
+       from custom_mcp_connections where account_id = $1 and team_id = $2 order by updated_at, id`,
     [accountId, teamId],
+  );
+  return result.rows as ConnectionRow[];
+}
+
+async function connection(accountId: string, teamId: string, connectionId: string): Promise<ConnectionRow | undefined> {
+  const result = await pool.query(
+    `select id, endpoint_url, access_token, api_key, api_key_header, api_key_prefix, refresh_token, client_id, token_endpoint, expires_at
+       from custom_mcp_connections where id = $1 and account_id = $2 and team_id = $3`,
+    [connectionId, accountId, teamId],
   );
   return result.rows[0] as ConnectionRow | undefined;
 }
@@ -382,10 +392,10 @@ async function tokenFor(accountId: string, teamId: string, row: ConnectionRow): 
   }
   const expiresIn = typeof token.expires_in === "number" ? Math.max(60, token.expires_in) : 3600;
   await pool.query(
-    `update custom_mcp_connections set access_token = $3::jsonb, refresh_token = $4::jsonb,
-       expires_at = now() + ($5 * interval '1 second'), updated_at = now()
-     where account_id = $1 and team_id = $2`,
-    [accountId, teamId, JSON.stringify(encrypt(token.access_token)),
+    `update custom_mcp_connections set access_token = $4::jsonb, refresh_token = $5::jsonb,
+       expires_at = now() + ($6 * interval '1 second'), updated_at = now()
+     where id = $1 and account_id = $2 and team_id = $3`,
+    [row.id, accountId, teamId, JSON.stringify(encrypt(token.access_token)),
       typeof token.refresh_token === "string" ? JSON.stringify(encrypt(token.refresh_token)) : JSON.stringify(row.refresh_token),
       expiresIn],
   );
@@ -393,8 +403,8 @@ async function tokenFor(accountId: string, teamId: string, row: ConnectionRow): 
 }
 
 export async function customMcpStatus(accountId: string, teamId: string) {
-  const row = await connection(accountId, teamId);
-  return row ? { connected: true, endpointUrl: row.endpoint_url } : { connected: false, endpointUrl: "" };
+  const rows = await connections(accountId, teamId);
+  return { connections: rows.map((row) => ({ id: row.id, endpointUrl: row.endpoint_url })) };
 }
 
 export async function startCustomMcpConnection(input: {
@@ -402,6 +412,7 @@ export async function startCustomMcpConnection(input: {
   apiKey?: string; apiKeyHeader?: string; apiKeyPrefix?: string;
 }) {
   const endpointUrl = await validateCustomMcpEndpoint(input.endpointUrl.trim());
+  const connectionId = randomUUID();
   const apiKeyHeader = input.apiKeyHeader?.trim() || "X-API-Key";
   const apiKeyPrefix = input.apiKeyPrefix?.trim() || "";
   if (input.apiKey !== undefined && (!input.apiKey.trim() || input.apiKey.length > 8192 ||
@@ -417,16 +428,16 @@ export async function startCustomMcpConnection(input: {
   try {
     const tools = await listAt(endpointUrl, undefined, apiKeyHeaders);
     await pool.query(
-      `insert into custom_mcp_connections (account_id, team_id, endpoint_url, access_token, api_key, api_key_header, api_key_prefix, updated_at)
-       values ($1, $2, $3, null, $4::jsonb, $5, $6, now())
-       on conflict (account_id) do update set team_id = excluded.team_id, endpoint_url = excluded.endpoint_url,
+      `insert into custom_mcp_connections (id, account_id, team_id, endpoint_url, access_token, api_key, api_key_header, api_key_prefix, updated_at)
+       values ($1, $2, $3, $4, null, $5::jsonb, $6, $7, now())
+       on conflict (account_id, team_id, endpoint_url) do update set id = excluded.id,
          access_token = null, api_key = excluded.api_key, api_key_header = excluded.api_key_header,
          api_key_prefix = excluded.api_key_prefix, refresh_token = null, client_id = null, token_endpoint = null, expires_at = null,
          updated_at = now()`,
-      [input.accountId, input.teamId, endpointUrl, input.apiKey ? JSON.stringify(encrypt(input.apiKey)) : null,
+      [connectionId, input.accountId, input.teamId, endpointUrl, input.apiKey ? JSON.stringify(encrypt(input.apiKey)) : null,
         input.apiKey ? apiKeyHeader : null, input.apiKey ? apiKeyPrefix : null],
     );
-    return { connected: true as const, endpointUrl, toolCount: tools.length };
+    return { connected: true as const, connectionId, endpointUrl, toolCount: tools.length };
   } catch (error) {
     if (!(error instanceof McpAuthenticationRequiredError)) throw error;
     if (input.apiKey) throw new Error("The API key was rejected. Check the key, header name, and prefix.");
@@ -502,10 +513,10 @@ export async function startCustomMcpConnection(input: {
   const oauthState = randomUUID();
   await pool.query(
     `insert into custom_mcp_oauth_states
-      (id, state_hash, account_id, team_id, endpoint_url, resource_uri, client_id, token_endpoint, authorization_endpoint,
+      (id, connection_id, state_hash, account_id, team_id, endpoint_url, resource_uri, client_id, token_endpoint, authorization_endpoint,
        redirect_uri, code_verifier, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, now())`,
-    [oauthState, createHash("sha256").update(state).digest("hex"), input.accountId, input.teamId, endpointUrl, resourceUri,
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, now())`,
+    [oauthState, connectionId, createHash("sha256").update(state).digest("hex"), input.accountId, input.teamId, endpointUrl, resourceUri,
       registration.client_id, tokenEndpoint, authorizationEndpoint, input.redirectUri, JSON.stringify(encrypt(verifier))],
   );
   const authorization = new URL(authorizationEndpoint);
@@ -516,18 +527,18 @@ export async function startCustomMcpConnection(input: {
   authorization.searchParams.set("code_challenge_method", "S256");
   authorization.searchParams.set("state", state);
   authorization.searchParams.set("resource", resourceUri);
-  return { connected: false as const, authorizationUrl: authorization.toString(), endpointUrl };
+  return { connected: false as const, connectionId, authorizationUrl: authorization.toString(), endpointUrl };
 }
 
 export async function finishCustomMcpAuthorization(input: { state: string; code: string }) {
   const stateHash = createHash("sha256").update(input.state).digest("hex");
   const result = await pool.query(
     `delete from custom_mcp_oauth_states where state_hash = $1 and created_at > now() - interval '15 minutes'
-     returning account_id, team_id, endpoint_url, resource_uri, client_id, token_endpoint, redirect_uri, code_verifier`,
+     returning connection_id, account_id, team_id, endpoint_url, resource_uri, client_id, token_endpoint, redirect_uri, code_verifier`,
     [stateHash],
   );
   const row = result.rows[0] as {
-    account_id: string; team_id: string; endpoint_url: string; resource_uri: string; client_id: string; token_endpoint: string;
+    connection_id: string | null; account_id: string; team_id: string; endpoint_url: string; resource_uri: string; client_id: string; token_endpoint: string;
     redirect_uri: string; code_verifier: EncryptedValue | string;
   } | undefined;
   if (!row) throw new Error("The MCP sign-in request expired or was already used.");
@@ -546,58 +557,80 @@ export async function finishCustomMcpAuthorization(input: { state: string; code:
   const tools = await listAt(row.endpoint_url, token.access_token);
   await pool.query(
     `insert into custom_mcp_connections
-       (account_id, team_id, endpoint_url, access_token, refresh_token, client_id, token_endpoint, expires_at, updated_at)
-     values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, now() + ($8 * interval '1 second'), now())
-     on conflict (account_id) do update set team_id = excluded.team_id, endpoint_url = excluded.endpoint_url,
+       (id, account_id, team_id, endpoint_url, access_token, refresh_token, client_id, token_endpoint, expires_at, updated_at)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, now() + ($9 * interval '1 second'), now())
+     on conflict (account_id, team_id, endpoint_url) do update set id = excluded.id,
        access_token = excluded.access_token, refresh_token = excluded.refresh_token, client_id = excluded.client_id,
         token_endpoint = excluded.token_endpoint, expires_at = excluded.expires_at,
         api_key = null, api_key_header = null, api_key_prefix = null, updated_at = now()`,
-    [row.account_id, row.team_id, row.endpoint_url, JSON.stringify(encrypt(token.access_token)),
+    [row.connection_id ?? randomUUID(), row.account_id, row.team_id, row.endpoint_url, JSON.stringify(encrypt(token.access_token)),
       typeof token.refresh_token === "string" ? JSON.stringify(encrypt(token.refresh_token)) : null,
       row.client_id, row.token_endpoint, typeof token.expires_in === "number" ? Math.max(60, token.expires_in) : 3600],
   );
   return { accountId: row.account_id, teamId: row.team_id, endpointUrl: row.endpoint_url, toolCount: tools.length };
 }
 
-export async function disconnectCustomMcp(accountId: string, teamId: string) {
-  await pool.query(`delete from custom_mcp_connections where account_id = $1 and team_id = $2`, [accountId, teamId]);
+export async function disconnectCustomMcp(accountId: string, teamId: string, connectionId: string) {
+  await pool.query(`delete from custom_mcp_connections where id = $1 and account_id = $2 and team_id = $3`, [connectionId, accountId, teamId]);
 }
 
 export async function listCustomMcpTools(accountId: string, teamId: string): Promise<{
-  tools: CustomMcpTool[]; bindings: Map<string, CustomMcpToolBinding>;
+  tools: CustomMcpTool[]; bindings: Map<string, CustomMcpToolBinding>; hasErrors: boolean;
 }> {
-  const row = await connection(accountId, teamId);
-  if (!row) return { tools: [], bindings: new Map() };
-  const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
-  const accessToken = await tokenFor(accountId, teamId, row);
-  const apiKey = row.api_key ? decryptValue(row.api_key) : undefined;
-  const apiKeyHeaders = apiKey ? {
-    [row.api_key_header || "X-API-Key"]: row.api_key_prefix ? `${row.api_key_prefix} ${apiKey}` : apiKey,
-  } : undefined;
-  const serverTools = await listAt(endpoint, accessToken, apiKeyHeaders);
   const tools: CustomMcpTool[] = [];
   const bindings = new Map<string, CustomMcpToolBinding>();
-  for (const tool of serverTools) {
-    if (typeof tool.name !== "string" || !tool.name.trim()) continue;
-    const name = `custom_mcp_${tool.name.replace(/[^a-zA-Z0-9_-]/g, "_")}`.slice(0, 64);
-    if (bindings.has(name)) continue;
+  let hasErrors = false;
+  const discovered: { row: ConnectionRow; tool: McpTool; toolSuffix: string }[] = [];
+  const rows = await connections(accountId, teamId);
+  for (const row of rows) {
+    try {
+      const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
+      const accessToken = await tokenFor(accountId, teamId, row);
+      const apiKey = row.api_key ? decryptValue(row.api_key) : undefined;
+      const apiKeyHeaders = apiKey ? {
+        [row.api_key_header || "X-API-Key"]: row.api_key_prefix ? `${row.api_key_prefix} ${apiKey}` : apiKey,
+      } : undefined;
+      const serverTools = await listAt(endpoint, accessToken, apiKeyHeaders);
+      for (const tool of serverTools) {
+        if (typeof tool.name !== "string" || !tool.name.trim()) continue;
+        const toolSuffix = tool.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+        discovered.push({ row, tool, toolSuffix });
+      }
+    } catch {
+      hasErrors = true;
+    }
+  }
+  const suffixCounts = new Map<string, number>();
+  for (const item of discovered) suffixCounts.set(item.toolSuffix, (suffixCounts.get(item.toolSuffix) ?? 0) + 1);
+  for (const { row, tool, toolSuffix } of discovered) {
+    // Keep the historical name while it is unambiguous so existing per-tool
+    // settings remain valid. Duplicate tool names receive a full connection ID.
+    const baseName = suffixCounts.get(toolSuffix) === 1
+      ? `custom_mcp_${toolSuffix}`.slice(0, 64)
+      : `custom_mcp_${row.id.replace(/[^a-zA-Z0-9]/g, "")}_${toolSuffix}`.slice(0, 64);
+    let name = baseName;
+    let collisionIndex = 2;
+    while (bindings.has(name)) {
+      const suffix = `_${collisionIndex++}`;
+      name = `${baseName.slice(0, 64 - suffix.length)}${suffix}`;
+    }
     const parameters = tool.inputSchema && typeof tool.inputSchema === "object"
       ? tool.inputSchema as Record<string, unknown>
       : { type: "object", properties: {} };
-    bindings.set(name, { serverName: tool.name });
+    bindings.set(name, { connectionId: row.id, toolName: tool.name as string });
     tools.push({ type: "function", function: {
       name,
       description: typeof tool.description === "string" ? tool.description.slice(0, 1000) : `Call MCP tool ${tool.name}.`,
       parameters,
     } });
   }
-  return { tools, bindings };
+  return { tools, bindings, hasErrors };
 }
 
 export async function callCustomMcpTool(
-  accountId: string, teamId: string, toolName: string, args: Record<string, unknown>,
+  accountId: string, teamId: string, connectionId: string, toolName: string, args: Record<string, unknown>,
 ): Promise<string> {
-  const row = await connection(accountId, teamId);
+  const row = await connection(accountId, teamId, connectionId);
   if (!row) throw new Error("Custom MCP is not connected.");
   const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
   const accessToken = await tokenFor(accountId, teamId, row);
