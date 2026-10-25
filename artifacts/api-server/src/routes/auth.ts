@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
@@ -66,6 +66,10 @@ import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
+import {
+  canFallbackNewTeamToPrimary,
+  isTransientDatabaseAvailabilityError,
+} from "../lib/databaseAvailability";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { requestTeamId } from "../middlewares/adminAuth";
 import {
@@ -1193,12 +1197,18 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     return;
   }
   const normalizedTeam = normalizeTeamName(teamName);
+  let secondaryTeamListWasRead = false;
   try {
     const primaryTeams = await primaryDb.select().from(teamsTable);
     let secondaryTeams: typeof primaryTeams = [];
     try {
       const secondary = secondaryDb();
-      if (secondary) secondaryTeams = await secondary.select().from(teamsTable);
+      if (secondary) {
+        secondaryTeams = await secondary.select().from(teamsTable);
+        secondaryTeamListWasRead = true;
+      } else {
+        secondaryTeamListWasRead = true;
+      }
     } catch {
       // Secondary unreachable: creation below will surface the real error.
     }
@@ -1224,11 +1234,38 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   }
   if (await rejectUnsafePassword(req, res, password, confirmLowExposure)) return;
   const teamId = randomBytes(16).toString("hex");
-  // New teams live on the secondary instance; the primary keeps the current
-  // teams untouched. Everything below (team row, account, singleton settings,
-  // queue labels) resolves there through the shared db/pool handles.
-  enterInstance("secondary");
+  let teamInstance: DbInstance = "primary";
   try {
+    // Only choose secondary after proving it is reachable, before any team
+    // writes begin. If it is temporarily unavailable, a new team can safely
+    // start on primary and its session will be pinned there. Existing teams
+    // remain on their owning database; their data is never silently redirected.
+    const secondary = secondaryPool();
+    if (secondary) {
+      try {
+        await secondary.query("select 1");
+        if (!secondaryTeamListWasRead) {
+          res.status(503).json({
+            error: "Could not verify existing teams on the secondary database. Try again shortly.",
+          });
+          return;
+        }
+        teamInstance = "secondary";
+      } catch (error) {
+        if (!isTransientDatabaseAvailabilityError(error)) throw error;
+        if (!canFallbackNewTeamToPrimary(error, secondaryTeamListWasRead)) {
+          res.status(503).json({
+            error: "The secondary database is unavailable, so this team cannot be safely placed yet. Try again shortly.",
+          });
+          return;
+        }
+        req.log.warn(
+          { placement: "primary" },
+          "Secondary unavailable; creating new team on primary",
+        );
+      }
+    }
+    enterInstance(teamInstance);
     await ensureDefaultTeam();
     const [team] = await db.insert(teamsTable).values({
       id: teamId,
@@ -1277,7 +1314,7 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
       // Team + account already exist; per-team settings can be repaired on next sign-in.
     }
     teamCreateFailures.delete(ip);
-    const session = createInterviewerSession(account.id, "secondary");
+    const session = createInterviewerSession(account.id, teamInstance);
     setAdminCookie(res, session);
     res.status(201).json({
       message: "Team created.",
