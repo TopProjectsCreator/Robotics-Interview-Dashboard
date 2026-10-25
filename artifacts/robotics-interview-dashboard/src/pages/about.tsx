@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, Cpu, LayoutDashboard, Menu, MessageSquare, UsersRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cpu, ExternalLink, LayoutDashboard, Menu, MessageSquare, Pause, Play, UsersRound, X } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
 const sections = [
@@ -45,9 +45,38 @@ const accentStyles = {
   lilac: "bg-[#e7e7fb] text-[#6351a1] dark:bg-[#322d51] dark:text-[#c8b7ff]",
 };
 
+const teamPhotos = [
+  {
+    src: `${import.meta.env.BASE_URL}team-23442-1.webp`,
+    alt: "A Wolverine team member working on a laptop",
+  },
+  {
+    src: `${import.meta.env.BASE_URL}team-23442-2.webp`,
+    alt: "Team 23442 standing together in their Wolverines shirts",
+  },
+  {
+    src: `${import.meta.env.BASE_URL}team-23442-3.webp`,
+    alt: "Wolverines team members assembling a robot",
+  },
+];
+
 export default function AboutPage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activePhoto, setActivePhoto] = useState(0);
+  const [photoRotationPaused, setPhotoRotationPaused] = useState(false);
   const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    if (photoRotationPaused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const interval = window.setInterval(() => {
+      setActivePhoto((current) => (current + 1) % teamPhotos.length);
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [photoRotationPaused]);
+
+  const showPhoto = (offset: number) => {
+    setActivePhoto((current) => (current + offset + teamPhotos.length) % teamPhotos.length);
+  };
 
   return (
     <main className="relative isolate min-h-[100dvh] overflow-x-clip bg-[#f5f8f4] text-[#16303b] dark:bg-[#0c1d24] dark:text-[#e3efeb]" data-testid="public-about">
@@ -125,22 +154,56 @@ export default function AboutPage() {
           </div>
         </section>
 
-        <section className="mb-14 grid overflow-hidden rounded-2xl border border-[#d9e6e1] bg-white/70 dark:border-[#28464d] dark:bg-[#122a32] md:grid-cols-[minmax(260px,.8fr)_1.2fr]" aria-labelledby="made-by-heading" data-testid="about-team-23442">
-          <div className="overflow-hidden bg-black">
-            <img
-              src={`${import.meta.env.BASE_URL}team-23442.png`}
-              alt="Wolverines Robotics, team 23442 — All claws on deck"
-              className="aspect-square w-full object-contain"
-              data-testid="about-team-23442-image"
-            />
-          </div>
-          <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-14">
+        <section className="mb-14 grid gap-8 rounded-2xl border border-[#d9e6e1] bg-white/70 p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:p-8 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)] md:items-center lg:gap-12 lg:p-10" aria-labelledby="made-by-heading" data-testid="about-team-23442">
+          <div className="flex flex-col justify-center">
             <p className="mb-4 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">The team behind the workspace</p>
             <h2 id="made-by-heading" className="text-3xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-5xl">Made by Team 23442.</h2>
             <p className="mt-4 max-w-[560px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be] sm:text-base sm:leading-7">
               Team 23442—the Wolverines—built this workspace to bring the engineering, collaboration, and shared knowledge behind robotics into one place.
             </p>
-            <p className="mt-7 border-t border-[#d9e6e1] pt-4 font-mono text-[10px] uppercase tracking-[.13em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8]">Wolverines · All claws on deck</p>
+            <a
+              href="https://pinelakeroboticsteam.lovable.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex min-h-11 w-fit items-center gap-2 rounded-lg bg-[#153642] px-4 text-xs font-bold text-white transition hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
+              data-testid="link-team-site"
+            >
+              Visit the team site <ExternalLink size={14} />
+            </a>
+          </div>
+          <div className="min-w-0" role="region" aria-label="Team 23442 photo carousel" aria-roledescription="carousel">
+            <div className="overflow-hidden rounded-xl bg-[#0b1515]">
+              <img
+                key={teamPhotos[activePhoto].src}
+                src={teamPhotos[activePhoto].src}
+                alt={teamPhotos[activePhoto].alt}
+                className="aspect-[4/3] w-full object-cover"
+                data-testid="about-team-23442-image"
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => showPhoto(-1)} aria-label="Previous team photo" className="grid size-9 shrink-0 place-items-center rounded-full border border-[#d9e6e1] text-[#31515a] hover:bg-[#e8f2ee] dark:border-[#28464d] dark:text-[#c5d9d5] dark:hover:bg-[#1b3940]">
+                <ArrowLeft size={15} />
+              </button>
+              <div className="flex items-center gap-2" aria-label={`Photo ${activePhoto + 1} of ${teamPhotos.length}`}>
+                {teamPhotos.map((photo, index) => (
+                  <button
+                    key={photo.src}
+                    type="button"
+                    onClick={() => setActivePhoto(index)}
+                    aria-label={`Show team photo ${index + 1}`}
+                    aria-current={activePhoto === index ? "true" : undefined}
+                    className={`h-2 rounded-full transition-all ${activePhoto === index ? "w-6 bg-[#168b94] dark:bg-[#7edbd0]" : "w-2 bg-[#aac1be] dark:bg-[#45676d]"}`}
+                  />
+                ))}
+              </div>
+              <button type="button" onClick={() => setPhotoRotationPaused((paused) => !paused)} aria-label={photoRotationPaused ? "Resume photo rotation" : "Pause photo rotation"} aria-pressed={photoRotationPaused} className="grid size-9 shrink-0 place-items-center rounded-full border border-[#d9e6e1] text-[#31515a] hover:bg-[#e8f2ee] dark:border-[#28464d] dark:text-[#c5d9d5] dark:hover:bg-[#1b3940]">
+                {photoRotationPaused ? <Play size={14} /> : <Pause size={14} />}
+              </button>
+              <button type="button" onClick={() => showPhoto(1)} aria-label="Next team photo" className="grid size-9 shrink-0 place-items-center rounded-full border border-[#d9e6e1] text-[#31515a] hover:bg-[#e8f2ee] dark:border-[#28464d] dark:text-[#c5d9d5] dark:hover:bg-[#1b3940]">
+                <ArrowRight size={15} />
+              </button>
+            </div>
           </div>
         </section>
 
