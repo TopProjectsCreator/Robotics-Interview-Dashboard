@@ -50,6 +50,8 @@ import type { FeatureRequest } from "@workspace/api-client-react";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
+import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
+import { accountSetupErrorMessage } from "./lib/auth-error-messages";
 import { AssistantModelPicker, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
@@ -168,19 +170,6 @@ function eventPasscodeErrorMessage(error: unknown): string {
     : undefined;
   if (status === 401) return "That team access code is incorrect. Check it and try again.";
   return signInErrorMessage(error, "Could not verify the team access code. Try again.");
-}
-
-function accountSetupErrorMessage(error: unknown, fallback: string): string {
-  const status = error && typeof error === "object" && "status" in error
-    ? (error as { status?: unknown }).status
-    : undefined;
-
-  if (status === 401) return "The team access code is incorrect. Check it and try again.";
-  if (status === 429) return "Too many account setup attempts. Wait a minute and try again.";
-  if (typeof status !== "number" || status >= 500) {
-    return "Account setup is temporarily unavailable. Check your connection and try again.";
-  }
-  return fallback;
 }
 
 function retryTemporaryAuthFailure(failureCount: number, error: unknown): boolean {
@@ -970,6 +959,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
         </SettingRow>
       </div>}
+      {session.data?.role === "coordinator" && session.data.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
@@ -2570,7 +2560,7 @@ function LegacyLogin() {
   };
   const selected = interviewers.data?.items.find(item => item.id === selectedId);
   const busy = login.isPending || setup.isPending || create.isPending;
-  const errorMessage = login.isError ? "That password was not recognized." : setup.isError ? "Could not set that password. Check the event passcode." : create.isError ? "Could not create that team member. Check the event passcode." : "";
+  const errorMessage = login.isError ? "That password was not recognized." : setup.isError ? accountSetupErrorMessage(setup.error, "Could not set that password. Check the event passcode.") : create.isError ? accountSetupErrorMessage(create.error, "Could not create that team member. Check the event passcode.") : "";
   return <main className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white">
     <div className="absolute -right-40 -top-40 h-[680px] w-[680px] rounded-full border border-[#387182]/30" /><div className="absolute -right-20 -top-20 h-[440px] w-[440px] rounded-full border border-[#387182]/30" />
     <div className="relative z-10 grid w-full lg:grid-cols-[1fr_480px]">

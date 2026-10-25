@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const interviewQueueTable = pgTable("interview_queue", {
@@ -58,6 +58,18 @@ export const chatSettingsTable = pgTable("chat_settings", {
   id: text("id").primaryKey().default("1"),
   teamId: text("team_id"),
   slowmodeSeconds: integer("slowmode_seconds").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export type TeamNameRule = {
+  matchType: "contains" | "startsWith" | "endsWith" | "exact";
+  text: string;
+};
+
+export const teamNameRulesTable = pgTable("team_name_rules", {
+  teamId: text("team_id").primaryKey(),
+  rules: jsonb("rules").$type<TeamNameRule[]>().notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
     .$onUpdate(() => new Date()),
 });

@@ -325,6 +325,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/name-rules:
+    get:
+      operationId: getTeamNameRules
+      tags: [auth]
+      summary: Read the signed-in team's name rules (coordinators only)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current team name rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamNameRules"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateTeamNameRules
+      tags: [auth]
+      summary: Replace the signed-in team's name rules (coordinators only)
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamNameRulesUpdateInput"
+      responses:
+        "200":
+          description: Saved team name rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamNameRules"
+        "400":
+          description: Invalid name rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/interviewers:
     get:
       operationId: listInterviewers
@@ -4337,6 +4390,38 @@ components:
       schema:
         type: integer
   schemas:
+    TeamNameRule:
+      type: object
+      additionalProperties: false
+      required: [matchType, text]
+      properties:
+        matchType:
+          type: string
+          enum: [contains, startsWith, endsWith, exact]
+        text:
+          type: string
+          minLength: 1
+          maxLength: 40
+    TeamNameRules:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TeamNameRule"
+    TeamNameRulesUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TeamNameRule"
     CustomMcpConnection:
       type: object
       required: [id, endpointUrl]

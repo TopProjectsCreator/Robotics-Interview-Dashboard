@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
+import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
@@ -61,6 +61,7 @@ import {
 } from "../middlewares/adminAuth";
 import { deletePresenceHeartbeat } from "./presence";
 import { checkAccountCreationAllowed, validateDisplayName } from "../lib/spamGuard";
+import { validateTeamNameRules } from "../lib/nameRules";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
@@ -79,10 +80,43 @@ import {
   GetPersonalNotepadResponse,
   UpdatePersonalNotepadBody,
   UpdatePersonalNotepadResponse,
+  GetTeamNameRulesResponse,
+  UpdateTeamNameRulesBody,
+  UpdateTeamNameRulesResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+router.get("/auth/name-rules", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [record] = await db.select({ rules: teamNameRulesTable.rules })
+    .from(teamNameRulesTable)
+    .where(eq(teamNameRulesTable.teamId, teamId))
+    .limit(1);
+  res.json(GetTeamNameRulesResponse.parse({ rules: record?.rules ?? [] }));
+});
+
+router.put("/auth/name-rules", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = UpdateTeamNameRulesBody.safeParse(req.body);
+  if (!parsed.success || parsed.data.rules.some((rule) => !rule.text.trim())) {
+    res.status(400).json({ error: "Each rule needs text between 1 and 40 characters, with no more than 50 rules." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const rules = parsed.data.rules.map((rule) => ({
+    matchType: rule.matchType,
+    text: rule.text.trim().replace(/\s+/g, " "),
+  }));
+  const [record] = await db.insert(teamNameRulesTable)
+    .values({ teamId, rules })
+    .onConflictDoUpdate({
+      target: teamNameRulesTable.teamId,
+      set: { rules, updatedAt: new Date() },
+    })
+    .returning({ rules: teamNameRulesTable.rules });
+  res.json(UpdateTeamNameRulesResponse.parse({ rules: record?.rules ?? rules }));
+});
 
 router.get("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
   const accountId = interviewerIdFromSession(requestAdminSession(req));
@@ -486,6 +520,15 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(400).json({ error: nameProblem });
     return;
   }
+  const [nameRulesRecord] = await db.select({ rules: teamNameRulesTable.rules })
+    .from(teamNameRulesTable)
+    .where(eq(teamNameRulesTable.teamId, team.id))
+    .limit(1);
+  const configuredNameProblem = validateTeamNameRules(displayName, nameRulesRecord?.rules ?? []);
+  if (configuredNameProblem) {
+    res.status(400).json({ error: configuredNameProblem });
+    return;
+  }
   // Cap how many accounts one network can create per hour.
   const creationVerdict = checkAccountCreationAllowed(req.ip ?? "unknown");
   if (!creationVerdict.allowed) {
@@ -770,6 +813,17 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
     return;
   }
   const normalizedName = normalizeInterviewerName(displayName);
+  if (normalizedName !== account.normalizedName) {
+    const [nameRulesRecord] = await db.select({ rules: teamNameRulesTable.rules })
+      .from(teamNameRulesTable)
+      .where(eq(teamNameRulesTable.teamId, ownTeam))
+      .limit(1);
+    const configuredNameProblem = validateTeamNameRules(displayName, nameRulesRecord?.rules ?? []);
+    if (configuredNameProblem) {
+      res.status(400).json({ error: configuredNameProblem });
+      return;
+    }
+  }
   const previousName = account.displayName;
   if (normalizedName === account.normalizedName) {
     res.json(UpdateInterviewerNameResponse.parse(publicAccount(account)));
@@ -1366,7 +1420,7 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
       "applicants", "application_imports", "assistant_conversations",
       "assistant_messages", "broadcasts", "cad_bots", "cad_folders",
       "cad_models", "chat_custom_emojis", "chat_message_reactions",
-      "chat_poll_votes", "chat_polls", "chat_settings", "chunked_uploads",
+      "chat_poll_votes", "chat_polls", "chat_settings", "team_name_rules", "chunked_uploads",
       "code_files", "code_presence", "code_projects", "code_revisions",
       "dashboard_charts", "data_snapshots", "display_settings",
       "feature_requests", "interview_chat_messages", "interview_queue",

@@ -210,6 +210,53 @@ export const ResetTeamLogoResponse = zod.void()
 
 
 /**
+ * @summary Read the signed-in team's name rules (coordinators only)
+ */
+export const getTeamNameRulesResponseRulesItemTextMax = 40;
+
+export const getTeamNameRulesResponseRulesMax = 50;
+
+
+
+export const GetTeamNameRulesResponse = zod.object({
+  "rules": zod.array(zod.object({
+  "matchType": zod.enum(['contains', 'startsWith', 'endsWith', 'exact']),
+  "text": zod.string().min(1).max(getTeamNameRulesResponseRulesItemTextMax)
+})).max(getTeamNameRulesResponseRulesMax)
+})
+
+
+/**
+ * @summary Replace the signed-in team's name rules (coordinators only)
+ */
+export const updateTeamNameRulesBodyRulesItemTextMax = 40;
+
+export const updateTeamNameRulesBodyRulesMax = 50;
+
+
+
+export const UpdateTeamNameRulesBody = zod.object({
+  "rules": zod.array(zod.object({
+  "matchType": zod.enum(['contains', 'startsWith', 'endsWith', 'exact']),
+  "text": zod.string().min(1).max(updateTeamNameRulesBodyRulesItemTextMax)
+})).max(updateTeamNameRulesBodyRulesMax)
+})
+
+export const updateTeamNameRulesResponseRulesItemTextMax = 40;
+
+export const updateTeamNameRulesResponseRulesMax = 50;
+
+
+
+export const UpdateTeamNameRulesResponse = zod.object({
+  "rules": zod.array(zod.object({
+  "matchType": zod.enum(['contains', 'startsWith', 'endsWith', 'exact']),
+  "text": zod.string().min(1).max(updateTeamNameRulesResponseRulesItemTextMax)
+})).max(updateTeamNameRulesResponseRulesMax)
+})
+
+
+/**
  * Private roster. Requires a signed-in session, or the team access code as ?eventPassword for the login screen before anyone has signed in. Requests with neither are rejected. Teams never see each other's accounts.
  * @summary List interviewer accounts and password setup state
  */

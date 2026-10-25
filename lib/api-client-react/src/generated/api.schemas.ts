@@ -5,6 +5,35 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type TeamNameRuleMatchType = typeof TeamNameRuleMatchType[keyof typeof TeamNameRuleMatchType];
+
+
+export const TeamNameRuleMatchType = {
+  contains: 'contains',
+  startsWith: 'startsWith',
+  endsWith: 'endsWith',
+  exact: 'exact',
+} as const;
+
+export interface TeamNameRule {
+  matchType: TeamNameRuleMatchType;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  text: string;
+}
+
+export interface TeamNameRules {
+  /** @maxItems 50 */
+  rules: TeamNameRule[];
+}
+
+export interface TeamNameRulesUpdateInput {
+  /** @maxItems 50 */
+  rules: TeamNameRule[];
+}
+
 export interface CustomMcpConnection {
   id: string;
   endpointUrl: string;

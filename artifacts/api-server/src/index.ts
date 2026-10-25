@@ -311,6 +311,7 @@ async function ensureSchema(): Promise<void> {
     `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
     `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
     // Invite-only chat channels. Admins (coordinators) create, rename, and
     // manage them; membership gates every read and write. Messages reuse
     // interview_chat_messages with conversation_scope='channel'.

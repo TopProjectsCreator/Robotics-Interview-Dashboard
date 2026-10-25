@@ -243,6 +243,8 @@ import type {
   TeamBranding,
   TeamCreateInput,
   TeamCreateResponse,
+  TeamNameRules,
+  TeamNameRulesUpdateInput,
   TeamVerifyResponse,
   UpdateCodeFile200,
   UpdateCodeProject200,
@@ -1243,6 +1245,154 @@ export const useResetTeamLogo = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getResetTeamLogoMutationOptions(options));
+    }
+
+export const getGetTeamNameRulesUrl = () => {
+
+
+
+
+  return `/api/auth/name-rules`
+}
+
+/**
+ * @summary Read the signed-in team's name rules (coordinators only)
+ */
+export const getTeamNameRules = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamNameRules> => {
+
+  return customFetch<TeamNameRules>(getGetTeamNameRulesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamNameRulesQueryKey = () => {
+    return [
+    `/api/auth/name-rules`
+    ] as const;
+    }
+
+
+export const getGetTeamNameRulesQueryOptions = <TData = Awaited<ReturnType<typeof getTeamNameRules>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamNameRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamNameRulesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamNameRules>>> = ({ signal }) => getTeamNameRules({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamNameRules>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamNameRulesQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamNameRules>>>
+export type GetTeamNameRulesQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read the signed-in team's name rules (coordinators only)
+ */
+
+export function useGetTeamNameRules<TData = Awaited<ReturnType<typeof getTeamNameRules>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamNameRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamNameRulesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTeamNameRulesUrl = () => {
+
+
+
+
+  return `/api/auth/name-rules`
+}
+
+/**
+ * @summary Replace the signed-in team's name rules (coordinators only)
+ */
+export const updateTeamNameRules = async (teamNameRulesUpdateInput: TeamNameRulesUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamNameRules> => {
+
+  return customFetch<TeamNameRules>(getUpdateTeamNameRulesUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamNameRulesUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamNameRulesMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamNameRules>>, TError,{data: BodyType<TeamNameRulesUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamNameRules>>, TError,{data: BodyType<TeamNameRulesUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateTeamNameRules'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamNameRules>>, {data: BodyType<TeamNameRulesUpdateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateTeamNameRules(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamNameRulesMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamNameRules>>>
+    export type UpdateTeamNameRulesMutationBody = BodyType<TeamNameRulesUpdateInput>
+    export type UpdateTeamNameRulesMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Replace the signed-in team's name rules (coordinators only)
+ */
+export const useUpdateTeamNameRules = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamNameRules>>, TError,{data: BodyType<TeamNameRulesUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamNameRules>>,
+        TError,
+        {data: BodyType<TeamNameRulesUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamNameRulesMutationOptions(options));
     }
 
 export const getListInterviewersUrl = (params?: ListInterviewersParams,) => {
