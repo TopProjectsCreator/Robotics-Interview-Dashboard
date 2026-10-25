@@ -8,6 +8,44 @@ import { accountById } from "./interviewerAccounts";
 import { readWorkspaceVisibility } from "./workspaceAccess";
 import { userCanSeeWorkspace, type WorkspaceKey } from "./workspaceVisibility";
 import { getAssistantModel } from "./assistantModel";
+import { nextAssistantTaskOccurrence, validateAssistantTaskSchedule, type AssistantTaskRecurrence } from "./assistantSchedule";
+
+const assistantTaskTool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
+  type: "function" as const,
+  function: {
+    name,
+    description,
+    parameters: { type: "object", properties, required, additionalProperties: false },
+  },
+});
+
+const ASSISTANT_TASK_TOOL_NAMES = new Set([
+  "create_scheduled_assistant_task",
+  "activate_scheduled_assistant_task",
+  "list_scheduled_assistant_tasks",
+  "update_scheduled_assistant_task",
+  "pause_scheduled_assistant_task",
+  "resume_scheduled_assistant_task",
+  "cancel_scheduled_assistant_task",
+]);
+export const ASSISTANT_AUTOMATION_TOOL_NAMES = new Set([
+  ...ASSISTANT_TASK_TOOL_NAMES,
+  "web_search",
+  "list_team_chat_messages",
+  "list_team_chat_channels",
+  "read_team_chat_channel_history",
+  "send_team_chat_message",
+  "create_team_chat_channel",
+]);
+
+const ASSISTANT_SCHEDULED_SAFE_TOOLS = new Set([
+  "web_search",
+  "list_team_chat_messages",
+  "list_team_chat_channels",
+  "read_team_chat_channel_history",
+  "send_team_chat_message",
+  "create_team_chat_channel",
+]);
 
 async function snapshotCustomWorkspaceBeforeFileChange(
   workspaceId: string,
@@ -58,10 +96,69 @@ const tool = (
 });
 
 export const ASSISTANT_WORKSPACE_TOOLS = [
+  assistantTaskTool(
+    "create_scheduled_assistant_task",
+    "Create a recurring AI workflow as a draft only. Never activate it in the same turn. The assistant must resolve the local time, IANA timezone, cadence, weekdays, and any channel destination, then show the exact schedule and ask the user to activate using the returned confirmation code.",
+    {
+      prompt: { type: "string", minLength: 1, maxLength: 8000 },
+      frequency: { type: "string", enum: ["daily", "weekly"] },
+      hour: { type: "integer", minimum: 0, maximum: 23 },
+      minute: { type: "integer", minimum: 0, maximum: 59 },
+      daysOfWeek: { type: "array", items: { type: "integer", minimum: 0, maximum: 6 }, uniqueItems: true },
+      timeZone: { type: "string", minLength: 1, maxLength: 100 },
+      channelName: { type: "string", minLength: 1, maxLength: 80 },
+    },
+    ["prompt", "frequency", "hour", "minute", "daysOfWeek", "timeZone"],
+  ),
+  assistantTaskTool(
+    "activate_scheduled_assistant_task",
+    "Activate an existing draft only after the user explicitly replies with its exact activation code. This starts recurring assistant runs.",
+    { taskId: { type: "string", minLength: 1 }, confirmationCode: { type: "string", minLength: 4, maxLength: 12 } },
+    ["taskId", "confirmationCode"],
+  ),
+  assistantTaskTool("list_scheduled_assistant_tasks", "List this account's recurring AI tasks and their recent run results. Direct messages and other owners' tasks are excluded.", {}),
+  assistantTaskTool(
+    "update_scheduled_assistant_task",
+    "Edit the prompt, cadence, local time, timezone, weekdays, or destination of a draft, paused, or active task. Updating an active task recalculates its next run.",
+    {
+      taskId: { type: "string", minLength: 1 },
+      prompt: { type: "string", minLength: 1, maxLength: 8000 },
+      frequency: { type: "string", enum: ["daily", "weekly"] },
+      hour: { type: "integer", minimum: 0, maximum: 23 },
+      minute: { type: "integer", minimum: 0, maximum: 59 },
+      daysOfWeek: { type: "array", items: { type: "integer", minimum: 0, maximum: 6 }, uniqueItems: true },
+      timeZone: { type: "string", minLength: 1, maxLength: 100 },
+      channelName: { type: "string", minLength: 1, maxLength: 80 },
+    },
+    ["taskId"],
+  ),
+  assistantTaskTool("pause_scheduled_assistant_task", "Pause one of this account's recurring AI tasks.", { taskId: { type: "string", minLength: 1 } }, ["taskId"]),
+  assistantTaskTool("resume_scheduled_assistant_task", "Resume one of this account's paused recurring AI tasks.", { taskId: { type: "string", minLength: 1 } }, ["taskId"]),
+  assistantTaskTool("cancel_scheduled_assistant_task", "Cancel one of this account's recurring AI tasks. Cancellation is permanent; run history is retained.", { taskId: { type: "string", minLength: 1 } }, ["taskId"]),
   tool(
     "list_team_chat_messages",
     "Read recent messages from the shared team Chat channel. Direct messages are never included. Deleted messages appear only as a deletion marker.",
     { limit: { type: "integer", minimum: 1, maximum: 50 } },
+  ),
+  tool(
+    "read_team_chat_channel_history",
+    "Read messages from an accessible team channel within a requested UTC date interval. Direct messages and inaccessible channels are never included.",
+    {
+      channelName: { type: "string", minLength: 1, maxLength: 80 },
+      startDate: { type: "string", description: "Inclusive YYYY-MM-DD date" },
+      endDate: { type: "string", description: "Inclusive YYYY-MM-DD date" },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    },
+    ["channelName", "startDate", "endDate"],
+  ),
+  tool(
+    "create_team_chat_channel",
+    "Create a named team chat channel and optionally invite every current team member. Coordinator role required. Never use this unless the user explicitly requests a new channel.",
+    {
+      name: { type: "string", minLength: 1, maxLength: 80 },
+      inviteAllTeamMembers: { type: "boolean" },
+    },
+    ["name"],
   ),
   tool(
     "list_team_chat_channels",
@@ -261,6 +358,10 @@ type ToolContext = {
   accountId: string;
   teamId: string;
   authorName: string;
+  role?: string;
+  allowedToolNames?: string[];
+  disabledTools?: string[];
+  confirmationText?: string;
   askCoordinator?: (questions: AssistantQuestion[]) => Promise<Record<string, unknown>>;
 };
 
@@ -360,7 +461,9 @@ export async function runAssistantWorkspaceTool(
   context: ToolContext,
 ): Promise<{ content: string; detail: string }> {
   const workspace: WorkspaceKey =
-    name === "list_team_chat_messages" || name === "list_team_chat_channels" || name === "send_team_chat_message"
+    name === "list_team_chat_messages" || name === "list_team_chat_channels" || name === "send_team_chat_message" ||
+    name === "read_team_chat_channel_history" || name === "create_team_chat_channel" ||
+    ASSISTANT_TASK_TOOL_NAMES.has(name)
       ? "chat"
       : name.includes("cad_")
         ? "cad"
@@ -372,6 +475,213 @@ export async function runAssistantWorkspaceTool(
     }
   } else if (!(await canUseWorkspace(context, workspace))) {
     return { content: `This account does not have access to the ${workspace} workspace.`, detail: "access denied" };
+  }
+
+  if (ASSISTANT_TASK_TOOL_NAMES.has(name)) {
+    const account = await chatAccountInTeam(context);
+    if (!account) return { content: "Authentication is required to manage recurring assistant tasks.", detail: "access denied" };
+    const taskId = textArg(args, "taskId", 128);
+
+    if (name === "create_scheduled_assistant_task") {
+      const prompt = textArg(args, "prompt", 8000);
+      const frequency = args.frequency === "weekly" ? "weekly" : args.frequency === "daily" ? "daily" : null;
+      const recurrence: AssistantTaskRecurrence = {
+        frequency: frequency ?? "daily",
+        hour: typeof args.hour === "number" ? Math.floor(args.hour) : -1,
+        minute: typeof args.minute === "number" ? Math.floor(args.minute) : -1,
+        daysOfWeek: Array.isArray(args.daysOfWeek) ? args.daysOfWeek.map(Number) : [],
+      };
+      const timeZone = textArg(args, "timeZone", 100);
+      const validationError = frequency ? validateAssistantTaskSchedule(recurrence, timeZone) : "Choose a daily or weekly cadence.";
+      if (!prompt || !frequency || validationError) {
+        return { content: validationError || "Describe the recurring task.", detail: "invalid schedule" };
+      }
+      let destinationChannel: string | null = null;
+      if (args.channelName !== undefined) {
+        const requested = textArg(args, "channelName", 80).replace(/\s+/g, " ");
+        const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+        const match = channels.rows.find((channel) =>
+          channel.name.trim().replace(/\s+/g, " ").toLowerCase() === requested.toLowerCase(),
+        );
+        if (!match) return { content: "That destination is not an accessible channel. List accessible channels or ask a coordinator to create it.", detail: "destination unavailable" };
+        destinationChannel = match.name;
+      }
+      const id = randomUUID();
+      const activationCode = randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+      const permitted = [...new Set((context.allowedToolNames ?? [...ASSISTANT_SCHEDULED_SAFE_TOOLS])
+        .filter((toolName) => ASSISTANT_SCHEDULED_SAFE_TOOLS.has(toolName))
+        .filter((toolName) => toolName !== "create_team_chat_channel" || account.role === "coordinator")
+        .filter((toolName) => !(context.disabledTools ?? []).includes(toolName)))];
+      const disabledTools = [...new Set(context.disabledTools ?? [])];
+      if (!permitted.includes("send_team_chat_message") && destinationChannel) {
+        return { content: "Team chat posting is disabled or unavailable in this assistant surface; no task was created.", detail: "posting tool unavailable" };
+      }
+      const existing = await pool.query<{ count: number | string }>(
+        `select count(*)::int as "count" from "assistant_scheduled_tasks"
+          where "team_id" = $1 and "owner_id" = $2 and "status" in ('draft', 'active', 'paused')`,
+        [context.teamId, account.id],
+      );
+      if (Number(existing.rows[0]?.count ?? 0) >= 50) {
+        return { content: "This account already has 50 unfinished recurring tasks. Cancel one before creating another.", detail: "task limit reached" };
+      }
+      await pool.query(
+        `insert into "assistant_scheduled_tasks"
+          ("id", "team_id", "owner_id", "prompt", "status", "recurrence", "time_zone",
+           "destination_channel", "activation_code", "allowed_tools", "disabled_tools")
+         values ($1, $2, $3, $4, 'draft', $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb)`,
+        [
+          id, context.teamId, account.id, prompt, JSON.stringify(recurrence), timeZone,
+          destinationChannel, activationCode, JSON.stringify(permitted), JSON.stringify(disabledTools),
+        ],
+      );
+      return {
+        content: JSON.stringify({
+          id,
+          status: "draft",
+          prompt,
+          recurrence,
+          timeZone,
+          destinationChannel,
+          activationCode,
+          nextStep: `Show the full schedule, explain that it will run with the owner's currently authorized tools, then ask the user to reply "activate ${activationCode}" to start it.`,
+        }),
+        detail: `saved recurring assistant task draft ${id}`,
+      };
+    }
+
+    if (name === "list_scheduled_assistant_tasks") {
+      const tasks = await pool.query<{
+        id: string; prompt: string; status: string; recurrence: AssistantTaskRecurrence;
+        time_zone: string; destination_channel: string | null; next_run_at: Date | null;
+        last_run_at: Date | null; last_error: string | null; created_at: Date;
+      }>(
+        `select "id", "prompt", "status", "recurrence", "time_zone", "destination_channel",
+                "next_run_at", "last_run_at", "last_error", "created_at"
+           from "assistant_scheduled_tasks"
+          where "team_id" = $1 and "owner_id" = $2
+          order by "created_at" desc limit 30`,
+        [context.teamId, account.id],
+      );
+      const items = await Promise.all(tasks.rows.map(async (task) => {
+        const runs = await pool.query(
+          `select "id", "scheduled_for" as "scheduledFor", "status", "attempt",
+                  "started_at" as "startedAt", "finished_at" as "finishedAt", "result", "error"
+             from "assistant_scheduled_task_runs"
+            where "task_id" = $1 and "team_id" = $2 and "owner_id" = $3
+            order by "created_at" desc limit 5`,
+          [task.id, context.teamId, account.id],
+        );
+        return { ...task, runs: runs.rows };
+      }));
+      return { content: JSON.stringify(items), detail: `listed ${items.length} owned recurring assistant tasks` };
+    }
+
+    const [task] = (await pool.query<{
+      id: string; prompt: string; status: string; recurrence: AssistantTaskRecurrence;
+      time_zone: string; destination_channel: string | null; activation_code: string | null;
+    }>(
+      `select "id", "prompt", "status", "recurrence", "time_zone", "destination_channel", "activation_code"
+         from "assistant_scheduled_tasks"
+        where "id" = $1 and "team_id" = $2 and "owner_id" = $3 limit 1`,
+      [taskId, context.teamId, account.id],
+    )).rows;
+    if (!task) return { content: "Recurring task not found for this account.", detail: "task not found" };
+
+    if (name === "activate_scheduled_assistant_task") {
+      const suppliedCode = textArg(args, "confirmationCode", 12).toUpperCase();
+      const explicitReply = (context.confirmationText ?? "").match(/\bactivate\s+([A-Z0-9]{4,12})\b/i)?.[1]?.toUpperCase();
+      if (task.status !== "draft" || !task.activation_code || suppliedCode !== task.activation_code || explicitReply !== task.activation_code) {
+        return { content: "The draft was not activated. Ask the user to confirm with the exact activation code shown with the schedule.", detail: "activation confirmation mismatch" };
+      }
+      if (task.destination_channel) {
+        const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+        if (!channels.rows.some((channel) => channel.name === task.destination_channel)) {
+          return { content: "The destination channel is no longer accessible. Edit the draft before activating it.", detail: "destination no longer accessible" };
+        }
+      }
+      const recurrence = task.recurrence;
+      const nextRunAt = nextAssistantTaskOccurrence(recurrence, task.time_zone, new Date());
+      const activated = await pool.query(
+        `update "assistant_scheduled_tasks"
+            set "status" = 'active', "activation_code" = null, "next_run_at" = $4,
+                "updated_at" = now(), "last_error" = null
+          where "id" = $1 and "team_id" = $2 and "owner_id" = $3 and "status" = 'draft'
+          returning "id"`,
+        [task.id, context.teamId, account.id, nextRunAt],
+      );
+      if (!activated.rowCount) return { content: "The task changed before it could be activated. List tasks and try again.", detail: "activation race" };
+      return { content: JSON.stringify({ id: task.id, status: "active", nextRunAt }), detail: "activated recurring assistant task" };
+    }
+
+    if (name === "update_scheduled_assistant_task") {
+      if (!["draft", "paused", "active"].includes(task.status)) {
+        return { content: "Only draft, paused, or active tasks can be edited.", detail: "task not editable" };
+      }
+      const recurrence = { ...task.recurrence };
+      if (args.frequency !== undefined) {
+        if (args.frequency !== "daily" && args.frequency !== "weekly") return { content: "Choose daily or weekly.", detail: "invalid cadence" };
+        recurrence.frequency = args.frequency;
+        if (recurrence.frequency === "daily") recurrence.daysOfWeek = [];
+      }
+      if (typeof args.hour === "number") recurrence.hour = Math.floor(args.hour);
+      if (typeof args.minute === "number") recurrence.minute = Math.floor(args.minute);
+      if (Array.isArray(args.daysOfWeek)) recurrence.daysOfWeek = args.daysOfWeek.map(Number);
+      const timeZone = args.timeZone === undefined ? task.time_zone : textArg(args, "timeZone", 100);
+      const validationError = validateAssistantTaskSchedule(recurrence, timeZone);
+      const prompt = args.prompt === undefined ? task.prompt : textArg(args, "prompt", 8000);
+      if (!prompt || validationError) return { content: validationError || "The task prompt cannot be empty.", detail: "invalid task update" };
+      let destination = task.destination_channel;
+      if (args.channelName !== undefined) {
+        const requested = textArg(args, "channelName", 80).replace(/\s+/g, " ");
+        const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+        const match = channels.rows.find((channel) => channel.name.trim().replace(/\s+/g, " ").toLowerCase() === requested.toLowerCase());
+        if (!match) return { content: "That destination is not an accessible channel.", detail: "destination unavailable" };
+        destination = match.name;
+      }
+      const nextRunAt = task.status === "active" ? nextAssistantTaskOccurrence(recurrence, timeZone, new Date()) : null;
+      await pool.query(
+        `update "assistant_scheduled_tasks"
+            set "prompt" = $4, "recurrence" = $5::jsonb, "time_zone" = $6,
+                "destination_channel" = $7, "next_run_at" = $8, "updated_at" = now()
+          where "id" = $1 and "team_id" = $2 and "owner_id" = $3`,
+        [task.id, context.teamId, account.id, prompt, JSON.stringify(recurrence), timeZone, destination, nextRunAt],
+      );
+      return { content: JSON.stringify({ id: task.id, prompt, recurrence, timeZone, destinationChannel: destination, nextRunAt }), detail: `updated recurring assistant task ${task.id}` };
+    }
+
+    if (name === "pause_scheduled_assistant_task") {
+      const result = await pool.query(
+        `update "assistant_scheduled_tasks" set "status" = 'paused', "next_run_at" = null,
+                "claimed_until" = null, "updated_at" = now()
+          where "id" = $1 and "team_id" = $2 and "owner_id" = $3 and "status" = 'active'
+          returning "id"`,
+        [task.id, context.teamId, account.id],
+      );
+      return { content: result.rowCount ? `Paused task ${task.id}.` : "This task is not active.", detail: result.rowCount ? "task paused" : "task not active" };
+    }
+    if (name === "resume_scheduled_assistant_task") {
+      if (task.status !== "paused") return { content: "This task is not paused.", detail: "task not paused" };
+      const nextRunAt = nextAssistantTaskOccurrence(task.recurrence, task.time_zone, new Date());
+      const result = await pool.query(
+        `update "assistant_scheduled_tasks" set "status" = 'active', "next_run_at" = $4,
+                "claimed_until" = null, "updated_at" = now(), "last_error" = null
+          where "id" = $1 and "team_id" = $2 and "owner_id" = $3 and "status" = 'paused'
+          returning "id"`,
+        [task.id, context.teamId, account.id, nextRunAt],
+      );
+      return { content: result.rowCount ? JSON.stringify({ id: task.id, status: "active", nextRunAt }) : "The task changed before it could resume.", detail: result.rowCount ? "task resumed" : "resume race" };
+    }
+    if (name === "cancel_scheduled_assistant_task") {
+      const result = await pool.query(
+        `update "assistant_scheduled_tasks" set "status" = 'cancelled', "next_run_at" = null,
+                "activation_code" = null, "claimed_until" = null, "updated_at" = now()
+          where "id" = $1 and "team_id" = $2 and "owner_id" = $3 and "status" <> 'cancelled'
+          returning "id"`,
+        [task.id, context.teamId, account.id],
+      );
+      return { content: result.rowCount ? `Cancelled task ${task.id}. Its run history is retained.` : "This task is already cancelled.", detail: result.rowCount ? "task cancelled" : "task already cancelled" };
+    }
+    return { content: "Unsupported task action.", detail: "unsupported action" };
   }
 
   if (name === "list_team_chat_messages") {
@@ -393,6 +703,100 @@ export async function runAssistantWorkspaceTool(
       pinned: Boolean(row.pinnedAt),
     }));
     return { content: JSON.stringify(messages), detail: `read ${messages.length} shared chat messages` };
+  }
+
+  if (name === "read_team_chat_channel_history") {
+    const account = await chatAccountInTeam(context);
+    if (!account) return { content: "Authentication is required to read channel history.", detail: "access denied" };
+    const requestedName = textArg(args, "channelName", 80).replace(/\s+/g, " ");
+    const startDate = textArg(args, "startDate", 10);
+    const endDate = textArg(args, "endDate", 10);
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const parseDate = (value: string) => {
+      if (!datePattern.test(value)) return null;
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return date.toISOString().slice(0, 10) === value ? date : null;
+    };
+    const start = parseDate(startDate);
+    const end = parseDate(endDate);
+    if (!start || !end || end.getTime() < start.getTime() || end.getTime() - start.getTime() > 30 * 86_400_000) {
+      return { content: "Choose valid dates in order, covering no more than 31 days.", detail: "invalid date interval" };
+    }
+    const channels = await accessibleTeamChatChannels(context, account.id, account.role);
+    const channel = channels.rows.find((item) => item.name.trim().replace(/\s+/g, " ").toLowerCase() === requestedName.toLowerCase());
+    if (!channel) return { content: "No accessible team channel with that name was found.", detail: "channel not found or access denied" };
+    const endExclusive = new Date(end.getTime() + 86_400_000);
+    const limit = typeof args.limit === "number" ? Math.max(1, Math.min(100, Math.floor(args.limit))) : 50;
+    const rows = await pool.query(
+      `select "id", "author", "message", "created_at" as "createdAt", "deleted_at" as "deletedAt"
+         from "interview_chat_messages"
+        where ${teamSqlCondition('"team_id"', "$1")}
+          and "conversation_scope" = 'channel' and "conversation_peer" = $2
+          and "created_at" >= $3 and "created_at" < $4
+        order by "created_at" asc limit $5`,
+      [context.teamId, channel.id, start, endExclusive, limit],
+    );
+    return {
+      content: JSON.stringify(rows.rows.map((row) => ({
+        ...row,
+        message: row.deletedAt ? "[message deleted]" : String(row.message).slice(0, 1000),
+        createdAt: new Date(String(row.createdAt)).toISOString(),
+      }))),
+      detail: `read ${rows.rowCount ?? 0} messages in ${channel.name} from ${startDate} through ${endDate}`,
+    };
+  }
+
+  if (name === "create_team_chat_channel") {
+    const account = await chatAccountInTeam(context);
+    if (!account) return { content: "Authentication is required to create a channel.", detail: "access denied" };
+    if (account.role !== "coordinator") return { content: "Only a coordinator can create a channel or invite team members.", detail: "access denied" };
+    const channelName = textArg(args, "name", 80).replace(/\s+/g, " ");
+    const normalized = channelName.toLowerCase();
+    if (!channelName) return { content: "A channel name is required.", detail: "invalid channel name" };
+    const channelId = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `insert into "chat_channels" ("id", "team_id", "name", "normalized_name", "created_by")
+         values ($1, $2, $3, $4, $5)`,
+        [channelId, context.teamId, channelName, normalized, account.id],
+      );
+      const invited: string[] = [];
+      if (args.inviteAllTeamMembers === true) {
+        const members = await client.query<{ id: string; display_name: string }>(
+          `select "id", "display_name" from "interviewer_accounts"
+            where ${teamSqlCondition('"team_id"', "$1")} order by lower("display_name")`,
+          [context.teamId],
+        );
+        for (const member of members.rows) {
+          await client.query(
+            `insert into "chat_channel_members" ("id", "team_id", "channel_id", "member_id", "member_name", "added_by")
+             values ($1, $2, $3, $4, $5, $6) on conflict ("channel_id", "member_id") do nothing`,
+            [randomUUID(), context.teamId, channelId, member.id, member.display_name, account.id],
+          );
+          invited.push(member.display_name);
+        }
+      } else {
+        await client.query(
+          `insert into "chat_channel_members" ("id", "team_id", "channel_id", "member_id", "member_name", "added_by")
+           values ($1, $2, $3, $4, $5, $6) on conflict ("channel_id", "member_id") do nothing`,
+          [randomUUID(), context.teamId, channelId, account.id, account.displayName, account.id],
+        );
+        invited.push(account.displayName);
+      }
+      await client.query("commit");
+      pushRealtimeHint("chat_channels", "INSERT");
+      return { content: JSON.stringify({ id: channelId, name: channelName, invitedMembers: invited }), detail: `created channel ${channelName} and invited ${invited.length} team member(s)` };
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+        return { content: "A channel with that name already exists in this team.", detail: "channel name already exists" };
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   if (name === "list_team_chat_channels") {

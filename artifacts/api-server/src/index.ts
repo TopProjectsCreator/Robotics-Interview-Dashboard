@@ -8,7 +8,7 @@ import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
-import { startAssistantPromptDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
+import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
@@ -589,6 +589,44 @@ async function ensureSchema(): Promise<void> {
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
+    `create table if not exists "assistant_scheduled_tasks" (
+       "id" text primary key,
+       "team_id" text not null,
+       "owner_id" text not null,
+       "prompt" text not null check (length("prompt") between 1 and 8000),
+       "status" text not null default 'draft' check ("status" in ('draft', 'active', 'paused', 'cancelled')),
+       "recurrence" jsonb not null,
+       "time_zone" text not null,
+       "destination_channel" text,
+       "activation_code" text,
+       "allowed_tools" jsonb not null default '[]'::jsonb,
+       "disabled_tools" jsonb not null default '[]'::jsonb,
+       "next_run_at" timestamptz,
+       "last_run_at" timestamptz,
+       "last_error" text,
+       "claimed_until" timestamptz,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "assistant_scheduled_tasks_due_idx" on "assistant_scheduled_tasks" ("status", "next_run_at")`,
+    `create index if not exists "assistant_scheduled_tasks_owner_idx" on "assistant_scheduled_tasks" ("team_id", "owner_id", "created_at")`,
+    `create table if not exists "assistant_scheduled_task_runs" (
+       "id" text primary key,
+       "task_id" text not null references "assistant_scheduled_tasks"("id") on delete cascade,
+       "team_id" text not null,
+       "owner_id" text not null,
+       "idempotency_key" text not null,
+       "scheduled_for" timestamptz not null,
+       "status" text not null check ("status" in ('running', 'succeeded', 'failed', 'interrupted', 'cancelled')),
+       "attempt" integer not null default 1,
+       "started_at" timestamptz,
+       "finished_at" timestamptz,
+       "result" text,
+       "error" text,
+       "created_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "assistant_scheduled_task_runs_idempotency_unique" on "assistant_scheduled_task_runs" ("idempotency_key")`,
+    `create index if not exists "assistant_scheduled_task_runs_task_created_idx" on "assistant_scheduled_task_runs" ("team_id", "task_id", "created_at")`,
     `alter table "assistant_skills" add column if not exists "github_repository_url" text`,
     `create unique index if not exists "assistant_skills_team_name_unique" on "assistant_skills" ("team_id", lower("name"))`,
     `create index if not exists "assistant_skills_team_enabled_idx" on "assistant_skills" ("team_id", "enabled")`,
@@ -774,6 +812,7 @@ server.listen(port, () => {
       // Server-side scheduled chat delivery: posts due messages even when no
       // browser is open.
       startScheduledChatDispatcher();
+      startAssistantScheduledTaskDispatcher();
       // Persisted assistant prompts continue independently of the browser tab.
       startAssistantPromptDispatcher();
       // Team inbox: email forwarded into the team mailbox is posted into the

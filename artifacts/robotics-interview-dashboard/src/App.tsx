@@ -6437,7 +6437,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           .map(item => ({ author: item.author, message: item.message }));
         // No timeout here: the agent keeps calling tools until it is done, so
         // a long multi-step answer must not be cut off at an arbitrary mark.
-        const response = await ask.mutateAsync({ data: { question, applicantIds, chatContext } });
+        const chatAssistantDisabledTools = loadDisabledTools();
+        const response = await ask.mutateAsync({
+          data: {
+            question,
+            applicantIds,
+            chatContext,
+            ...(chatAssistantDisabledTools.length ? { disabledTools: chatAssistantDisabledTools } : {}),
+          },
+        });
         assistantReplyForRetry = {
           answer: response.answer,
           activities: response.activities ?? [],
@@ -7410,6 +7418,15 @@ function timeAgo(iso: string): string {
 
 function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "web_search") return { label: "Searched the web", Icon: Search };
+  if (tool === "create_scheduled_assistant_task") return { label: "Drafted recurring task", Icon: Clock };
+  if (tool === "activate_scheduled_assistant_task") return { label: "Activated recurring task", Icon: Check };
+  if (tool === "list_scheduled_assistant_tasks") return { label: "Checked recurring tasks", Icon: Clock };
+  if (tool === "update_scheduled_assistant_task") return { label: "Edited recurring task", Icon: Pencil };
+  if (tool === "pause_scheduled_assistant_task") return { label: "Paused recurring task", Icon: Clock };
+  if (tool === "resume_scheduled_assistant_task") return { label: "Resumed recurring task", Icon: Clock };
+  if (tool === "cancel_scheduled_assistant_task") return { label: "Cancelled recurring task", Icon: Trash2 };
+  if (tool === "read_team_chat_channel_history") return { label: "Read channel history", Icon: MessageSquare };
+  if (tool === "create_team_chat_channel") return { label: "Created team channel", Icon: MessageSquare };
   if (tool === "set_assistant_model") return { label: "Changed assistant model", Icon: Sparkles };
   if (tool === "python_exec" || tool === "python") return { label: "Ran Python", Icon: SquareTerminal };
   if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };

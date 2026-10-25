@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 
@@ -77,6 +77,48 @@ export const assistantSkillsTable = pgTable("assistant_skills", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  ownerId: text("owner_id").notNull(),
+  prompt: text("prompt").notNull(),
+  status: text("status").notNull().default("draft"),
+  recurrence: jsonb("recurrence").$type<{ frequency: "daily" | "weekly"; hour: number; minute: number; daysOfWeek: number[] }>().notNull(),
+  timeZone: text("time_zone").notNull(),
+  destinationChannel: text("destination_channel"),
+  activationCode: text("activation_code"),
+  allowedTools: jsonb("allowed_tools").$type<string[]>().notNull().default([]),
+  disabledTools: jsonb("disabled_tools").$type<string[]>().notNull().default([]),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_scheduled_tasks_due_idx").on(table.status, table.nextRunAt),
+  index("assistant_scheduled_tasks_owner_idx").on(table.teamId, table.ownerId, table.createdAt),
+]);
+
+export const assistantScheduledTaskRunsTable = pgTable("assistant_scheduled_task_runs", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id").notNull().references(() => assistantScheduledTasksTable.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull(),
+  ownerId: text("owner_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+  status: text("status").notNull(),
+  attempt: integer("attempt").notNull().default(1),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  result: text("result"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("assistant_scheduled_task_runs_idempotency_unique").on(table.idempotencyKey),
+  index("assistant_scheduled_task_runs_task_created_idx").on(table.teamId, table.taskId, table.createdAt),
+]);
 
 export const insertAssistantMessageSchema = createInsertSchema(assistantMessagesTable).omit({
   createdAt: true,

@@ -181,7 +181,7 @@ describe("AssistantModelPicker", () => {
 
     expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
     expect(webSearchTool).not.toBeChecked();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("70 of 71 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("79 of 80 enabled");
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -204,7 +204,7 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(71);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(80);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
@@ -214,6 +214,15 @@ describe("AssistantModelPicker", () => {
       "update_parts_inventory_details",
       "list_team_chat_messages",
       "list_team_chat_channels",
+      "create_scheduled_assistant_task",
+      "activate_scheduled_assistant_task",
+      "list_scheduled_assistant_tasks",
+      "update_scheduled_assistant_task",
+      "pause_scheduled_assistant_task",
+      "resume_scheduled_assistant_task",
+      "cancel_scheduled_assistant_task",
+      "read_team_chat_channel_history",
+      "create_team_chat_channel",
       "ask_user",
       "create_custom_workspace",
       "list_code_project_files",
@@ -262,7 +271,7 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     expect(await screen.findByTestId("assistant-dynamic-tools")).toBeInTheDocument();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("73 of 73 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("82 of 82 enabled");
     fireEvent.click(screen.getByRole("checkbox", { name: "Onshape: Get Document tool" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["onshape_getDocument"]);
     fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
@@ -395,10 +404,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const gear = screen.getByTestId("assistant-tools-gear");
-    expect(gear).toHaveAttribute("title", expect.stringContaining("70 of 71 tools enabled"));
+    expect(gear).toHaveAttribute("title", expect.stringContaining("79 of 80 tools enabled"));
 
     fireEvent.click(gear);
-    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("70 of 71 enabled");
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("79 of 80 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
     const skillsToggle = screen.getByTestId("toggle-assistant-skills");
