@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CadStorageStatus } from "@workspace/api-client-react";
@@ -169,6 +170,27 @@ afterEach(() => {
 });
 
 describe("CAD workspace tree", () => {
+  it("marks the library layout for desktop viewport fill while preserving natural page flow on small screens", () => {
+    renderPage();
+
+    expect(screen.getByTestId("cad-workspace-page")).toHaveClass("cad-workspace-page");
+    expect(screen.getByTestId("cad-library-layout")).toHaveClass(
+      "cad-library-layout",
+      "lg:grid-cols-[290px_minmax(0,1fr)]",
+    );
+    expect(screen.getByTestId("cad-model-grid")).toHaveClass("cad-model-panel", "min-h-[420px]");
+  });
+
+  it("limits viewport sizing to taller desktops and keeps long CAD content scrollable", () => {
+    const css = readFileSync("src/index.css", "utf8");
+
+    expect(css).toMatch(/@media \(min-width:\s*1024px\) and \(min-height:\s*700px\)/);
+    expect(css).toMatch(/\.cad-workspace-shell\s*\{[^}]*height:\s*100dvh/s);
+    expect(css).toMatch(/\.cad-workspace-main\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto/s);
+    expect(css).toMatch(/\.cad-library-layout\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto/s);
+    expect(css).toMatch(/\.cad-library-sidebar,\s*\.cad-model-panel\s*\{[^}]*overflow-y:\s*auto/s);
+  });
+
   it("shows the failover notice when the permitted admin receives backup status", async () => {
     renderPage(undefined, {
       usingBackupStorage: true,

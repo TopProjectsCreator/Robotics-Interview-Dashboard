@@ -3333,6 +3333,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
   const workspaceArea = workspaceAreaForPath(location);
+  const isCadWorkspaceRoute = location.split(/[?#]/, 1)[0] === "/cad";
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
     chat: MessageSquare,
@@ -3403,7 +3404,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         )}
         <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
-      <div className="lg:pl-[248px]">
+      <div className={`lg:pl-[248px]${isCadWorkspaceRoute ? " cad-workspace-shell" : ""}`}>
         <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9"
           style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] dark:text-[#9db2bd] dark:hover:bg-[#1e3340] lg:hidden"><Menu size={21} /></button>
@@ -3416,7 +3417,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
             <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9"
+        <main className={`mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9${isCadWorkspaceRoute ? " cad-workspace-main" : ""}`}
           style={{ paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           {children}

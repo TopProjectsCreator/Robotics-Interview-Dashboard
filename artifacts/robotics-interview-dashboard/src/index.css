@@ -41,6 +41,43 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
+
+/* The CAD library is the only workspace that uses the remaining viewport
+   below the shared header. Short screens stay in normal document flow so the
+   full page, rather than a cramped nested panel, remains scrollable. */
+@media (min-width: 1024px) and (min-height: 700px) {
+  .cad-workspace-shell {
+    display: flex;
+    height: 100dvh;
+    flex-direction: column;
+  }
+  .cad-workspace-shell > [data-testid="workspace-header"] {
+    flex: 0 0 auto;
+  }
+  .cad-workspace-main {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .cad-workspace-page {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .cad-library-layout {
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .cad-library-sidebar,
+  .cad-model-panel {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 /* `clip` (not `hidden`) so the root never becomes a scroll container: wide
    content is trimmed at the page edge instead of adding a sideways scroll,
    while vertical scrolling and `position: sticky` keep working. */

@@ -477,7 +477,7 @@ export function CadWorkspacePage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="cad-workspace-page space-y-5" data-testid="cad-workspace-page">
       {!cadStorageStatus.isError && cadStorageStatus.data?.usingBackupStorage && (
         <div
           role="status"
@@ -614,8 +614,8 @@ export function CadWorkspacePage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[290px_minmax(0,1fr)]">
-        <aside className="space-y-3">
+      <div className="cad-library-layout grid gap-5 lg:grid-cols-[290px_minmax(0,1fr)]" data-testid="cad-library-layout">
+        <aside className="cad-library-sidebar space-y-3">
           <div
             {...treeDropProps("unfiled", { botId: null, folderId: null })}
             className={`rounded-xl border p-3 transition ${
@@ -748,7 +748,7 @@ export function CadWorkspacePage() {
 
         <section
           {...gridDropProps}
-          className={`relative min-h-[420px] rounded-2xl border border-border bg-card p-5 transition ${
+          className={`cad-model-panel relative min-h-[420px] rounded-2xl border border-border bg-card p-5 transition ${
             dropTarget === "grid" ? "ring-2 ring-primary" : ""
           } ${pageDragActive ? "outline-2 outline-dashed outline-primary" : ""}`}
           data-testid="cad-model-grid"
