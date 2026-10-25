@@ -156,8 +156,18 @@ export default function AboutPage() {
 
         <section className="mb-14 grid gap-8 rounded-2xl border border-[#d9e6e1] bg-white/70 p-5 dark:border-[#28464d] dark:bg-[#122a32] sm:p-8 md:grid-cols-[minmax(0,1fr)_minmax(260px,340px)] md:items-center lg:gap-12 lg:p-10" aria-labelledby="made-by-heading" data-testid="about-team-23442">
           <div className="flex flex-col justify-center">
-            <p className="mb-4 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">The team behind the workspace</p>
-            <h2 id="made-by-heading" className="text-3xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-5xl">Made by Team 23442.</h2>
+            <div className="mb-4 flex items-center gap-4 sm:gap-5">
+              <img
+                src={`${import.meta.env.BASE_URL}team-23442-logo.webp`}
+                alt="Wolverines Robotics team 23442 logo"
+                className="size-20 shrink-0 rounded-xl bg-black object-contain p-1 sm:size-24"
+                data-testid="about-team-23442-logo"
+              />
+              <div>
+                <p className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">The team behind the workspace</p>
+                <h2 id="made-by-heading" className="text-2xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-3xl lg:text-4xl">Made by Team 23442.</h2>
+              </div>
+            </div>
             <p className="mt-4 max-w-[560px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be] sm:text-base sm:leading-7">
               Team 23442—the Wolverines—built this workspace to bring the engineering, collaboration, and shared knowledge behind robotics into one place.
             </p>
