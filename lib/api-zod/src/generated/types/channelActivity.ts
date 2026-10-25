@@ -12,4 +12,5 @@ export interface ChannelActivity {
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
+  isUnread: boolean;
 }

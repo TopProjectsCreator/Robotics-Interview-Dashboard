@@ -5011,27 +5011,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     return new URLSearchParams(window.location.search).get("channel")?.trim() || null;
   });
   const activeInterviewer = session.data?.label ?? "Interviewer";
-  const dmLastSeenRef = useRef<Record<string, string>>({});
-  const [dmLastSeen, setDmLastSeen] = useState<Record<string, string>>({});
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("robotics-dm-last-seen");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, string>;
-        dmLastSeenRef.current = parsed;
-        setDmLastSeen(parsed);
-      }
-    } catch { /* private browsing etc. */ }
-  }, []);
-  const markDmRead = useCallback((peer: string, at?: string) => {
-    const stamp = at ?? new Date().toISOString();
-    const next = { ...dmLastSeenRef.current, [peer.trim().toLowerCase()]: stamp };
-    dmLastSeenRef.current = next;
-    setDmLastSeen(next);
-    try {
-      window.localStorage.setItem("robotics-dm-last-seen", JSON.stringify(next));
-    } catch { /* private browsing etc. */ }
-  }, []);
   const conversations = useGetChatConversations({
     query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )},
   });
@@ -5041,19 +5020,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     for (const item of conversations.data?.items ?? []) {
       const peer = item.peer.trim().toLowerCase();
       if (!peer || peer === active) continue;
-      if (item.lastMessageAuthor.trim().toLowerCase() === activeInterviewer.trim().toLowerCase()) continue;
-      const seen = dmLastSeen[peer];
-      if (!seen || item.lastMessageAt > seen) unread.add(peer);
+      if (item.isUnread) unread.add(peer);
     }
     return unread;
-  }, [conversations.data, dmLastSeen, conversationPeer, activeInterviewer]);
-  useEffect(() => {
-    if (!conversationPeer) return;
-    const item = (conversations.data?.items ?? []).find(
-      (entry) => entry.peer.trim().toLowerCase() === conversationPeer.trim().toLowerCase(),
-    );
-    markDmRead(conversationPeer, item?.lastMessageAt);
-  }, [conversationPeer, conversations.data, markDmRead]);
+  }, [conversations.data, conversationPeer]);
   const channelsQuery = useListChatChannels({
     query: { queryKey: getListChatChannelsQueryKey(), refetchInterval: streamHealthy ? false : 5000 },
   });
@@ -5063,44 +5033,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     [channels, conversationChannelId],
   );
   const canManageChannels = session.data?.role === "coordinator";
-  const channelLastSeenRef = useRef<Record<string, string>>({});
-  const [channelLastSeen, setChannelLastSeen] = useState<Record<string, string>>({});
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("robotics-channel-last-seen");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, string>;
-        channelLastSeenRef.current = parsed;
-        setChannelLastSeen(parsed);
-      }
-    } catch { /* private browsing etc. */ }
-  }, []);
-  const markChannelSeen = useCallback((channelId: string, at?: string) => {
-    const stamp = at ?? new Date().toISOString();
-    const next = { ...channelLastSeenRef.current, [channelId]: stamp };
-    channelLastSeenRef.current = next;
-    setChannelLastSeen(next);
-    try {
-      window.localStorage.setItem("robotics-channel-last-seen", JSON.stringify(next));
-    } catch { /* private browsing etc. */ }
-  }, []);
   const unreadChannels = useMemo(() => {
     const active = conversationChannelId ?? "";
     const unread = new Set<string>();
     for (const item of conversations.data?.channels ?? []) {
       if (item.channelId === active) continue;
-      if (item.lastMessageAuthor.trim().toLowerCase() === activeInterviewer.trim().toLowerCase()) continue;
-      const seen = channelLastSeen[item.channelId];
-      if (!seen || item.lastMessageAt > seen) unread.add(item.channelId);
+      if (item.isUnread) unread.add(item.channelId);
     }
     return unread;
-  }, [conversations.data, channelLastSeen, conversationChannelId, activeInterviewer]);
-  useEffect(() => {
-    if (!conversationChannelId) return;
-    const activity = (conversations.data?.channels ?? []).find(entry => entry.channelId === conversationChannelId)
-      ?? channels.find(channel => channel.id === conversationChannelId);
-    markChannelSeen(conversationChannelId, activity?.lastMessageAt ?? undefined);
-  }, [conversationChannelId, conversations.data, channels, markChannelSeen]);
+  }, [conversations.data, conversationChannelId]);
   const channelAccountsQuery = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
   const channelAccounts = useMemo(() => channelAccountsQuery.data?.items ?? [], [channelAccountsQuery.data]);
   const createChannelMutation = useCreateChatChannel();

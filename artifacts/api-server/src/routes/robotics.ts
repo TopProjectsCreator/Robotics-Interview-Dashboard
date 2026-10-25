@@ -3404,6 +3404,7 @@ type ChannelActivityItem = {
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
+  isUnread: boolean;
 };
 
 function canonicalInterviewerLabel(labels: string[], value: unknown): string | null {
@@ -4291,46 +4292,79 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     const accessibleIds = (await accessibleChatChannelIds(teamId, channelViewerFor(account))) ?? [];
     try {
       const { rows: versionRows } = await pool.query(
-        `select count(*)::int as n, max(created_at) as m, max(edited_at) as e, max(deleted_at) as d
+        `select count(*)::int as n, max(created_at) as m, max(edited_at) as e, max(deleted_at) as d,
+                (select count(*)::int from chat_message_reads cr
+                 join interview_chat_messages mr on mr.id = cr.message_id
+                 where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
+                   and cr.reader_id = $3
+                   and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
+                (select max(cr.read_at) from chat_message_reads cr
+                 join interview_chat_messages mr on mr.id = cr.message_id
+                 where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
+                   and cr.reader_id = $3
+                   and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
            from interview_chat_messages
           where conversation_scope = 'direct' and position($1 in conversation_peer) > 0
             and (team_id = $2 or ($2 = 'default' and team_id is null))`,
-        [account.displayName, teamId],
+        [account.displayName, teamId, account.id],
       );
-      const versionRow = versionRows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null };
-      let channelVersion: { n: number; m: Date | null } = { n: 0, m: null };
+      const versionRow = versionRows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; rc: number; r: Date | null };
+      let channelVersion: { n: number; m: Date | null; rc: number; r: Date | null } = { n: 0, m: null, rc: 0, r: null };
+      let sharedReadVersion: { rc: number; r: Date | null } = { rc: 0, r: null };
       if (accessibleIds.length) {
         const { rows: channelVersionRows } = await pool.query(
-          `select count(*)::int as n, max(created_at) as m
+          `select count(*)::int as n, max(created_at) as m,
+                  (select count(*)::int from chat_message_reads cr
+                   join interview_chat_messages mr on mr.id = cr.message_id
+                   where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
+                     and cr.reader_id = $3
+                     and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
+                  (select max(cr.read_at) from chat_message_reads cr
+                   join interview_chat_messages mr on mr.id = cr.message_id
+                   where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
+                     and cr.reader_id = $3
+                     and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
              from interview_chat_messages
             where conversation_scope = 'channel' and conversation_peer = any($1::text[])
               and (team_id = $2 or ($2 = 'default' and team_id is null))`,
-          [accessibleIds, teamId],
+          [accessibleIds, teamId, account.id],
         );
-        channelVersion = channelVersionRows[0] as { n: number; m: Date | null };
+        channelVersion = channelVersionRows[0] as { n: number; m: Date | null; rc: number; r: Date | null };
       }
+      const { rows: sharedReadRows } = await pool.query(
+        `select count(*)::int as rc, max(cr.read_at) as r
+           from chat_message_reads cr
+           join interview_chat_messages m on m.id = cr.message_id
+          where m.conversation_scope = 'shared' and cr.reader_id = $2
+            and (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))`,
+        [teamId, account.id],
+      );
+      sharedReadVersion = sharedReadRows[0] as { rc: number; r: Date | null };
       const t = (value: Date | null) => (value ? new Date(value).getTime() : 0);
-      const tag = `dm${versionRow.n}|${t(versionRow.m)}|${t(versionRow.e)}|${t(versionRow.d)}`
-        + `|chan${channelVersion.n}|${channelVersion.n}|${t(channelVersion.m)}`;
+      const tag = `dm${versionRow.n}|${t(versionRow.m)}|${t(versionRow.e)}|${t(versionRow.d)}|${versionRow.rc}|${t(versionRow.r)}`
+        + `|chan${channelVersion.n}|${t(channelVersion.m)}|${channelVersion.rc}|${t(channelVersion.r)}`
+        + `|shared${sharedReadVersion.rc}|${t(sharedReadVersion.r)}`;
       if (await notModified(req, res, tag)) return;
     } catch {
       // Version check is best-effort; fall through to the full load.
     }
     const { rows } = await pool.query(
-      `select distinct on (conversation_peer)
-              conversation_peer as "peerKey",
-              author,
-              message,
-               created_at,
-               deleted_at
-         from interview_chat_messages
-        where conversation_scope = 'direct'
-          and position($1 in conversation_peer) > 0
-          and (team_id = $2 or ($2 = 'default' and team_id is null))
-        order by conversation_peer, created_at desc`,
-      [account.displayName, teamId],
+      `select distinct on (m.conversation_peer)
+              m.conversation_peer as "peerKey",
+              m.author, m.message, m.created_at, m.deleted_at,
+              (lower(m.author) <> lower($3) and not exists (
+                select 1 from chat_message_reads cr
+                 where cr.message_id = m.id and cr.reader_id = $4
+                   and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))
+              )) as "isUnread"
+         from interview_chat_messages m
+        where m.conversation_scope = 'direct'
+          and position($1 in m.conversation_peer) > 0
+          and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
+        order by m.conversation_peer, m.created_at desc`,
+      [account.displayName, teamId, account.displayName, account.id],
     );
-     const items = (rows as { peerKey: string; author: string; message: string; created_at: Date; deleted_at: Date | null }[])
+     const items = (rows as { peerKey: string; author: string; message: string; created_at: Date; deleted_at: Date | null; isUnread: boolean }[])
       .map((row) => {
         const parts = String(row.peerKey).split("\u001f").filter(Boolean);
         const peer = parts.find((label) => label.toLowerCase() !== account.displayName.toLowerCase()) ?? parts[0] ?? "";
@@ -4339,22 +4373,28 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
           lastMessageAt: new Date(row.created_at).toISOString(),
           lastMessageAuthor: String(row.author),
            lastMessage: row.deleted_at ? "This message was deleted" : String(row.message ?? "").slice(0, 140),
+            isUnread: Boolean(row.isUnread),
         };
       })
       .filter((item) => item.peer)
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
     const channelModifications = accessibleIds.length
       ? (await pool.query(
-          `select distinct on (conversation_peer)
-                  conversation_peer as "channelId",
-                  author, message, created_at, deleted_at
-             from interview_chat_messages
-            where conversation_scope = 'channel'
-              and conversation_peer = any($1::text[])
-              and (team_id = $2 or ($2 = 'default' and team_id is null))
-            order by conversation_peer, created_at desc`,
-          [accessibleIds, teamId],
-        )).rows as { channelId: string; author: string; message: string; created_at: Date; deleted_at: Date | null }[]
+          `select distinct on (m.conversation_peer)
+                  m.conversation_peer as "channelId",
+                  m.author, m.message, m.created_at, m.deleted_at,
+                  (lower(m.author) <> lower($3) and not exists (
+                    select 1 from chat_message_reads cr
+                     where cr.message_id = m.id and cr.reader_id = $4
+                       and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))
+                  )) as "isUnread"
+             from interview_chat_messages m
+            where m.conversation_scope = 'channel'
+              and m.conversation_peer = any($1::text[])
+              and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
+            order by m.conversation_peer, m.created_at desc`,
+          [accessibleIds, teamId, account.displayName, account.id],
+        )).rows as { channelId: string; author: string; message: string; created_at: Date; deleted_at: Date | null; isUnread: boolean }[]
       : [];
     const lastByChannel = new Map(channelModifications.map((row) => [String(row.channelId), row]));
     // Channel rows with no messages yet still need a name and a sortable time.
@@ -4374,6 +4414,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
           lastMessage: last
             ? (last.deleted_at ? "This message was deleted" : String(last.message ?? "").slice(0, 140))
             : "",
+          isUnread: Boolean(last?.isUnread),
         });
       }
       channels.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
@@ -4381,21 +4422,27 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     // Also report the latest team-channel message so the client can notify
     // about chat activity even when the chat panel is not on screen.
     const sharedResult = await pool.query(
-       `select author, message, created_at, deleted_at
+       `select author, message, created_at, deleted_at,
+               (lower(author) <> lower($2) and not exists (
+                 select 1 from chat_message_reads cr
+                  where cr.message_id = interview_chat_messages.id and cr.reader_id = $3
+                    and (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
+               )) as "isUnread"
          from interview_chat_messages
         where conversation_scope = 'shared' and conversation_peer is null
           and (team_id = $1 or ($1 = 'default' and team_id is null))
         order by created_at desc
         limit 1`,
-      [teamId],
+       [teamId, account.displayName, account.id],
     );
-     const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date; deleted_at: Date | null } | undefined;
+     const sharedRowValue = sharedResult.rows[0] as { author: string; message: string; created_at: Date; deleted_at: Date | null; isUnread: boolean } | undefined;
     const shared = sharedRowValue
       ? {
           peer: "",
           lastMessageAt: new Date(sharedRowValue.created_at).toISOString(),
           lastMessageAuthor: String(sharedRowValue.author),
            lastMessage: sharedRowValue.deleted_at ? "This message was deleted" : String(sharedRowValue.message ?? "").slice(0, 140),
+            isUnread: Boolean(sharedRowValue.isUnread),
         }
       : null;
     res.json(GetChatConversationsResponse.parse({ items, shared, channels }));

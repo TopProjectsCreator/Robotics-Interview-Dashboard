@@ -1678,6 +1678,7 @@ export interface ChatConversationSummary {
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
+  isUnread: boolean;
 }
 
 export interface ChannelActivity {
@@ -1686,6 +1687,7 @@ export interface ChannelActivity {
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
+  isUnread: boolean;
 }
 
 export interface ChatConversationList {
@@ -3132,12 +3134,12 @@ export interface CustomWorkspace {
      * @minimum 0
      * @maximum 5
      */
-  critiqueRounds?: number;
+  critiqueRounds: number;
   /**
      * @minimum 0
      * @maximum 5
      */
-  verifiedCritiqueRounds?: number;
+  verifiedCritiqueRounds: number;
 }
 
 export interface CustomWorkspaceEnvelope {

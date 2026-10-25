@@ -25,10 +25,10 @@ export interface CustomWorkspace {
      * @minimum 0
      * @maximum 5
      */
-  critiqueRounds?: number;
+  critiqueRounds: number;
   /**
      * @minimum 0
      * @maximum 5
      */
-  verifiedCritiqueRounds?: number;
+  verifiedCritiqueRounds: number;
 }

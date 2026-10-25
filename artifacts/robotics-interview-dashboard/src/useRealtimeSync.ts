@@ -103,6 +103,7 @@ export function useRealtimeSync(authenticated: boolean) {
       }
       if (table === "chat_message_reads") {
         void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
         return;
       }
       if (table === "chat_channels") {

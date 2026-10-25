@@ -6420,7 +6420,7 @@ components:
           minimum: 0
     ChatConversationSummary:
       type: object
-      required: [peer, lastMessageAt, lastMessageAuthor, lastMessage]
+      required: [peer, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
       properties:
         peer:
           type: string
@@ -6430,6 +6430,8 @@ components:
           type: string
         lastMessage:
           type: string
+        isUnread:
+          type: boolean
     ChatConversationList:
       type: object
       required: [items, shared, channels]
@@ -6450,7 +6452,7 @@ components:
             $ref: "#/components/schemas/ChannelActivity"
     ChannelActivity:
       type: object
-      required: [channelId, channelName, lastMessageAt, lastMessageAuthor, lastMessage]
+      required: [channelId, channelName, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
       properties:
         channelId:
           type: string
@@ -6462,6 +6464,8 @@ components:
           type: string
         lastMessage:
           type: string
+        isUnread:
+          type: boolean
     ChatReaction:
       type: object
       required: [emoji, count, authors]
