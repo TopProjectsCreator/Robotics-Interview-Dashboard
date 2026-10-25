@@ -6,9 +6,9 @@ import { BrandMark } from "@/components/BrandMark";
 const sections = [
   {
     index: "01",
-    label: "TEAM OPERATIONS",
-    title: "Make tryouts easier to coordinate.",
-    body: "A dedicated interview workflow brings applicant review and tryout coordination into the same workspace as the rest of the team's work.",
+    label: "TEAM COORDINATION",
+    title: "Keep project work moving.",
+    body: "Shared planning, attendance tools, and clear team updates help keep day-to-day robotics work organized.",
     icon: UsersRound,
     accent: "teal",
   },
@@ -80,16 +80,16 @@ export default function AboutPage() {
                 The work behind a robot is part of the build.
               </h1>
               <p className="mt-6 max-w-[640px] text-base leading-7 text-[#43616a] dark:text-[#aac1be] sm:text-lg sm:leading-8">
-                Tryouts, design reviews, team coordination, and shared records all shape how a robotics team works. This workspace brings those everyday tools together.
+                Engineering, team coordination, and shared records all shape how a robotics team works. This workspace brings those everyday tools together.
               </p>
             </div>
             <aside aria-label="Work connected in the workspace" className="lg:border-l lg:border-[#d9e6e1] lg:pl-8 dark:lg:border-[#28464d]">
               <p className="mb-3 font-mono text-[9px] font-medium uppercase tracking-[.15em] text-[#70868b] dark:text-[#91aaa8]">Connected work</p>
               <ol className="divide-y divide-[#d9e6e1] dark:divide-[#28464d]">
                 {[
-                  ["01", "Tryouts & interviews"],
-                  ["02", "Engineering & CAD"],
-                  ["03", "Chat, boards & shared plans"],
+                  ["01", "Engineering & CAD"],
+                  ["02", "Team chat & shared boards"],
+                  ["03", "Plans, sheets & insights"],
                 ].map(([number, label]) => (
                   <li key={number} className="flex items-center gap-4 py-3">
                     <span className="font-mono text-[10px] text-[#168b94] dark:text-[#7edbd0]">{number}</span>
@@ -103,7 +103,7 @@ export default function AboutPage() {
 
         <section className="grid grid-cols-2 border-y border-[#d9e6e1] dark:border-[#28464d] sm:grid-cols-4" aria-label="Workspace focus areas">
           {[
-            ["01 / Coordinate", "Tryouts & interviews"],
+            ["01 / Coordinate", "Team planning & updates"],
             ["02 / Connect", "Chat & shared boards"],
             ["03 / Design", "CAD & 3D files"],
             ["04 / Organize", "Sheets & insights"],
@@ -113,7 +113,7 @@ export default function AboutPage() {
         <section id="what-we-bring-together" className="scroll-mt-8 py-16 sm:py-24" aria-labelledby="work-heading">
           <div className="mb-10 grid gap-5 md:grid-cols-[1fr_.72fr] md:items-end">
             <div><p className="mb-3 font-mono text-[10px] uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">A workspace built around the team</p><h2 id="work-heading" className="max-w-[650px] text-3xl font-semibold leading-[1.02] tracking-[-.065em] text-[#153642] dark:text-[#e3efeb] sm:text-5xl">Different workstreams, connected by shared context.</h2></div>
-            <p className="max-w-[400px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be]">From organizing tryouts to reviewing a model, the workspace brings practical team tools into a shared home.</p>
+            <p className="max-w-[400px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be]">From planning project work to reviewing a model, the workspace brings practical team tools into a shared home.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {sections.map(({ index, label, title, body, icon: Icon, accent }) => (
@@ -122,6 +122,25 @@ export default function AboutPage() {
                 <div><div className="flex items-center justify-between gap-3"><p className="font-mono text-[9px] tracking-[.13em] text-[#168b94] dark:text-[#7edbd0]">{label}</p><span className="font-mono text-[10px] text-[#91a2a2] dark:text-[#91aaa8]">{index}</span></div><h3 className="mt-3 text-xl font-semibold tracking-[-.04em] text-[#153642] dark:text-[#e3efeb]">{title}</h3><p className="mt-2 max-w-[530px] text-sm leading-6 text-[#607981] dark:text-[#aac1be]">{body}</p></div>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="mb-14 grid overflow-hidden rounded-2xl border border-[#d9e6e1] bg-white/70 dark:border-[#28464d] dark:bg-[#122a32] md:grid-cols-[minmax(260px,.8fr)_1.2fr]" aria-labelledby="made-by-heading" data-testid="about-team-23442">
+          <div className="overflow-hidden bg-black">
+            <img
+              src={`${import.meta.env.BASE_URL}team-23442.png`}
+              alt="Wolverines Robotics, team 23442 — All claws on deck"
+              className="aspect-square w-full object-contain"
+              data-testid="about-team-23442-image"
+            />
+          </div>
+          <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-14">
+            <p className="mb-4 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">The team behind the workspace</p>
+            <h2 id="made-by-heading" className="text-3xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-5xl">Made by Team 23442.</h2>
+            <p className="mt-4 max-w-[560px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be] sm:text-base sm:leading-7">
+              Team 23442—the Wolverines—built this workspace to bring the engineering, collaboration, and shared knowledge behind robotics into one place.
+            </p>
+            <p className="mt-7 border-t border-[#d9e6e1] pt-4 font-mono text-[10px] uppercase tracking-[.13em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8]">Wolverines · All claws on deck</p>
           </div>
         </section>
 
