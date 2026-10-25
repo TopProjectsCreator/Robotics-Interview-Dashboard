@@ -202,7 +202,112 @@ try {
   assert.equal(await send.isEnabled(), true, "a composed message should keep the send action available");
   assert.deepEqual(pageErrors, [], "mobile chat should not raise browser errors");
 
-  console.log("Mobile chat composer fit 320px, 375px, and 430px viewports with the input focused; all tools remained reachable and formatting, emoji, upload, poll, scheduling, voice, and send actions worked.");
+  const desktopPage = await browser.newPage({ viewport: { width: 1365, height: 800 } });
+  const desktopErrors = [];
+  desktopPage.on("pageerror", error => desktopErrors.push(error.message));
+  await desktopPage.route("**/api/**", async route => {
+    const url = new URL(route.request().url());
+    let body = {
+      items: [],
+      interviewerLabels: ["Browser Tester", "Jordan"],
+      currentApplicants: [],
+      nextApplicants: [],
+      remainingCount: 0,
+      completedCount: 0,
+    };
+    if (url.pathname === "/api/auth/session") {
+      body = { authenticated: true, interviewerId: "desktop-chat-test", label: "Browser Tester" };
+    } else if (url.pathname === "/api/queue/chat") {
+      body = {
+        items: [],
+        scope: url.searchParams.get("scope") ?? "shared",
+        peer: url.searchParams.get("peer"),
+      };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await desktopPage.goto(`${serverUrl}/chat`);
+  await desktopPage.getByText("Signed in as Browser Tester").waitFor({ state: "visible" });
+  const desktopMain = desktopPage.locator(".chat-workspace-main");
+  const desktopPanel = desktopPage.locator(".chat-panel-tall");
+  const desktopFeed = desktopPage.locator(".chat-message-feed");
+
+  for (const height of [650, 800]) {
+    await desktopPage.setViewportSize({ width: 1365, height });
+    const geometry = await desktopPage.evaluate(() => {
+      const rect = selector => {
+        const { top, bottom, height } = document.querySelector(selector).getBoundingClientRect();
+        return { top, bottom, height };
+      };
+      const main = document.querySelector(".chat-workspace-main");
+      const panel = document.querySelector(".chat-panel-tall");
+      const feed = document.querySelector(".chat-message-feed");
+      const composer = document.querySelector(".chat-composer-dropzone");
+      for (let index = 0; index < 24; index++) {
+        const message = document.createElement("p");
+        message.textContent = `Browser test message ${index}`;
+        feed.append(message);
+      }
+      return {
+        viewportHeight: window.innerHeight,
+        main: rect(".chat-workspace-main"),
+        panel: rect(".chat-panel-tall"),
+        feed: rect(".chat-message-feed"),
+        composer: rect(".chat-composer-dropzone"),
+        mainScrollHeight: main.scrollHeight,
+        mainClientHeight: main.clientHeight,
+        panelScrollHeight: panel.scrollHeight,
+        panelClientHeight: panel.clientHeight,
+        feedScrollHeight: feed.scrollHeight,
+        feedClientHeight: feed.clientHeight,
+      };
+    });
+    assert.ok(geometry.composer.top >= 0 && geometry.composer.bottom <= height,
+      `${height}px chat viewport should show the composer without page scrolling: ${JSON.stringify(geometry)}`);
+    assert.ok(geometry.feedClientHeight >= 96,
+      `${height}px chat viewport should leave a usable message history area: ${JSON.stringify(geometry)}`);
+    assert.ok(geometry.feedScrollHeight > geometry.feedClientHeight,
+      `${height}px message history should scroll independently: ${JSON.stringify(geometry)}`);
+    assert.ok(geometry.mainScrollHeight <= geometry.mainClientHeight + 1,
+      `${height}px chat page should not need document scrolling: ${JSON.stringify(geometry)}`);
+    assert.equal(await desktopPage.getByTestId("button-chat-team").isVisible(), true,
+      `${height}px team conversation control should remain visible`);
+    const teamControl = await desktopPage.getByTestId("button-chat-team").boundingBox();
+    assert.ok(teamControl && teamControl.y >= 0 && teamControl.y + teamControl.height <= height,
+      `${height}px conversation controls should remain within the viewport: ${JSON.stringify(geometry)}`);
+    assert.equal(await desktopPage.getByTestId("input-interviewer-chat").isVisible(), true,
+      `${height}px message input should remain visible`);
+
+    await desktopFeed.evaluate(feed => { feed.scrollTop = feed.scrollHeight; });
+    assert.ok(await desktopFeed.evaluate(feed => feed.scrollTop > 0),
+      `${height}px feed should scroll without moving the page`);
+    assert.equal(await desktopMain.evaluate(main => main.scrollTop), 0,
+      `${height}px scrolling history should not scroll the workspace page`);
+    await desktopFeed.evaluate(feed => { feed.replaceChildren(); });
+  }
+
+  await desktopPage.setViewportSize({ width: 1365, height: 650 });
+  await desktopPage.getByTestId("button-chat-poll").click();
+  await desktopPage.getByTestId("chat-poll-form").waitFor({ state: "visible" });
+  await desktopPanel.evaluate(panel => { panel.scrollTop = panel.scrollHeight; });
+  const expandedComposer = await desktopPage.evaluate(() => {
+    const panel = document.querySelector(".chat-panel-tall");
+    const pollButton = document.querySelector('[data-testid="button-poll-create"]');
+    const rect = pollButton.getBoundingClientRect();
+    return {
+      panelCanScroll: panel.scrollHeight > panel.clientHeight,
+      pollButtonTop: rect.top,
+      pollButtonBottom: rect.bottom,
+    };
+  });
+  assert.equal(expandedComposer.panelCanScroll, true,
+    "an expanded composer should leave the chat panel scrollable instead of clipping its controls");
+  assert.ok(expandedComposer.pollButtonTop >= 0 && expandedComposer.pollButtonBottom <= 650,
+    `expanded composer controls should remain reachable by scrolling: ${JSON.stringify(expandedComposer)}`);
+  await desktopPage.getByTestId("button-poll-cancel").evaluate(button => button.click());
+
+  assert.deepEqual(desktopErrors, [], "desktop chat viewport checks should not raise browser errors");
+  console.log("Mobile chat composer fit 320px, 375px, and 430px viewports; laptop chat kept its composer visible at 650px and 800px heights while history scrolled independently.");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
