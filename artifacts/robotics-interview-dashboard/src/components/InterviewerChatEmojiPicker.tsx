@@ -19,6 +19,7 @@ type Props = {
   customEmojis: readonly SharedEmoji[];
   customEmojiLoadFailed?: boolean;
   onRetryCustomEmojis?: () => void;
+  placement?: "above" | "below";
   onSelect: (value: string) => void;
 };
 
@@ -41,7 +42,7 @@ async function encodeBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoadFailed = false, onRetryCustomEmojis, onSelect }: Props) {
+export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoadFailed = false, onRetryCustomEmojis, placement = "above", onSelect }: Props) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadEmoji = useUploadChatCustomEmoji();
@@ -111,7 +112,7 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
 
   return (
     <div
-      className="absolute bottom-[calc(100%+10px)] right-0 z-40 max-h-[min(70dvh,420px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]"
+      className={`absolute ${placement === "below" ? "top-[calc(100%+10px)]" : "bottom-[calc(100%+10px)]"} right-0 z-40 max-h-[min(70dvh,420px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]`}
       role="dialog"
       aria-label="Emoji picker"
       data-testid="emoji-picker"

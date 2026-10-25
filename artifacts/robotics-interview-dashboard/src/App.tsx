@@ -5053,6 +5053,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [channelNameDraft, setChannelNameDraft] = useState("");
   const [channelEmojiDraft, setChannelEmojiDraft] = useState("");
   const [channelEmojiPickerOpen, setChannelEmojiPickerOpen] = useState(false);
+  const [channelEmojiPickerPlacement, setChannelEmojiPickerPlacement] = useState<"above" | "below">("above");
   const [channelMemberIdsDraft, setChannelMemberIdsDraft] = useState<string[]>([]);
   const [channelDialogError, setChannelDialogError] = useState("");
   const openCreateChannelDialog = () => {
@@ -5088,6 +5089,23 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setChannelMemberIdsDraft(current => current.includes(accountId)
       ? current.filter(id => id !== accountId)
       : [...current, accountId]);
+  };
+  const toggleChannelEmojiPicker = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (channelEmojiPickerOpen) {
+      setChannelEmojiPickerOpen(false);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const expectedHeight = Math.min(420, window.innerHeight * 0.7);
+    const spaceAbove = rect.top;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const placement = spaceAbove >= expectedHeight + 12
+      ? "above"
+      : spaceBelow >= expectedHeight + 12 || spaceBelow >= spaceAbove
+        ? "below"
+        : "above";
+    setChannelEmojiPickerPlacement(placement);
+    setChannelEmojiPickerOpen(true);
   };
   const submitChannelDialog = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -6873,13 +6891,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
               <div className="relative mt-3">
                 <span className="block text-[11px] font-semibold text-[#63747c]">Channel icon</span>
                 <div className="mt-1 flex items-center gap-2">
-                  <button id="button-channel-emoji" type="button" onClick={() => setChannelEmojiPickerOpen(open => !open)} aria-expanded={channelEmojiPickerOpen} aria-label="Choose channel emoji" data-testid="button-channel-emoji" className="flex h-10 min-w-10 items-center justify-center rounded-lg border border-[#d5e0e0] bg-white px-3 text-xl text-[#183a4b] hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]">
-                    {channelEmojiDraft ? (getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths) ? <AuthenticatedChatImage src={getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths)!} alt="" inline /> : channelEmojiDraft) : <UsersRound size={16} className="text-[#718189]" />}
-                  </button>
+                  <div className="relative">
+                    <button id="button-channel-emoji" type="button" onClick={toggleChannelEmojiPicker} aria-expanded={channelEmojiPickerOpen} aria-label="Choose channel emoji" data-testid="button-channel-emoji" className="flex h-10 min-w-10 items-center justify-center rounded-lg border border-[#d5e0e0] bg-white px-3 text-xl text-[#183a4b] hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]">
+                      {channelEmojiDraft ? (getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths) ? <AuthenticatedChatImage src={getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths)!} alt="" inline /> : channelEmojiDraft) : <UsersRound size={16} className="text-[#718189]" />}
+                    </button>
+                    {channelEmojiPickerOpen && <InterviewerChatEmojiPicker dark={theme === "dark"} customEmojis={customEmojiItems} customEmojiLoadFailed={customEmojisQuery.isError} onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }} placement={channelEmojiPickerPlacement} onSelect={value => { setChannelEmojiDraft(value); setChannelEmojiPickerOpen(false); }} />}
+                  </div>
                   <span className="min-w-0 flex-1 text-xs text-[#7c8c91] dark:text-[#9aadb5]">{channelEmojiDraft ? "Custom channel icon" : "Using the default people icon"}</span>
                   {channelEmojiDraft && <button type="button" onClick={() => { setChannelEmojiDraft(""); setChannelEmojiPickerOpen(false); }} className="rounded-md px-2 py-1 text-xs font-semibold text-[#52666e] hover:bg-[#edf4f3] dark:text-[#b9c9d1]" data-testid="button-clear-channel-emoji">Reset</button>}
                 </div>
-                {channelEmojiPickerOpen && <div className="absolute left-0 top-14 z-50 w-[min(360px,calc(100vw-40px))]"><InterviewerChatEmojiPicker dark={theme === "dark"} customEmojis={customEmojiItems} customEmojiLoadFailed={customEmojisQuery.isError} onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }} onSelect={value => { setChannelEmojiDraft(value); setChannelEmojiPickerOpen(false); }} /></div>}
               </div>
              <div className="mt-3">
                <p className="text-[11px] font-semibold text-[#63747c]">Invited people</p>
