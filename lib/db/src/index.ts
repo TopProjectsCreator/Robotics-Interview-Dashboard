@@ -65,8 +65,21 @@ export function enterInstance(instance: DbInstance | undefined | null): void {
 }
 
 function secondaryUrl(): string | null {
-  const url = process.env.SECONDARY_DATABASE_URL?.trim();
-  return url ? url : null;
+  const configuredUrl = process.env.SECONDARY_DATABASE_URL?.trim();
+  if (!configuredUrl) return null;
+
+  const url = new URL(configuredUrl);
+  const directSupabaseHost = url.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+  const poolerHost = process.env.SECONDARY_DATABASE_POOLER_HOST?.trim();
+  if (!poolerHost || !directSupabaseHost || url.username !== "postgres") {
+    return configuredUrl;
+  }
+
+  // Preserve the existing password when a runtime opts into Supavisor.
+  url.hostname = poolerHost;
+  url.username = `postgres.${directSupabaseHost[1]}`;
+  url.port = "5432";
+  return url.toString();
 }
 
 export function hasSecondary(): boolean {
