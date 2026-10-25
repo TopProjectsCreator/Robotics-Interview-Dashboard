@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { ArrowDown, ArrowRight, Cpu, LayoutDashboard, Menu, MessageSquare, Radio, Sparkles, UsersRound, X } from "lucide-react";
+import { ArrowRight, Cpu, LayoutDashboard, Menu, MessageSquare, UsersRound, X } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
 
 const sections = [
@@ -69,39 +69,35 @@ export default function AboutPage() {
           </button>
         </header>
 
-        <section className="grid items-end gap-10 pb-16 pt-14 sm:pb-24 sm:pt-20 lg:grid-cols-[1.12fr_.88fr] lg:gap-16 lg:pt-28" aria-labelledby="about-title">
-          <div className="max-w-[730px]">
-            <p className="mb-5 flex items-center gap-2 font-mono text-[10px] font-medium uppercase tracking-[.15em] text-[#168b94] dark:text-[#7edbd0]"><span className="size-2 rounded-full bg-[#64ae8e]" />ABOUT THE WORKSPACE</p>
-            <h1 id="about-title" className="text-[clamp(2.8rem,9vw,6.4rem)] font-semibold leading-[.91] tracking-[-.08em] text-[#153642] dark:text-[#e3efeb]">
-              One home for the work <span className="text-[#168b94] dark:text-[#6bd1d0]">behind the robot.</span>
-            </h1>
-            <p className="mt-7 max-w-[620px] text-base leading-7 text-[#43616a] dark:text-[#aac1be] sm:text-lg sm:leading-8">
-              A shared workspace for robotics teams to coordinate tryouts, collaborate on engineering, and keep team knowledge connected.
-            </p>
-            <a href="#what-we-bring-together" className="mt-8 inline-flex min-h-12 items-center gap-3 rounded-lg bg-[#153642] px-5 text-xs font-bold text-white transition hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]" data-testid="link-about-explore">
-              See how the workspace fits together <ArrowDown size={15} />
-            </a>
-          </div>
-          <div className="relative overflow-hidden rounded-2xl border border-[#2c5963] bg-[#153642] p-5 text-[#eaf5f0] shadow-[0_24px_60px_rgba(21,54,66,.18)] sm:p-7" data-testid="about-workspace-map">
-            <div aria-hidden="true" className="absolute inset-0 opacity-[.13] [background-image:linear-gradient(rgba(157,221,210,.4)_1px,transparent_1px),linear-gradient(90deg,rgba(157,221,210,.4)_1px,transparent_1px)] [background-size:34px_34px] [mask-image:linear-gradient(120deg,black,transparent_85%)]" />
-            <div className="relative flex items-center justify-between gap-4 border-b border-white/10 pb-5">
-              <div><p className="font-mono text-[9px] tracking-[.14em] text-[#8cb7b5]">A SHARED TEAM SPACE</p><h2 className="mt-2 text-2xl font-semibold tracking-[-.05em]">Many kinds of work.<br />One connected place.</h2></div>
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-white/[.08] text-[#efc34f]"><Radio size={21} /></span>
+        <section className="border-y border-[#d9e6e1] py-12 dark:border-[#28464d] sm:py-16 lg:py-20" aria-labelledby="about-title">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.25fr)_minmax(260px,.75fr)] lg:items-end lg:gap-16">
+            <div className="max-w-[800px]">
+              <p className="mb-7 flex items-center gap-3 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">
+                <span className="h-px w-8 bg-[#168b94] dark:bg-[#7edbd0]" />
+                About the workspace
+              </p>
+              <h1 id="about-title" className="text-[clamp(2.7rem,8vw,5.8rem)] font-semibold leading-[.96] tracking-[-.075em] text-[#153642] dark:text-[#e3efeb]">
+                The work behind a robot is part of the build.
+              </h1>
+              <p className="mt-6 max-w-[640px] text-base leading-7 text-[#43616a] dark:text-[#aac1be] sm:text-lg sm:leading-8">
+                Tryouts, design reviews, team coordination, and shared records all shape how a robotics team works. This workspace brings those everyday tools together.
+              </p>
             </div>
-            <div className="relative mt-5 grid grid-cols-2 gap-2">
-              {[
-                { title: "Tryouts", detail: "Applicant review", icon: UsersRound, color: "text-[#7edbd0]" },
-                { title: "Engineering", detail: "CAD & 3D previews", icon: Cpu, color: "text-[#f1cc67]" },
-                { title: "Collaboration", detail: "Chat & shared boards", icon: MessageSquare, color: "text-[#a5dfb8]" },
-                { title: "Team knowledge", detail: "Sheets & dashboards", icon: LayoutDashboard, color: "text-[#c8b7ff]" },
-              ].map(({ title, detail, icon: Icon, color }) => (
-                <div key={title} className="flex min-h-[92px] items-start gap-3 rounded-xl border border-white/10 bg-[#0c1d24]/35 p-3 sm:p-4">
-                  <Icon size={17} className={`mt-0.5 shrink-0 ${color}`} />
-                  <div><strong className="block text-xs font-semibold">{title}</strong><span className="mt-1 block text-[10px] leading-4 text-[#a8c6c3]">{detail}</span></div>
-                </div>
-              ))}
-            </div>
-            <p className="relative mt-5 flex items-center gap-2 border-t border-white/10 pt-4 font-mono text-[9px] tracking-[.12em] text-[#8cb7b5]"><Sparkles size={12} className="text-[#c8b7ff]" />TOOLS FOR THE WORK BEHIND THE ROBOT</p>
+            <aside aria-label="Work connected in the workspace" className="lg:border-l lg:border-[#d9e6e1] lg:pl-8 dark:lg:border-[#28464d]">
+              <p className="mb-3 font-mono text-[9px] font-medium uppercase tracking-[.15em] text-[#70868b] dark:text-[#91aaa8]">Connected work</p>
+              <ol className="divide-y divide-[#d9e6e1] dark:divide-[#28464d]">
+                {[
+                  ["01", "Tryouts & interviews"],
+                  ["02", "Engineering & CAD"],
+                  ["03", "Chat, boards & shared plans"],
+                ].map(([number, label]) => (
+                  <li key={number} className="flex items-center gap-4 py-3">
+                    <span className="font-mono text-[10px] text-[#168b94] dark:text-[#7edbd0]">{number}</span>
+                    <span className="text-sm font-semibold text-[#31515a] dark:text-[#c5d9d5]">{label}</span>
+                  </li>
+                ))}
+              </ol>
+            </aside>
           </div>
         </section>
 
