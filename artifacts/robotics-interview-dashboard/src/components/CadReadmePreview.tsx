@@ -4,6 +4,7 @@ import type { CadModel } from "@workspace/api-client-react";
 import { storageUrl } from "@/components/CadModelPreviewDialog";
 
 const MAX_README_CHARS = 100_000;
+const MAX_README_BYTES = 1024 * 1024;
 
 function safeLinkTarget(href: string): string | null {
   try {
@@ -194,9 +195,13 @@ function SafeMarkdown({ source }: { source: string }) {
 }
 
 export function CadReadmePreview({ model }: { model: CadModel }) {
+  const isTooLargeToPreview = model.sizeBytes > MAX_README_BYTES;
   const readme = useQuery({
     queryKey: ["/api/cad/readme", model.id, model.objectPath],
     queryFn: async () => {
+      if (isTooLargeToPreview) {
+        throw new Error("README is too large to preview here. Download it from its library card.");
+      }
       const response = await fetch(storageUrl(model.objectPath), {
         credentials: "include",
       });
@@ -205,6 +210,7 @@ export function CadReadmePreview({ model }: { model: CadModel }) {
       }
       return response.text();
     },
+    enabled: !isTooLargeToPreview,
     retry: false,
   });
 
@@ -218,7 +224,11 @@ export function CadReadmePreview({ model }: { model: CadModel }) {
         <h2 id="cad-readme-heading" className="text-base font-semibold text-foreground">README.md</h2>
         <span className="truncate text-xs text-muted-foreground">{model.fileName}</span>
       </div>
-      {readme.isPending ? (
+      {isTooLargeToPreview ? (
+        <p className="text-sm text-muted-foreground" data-testid="cad-readme-too-large">
+          README is larger than 1 MiB and can’t be previewed here. Download it from its library card.
+        </p>
+      ) : readme.isPending ? (
         <p role="status" className="text-sm text-muted-foreground" data-testid="cad-readme-loading">Loading README…</p>
       ) : readme.isError ? (
         <div className="flex flex-wrap items-center justify-between gap-3" role="alert" data-testid="cad-readme-error">

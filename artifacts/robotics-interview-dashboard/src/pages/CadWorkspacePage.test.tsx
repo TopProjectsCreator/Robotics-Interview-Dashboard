@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import * as fs from "fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CadStorageStatus } from "@workspace/api-client-react";
@@ -182,7 +182,7 @@ describe("CAD workspace tree", () => {
   });
 
   it("limits viewport sizing to taller desktops and keeps long CAD content scrollable", () => {
-    const css = readFileSync("src/index.css", "utf8");
+    const css = fs.readFileSync("src/index.css", "utf8");
 
     expect(css).toMatch(/@media \(min-width:\s*1024px\) and \(min-height:\s*700px\)/);
     expect(css).toMatch(/\.cad-workspace-shell\s*\{[^}]*height:\s*100dvh/s);
@@ -500,6 +500,32 @@ describe("CAD README preview", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/storage/objects/readme-intake",
       { credentials: "include" },
+    );
+  });
+
+  it("does not fetch oversized READMEs and keeps the library-card download available", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage({
+      bots: [bot],
+      folders: [intakeFolder],
+      models: [
+        readme("readme-large", intakeFolder.id, "README.md", "/objects/readme-large"),
+      ].map((entry) => ({ ...entry, sizeBytes: 1024 * 1024 + 1 })),
+    });
+
+    fireEvent.click(await screen.findByTestId("cad-folder-folder-intake"));
+
+    expect(await screen.findByTestId("cad-readme-too-large")).toHaveTextContent(
+      "larger than 1 MiB",
+    );
+    expect(screen.getByTestId("cad-readme-too-large")).toHaveTextContent(
+      "Download it from its library card",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Download README.md" })).toHaveAttribute(
+      "href",
+      "/api/storage/objects/readme-large",
     );
   });
 
