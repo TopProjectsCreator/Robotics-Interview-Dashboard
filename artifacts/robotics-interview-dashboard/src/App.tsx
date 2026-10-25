@@ -5051,11 +5051,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [channelDialogId, setChannelDialogId] = useState<string | null>(null);
   const [channelDialogOpen, setChannelDialogOpen] = useState(false);
   const [channelNameDraft, setChannelNameDraft] = useState("");
+  const [channelEmojiDraft, setChannelEmojiDraft] = useState("");
+  const [channelEmojiPickerOpen, setChannelEmojiPickerOpen] = useState(false);
   const [channelMemberIdsDraft, setChannelMemberIdsDraft] = useState<string[]>([]);
   const [channelDialogError, setChannelDialogError] = useState("");
   const openCreateChannelDialog = () => {
     setChannelDialogId("");
     setChannelNameDraft("");
+    setChannelEmojiDraft("");
+    setChannelEmojiPickerOpen(false);
     setChannelMemberIdsDraft([]);
     setChannelDialogError("");
     setChannelDialogOpen(true);
@@ -5065,6 +5069,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     if (!channel) return;
     setChannelDialogId(channelId);
     setChannelNameDraft(channel.name);
+    setChannelEmojiDraft(channel.emoji ?? "");
+    setChannelEmojiPickerOpen(false);
     setChannelMemberIdsDraft(channel.members.map(member => member.id));
     setChannelDialogError("");
     setChannelDialogOpen(true);
@@ -5072,6 +5078,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const closeChannelDialog = () => {
     setChannelDialogOpen(false);
     setChannelDialogId(null);
+    setChannelEmojiPickerOpen(false);
   };
   const invalidateChannelData = () => {
     void qc.invalidateQueries({ queryKey: getListChatChannelsQueryKey() });
@@ -5089,10 +5096,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setChannelDialogError("");
     try {
       if (channelDialogId) {
-        await updateChannelMutation.mutateAsync({ channelId: channelDialogId, data: { name, memberIds: channelMemberIdsDraft } });
+        await updateChannelMutation.mutateAsync({ channelId: channelDialogId, data: { name, emoji: channelEmojiDraft.trim() || null, memberIds: channelMemberIdsDraft } });
       } else {
         const created = await createChannelMutation.mutateAsync({
-          data: { name, memberIds: channelMemberIdsDraft.length ? channelMemberIdsDraft : undefined },
+          data: { name, emoji: channelEmojiDraft.trim() || null, memberIds: channelMemberIdsDraft.length ? channelMemberIdsDraft : undefined },
         });
         setConversationPeer(null);
         setConversationChannelId(created.id);
@@ -6626,9 +6633,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
      if (activityChannels.length) return activityChannels;
      // Before the first conversations load, fall back to the channel list so
      // invites are still shown.
-     return channels.map(channel => ({
+      return channels.map(channel => ({
        channelId: channel.id,
        channelName: channel.name,
+        channelEmoji: channel.emoji,
        lastMessageAt: channel.updatedAt,
        lastMessageAuthor: "",
        lastMessage: "",
@@ -6669,7 +6677,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
          <button type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(null); }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer && !conversationChannelId ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
          {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => { setConversationChannelId(null); setConversationPeer(label); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
-         {stripChannels.map(channelItem => { const activeChannelButton = conversationChannelId === channelItem.channelId; const hasUnread = unreadChannels.has(channelItem.channelId); return <button key={`channel-${channelItem.channelId}`} type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(channelItem.channelId); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeChannelButton ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-channel-${channelItem.channelId.slice(0, 8)}`} title={channelItem.lastMessage ? `${channelItem.lastMessageAuthor}: ${channelItem.lastMessage}` : "Invite-only channel"}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`channel-unread-dot-${channelItem.channelId.slice(0, 8)}`} aria-label="Unread" />}<span className="flex items-center gap-1"><UsersRound size={11} className="shrink-0 opacity-70" /><span>{channelItem.channelName}</span></span></button>; })}
+          {stripChannels.map(channelItem => { const activeChannelButton = conversationChannelId === channelItem.channelId; const hasUnread = unreadChannels.has(channelItem.channelId); const emojiUrl = channelItem.channelEmoji ? getTeamEmojiStorageUrl(channelItem.channelEmoji, customEmojiPaths) : null; return <button key={`channel-${channelItem.channelId}`} type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(channelItem.channelId); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeChannelButton ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-channel-${channelItem.channelId.slice(0, 8)}`} title={channelItem.lastMessage ? `${channelItem.lastMessageAuthor}: ${channelItem.lastMessage}` : "Invite-only channel"}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`channel-unread-dot-${channelItem.channelId.slice(0, 8)}`} aria-label="Unread" />}<span className="flex items-center gap-1">{emojiUrl ? <AuthenticatedChatImage src={emojiUrl} alt="" inline /> : channelItem.channelEmoji ? <span aria-hidden="true">{channelItem.channelEmoji}</span> : <UsersRound size={11} className="shrink-0 opacity-70" />}<span>{channelItem.channelName}</span></span></button>; })}
          {canManageChannels && conversationChannelId && <button type="button" onClick={() => openManageChannelDialog(conversationChannelId)} data-testid="button-manage-channel" aria-label="Manage this channel" title="Rename, invite, or delete this channel" className="flex items-center gap-1.5 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#12737d] transition hover:border-[#16869a]"><Settings size={12} /><span>Manage</span></button>}
          {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /><span>Channel</span></button>}
        </div>
@@ -6862,6 +6870,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                data-testid="input-channel-name"
                className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]"
              />
+              <div className="relative mt-3">
+                <span className="block text-[11px] font-semibold text-[#63747c]">Channel icon</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <button id="button-channel-emoji" type="button" onClick={() => setChannelEmojiPickerOpen(open => !open)} aria-expanded={channelEmojiPickerOpen} aria-label="Choose channel emoji" data-testid="button-channel-emoji" className="flex h-10 min-w-10 items-center justify-center rounded-lg border border-[#d5e0e0] bg-white px-3 text-xl text-[#183a4b] hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]">
+                    {channelEmojiDraft ? (getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths) ? <AuthenticatedChatImage src={getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths)!} alt="" inline /> : channelEmojiDraft) : <UsersRound size={16} className="text-[#718189]" />}
+                  </button>
+                  <span className="min-w-0 flex-1 text-xs text-[#7c8c91] dark:text-[#9aadb5]">{channelEmojiDraft ? "Custom channel icon" : "Using the default people icon"}</span>
+                  {channelEmojiDraft && <button type="button" onClick={() => { setChannelEmojiDraft(""); setChannelEmojiPickerOpen(false); }} className="rounded-md px-2 py-1 text-xs font-semibold text-[#52666e] hover:bg-[#edf4f3] dark:text-[#b9c9d1]" data-testid="button-clear-channel-emoji">Reset</button>}
+                </div>
+                {channelEmojiPickerOpen && <div className="absolute left-0 top-14 z-50 w-[min(360px,calc(100vw-40px))]"><InterviewerChatEmojiPicker dark={theme === "dark"} customEmojis={customEmojiItems} customEmojiLoadFailed={customEmojisQuery.isError} onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }} onSelect={value => { setChannelEmojiDraft(value); setChannelEmojiPickerOpen(false); }} /></div>}
+              </div>
              <div className="mt-3">
                <p className="text-[11px] font-semibold text-[#63747c]">Invited people</p>
                <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-1.5" data-testid="channel-member-picker">

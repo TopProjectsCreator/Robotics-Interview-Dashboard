@@ -70,6 +70,7 @@ export const chatChannelsTable = pgTable("chat_channels", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),
   name: text("name").notNull(),
+  emoji: text("emoji"),
   // Case-insensitive uniqueness key for names within one team.
   normalizedName: text("normalized_name").notNull(),
   // Interviewer display name that created the channel.

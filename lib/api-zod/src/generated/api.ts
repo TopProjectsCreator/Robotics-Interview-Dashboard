@@ -1738,6 +1738,7 @@ export const GetChatConversationsResponse = zod.object({
   "channels": zod.array(zod.object({
   "channelId": zod.string(),
   "channelName": zod.string(),
+  "channelEmoji": zod.string().nullable(),
   "lastMessageAt": zod.string(),
   "lastMessageAuthor": zod.string(),
   "lastMessage": zod.string(),
@@ -1754,6 +1755,7 @@ export const ListChatChannelsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "emoji": zod.string().nullable(),
   "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1777,18 +1779,22 @@ export const ListChatChannelsResponse = zod.object({
  */
 export const createChatChannelBodyNameMax = 80;
 
+export const createChatChannelBodyEmojiMax = 34;
+
 export const createChatChannelBodyMemberIdsMax = 100;
 
 
 
 export const CreateChatChannelBody = zod.object({
   "name": zod.string().min(1).max(createChatChannelBodyNameMax).describe('Channel display name; must be unique within the team (case-insensitive).'),
+  "emoji": zod.string().max(createChatChannelBodyEmojiMax).nullish(),
   "memberIds": zod.array(zod.string()).max(createChatChannelBodyMemberIdsMax).optional().describe('Interviewer account ids to invite; the creating admin is always included.')
 })
 
 export const CreateChatChannelResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "emoji": zod.string().nullable(),
   "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1815,18 +1821,22 @@ export const UpdateChatChannelParams = zod.object({
 
 export const updateChatChannelBodyNameMax = 80;
 
+export const updateChatChannelBodyEmojiMax = 34;
+
 export const updateChatChannelBodyMemberIdsMax = 100;
 
 
 
 export const UpdateChatChannelBody = zod.object({
   "name": zod.string().min(1).max(updateChatChannelBodyNameMax).optional(),
+  "emoji": zod.string().max(updateChatChannelBodyEmojiMax).nullish(),
   "memberIds": zod.array(zod.string()).max(updateChatChannelBodyMemberIdsMax).optional().describe('Full replacement of the invited members.')
 })
 
 export const UpdateChatChannelResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
+  "emoji": zod.string().nullable(),
   "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),

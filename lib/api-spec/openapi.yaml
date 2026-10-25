@@ -6452,12 +6452,14 @@ components:
             $ref: "#/components/schemas/ChannelActivity"
     ChannelActivity:
       type: object
-      required: [channelId, channelName, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
+      required: [channelId, channelName, channelEmoji, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
       properties:
         channelId:
           type: string
         channelName:
           type: string
+        channelEmoji:
+          type: ["string", "null"]
         lastMessageAt:
           type: string
         lastMessageAuthor:
@@ -6503,12 +6505,14 @@ components:
           description: Display name of the admin that invited this person.
     ChatChannel:
       type: object
-      required: [id, name, createdBy, createdAt, updatedAt, members, youAreMember, canManage]
+      required: [id, name, emoji, createdBy, createdAt, updatedAt, members, youAreMember, canManage]
       properties:
         id:
           type: string
         name:
           type: string
+        emoji:
+          type: ["string", "null"]
         createdBy:
           type: string
           description: Display name of the admin that created the channel.
@@ -6553,6 +6557,9 @@ components:
           minLength: 1
           maxLength: 80
           description: Channel display name; must be unique within the team (case-insensitive).
+        emoji:
+          type: ["string", "null"]
+          maxLength: 34
         memberIds:
           type: array
           maxItems: 100
@@ -6566,6 +6573,9 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        emoji:
+          type: ["string", "null"]
+          maxLength: 34
         memberIds:
           type: array
           maxItems: 100

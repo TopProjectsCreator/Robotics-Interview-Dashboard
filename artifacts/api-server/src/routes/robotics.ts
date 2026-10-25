@@ -3424,6 +3424,7 @@ const SHARED_CONVERSATION: ChatConversation = { scope: "shared", peer: null, key
 type ChannelActivityItem = {
   channelId: string;
   channelName: string;
+  channelEmoji: string | null;
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
@@ -4423,7 +4424,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     // Channel rows with no messages yet still need a name and a sortable time.
     const channels = ([] as ChannelActivityItem[]);
     if (accessibleIds.length) {
-      const channelRows = await db.select({ id: chatChannelsTable.id, name: chatChannelsTable.name, updatedAt: chatChannelsTable.updatedAt, createdAt: chatChannelsTable.createdAt })
+      const channelRows = await db.select({ id: chatChannelsTable.id, name: chatChannelsTable.name, emoji: chatChannelsTable.emoji, updatedAt: chatChannelsTable.updatedAt, createdAt: chatChannelsTable.createdAt })
         .from(chatChannelsTable)
         .where(and(inArray(chatChannelsTable.id, accessibleIds), teamFilter(chatChannelsTable.teamId, teamId)));
       for (const channel of channelRows) {
@@ -4432,6 +4433,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
         channels.push({
           channelId: channel.id,
           channelName: channel.name,
+          channelEmoji: channel.emoji,
           lastMessageAt,
           lastMessageAuthor: last ? String(last.author) : "",
           lastMessage: last
@@ -4516,6 +4518,7 @@ function chatChannelResponse(
   return {
     id: channel.id,
     name: channel.name,
+    emoji: channel.emoji,
     createdBy: channel.createdBy,
     createdAt: channel.createdAt,
     updatedAt: channel.updatedAt,
@@ -4597,6 +4600,7 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
   const parsed = CreateChatChannelBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A channel name is required." }); return; }
   const name = normalizeChannelName(parsed.data.name);
+  const emoji = parsed.data.emoji?.trim() || null;
   if (!name) { res.status(400).json({ error: "A channel name is required." }); return; }
   const teamId = await requestTeamId(req);
   const normalizedName = normalizeChannelKey(name);
@@ -4622,6 +4626,7 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
     id: randomUUID(),
     teamId,
     name,
+    emoji,
     normalizedName,
     createdBy: account.displayName,
   }).returning();
@@ -4659,6 +4664,9 @@ router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, 
   const newName = parsed.data.name === undefined || parsed.data.name === null
     ? null
     : normalizeChannelName(parsed.data.name);
+  const newEmoji = parsed.data.emoji === undefined
+    ? undefined
+    : parsed.data.emoji?.trim() || null;
   if (parsed.data.name !== undefined && parsed.data.name !== null && !newName) {
     res.status(400).json({ error: "A channel name is required." });
     return;
@@ -4668,8 +4676,8 @@ router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, 
     : [...new Set(parsed.data.memberIds
       .map((value) => (typeof value === "string" ? value.trim() : ""))
       .filter(Boolean))];
-  if (!newName && memberIdsReplace === null) {
-    res.status(400).json({ error: "Provide a new channel name or invited members." });
+  if (!newName && memberIdsReplace === null && newEmoji === undefined) {
+    res.status(400).json({ error: "Provide a channel name, emoji, or invited members." });
     return;
   }
   const teamId = await requestTeamId(req);
@@ -4706,9 +4714,12 @@ router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, 
       })));
     }
   }
-  if (newName) {
+  if (newName || newEmoji !== undefined) {
     await db.update(chatChannelsTable)
-      .set({ name: newName, normalizedName: normalizeChannelKey(newName) })
+      .set({
+        ...(newName ? { name: newName, normalizedName: normalizeChannelKey(newName) } : {}),
+        ...(newEmoji !== undefined ? { emoji: newEmoji } : {}),
+      })
       .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)));
   }
   // Member changes alone from a fresh drizzle set() would skip $onUpdate; the

@@ -9,6 +9,8 @@
 export interface ChannelActivity {
   channelId: string;
   channelName: string;
+  /** @nullable */
+  channelEmoji: string | null;
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;

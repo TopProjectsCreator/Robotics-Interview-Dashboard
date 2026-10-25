@@ -14,6 +14,11 @@ export interface ChatChannelInput {
      */
   name: string;
   /**
+     * @maxLength 34
+     * @nullable
+     */
+  emoji?: string | null;
+  /**
      * Interviewer account ids to invite; the creating admin is always included.
      * @maxItems 100
      */

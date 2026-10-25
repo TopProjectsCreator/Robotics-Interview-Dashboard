@@ -13,6 +13,11 @@ export interface ChatChannelUpdateInput {
      */
   name?: string;
   /**
+     * @maxLength 34
+     * @nullable
+     */
+  emoji?: string | null;
+  /**
      * Full replacement of the invited members.
      * @maxItems 100
      */

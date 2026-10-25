@@ -10,6 +10,8 @@ import type { ChatChannelMember } from './chatChannelMember';
 export interface ChatChannel {
   id: string;
   name: string;
+  /** @nullable */
+  emoji: string | null;
   /** Display name of the admin that created the channel. */
   createdBy: string;
   createdAt: Date;

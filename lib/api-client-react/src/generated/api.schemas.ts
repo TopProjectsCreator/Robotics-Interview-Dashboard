@@ -1684,6 +1684,8 @@ export interface ChatConversationSummary {
 export interface ChannelActivity {
   channelId: string;
   channelName: string;
+  /** @nullable */
+  channelEmoji: string | null;
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
@@ -1719,6 +1721,8 @@ export interface ChatChannelMember {
 export interface ChatChannel {
   id: string;
   name: string;
+  /** @nullable */
+  emoji: string | null;
   /** Display name of the admin that created the channel. */
   createdBy: string;
   createdAt: string;
@@ -1751,6 +1755,11 @@ export interface ChatChannelInput {
      */
   name: string;
   /**
+     * @maxLength 34
+     * @nullable
+     */
+  emoji?: string | null;
+  /**
      * Interviewer account ids to invite; the creating admin is always included.
      * @maxItems 100
      */
@@ -1763,6 +1772,11 @@ export interface ChatChannelUpdateInput {
      * @maxLength 80
      */
   name?: string;
+  /**
+     * @maxLength 34
+     * @nullable
+     */
+  emoji?: string | null;
   /**
      * Full replacement of the invited members.
      * @maxItems 100
