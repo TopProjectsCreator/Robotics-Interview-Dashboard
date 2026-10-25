@@ -116,23 +116,26 @@ const pool = {
           return { rows: [], rowCount: 0 };
         }
         if (statement.includes('update "parts_catalog_items"')) {
-          const [partId, hasImage, imageUrl, hasCost, unitCost, costCurrency, teamId] = values;
+          const [partId, hasImage, imageUrl, teamId] = values;
           const record = records.find((candidate) =>
             candidate.id === partId && candidate.teamId === teamId,
           );
           if (!record) return { rows: [], rowCount: 0 };
           if (hasImage) record.imageUrl = imageUrl;
+          return { rows: [{ id: partId }], rowCount: 1 };
+        }
+        if (statement.includes('insert into "parts_inventory"')) {
+          const [partId, teamId, storageLocation, inventoryNotes, unitCost, costCurrency, hasLocation, hasNotes, hasCost] = values;
+          const record = records.find((candidate) =>
+            candidate.id === partId && candidate.teamId === teamId,
+          );
+          if (!record) return { rows: [], rowCount: 0 };
+          if (hasLocation) record.storageLocation = storageLocation;
+          if (hasNotes) record.inventoryNotes = inventoryNotes;
           if (hasCost) {
             record.unitCost = unitCost;
             record.costCurrency = costCurrency;
           }
-          return { rows: [{ id: partId }], rowCount: 1 };
-        }
-        if (statement.includes('insert into "parts_inventory"')) {
-          const [partId, storageLocation, inventoryNotes, hasLocation, hasNotes] = values;
-          const record = records.find((candidate) => candidate.id === partId);
-          if (hasLocation) record.storageLocation = storageLocation;
-          if (hasNotes) record.inventoryNotes = inventoryNotes;
           return { rows: [], rowCount: 1 };
         }
         throw new Error(`Unexpected transactional query: ${statement}`);

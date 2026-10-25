@@ -43,7 +43,11 @@ import {
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
 import { requestTeamId, requireAdmin } from "../middlewares/adminAuth";
-import { teamSqlCondition } from "../lib/teams";
+import {
+  DEFAULT_TEAM_ID,
+  sharedCatalogTeamSqlCondition,
+  teamSqlCondition,
+} from "../lib/teams";
 import { pushRealtimeHint } from "../lib/realtime";
 import {
   fallbackProductSearchMetadata,
@@ -207,6 +211,21 @@ function withTeamScope(
   };
 }
 
+function withCatalogTeamScope(
+  whereSql: string,
+  values: unknown[],
+  teamId: string | undefined,
+  alias: string,
+): { whereSql: string; values: unknown[] } {
+  const scopedTeamId = teamId ?? DEFAULT_TEAM_ID;
+  const placeholder = `$${values.length + 1}`;
+  const condition = sharedCatalogTeamSqlCondition(alias, placeholder);
+  return {
+    whereSql: whereSql ? `${whereSql} and ${condition}` : `where ${condition}`,
+    values: [...values, scopedTeamId],
+  };
+}
+
 async function upsertCatalogRecord(
   client: PoolClient,
   input: {
@@ -222,15 +241,18 @@ async function upsertCatalogRecord(
   },
   teamId?: string,
 ): Promise<{ id: string; created: boolean }> {
+  const scopedTeamId = teamId ?? DEFAULT_TEAM_ID;
   const lookupValues: unknown[] = [input.vendorKey, input.externalKey];
   let lookupSql =
     `select "id" from "parts_catalog_items" where "vendor_key" = $1 and "external_key" = $2`;
-  if (teamId) {
-    lookupValues.push(teamId);
-    lookupSql += ` and ${teamSqlCondition('"team_id"', `$${lookupValues.length}`)}`;
+  if (input.isManual) {
+    lookupValues.push(scopedTeamId);
+    lookupSql += ` and ${teamSqlCondition('"team_id"', `$${lookupValues.length}`)} and "is_manual" = true`;
+  } else {
+    lookupSql += ` and "team_id" is null and "is_manual" = false`;
   }
   const existing = await client.query(lookupSql, lookupValues);
-  if (teamId && existing.rowCount !== 0) {
+  if (input.isManual && existing.rowCount !== 0) {
     // A row for this team already exists (possibly a legacy NULL row adopted
     // by the default team): update it in place instead of inserting, so the
     // per-team unique index can never produce a same-team duplicate.
@@ -258,22 +280,23 @@ async function upsertCatalogRecord(
       ],
     );
     await client.query(
-      `insert into "parts_inventory" ("part_id", "quantity_owned")
-       values ($1, 0) on conflict ("part_id") do nothing`,
-      [id],
+      `insert into "parts_inventory" ("part_id", "team_id", "quantity_owned")
+       values ($1, $2, 0) on conflict ("part_id", "team_id") do nothing`,
+      [id, scopedTeamId],
     );
     return { id, created: false };
   }
   const created = existing.rowCount === 0;
   const id = created ? randomUUID() : String(existing.rows[0].id);
-  const columns = teamId
+  const teamOwned = input.isManual;
+  const columns = teamOwned
     ? `("id", "team_id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")`
     : `("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")`;
-  const conflictTarget = teamId
-    ? `("team_id", "vendor_key", "external_key")`
-    : `("vendor_key", "external_key")`;
-  const insertValues: unknown[] = teamId
-    ? [id, teamId, input.vendorKey, input.externalKey, input.name, input.sku, input.category, input.description, input.productUrl, input.imageUrl, input.isManual]
+  const conflictTarget = teamOwned
+    ? `("team_id", "vendor_key", "external_key") where "team_id" is not null`
+    : `("vendor_key", "external_key") where "team_id" is null and "is_manual" = false`;
+  const insertValues: unknown[] = teamOwned
+    ? [id, scopedTeamId, input.vendorKey, input.externalKey, input.name, input.sku, input.category, input.description, input.productUrl, input.imageUrl, input.isManual]
     : [id, input.vendorKey, input.externalKey, input.name, input.sku, input.category, input.description, input.productUrl, input.imageUrl, input.isManual];
   const placeholders = insertValues.map((_, index) => `$${index + 1}`).join(", ");
   const saved = await client.query(
@@ -293,11 +316,13 @@ async function upsertCatalogRecord(
     insertValues,
   );
   const savedId = String(saved.rows[0].id);
-  await client.query(
-    `insert into "parts_inventory" ("part_id", "quantity_owned")
-     values ($1, 0) on conflict ("part_id") do nothing`,
-    [savedId],
-  );
+  if (teamOwned) {
+    await client.query(
+      `insert into "parts_inventory" ("part_id", "team_id", "quantity_owned")
+       values ($1, $2, 0) on conflict ("part_id", "team_id") do nothing`,
+      [savedId, scopedTeamId],
+    );
+  }
   return { id: savedId, created };
 }
 
@@ -305,31 +330,30 @@ async function setOwnedQuantity(
   client: PoolClient,
   partId: string,
   quantity: number,
-  teamId?: string,
+  teamId: string,
 ): Promise<{ exists: boolean; allocated: number }> {
-  const lookupValues: unknown[] = [partId];
-  let partSql = `select "id" from "parts_catalog_items" where "id" = $1 for update`;
-  if (teamId) {
-    lookupValues.push(teamId);
-    partSql =
-      `select "id" from "parts_catalog_items" where "id" = $1` +
-      ` and ${teamSqlCondition('"team_id"', `$${lookupValues.length}`)} for update`;
-  }
+  const scopedTeamId = teamId ?? DEFAULT_TEAM_ID;
+  const lookupValues: unknown[] = [partId, scopedTeamId];
+  const partSql =
+    `select "id" from "parts_catalog_items" where "id" = $1` +
+    ` and ${sharedCatalogTeamSqlCondition('"parts_catalog_items"', "$2")} for update`;
   const part = await client.query(partSql, lookupValues);
   if (part.rowCount === 0) return { exists: false, allocated: 0 };
   const assignedResult = await client.query(
     `select coalesce(sum("quantity"), 0)::int as "assigned"
-     from "parts_robot_allocations" where "part_id" = $1`,
-    [partId],
+     from "parts_robot_allocations" a
+     join "parts_robots" r on r."id" = a."robot_id"
+     where a."part_id" = $1 and ${teamSqlCondition('r."team_id"', "$2")}`,
+    [partId, scopedTeamId],
   );
   const allocated = Number(assignedResult.rows[0].assigned);
   if (quantity < allocated) throw new StockConflictError(allocated);
   await client.query(
-    `insert into "parts_inventory" ("part_id", "quantity_owned", "updated_at")
-     values ($1, $2, now())
-     on conflict ("part_id") do update set
+    `insert into "parts_inventory" ("part_id", "team_id", "quantity_owned", "updated_at")
+     values ($1, $2, $3, now())
+     on conflict ("part_id", "team_id") do update set
        "quantity_owned" = excluded."quantity_owned", "updated_at" = now()`,
-    [partId, quantity],
+    [partId, scopedTeamId, quantity],
   );
   return { exists: true, allocated };
 }
@@ -345,36 +369,29 @@ async function saveRobotAllocation(
   quantity: number,
   teamId?: string,
 ): Promise<RobotAllocationResult> {
+  const scopedTeamId = teamId ?? DEFAULT_TEAM_ID;
   return withTransaction(async (client) => {
-    const robotValues: unknown[] = [robotId];
-    let robotSql = `select "id", "name" from "parts_robots" where "id" = $1`;
-    if (teamId) {
-      robotValues.push(teamId);
-      robotSql += ` and ${teamSqlCondition('"team_id"', `$${robotValues.length}`)}`;
-    }
+    const robotValues: unknown[] = [robotId, scopedTeamId];
+    const robotSql =
+      `select "id", "name" from "parts_robots" where "id" = $1` +
+      ` and ${teamSqlCondition('"team_id"', "$2")}`;
     const robotResult = await client.query(robotSql, robotValues);
     if (robotResult.rowCount === 0) return { missing: "robot" as const };
-    const partValues: unknown[] = [partId];
-    let partSql =
+    const partValues: unknown[] = [partId, scopedTeamId];
+    const partSql =
       `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
        from "parts_catalog_items" c
-       left join "parts_inventory" i on i."part_id" = c."id"
-       where c."id" = $1 for update of c`;
-    if (teamId) {
-      partValues.push(teamId);
-      partSql =
-        `select c."id", coalesce(i."quantity_owned", 0)::int as "quantityOwned"
-         from "parts_catalog_items" c
-         left join "parts_inventory" i on i."part_id" = c."id"
-         where c."id" = $1 and ${teamSqlCondition('c."team_id"', `$${partValues.length}`)} for update of c`;
-    }
+       left join "parts_inventory" i on i."part_id" = c."id" and ${teamSqlCondition('i."team_id"', "$2")}
+       where c."id" = $1 and ${sharedCatalogTeamSqlCondition("c", "$2")} for update of c`;
     const partResult = await client.query(partSql, partValues);
     if (partResult.rowCount === 0) return { missing: "part" as const };
     const otherAssignments = await client.query(
-      `select coalesce(sum("quantity"), 0)::int as "quantity"
-       from "parts_robot_allocations"
-       where "part_id" = $1 and "robot_id" <> $2`,
-      [partId, robotId],
+      `select coalesce(sum(a."quantity"), 0)::int as "quantity"
+       from "parts_robot_allocations" a
+       join "parts_robots" r on r."id" = a."robot_id"
+       where a."part_id" = $1 and a."robot_id" <> $2
+         and ${teamSqlCondition('r."team_id"', "$3")}`,
+      [partId, robotId, scopedTeamId],
     );
     const others = Number(otherAssignments.rows[0].quantity);
     const owned = Number(partResult.rows[0].quantityOwned);
@@ -471,17 +488,24 @@ async function queryCatalogRows(
   offset: number,
   teamId?: string,
 ): Promise<Record<string, unknown>[]> {
-  const teamValue = teamId ? [...values, teamId] : values;
-  const robotTeamCondition = teamId
-    ? `and ${teamSqlCondition('r."team_id"', `$${values.length + 1}`)}`
-    : "";
+  const scopedTeamId = teamId ?? DEFAULT_TEAM_ID;
+  const teamValue = [...values, scopedTeamId];
+  const scopedTeamPlaceholder = `$${values.length + 1}`;
+  const robotAssignmentTeamCondition =
+    `and exists (
+       select 1 from "parts_robots" scoped_robot
+       where scoped_robot."id" = a."robot_id"
+         and ${teamSqlCondition('scoped_robot."team_id"', scopedTeamPlaceholder)}
+     )`;
+  const inventoryTeamCondition =
+    `and ${teamSqlCondition('i."team_id"', scopedTeamPlaceholder)}`;
   const limitPlaceholder = teamValue.length + 1;
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
              c."image_url" as "imageUrl", i."storage_location" as "storageLocation",
-             i."inventory_notes" as "inventoryNotes", c."unit_cost" as "unitCost",
-             c."cost_currency" as "costCurrency", c."created_at" as "createdAt",
+             i."inventory_notes" as "inventoryNotes", i."unit_cost" as "unitCost",
+             i."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
             coalesce(i."quantity_owned", 0)::int as "quantityOwned",
             coalesce(sum(a."quantity") filter (where r."id" is not null), 0)::int as "quantityAssigned",
@@ -493,11 +517,12 @@ async function queryCatalogRows(
               '[]'::json
             ) as "allocations"
      from "parts_catalog_items" c
-     left join "parts_inventory" i on i."part_id" = c."id"
-     left join "parts_robot_allocations" a on a."part_id" = c."id"
-      left join "parts_robots" r on r."id" = a."robot_id" ${robotTeamCondition}
+     left join "parts_inventory" i on i."part_id" = c."id" ${inventoryTeamCondition}
+     left join "parts_robot_allocations" a on a."part_id" = c."id" ${robotAssignmentTeamCondition}
+     left join "parts_robots" r on r."id" = a."robot_id"
      ${whereSql}
-     group by c."id", i."quantity_owned", i."storage_location", i."inventory_notes"
+      group by c."id", i."quantity_owned", i."storage_location", i."inventory_notes",
+               i."unit_cost", i."cost_currency"
      order by c."updated_at" desc, lower(c."name"), c."id"
       limit $${limitPlaceholder} offset $${limitPlaceholder + 1}`,
     [...teamValue, limit, offset],
@@ -528,7 +553,7 @@ async function searchSyncedCatalog(
       or coalesce(c."description", '') ilike any(${patternArray}))`,
   );
   const baseWhere = `where ${clauses.join(" and ")}`;
-  const scoped = withTeamScope(baseWhere, values, teamId, "c");
+  const scoped = withCatalogTeamScope(baseWhere, values, teamId, "c");
   const whereSql = scoped.whereSql;
   const scopedValues = scoped.values;
   const [countResult, rows] = await Promise.all([
@@ -547,7 +572,7 @@ async function searchSyncedCatalog(
 }
 
 async function getCatalogItem(partId: string, teamId?: string) {
-  const scoped = withTeamScope(`where c."id" = $1`, [partId], teamId, "c");
+  const scoped = withCatalogTeamScope(`where c."id" = $1`, [partId], teamId, "c");
   const rows = await queryCatalogRows(scoped.whereSql, scoped.values, 1, 0, teamId);
   return rows[0] ? mapCatalogRow(rows[0]) : null;
 }
@@ -563,7 +588,9 @@ async function getCatalogDetails(partId: string, teamId: string) {
               c."vendor_key" as "vendorKey"
        from "parts_supplier_price_snapshots" s
        join "parts_catalog_items" c on c."id" = s."part_id"
-       where s."part_id" = $1 and ${teamSqlCondition('c."team_id"', "$2")}
+       where s."part_id" = $1
+         and ${sharedCatalogTeamSqlCondition("c", "$2")}
+         and ${teamSqlCondition('s."team_id"', "$2")}
        order by s."captured_at" desc`,
       [partId, teamId],
     ),
@@ -571,7 +598,8 @@ async function getCatalogDetails(partId: string, teamId: string) {
       `select distinct i."storage_location" as "storageLocation"
        from "parts_inventory" i
        join "parts_catalog_items" c on c."id" = i."part_id"
-       where ${teamSqlCondition('c."team_id"', "$1")}
+       where ${sharedCatalogTeamSqlCondition("c", "$1")}
+         and ${teamSqlCondition('i."team_id"', "$1")}
          and i."storage_location" is not null
        order by lower(i."storage_location")`,
       [teamId],
@@ -633,36 +661,29 @@ async function updateCatalogDetails(
     const saved = await client.query(
       `update "parts_catalog_items"
        set "image_url" = case when $2 then $3 else "image_url" end,
-           "unit_cost" = case when $4 then $5 else "unit_cost" end,
-           "cost_currency" = case when $4 then $6 else "cost_currency" end,
            "updated_at" = now()
-       where "id" = $1 and ${teamSqlCondition('"team_id"', "$7")}
+       where "id" = $1 and ${sharedCatalogTeamSqlCondition('"parts_catalog_items"', "$4")}
        returning "id"`,
-      [
-        partId,
-        Object.hasOwn(body, "imageUrl"),
-        imageUrl,
-        hasCost,
-        unitCost ?? null,
-        costCurrency ?? null,
-        teamId,
-      ],
+      [partId, Object.hasOwn(body, "imageUrl"), imageUrl, teamId],
     );
     if (saved.rowCount === 0) return false;
     const hasLocation = Object.hasOwn(body, "storageLocation");
     const hasNotes = Object.hasOwn(body, "inventoryNotes");
-    if (hasLocation || hasNotes) {
+    if (hasCost || hasLocation || hasNotes) {
       const storageLocation = cleanText(body.storageLocation, 120);
       const inventoryNotes = cleanText(body.inventoryNotes, 2000);
       await client.query(
         `insert into "parts_inventory"
-           ("part_id", "quantity_owned", "storage_location", "inventory_notes")
-         values ($1, 0, $2, $3)
-         on conflict ("part_id") do update set
-           "storage_location" = case when $4 then excluded."storage_location" else "parts_inventory"."storage_location" end,
-           "inventory_notes" = case when $5 then excluded."inventory_notes" else "parts_inventory"."inventory_notes" end,
+           ("part_id", "team_id", "quantity_owned", "storage_location", "inventory_notes", "unit_cost", "cost_currency")
+         values ($1, $2, 0, $3, $4, $5, $6)
+         on conflict ("part_id", "team_id") do update set
+           "storage_location" = case when $7 then excluded."storage_location" else "parts_inventory"."storage_location" end,
+           "inventory_notes" = case when $8 then excluded."inventory_notes" else "parts_inventory"."inventory_notes" end,
+           "unit_cost" = case when $9 then excluded."unit_cost" else "parts_inventory"."unit_cost" end,
+           "cost_currency" = case when $9 then excluded."cost_currency" else "parts_inventory"."cost_currency" end,
            "updated_at" = now()`,
-        [partId, storageLocation, inventoryNotes, hasLocation, hasNotes],
+        [partId, teamId, storageLocation, inventoryNotes, unitCost ?? null, costCurrency ?? null,
+          hasLocation, hasNotes, hasCost],
       );
     }
     return true;
@@ -1407,7 +1428,7 @@ export async function runAssistantPartsTool(
       const offsetValue = Number(args.offset);
       const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 30;
       const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
-      const scoped = withTeamScope(clauses.length ? `where ${clauses.join(" and ")}` : "", values, teamId, "c");
+      const scoped = withCatalogTeamScope(clauses.length ? `where ${clauses.join(" and ")}` : "", values, teamId, "c");
       const rows = await queryCatalogRows(scoped.whereSql, scoped.values, limit, offset, teamId);
       const items = rows.map(mapCatalogRow);
       return result(JSON.stringify({ offset, limit, items }), `${items.length} part(s)`);
@@ -2165,7 +2186,9 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
         `insert into "parts_catalog_items"
            ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
          values ${rows.join(", ")}
-         on conflict ("vendor_key", "external_key") do update set
+          on conflict ("vendor_key", "external_key")
+            where "team_id" is null and "is_manual" = false
+          do update set
            "name" = excluded."name",
            "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
            "category" = coalesce(excluded."category", "parts_catalog_items"."category"),
@@ -2180,19 +2203,6 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
       for (const row of saved.rows) {
         if (row.created === true) created += 1;
         else updated += 1;
-      }
-      if (saved.rows.length > 0) {
-        const inventoryValues: unknown[] = [];
-        const inventoryRows = saved.rows.map((row, index) => {
-          inventoryValues.push(String(row.id), 0);
-          return `($${index * 2 + 1}, $${index * 2 + 2})`;
-        });
-        await client.query(
-          `insert into "parts_inventory" ("part_id", "quantity_owned")
-           values ${inventoryRows.join(", ")}
-           on conflict ("part_id") do nothing`,
-          inventoryValues,
-        );
       }
     }
     return { created, updated };
@@ -2213,15 +2223,16 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
       ),
       pool.query(
         `select
-           (select count(*)::int from "parts_catalog_items" c where ${teamSqlCondition('c."team_id"', "$1")}) as "catalogItems",
+           (select count(*)::int from "parts_catalog_items" c where ${sharedCatalogTeamSqlCondition("c", "$1")}) as "catalogItems",
            (select coalesce(sum("quantity_owned"), 0)::int from "parts_inventory" i
              join "parts_catalog_items" c on c."id" = i."part_id"
-             where ${teamSqlCondition('c."team_id"', "$1")}) as "ownedUnits",
+              where ${teamSqlCondition('i."team_id"', "$1")}
+                and ${sharedCatalogTeamSqlCondition("c", "$1")}) as "ownedUnits",
            (select coalesce(sum("quantity"), 0)::int from "parts_robot_allocations" a
              join "parts_robots" r on r."id" = a."robot_id"
              join "parts_catalog_items" c on c."id" = a."part_id"
              where ${teamSqlCondition('r."team_id"', "$1")}
-               and ${teamSqlCondition('c."team_id"', "$1")}) as "assignedUnits"`,
+                and ${sharedCatalogTeamSqlCondition("c", "$1")}) as "assignedUnits"`,
         [teamId],
       ),
       readPartsSupplierSyncStates(),
@@ -2294,6 +2305,7 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
           or exists (
             select 1 from "parts_inventory" tracked_inventory
             where tracked_inventory."part_id" = c."id"
+              and ${teamSqlCondition('tracked_inventory."team_id"', teamPlaceholder)}
               and tracked_inventory."quantity_owned" > 0
           )
           or exists (
@@ -2308,7 +2320,7 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       );
     }
     const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
-    const scoped = withTeamScope(whereSql, values, teamId, "c");
+    const scoped = withCatalogTeamScope(whereSql, values, teamId, "c");
     const [countResult, rows] = await Promise.all([
       pool.query(
         `select count(*)::int as "total" from "parts_catalog_items" c ${scoped.whereSql}`,
@@ -2778,6 +2790,7 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
     return;
   }
   try {
+    const teamId = await requestTeamId(req);
     const counts = await withTransaction(async (client) => {
       let created = 0;
       let updated = 0;
@@ -2803,11 +2816,11 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
           productUrl,
           imageUrl,
           isManual: true,
-        });
+        }, teamId);
         if (saved.created) created += 1;
         else updated += 1;
         if (row.quantityOwned !== undefined) {
-          await setOwnedQuantity(client, saved.id, row.quantityOwned);
+          await setOwnedQuantity(client, saved.id, row.quantityOwned, teamId);
         }
       }
       return { created, updated };
@@ -2876,11 +2889,17 @@ router.patch("/parts/catalog/:partId/cost", requireAdmin, async (req, res): Prom
   try {
     const teamId = await requestTeamId(req);
     const updated = await pool.query(
-      `update "parts_catalog_items"
-       set "unit_cost" = $2, "cost_currency" = $3, "updated_at" = now()
-       where "id" = $1 and ${teamSqlCondition('"team_id"', "$4")}
-       returning "id"`,
-      [params.data.partId, unitCost, costCurrency, teamId],
+      `insert into "parts_inventory"
+         ("part_id", "team_id", "quantity_owned", "unit_cost", "cost_currency")
+       select c."id", $2, 0, $3, $4
+         from "parts_catalog_items" c
+        where c."id" = $1 and ${sharedCatalogTeamSqlCondition("c", "$2")}
+       on conflict ("part_id", "team_id") do update set
+         "unit_cost" = excluded."unit_cost",
+         "cost_currency" = excluded."cost_currency",
+         "updated_at" = now()
+       returning "part_id"`,
+      [params.data.partId, teamId, unitCost, costCurrency],
     );
     if (updated.rowCount === 0) {
       res.status(404).json({ error: "Catalog item not found." });
@@ -2959,7 +2978,8 @@ router.post(
     try {
       const teamId = await requestTeamId(req);
       const partResult = await pool.query(
-        `select "vendor_key" as "vendorKey" from "parts_catalog_items" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        `select "vendor_key" as "vendorKey" from "parts_catalog_items" c
+         where c."id" = $1 and ${sharedCatalogTeamSqlCondition("c", "$2")}`,
         [params.data.partId, teamId],
       );
       if (partResult.rowCount === 0) {
@@ -2975,14 +2995,15 @@ router.post(
       }
       const saved = await pool.query(
         `insert into "parts_supplier_price_snapshots"
-           ("id", "part_id", "unit_price", "currency", "source_url", "is_starting_at")
-         values ($1, $2, $3, $4, $5, $6)
+           ("id", "part_id", "team_id", "unit_price", "currency", "source_url", "is_starting_at")
+         values ($1, $2, $3, $4, $5, $6, $7)
          returning "id", "part_id" as "partId", "unit_price" as "unitPrice",
                    "currency", "source_url" as "sourceUrl",
                    "captured_at" as "capturedAt", "is_starting_at" as "isStartingAt"`,
         [
           randomUUID(),
           params.data.partId,
+          teamId,
           body.data.unitPrice,
           body.data.currency,
           sourceUrl,
@@ -3039,13 +3060,16 @@ router.get(
       const allocationResult = await pool.query(
         `select c."id" as "partId", c."name", c."vendor_key" as "vendorKey",
                 c."sku", c."product_url" as "productUrl",
-                c."unit_cost" as "unitCost", c."cost_currency" as "costCurrency",
+                 i."unit_cost" as "unitCost", i."cost_currency" as "costCurrency",
                 a."quantity"
          from "parts_robot_allocations" a
          join "parts_catalog_items" c on c."id" = a."part_id"
-         where a."robot_id" = $1
+          left join "parts_inventory" i on i."part_id" = c."id"
+            and ${teamSqlCondition('i."team_id"', "$2")}
+          where a."robot_id" = $1
+            and ${sharedCatalogTeamSqlCondition("c", "$2")}
          order by lower(c."name"), c."id"`,
-        [params.data.robotId],
+        [params.data.robotId, teamId],
       );
       const partIds = allocationResult.rows.map((row) => String(row.partId));
       const snapshotResult = partIds.length === 0
@@ -3058,9 +3082,10 @@ router.get(
                     c."vendor_key" as "vendorKey"
              from "parts_supplier_price_snapshots" s
              join "parts_catalog_items" c on c."id" = s."part_id"
-             where s."part_id" = any($1::text[])
+              where s."part_id" = any($1::text[])
+                and ${teamSqlCondition('s."team_id"', "$2")}
              order by s."captured_at" desc`,
-            [partIds],
+            [partIds, teamId],
           );
       const now = Date.now();
       const snapshotsByPart = new Map<string, unknown[]>();

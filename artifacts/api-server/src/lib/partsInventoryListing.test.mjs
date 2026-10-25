@@ -89,6 +89,30 @@ const items = [
     isManual: false,
     allocations: [{ robotId: "team-b-robot", robotName: "Team B robot", quantity: 2 }],
   },
+  {
+    id: "shared-zero-count",
+    teamId: null,
+    vendorKey: "ferra",
+    name: "Shared catalog item with no team stock",
+    sku: "SHARED-ZERO",
+    quantityOwned: 0,
+    isManual: false,
+    allocations: [],
+  },
+  {
+    id: "shared-team-stock",
+    teamId: null,
+    vendorKey: "andymark",
+    name: "Shared item with team-specific stock",
+    sku: "SHARED-STOCK",
+    quantityOwned: 0,
+    isManual: false,
+    allocations: [],
+    teamInventory: {
+      "team-a": { quantityOwned: 2, unitCost: "8.50", costCurrency: "USD", storageLocation: "A cabinet" },
+      "team-b": { quantityOwned: 0, unitCost: null, costCurrency: null, storageLocation: null },
+    },
+  },
 ].map((item) => ({
   category: null,
   description: null,
@@ -110,7 +134,8 @@ function teamFromQuery(statement, values) {
 }
 
 function matchesCatalogQuery(item, statement, values, teamId) {
-  if (item.teamId !== teamId) return false;
+  if (item.teamId !== teamId && !(item.teamId === null && !item.isManual)) return false;
+  const inventory = item.teamInventory?.[teamId] ?? item;
   if (
     !statement.includes("tracked_inventory") &&
     statement.includes('c."is_manual" = true') &&
@@ -120,7 +145,7 @@ function matchesCatalogQuery(item, statement, values, teamId) {
     const hasTeamAllocation = item.allocations.some(
       (allocation) => allocation.quantity > 0 && allocation.robotId.startsWith(`${teamId}-`),
     );
-    if (!item.isManual && item.quantityOwned <= 0 && !hasTeamAllocation) return false;
+    if (!item.isManual && inventory.quantityOwned <= 0 && !hasTeamAllocation) return false;
   }
   const vendorMatch = statement.match(/c\."vendor_key" = \$(\d+)/);
   if (vendorMatch && item.vendorKey !== values[Number(vendorMatch[1]) - 1]) return false;
@@ -139,6 +164,7 @@ function matchesCatalogQuery(item, statement, values, teamId) {
 }
 
 function mapCatalogRow(item, teamId) {
+  const inventory = item.teamInventory?.[teamId] ?? item;
   const allocations = item.allocations.filter(({ robotId }) =>
     robotId.startsWith(`${teamId}-`),
   );
@@ -155,13 +181,13 @@ function mapCatalogRow(item, teamId) {
     description: item.description,
     productUrl: item.productUrl,
     imageUrl: item.imageUrl,
-    storageLocation: item.storageLocation,
-    inventoryNotes: item.inventoryNotes,
-    unitCost: item.unitCost,
-    costCurrency: item.costCurrency,
+    storageLocation: inventory.storageLocation,
+    inventoryNotes: inventory.inventoryNotes,
+    unitCost: inventory.unitCost,
+    costCurrency: inventory.costCurrency,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
-    quantityOwned: item.quantityOwned,
+    quantityOwned: inventory.quantityOwned,
     quantityAssigned,
     allocations: allocations.map((allocation) => ({
       ...allocation,
@@ -184,11 +210,16 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
         assert.match(statement, /c\."team_id"/, "owned totals must be scoped to catalog team");
         assert.match(statement, /r\."team_id"/, "assigned totals must be scoped to robot team");
         const teamId = values[0];
-        const teamItems = items.filter((item) => item.teamId === teamId);
+        const teamItems = items.filter(
+          (item) => item.teamId === teamId || (item.teamId === null && !item.isManual),
+        );
         return {
           rows: [{
             catalogItems: teamItems.length,
-            ownedUnits: teamItems.reduce((sum, item) => sum + item.quantityOwned, 0),
+            ownedUnits: teamItems.reduce(
+              (sum, item) => sum + (item.teamInventory?.[teamId] ?? item).quantityOwned,
+              0,
+            ),
             assignedUnits: teamItems.reduce(
               (sum, item) => sum + item.allocations
                 .filter(({ robotId }) => robotId.startsWith(`${teamId}-`))
@@ -284,14 +315,14 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
       assignedUnits: dashboard.summary.assignedUnits,
       availableUnits: dashboard.summary.availableUnits,
     },
-    { ownedUnits: 9, assignedUnits: 3, availableUnits: 6 },
+    { ownedUnits: 11, assignedUnits: 3, availableUnits: 8 },
   );
 
   const inventory = await get("/parts/catalog?inventoryOnly=true&limit=100");
-  assert.equal(inventory.total, 4);
+  assert.equal(inventory.total, 5);
   assert.deepEqual(
     inventory.items.map(({ id }) => id).sort(),
-    ["team-a-allocation", "team-a-bearing", "team-a-gear", "team-a-manual"],
+    ["shared-team-stock", "team-a-allocation", "team-a-bearing", "team-a-gear", "team-a-manual"],
   );
   assert.equal(inventory.items.some(({ id }) => id === "team-a-untracked"), false);
   assert.equal(inventory.items.some(({ id }) => id === "team-b-private"), false);
@@ -320,11 +351,51 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   assert.deepEqual(manuallySaved.items.map(({ id }) => id), ["team-a-manual"]);
   const otherTeamInventory = await get("/parts/catalog?inventoryOnly=true", "team-b");
   assert.deepEqual(otherTeamInventory.items.map(({ id }) => id), ["team-b-private"]);
+  const teamACatalog = await get("/parts/catalog", "team-a");
+  const teamBCatalog = await get("/parts/catalog", "team-b");
+  assert.equal(teamACatalog.items.some(({ id }) => id === "shared-zero-count"), true);
+  assert.equal(teamBCatalog.items.some(({ id }) => id === "shared-zero-count"), true);
+  assert.equal(teamACatalog.items.some(({ id }) => id === "shared-team-stock"), true);
+  assert.equal(teamBCatalog.items.some(({ id }) => id === "shared-team-stock"), true);
+  assert.equal(
+    teamACatalog.items.find(({ id }) => id === "shared-team-stock").quantityOwned,
+    2,
+  );
+  assert.equal(
+    teamACatalog.items.find(({ id }) => id === "shared-team-stock").unitCost,
+    8.5,
+  );
+  assert.equal(
+    teamACatalog.items.find(({ id }) => id === "shared-team-stock").storageLocation,
+    "A cabinet",
+  );
+  assert.equal(
+    teamBCatalog.items.find(({ id }) => id === "shared-team-stock").quantityOwned,
+    0,
+    "one team's stock must not be exposed to another team using the shared catalog",
+  );
+  assert.equal(
+    teamBCatalog.items.find(({ id }) => id === "shared-team-stock").unitCost,
+    null,
+  );
+  assert.equal(
+    teamBCatalog.items.find(({ id }) => id === "shared-team-stock").storageLocation,
+    null,
+  );
+  assert.equal(
+    teamACatalog.items.find(({ id }) => id === "shared-zero-count").quantityOwned,
+    0,
+    "shared supplier rows with no team stock remain present without implying owned stock",
+  );
+  assert.equal(
+    teamBCatalog.items.find(({ id }) => id === "shared-zero-count").quantityOwned,
+    0,
+  );
   assert.ok(
     catalogQueries
       .filter(({ statement }) => statement.includes("json_agg("))
       .every(({ statement }) =>
-        statement.includes('and (r."team_id" ='),
+        statement.includes('scoped_robot."team_id"'),
       ),
     "listed allocations must be scoped to the current team’s robots",
   );

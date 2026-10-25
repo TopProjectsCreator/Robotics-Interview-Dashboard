@@ -3,12 +3,11 @@ import { eq, isNull, or } from "drizzle-orm";
 import { primaryDb, secondaryDb, hasSecondary, teamsTable, interviewerAccountsTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 
 /**
- * Team isolation helpers. Every tenant table carries a nullable `team_id`;
- * NULL means "legacy row belonging to the default team". Queries for the
- * default team therefore match BOTH `team_id = 'default'` AND `team_id IS
- * NULL`, so rows written before the multi-team migration are never lost and
- * the current team keeps working through the migration window. New teams
- * always write their concrete id, so they are completely separate.
+ * Team isolation helpers. Tenant rows with a nullable `team_id` use NULL for
+ * legacy default-team data, except shared supplier catalog rows. Queries for
+ * the default team therefore match BOTH `team_id = 'default'` AND `team_id IS
+ * NULL`; use sharedCatalogTeamSqlCondition for catalog items so global supplier
+ * rows remain visible to every team. New team-owned rows use a concrete ID.
  */
 
 export function hashTeamCode(code: string): string {
@@ -174,6 +173,19 @@ export function teamFilter(column: any, teamId: string) {
  */
 export function teamSqlCondition(columnSql: string, placeholder: string): string {
   return `(${columnSql} = ${placeholder} or (${placeholder} = 'default' and ${columnSql} is null))`;
+}
+
+/**
+ * Catalog rows without a team are shared supplier products. Manual rows are
+ * always assigned a team before this condition is used, so legacy NULL rows
+ * remain visible to the default team through teamSqlCondition while shared
+ * supplier rows are visible to every team.
+ */
+export function sharedCatalogTeamSqlCondition(
+  alias: string,
+  placeholder: string,
+): string {
+  return `(${teamSqlCondition(`${alias}."team_id"`, placeholder)} or (${alias}."team_id" is null and ${alias}."is_manual" = false))`;
 }
 
 export { normalizeTeamName, DEFAULT_TEAM_ID };

@@ -89,7 +89,9 @@ for (const [vendorKey, seed] of entries) {
         `insert into "parts_catalog_items"
            ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
          values ${placeholders.join(", ")}
-         on conflict ("vendor_key", "external_key") do update set
+          on conflict ("vendor_key", "external_key")
+            where "team_id" is null and "is_manual" = false
+          do update set
            "name" = excluded."name",
            "sku" = coalesce(excluded."sku", "parts_catalog_items"."sku"),
            "category" = coalesce(excluded."category", "parts_catalog_items"."category"),
@@ -104,19 +106,6 @@ for (const [vendorKey, seed] of entries) {
       for (const row of saved.rows) {
         if (row.created === true) created += 1;
         else updated += 1;
-      }
-      if (saved.rows.length > 0) {
-        const inventoryValues = [];
-        const inventoryPlaceholders = saved.rows.map((row, index) => {
-          inventoryValues.push(String(row.id), 0);
-          return `($${index * 2 + 1}, $${index * 2 + 2})`;
-        });
-        await client.query(
-          `insert into "parts_inventory" ("part_id", "quantity_owned")
-           values ${inventoryPlaceholders.join(", ")}
-           on conflict ("part_id") do nothing`,
-          inventoryValues,
-        );
       }
     }
     await client.query(

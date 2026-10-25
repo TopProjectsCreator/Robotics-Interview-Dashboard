@@ -129,6 +129,7 @@ test("public display state scopes by event code and exposes only approved fields
   });
   mock.module("../lib/teams", {
     namedExports: {
+      DEFAULT_TEAM_ID: "default",
       findTeamByCode: async (code) => {
         queriedTeams.push(code);
         return code === "EVENT-123" ? team : null;
@@ -136,6 +137,7 @@ test("public display state scopes by event code and exposes only approved fields
       getTeamById: async () => team,
       teamFilter: () => ({}),
       teamSqlCondition: () => "",
+      sharedCatalogTeamSqlCondition: () => "",
       findAccountAnywhere: async () => null,
     },
   });

@@ -372,7 +372,17 @@ async function ensureSchema(): Promise<void> {
     // declined to serve as a product. Recording the refusal is what makes the
     // first pass provably finite.
     `create table if not exists "parts_catalog_crawl_skips" ("vendor_key" text not null, "product_url" text not null, "reason" text not null, "attempts" integer not null default 1, "updated_at" timestamptz not null default now(), primary key ("vendor_key", "product_url"))`,
-    `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "parts_inventory" (
+       "part_id" text not null references "parts_catalog_items"("id") on delete cascade,
+       "team_id" text not null default 'default',
+       "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0),
+       "storage_location" text,
+       "inventory_notes" text,
+       "unit_cost" numeric(10,2),
+       "cost_currency" text,
+       "updated_at" timestamptz not null default now(),
+       primary key ("part_id", "team_id")
+     )`,
     `alter table "parts_inventory" add column if not exists "storage_location" text`,
     `alter table "parts_inventory" add column if not exists "inventory_notes" text`,
     `do $parts_inventory_details$ begin
@@ -412,6 +422,7 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "parts_supplier_price_snapshots" (
        "id" text primary key,
        "part_id" text not null references "parts_catalog_items"("id") on delete cascade,
+        "team_id" text not null default 'default',
        "unit_price" numeric(10,2) not null check ("unit_price" >= 0 and "unit_price" <= 99999999.99),
        "currency" text not null check ("currency" ~ '^[A-Z]{3}$'),
        "source_url" text not null check (length("source_url") between 1 and 2000),
@@ -534,9 +545,89 @@ async function ensureSchema(): Promise<void> {
     `alter table "parts_inventory" add column if not exists "team_id" text`,
     `alter table "parts_robots" add column if not exists "team_id" text`,
     `alter table "parts_supplier_sync_states" add column if not exists "team_id" text`,
+    `alter table "parts_supplier_price_snapshots" add column if not exists "team_id" text`,
     `alter table "presence_heartbeats" add column if not exists "team_id" text`,
     `alter table "seating_settings" add column if not exists "team_id" text`,
     `alter table "workspace_settings" add column if not exists "team_id" text`,
+    `alter table "parts_inventory" add column if not exists "unit_cost" numeric(10,2)`,
+    `alter table "parts_inventory" add column if not exists "cost_currency" text`,
+    `update "parts_catalog_items" set "team_id" = 'default'
+      where "is_manual" = true and "team_id" is null`,
+    `update "parts_inventory" i
+       set "team_id" = coalesce(c."team_id", 'default')
+      from "parts_catalog_items" c
+      where c."id" = i."part_id" and i."team_id" is null`,
+    `update "parts_inventory" set "team_id" = 'default' where "team_id" is null`,
+    `alter table "parts_inventory" alter column "team_id" set default 'default'`,
+    `alter table "parts_inventory" alter column "team_id" set not null`,
+    `do $parts_inventory_primary_key$
+     declare primary_key_name text;
+     begin
+       select conname into primary_key_name
+         from pg_constraint
+        where conrelid = 'parts_inventory'::regclass and contype = 'p';
+       if primary_key_name is not null
+          and pg_get_constraintdef((select oid from pg_constraint where conname = primary_key_name and conrelid = 'parts_inventory'::regclass)) <> 'PRIMARY KEY (part_id, team_id)' then
+         execute format('alter table parts_inventory drop constraint %I', primary_key_name);
+         primary_key_name := null;
+       end if;
+       if primary_key_name is null then
+         alter table parts_inventory add constraint parts_inventory_pkey primary key ("part_id", "team_id");
+       end if;
+     end $parts_inventory_primary_key$`,
+    `update "parts_inventory" i
+       set "unit_cost" = c."unit_cost", "cost_currency" = c."cost_currency"
+      from "parts_catalog_items" c
+      where c."id" = i."part_id"
+        and i."team_id" = coalesce(c."team_id", 'default')
+        and i."unit_cost" is null and c."unit_cost" is not null`,
+    `insert into "parts_inventory"
+       ("part_id", "team_id", "quantity_owned", "unit_cost", "cost_currency")
+     select c."id", coalesce(c."team_id", 'default'), 0, c."unit_cost", c."cost_currency"
+       from "parts_catalog_items" c
+      where c."unit_cost" is not null
+     on conflict ("part_id", "team_id") do update set
+       "unit_cost" = coalesce("parts_inventory"."unit_cost", excluded."unit_cost"),
+       "cost_currency" = coalesce("parts_inventory"."cost_currency", excluded."cost_currency")`,
+    `update "parts_catalog_items" set "unit_cost" = null, "cost_currency" = null
+      where "unit_cost" is not null or "cost_currency" is not null`,
+    `update "parts_supplier_price_snapshots" s
+       set "team_id" = coalesce(c."team_id", 'default')
+      from "parts_catalog_items" c
+      where c."id" = s."part_id" and s."team_id" is null`,
+    `update "parts_supplier_price_snapshots" set "team_id" = 'default' where "team_id" is null`,
+    `alter table "parts_supplier_price_snapshots" alter column "team_id" set default 'default'`,
+    `alter table "parts_supplier_price_snapshots" alter column "team_id" set not null`,
+    `do $parts_catalog_unique_indexes$
+     begin
+       if exists (
+         select 1 from pg_indexes
+          where schemaname = 'public'
+            and indexname = 'parts_catalog_vendor_external_key_unique'
+            and indexdef not like '% WHERE %'
+       ) then
+         drop index public.parts_catalog_vendor_external_key_unique;
+       end if;
+     end $parts_catalog_unique_indexes$`,
+    `create unique index if not exists "parts_catalog_vendor_external_key_unique"
+       on "parts_catalog_items" ("vendor_key", "external_key")
+       where "team_id" is null and "is_manual" = false`,
+    `create unique index if not exists "parts_catalog_team_vendor_external_key_unique"
+       on "parts_catalog_items" ("team_id", "vendor_key", "external_key")
+       where "team_id" is not null`,
+    `do $parts_inventory_saved_cost$
+     begin
+       if not exists (
+         select 1 from pg_constraint
+          where conname = 'parts_inventory_saved_cost_valid'
+            and conrelid = 'parts_inventory'::regclass
+       ) then
+         alter table "parts_inventory" add constraint "parts_inventory_saved_cost_valid"
+           check (("unit_cost" is null and "cost_currency" is null)
+             or ("unit_cost" >= 0 and "unit_cost" <= 99999999.99
+               and "cost_currency" is not null and "cost_currency" ~ '^[A-Z]{3}$'));
+       end if;
+     end $parts_inventory_saved_cost$`,
     // Feature requests inbox for the site owner (Ishaan Bansal): every
     // team's requests land here. is_site_owner is set once by the migration
     // below; all statements idempotent.

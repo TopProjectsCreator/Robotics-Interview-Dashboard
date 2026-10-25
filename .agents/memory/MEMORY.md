@@ -56,3 +56,4 @@
 - [Streaming large object downloads](streaming-large-object-download.md) — large CAD objects must be streamed to disk, never buffered in memory, because the instance has a 512 MB ceiling.
 - [Persisted CAD previews](persisted-cad-previews.md) — a finished CAD preview is stored under a path-derived id so it can be found again after the instance restarts.
 - [Mobile browser fixtures](mobile-browser-fixtures.md) — import the app’s shared stylesheet into component-level browser fixtures so mobile hit testing matches the real UI.
+- [Shared Parts supplier catalog](shared-parts-supplier-catalog.md) — supplier product rows are shared across teams; stock and saved inventory details remain team-specific.

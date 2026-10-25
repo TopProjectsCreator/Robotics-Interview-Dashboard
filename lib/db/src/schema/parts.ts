@@ -5,6 +5,7 @@ import {
   integer,
   pgTable,
   numeric,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -14,11 +15,12 @@ export const partsCatalogItemsTable = pgTable(
   "parts_catalog_items",
   {
     id: text("id").primaryKey(),
-    // NULL = legacy row belonging to the default team; never lost.
+    // NULL identifies shared supplier rows; manual rows always carry a team ID.
     teamId: text("team_id"),
     vendorKey: text("vendor_key").notNull(),
     externalKey: text("external_key").notNull(),
     name: text("name").notNull(),
+    isManual: boolean("is_manual").default(false).notNull(),
     sku: text("sku"),
     category: text("category"),
     description: text("description"),
@@ -30,11 +32,12 @@ export const partsCatalogItemsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    vendorExternalKey: uniqueIndex("parts_catalog_vendor_external_key_unique").on(
-      table.teamId,
-      table.vendorKey,
-      table.externalKey,
-    ),
+    sharedVendorExternalKey: uniqueIndex("parts_catalog_vendor_external_key_unique")
+      .on(table.vendorKey, table.externalKey)
+      .where(sql`${table.teamId} is null and ${table.isManual} = false`),
+    teamVendorExternalKey: uniqueIndex("parts_catalog_team_vendor_external_key_unique")
+      .on(table.teamId, table.vendorKey, table.externalKey)
+      .where(sql`${table.teamId} is not null`),
     validSavedCost: check(
       "parts_catalog_saved_cost_valid",
       sql`(${table.unitCost} is null and ${table.costCurrency} is null)
@@ -68,14 +71,18 @@ export const partsInventoryTable = pgTable(
   "parts_inventory",
   {
     partId: text("part_id")
-      .primaryKey()
+      .notNull()
       .references(() => partsCatalogItemsTable.id, { onDelete: "cascade" }),
+    teamId: text("team_id").default("default").notNull(),
     quantityOwned: integer("quantity_owned").default(0).notNull(),
     storageLocation: text("storage_location"),
     inventoryNotes: text("inventory_notes"),
+    unitCost: numeric("unit_cost", { precision: 10, scale: 2 }),
+    costCurrency: text("cost_currency"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    teamPart: primaryKey({ columns: [table.partId, table.teamId] }),
     nonnegativeQuantity: check(
       "parts_inventory_nonnegative_quantity",
       sql`${table.quantityOwned} >= 0`,
@@ -87,6 +94,13 @@ export const partsInventoryTable = pgTable(
     validInventoryNotes: check(
       "parts_inventory_notes_valid",
       sql`${table.inventoryNotes} is null or length(${table.inventoryNotes}) <= 2000`,
+    ),
+    validSavedCost: check(
+      "parts_inventory_saved_cost_valid",
+      sql`(${table.unitCost} is null and ${table.costCurrency} is null)
+        or (${table.unitCost} >= 0 and ${table.unitCost} <= 99999999.99
+          and ${table.costCurrency} is not null
+          and ${table.costCurrency} ~ '^[A-Z]{3}$')`,
     ),
   }),
 );
@@ -152,6 +166,7 @@ export const partsSupplierPriceSnapshotsTable = pgTable(
     partId: text("part_id")
       .notNull()
       .references(() => partsCatalogItemsTable.id, { onDelete: "cascade" }),
+    teamId: text("team_id").default("default").notNull(),
     unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
     currency: text("currency").notNull(),
     sourceUrl: text("source_url").notNull(),
