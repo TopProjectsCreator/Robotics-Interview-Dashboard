@@ -45,6 +45,13 @@ const accentStyles = {
   lilac: "bg-[#e7e7fb] text-[#6351a1] dark:bg-[#322d51] dark:text-[#c8b7ff]",
 };
 
+const focusAreas = [
+  { number: "01", label: "Team planning & updates", bandLabel: "01 / Coordinate" },
+  { number: "02", label: "Chat & shared boards", bandLabel: "02 / Connect" },
+  { number: "03", label: "CAD & 3D files", bandLabel: "03 / Design" },
+  { number: "04", label: "Sheets & insights", bandLabel: "04 / Organize" },
+];
+
 const teamPhotos = [
   {
     src: `${import.meta.env.BASE_URL}team-23442-1.webp`,
@@ -113,16 +120,14 @@ export default function AboutPage() {
               </p>
             </div>
             <aside aria-label="Work connected in the workspace" className="lg:border-l lg:border-[#d9e6e1] lg:pl-8 dark:lg:border-[#28464d]">
-              <p className="mb-3 font-mono text-[9px] font-medium uppercase tracking-[.15em] text-[#70868b] dark:text-[#91aaa8]">Connected work</p>
+              <p className="mb-3 font-mono text-[9px] font-medium uppercase tracking-[.15em] text-[#586d72] dark:text-[#91aaa8]">Connected work</p>
               <ol className="divide-y divide-[#d9e6e1] dark:divide-[#28464d]">
-                {[
-                  ["01", "Engineering & CAD"],
-                  ["02", "Team chat & shared boards"],
-                  ["03", "Plans, sheets & insights"],
-                ].map(([number, label]) => (
-                  <li key={number} className="flex items-center gap-4 py-3">
+                {focusAreas.map(({ number, label }) => (
+                  <li key={number}>
+                    <a href={`#about-area-${number}`} className="flex items-center gap-4 py-3 text-[#31515a] transition-colors hover:text-[#117078] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#168b94] dark:text-[#c5d9d5] dark:hover:text-[#7edbd0] dark:focus-visible:outline-[#7edbd0]">
                     <span className="font-mono text-[10px] text-[#168b94] dark:text-[#7edbd0]">{number}</span>
-                    <span className="text-sm font-semibold text-[#31515a] dark:text-[#c5d9d5]">{label}</span>
+                    <span className="text-sm font-semibold">{label}</span>
+                    </a>
                   </li>
                 ))}
               </ol>
@@ -131,12 +136,7 @@ export default function AboutPage() {
         </section>
 
         <section className="grid grid-cols-2 border-y border-[#d9e6e1] dark:border-[#28464d] sm:grid-cols-4" aria-label="Workspace focus areas">
-          {[
-            ["01 / Coordinate", "Team planning & updates"],
-            ["02 / Connect", "Chat & shared boards"],
-            ["03 / Design", "CAD & 3D files"],
-            ["04 / Organize", "Sheets & insights"],
-          ].map(([label, title], index) => <div key={label} className={`py-4 ${index % 2 === 1 ? "border-l border-[#d9e6e1] pl-4 dark:border-[#28464d] sm:px-5" : "pr-3"} ${index < 2 ? "border-b border-[#d9e6e1] dark:border-[#28464d] sm:border-b-0" : ""} ${index > 0 ? "sm:border-l sm:border-[#d9e6e1] sm:px-5 dark:sm:border-[#28464d]" : ""}`}><span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#70868b] dark:text-[#91aaa8]">{label}</span><strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">{title}</strong></div>)}
+          {focusAreas.map(({ number, label, bandLabel }, index) => <a key={number} href={`#about-area-${number}`} className={`py-4 transition-colors hover:bg-[#eaf2ee] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#168b94] dark:hover:bg-[#142e35] dark:focus-visible:outline-[#7edbd0] ${index % 2 === 1 ? "border-l border-[#d9e6e1] pl-4 dark:border-[#28464d] sm:px-5" : "pr-3"} ${index < 2 ? "border-b border-[#d9e6e1] dark:border-[#28464d] sm:border-b-0" : ""} ${index > 0 ? "sm:border-l sm:border-[#d9e6e1] sm:px-5 dark:sm:border-[#28464d]" : ""}`}><span className="font-mono text-[9px] uppercase tracking-[.12em] text-[#586d72] dark:text-[#91aaa8]">{bandLabel}</span><strong className="mt-2 block text-sm text-[#153642] dark:text-[#e3efeb]">{label}</strong></a>)}
         </section>
 
         <section id="what-we-bring-together" className="scroll-mt-8 py-16 sm:py-24" aria-labelledby="work-heading">
@@ -146,7 +146,7 @@ export default function AboutPage() {
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {sections.map(({ index, label, title, body, icon: Icon, accent }) => (
-              <article key={index} className="group grid gap-5 rounded-2xl border border-[#d9e6e1] bg-white/75 p-5 transition duration-200 hover:-translate-y-1 hover:border-[#a9c9c1] hover:shadow-[0_15px_30px_rgba(39,79,76,.08)] dark:border-[#28464d] dark:bg-[#122a32] dark:hover:border-[#477a7a] sm:grid-cols-[auto_1fr] sm:p-7" data-testid={`about-area-${index}`}>
+              <article id={`about-area-${index}`} tabIndex={-1} key={index} className="group scroll-mt-8 grid gap-5 rounded-2xl border border-[#d9e6e1] bg-white/75 p-5 transition duration-200 hover:-translate-y-1 hover:border-[#a9c9c1] hover:shadow-[0_15px_30px_rgba(39,79,76,.08)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#168b94] dark:border-[#28464d] dark:bg-[#122a32] dark:hover:border-[#477a7a] dark:focus-visible:outline-[#7edbd0] sm:grid-cols-[auto_1fr] sm:p-7" data-testid={`about-area-${index}`}>
                 <span className={`grid size-11 place-items-center rounded-xl ${accentStyles[accent as keyof typeof accentStyles]}`}><Icon size={19} /></span>
                 <div><div className="flex items-center justify-between gap-3"><p className="font-mono text-[9px] tracking-[.13em] text-[#168b94] dark:text-[#7edbd0]">{label}</p><span className="font-mono text-[10px] text-[#91a2a2] dark:text-[#91aaa8]">{index}</span></div><h3 className="mt-3 text-xl font-semibold tracking-[-.04em] text-[#153642] dark:text-[#e3efeb]">{title}</h3><p className="mt-2 max-w-[530px] text-sm leading-6 text-[#607981] dark:text-[#aac1be]">{body}</p></div>
               </article>
@@ -224,7 +224,7 @@ export default function AboutPage() {
           </div>
         </section>
 
-        <footer className="flex flex-col gap-4 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
+        <footer className="flex flex-col gap-4 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#586d72] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
           <span>Robotics team workspace</span>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link href="/" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Home</Link><Link href="/privacy" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Privacy</Link><Link href="/terms" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Terms</Link><Link href="/auth" className="inline-flex items-center gap-1.5 hover:text-[#168b94] dark:hover:text-[#7edbd0]">Team sign in <ArrowRight size={12} /></Link></div>
         </footer>
