@@ -9124,6 +9124,21 @@ function ErrorCodeRoute({ params }: { params: { code?: string } }) {
   return <ErrorPage code={code} target={`/${code}`} />;
 }
 
+function RouteScrollReset() {
+  const [location] = useLocation();
+  const pathname = location.split(/[?#]/, 1)[0] || "/";
+  const previousPathname = useRef(pathname);
+
+  useEffect(() => {
+    if (previousPathname.current === pathname) return;
+    previousPathname.current = pathname;
+    if (window.location.hash) return;
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
+
 function ChatPage() {
   const list = useListApplicants({ sort: "queue" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "queue" }) } });
   const applicantIds = useMemo(() => (list.data?.items ?? []).map(a => a.id), [list.data]);
@@ -9167,6 +9182,6 @@ function Router() {
     </ErrorBoundary>
   );
 }
-function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
+function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><RouteScrollReset /><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
 export { ConversationAssistant, InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;
