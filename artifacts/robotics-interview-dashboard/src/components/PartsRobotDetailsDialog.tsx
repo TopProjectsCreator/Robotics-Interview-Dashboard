@@ -611,7 +611,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
         role="dialog"
         aria-modal="true"
         aria-labelledby="robot-details-title"
-        className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-border bg-background shadow-2xl sm:max-h-[92dvh] sm:rounded-2xl"
+        className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-border bg-background pb-[env(safe-area-inset-bottom)] shadow-2xl sm:max-h-[92dvh] sm:rounded-2xl sm:pb-0"
         data-testid="dialog-robot-details"
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-card px-4 py-4 sm:px-6">

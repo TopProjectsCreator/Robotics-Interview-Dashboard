@@ -31,6 +31,7 @@ import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth"
 import { cleanCadLabel, cadWorkspaceKind, isWorkspaceContentTypeCompatible, CAD_WORKSPACE_ACCEPT_MESSAGE } from "../lib/cadModels";
 import { deleteChunkParts, getChunkUpload, getChunkUploadForTeam } from "../lib/chunkedUploads";
 import { teamSqlCondition } from "../lib/teams";
+import { pushRealtimeHint } from "../lib/realtime";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
@@ -270,6 +271,7 @@ router.post("/cad/bots", cadAccess, async (req, res): Promise<void> => {
        returning "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [id, teamId, name, notes],
     );
+    pushRealtimeHint("cad_bots", "INSERT");
     res.status(201).json(CreateCadBotResponse.parse(mapBot(inserted.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -316,6 +318,7 @@ router.patch("/cad/bots/:botId", cadAccess, async (req, res): Promise<void> => {
       res.status(404).json({ error: "Bot not found." });
       return;
     }
+    pushRealtimeHint("cad_bots", "UPDATE");
     res.json(UpdateCadBotResponse.parse(mapBot(updated.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -360,6 +363,7 @@ router.delete("/cad/bots", cadAccess, async (req, res): Promise<void> => {
       return;
     }
     await deleteModelFiles(models.rows.map(({ objectPath }) => objectPath), req.log, teamId);
+    pushRealtimeHint("cad_bots", "DELETE");
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "CAD bot deletion failed");
@@ -412,6 +416,7 @@ router.post("/cad/folders", cadAccess, async (req, res): Promise<void> => {
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [randomUUID(), teamId, body.data.botId, parentId, name],
     );
+    pushRealtimeHint("cad_folders", "INSERT");
     res.status(201).json(CreateCadFolderResponse.parse(mapFolder(inserted.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -490,6 +495,7 @@ router.patch("/cad/folders/:folderId", cadAccess, async (req, res): Promise<void
                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
       [params.data.folderId, name ?? null, parentId ?? null, patch.parentId !== undefined, teamId],
     );
+    pushRealtimeHint("cad_folders", "UPDATE");
     res.json(UpdateCadFolderResponse.parse(mapFolder(updated.rows[0])));
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -533,6 +539,7 @@ router.delete("/cad/folders/:folderId", cadAccess, async (req, res): Promise<voi
       res.status(404).json({ error: "Folder not found." });
       return;
     }
+    pushRealtimeHint("cad_folders", "DELETE");
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "CAD folder deletion failed");
@@ -628,6 +635,7 @@ router.post("/cad/models", cadAccess, async (req, res): Promise<void> => {
         uploadedBy,
       ],
     );
+    pushRealtimeHint("cad_models", "INSERT");
     res.status(201).json(CreateCadModelResponse.parse(mapModel(inserted.rows[0])));
   } catch (error) {
     req.log.error({ err: error }, "CAD model creation failed");
@@ -707,6 +715,7 @@ router.patch("/cad/models/:modelId", cadAccess, async (req, res): Promise<void> 
       ],
     );
     await client.query("COMMIT");
+    pushRealtimeHint("cad_models", "UPDATE");
     res.json(UpdateCadModelResponse.parse(mapModel(updated.rows[0])));
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -735,6 +744,7 @@ router.delete("/cad/models/:modelId", cadAccess, async (req, res): Promise<void>
       return;
     }
     await deleteModelFiles([row.objectPath], req.log, teamId);
+    pushRealtimeHint("cad_models", "DELETE");
     res.status(204).end();
   } catch (error) {
     req.log.error({ err: error }, "CAD model deletion failed");

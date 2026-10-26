@@ -10,7 +10,7 @@
   position: relative;
   isolation: isolate;
   min-height: 100dvh;
-  overflow: hidden;
+  overflow-x: clip;
   background: var(--parts-paper);
   color: var(--parts-ink);
 }
@@ -1636,4 +1636,21 @@ html.dark .parts-landing .parts-landing__nav-cta:focus-visible {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .parts-result p { font-size: 11px; }
+  .parts-result__meta { font-size: 11px; }
+  .vendor-row small { font-size: 11px; }
+  .reservation-card__foot { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .parts-landing h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
 }

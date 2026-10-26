@@ -124,6 +124,7 @@ function createHarness(t, {
         delete: () => ({ where: () => Promise.resolve() }),
       },
       chunkedUploadsTable: { uploadId: "upload_id" },
+      cadPreviewJobsTable: { id: "id", status: "status", objectPath: "object_path", format: "format", updatedAt: "updated_at", manifest: "manifest", previewId: "preview_id", error: "error" },
       interviewerAccountsTable: {},
       teamsTable,
       DEFAULT_TEAM_ID,
@@ -189,6 +190,7 @@ function createHarness(t, {
     namedExports: {
       requireAdmin: (_req, _res, next) => next(),
       requireCoordinator: (_req, _res, next) => next(),
+      requireWolverinesCoordinator: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
       authenticatedInterviewerId: () => "account-1",

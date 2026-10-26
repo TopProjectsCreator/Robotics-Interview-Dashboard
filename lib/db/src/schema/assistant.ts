@@ -1,10 +1,12 @@
 import { createInsertSchema } from "drizzle-zod";
-import { boolean, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 
 export const assistantConversationsTable = pgTable("assistant_conversations", {
   id: text("id").primaryKey(),
   teamId: text("team_id"),
+  ownerId: text("owner_id"),
   title: text("title").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -21,6 +23,48 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantPromptRunsTable = pgTable("assistant_prompt_runs", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  conversationId: text("conversation_id").notNull(),
+  ownerId: text("owner_id"),
+  accountId: text("account_id").notNull(),
+  prompt: text("prompt").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  status: text("status").notNull(),
+  answer: text("answer"),
+  error: text("error"),
+  activities: text("activities").notNull().default("[]"),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_prompt_runs_conversation_created_idx").on(table.teamId, table.conversationId, table.createdAt),
+  uniqueIndex("assistant_prompt_runs_one_running_per_conversation")
+    .on(table.teamId, table.conversationId)
+    .where(sql`${table.status} = 'running'`),
+]);
+
+export const assistantBuilderRunsTable = pgTable("assistant_builder_runs", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  coordinatorId: text("coordinator_id").notNull(),
+  conversationId: text("conversation_id").notNull(),
+  prompt: text("prompt").notNull(),
+  status: text("status").notNull(),
+  questionId: text("question_id"),
+  questions: jsonb("questions").$type<{ id: string; type: string; title: string; required?: boolean; options?: string[] }[] | null>(),
+  answers: jsonb("answers").$type<Record<string, unknown>>().notNull().default({}),
+  activities: text("activities").notNull().default("[]"),
+  result: text("result"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_builder_runs_owner_created_idx").on(table.teamId, table.coordinatorId, table.createdAt),
+  index("assistant_builder_runs_question_idx").on(table.teamId, table.coordinatorId, table.questionId),
+]);
+
 export const assistantSkillsTable = pgTable("assistant_skills", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),
@@ -29,6 +73,7 @@ export const assistantSkillsTable = pgTable("assistant_skills", {
   instructions: text("instructions").notNull(),
   actions: jsonb("actions").$type<string[]>().notNull().default([]),
   enabled: boolean("enabled").notNull().default(true),
+  githubRepositoryUrl: text("github_repository_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

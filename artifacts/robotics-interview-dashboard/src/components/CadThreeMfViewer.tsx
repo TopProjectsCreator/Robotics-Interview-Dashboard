@@ -86,7 +86,7 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
           return;
         }
 
-        const width = Math.max(host.clientWidth, 320);
+        const width = Math.max(host.clientWidth, 240);
         const viewerScene = new THREE.Scene();
         scene = viewerScene;
         const camera = new THREE.PerspectiveCamera(
@@ -105,7 +105,7 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
         viewerRenderer.domElement.tabIndex = 0;
         // Without this the browser claims two-finger gestures for page scroll,
         // so OrbitControls never receives them.
-        viewerRenderer.domElement.style.touchAction = "none";
+        viewerRenderer.domElement.style.touchAction = "pan-y";
         host.appendChild(viewerRenderer.domElement);
 
         viewerScene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -129,7 +129,7 @@ export function CadThreeMfViewer({ name, src, height = 420 }: CadThreeMfViewerPr
 
         const resize = () => {
           if (!active) return;
-          const nextWidth = Math.max(host.clientWidth, 320);
+          const nextWidth = Math.max(host.clientWidth, 240);
           camera.aspect = nextWidth / height;
           camera.updateProjectionMatrix();
           viewerRenderer.setSize(nextWidth, height, false);

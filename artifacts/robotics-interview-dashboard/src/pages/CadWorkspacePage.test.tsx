@@ -109,17 +109,24 @@ function renderPage(
     lastFailoverAt: null,
     lastRecoveryAt: null,
   },
+  statusError?: Error,
+  cachedCadStatus?: CadStorageStatus,
 ) {
   mocks.listLibrary.mockReturnValue({ data: library, isLoading: false });
-  mocks.getCadStorageStatus.mockResolvedValue(cadStatus);
+  if (statusError) mocks.getCadStorageStatus.mockRejectedValue(statusError);
+  else mocks.getCadStorageStatus.mockResolvedValue(cadStatus);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  if (cachedCadStatus) {
+    queryClient.setQueryData(["/api/storage/cad-status"], cachedCadStatus);
+  }
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <CadWorkspacePage />
     </QueryClientProvider>,
   );
+  return { ...rendered, queryClient };
 }
 
 function cadFile(name: string, size = 10): File {
@@ -158,7 +165,7 @@ beforeEach(() => {
 });
 
 describe("CAD workspace tree", () => {
-  it("shows admins when CAD uploads are routed to backup storage", async () => {
+  it("shows the failover notice when the permitted admin receives backup status", async () => {
     renderPage(undefined, {
       usingBackupStorage: true,
       lastFailoverAt: "2026-10-15T10:00:00.000Z",
@@ -171,6 +178,32 @@ describe("CAD workspace tree", () => {
     expect(screen.getByTestId("cad-storage-failover")).toHaveTextContent(
       "New CAD files are being written to secondary storage",
     );
+  });
+
+  it("does not show the notice when the status request is denied", async () => {
+    const failoverStatus = {
+      usingBackupStorage: true,
+      lastFailoverAt: "2026-10-15T10:00:00.000Z",
+      lastRecoveryAt: null,
+    };
+    const { queryClient } = renderPage(
+      undefined,
+      failoverStatus,
+      new Error("Forbidden"),
+      failoverStatus,
+    );
+
+    await waitFor(() =>
+      expect(queryClient.getQueryState(["/api/storage/cad-status"])?.status).toBe("error"),
+    );
+    expect(screen.queryByTestId("cad-storage-failover")).not.toBeInTheDocument();
+  });
+
+  it("does not show the notice when storage is healthy", async () => {
+    renderPage();
+
+    await waitFor(() => expect(mocks.getCadStorageStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("cad-storage-failover")).not.toBeInTheDocument();
   });
 
   it("lists bots and renders nested folders", async () => {

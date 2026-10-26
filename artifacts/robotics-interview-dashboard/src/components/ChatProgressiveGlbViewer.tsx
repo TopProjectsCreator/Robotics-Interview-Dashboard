@@ -95,8 +95,10 @@ export function ChatProgressiveGlbViewer({
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
-    // Without this the browser claims two-finger gestures for page scroll.
-    renderer.domElement.style.touchAction = "none";
+    // Let vertical drags scroll the page past the preview. `none` swallowed
+    // every swipe that started on the canvas, which is the full card width on
+    // a phone, so the chat could not be scrolled past a 3D message.
+    renderer.domElement.style.touchAction = "pan-y";
     host.appendChild(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x526273, 2.0));

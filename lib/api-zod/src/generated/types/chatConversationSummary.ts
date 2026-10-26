@@ -11,4 +11,5 @@ export interface ChatConversationSummary {
   lastMessageAt: string;
   lastMessageAuthor: string;
   lastMessage: string;
+  isUnread: boolean;
 }

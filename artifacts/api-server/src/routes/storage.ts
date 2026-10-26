@@ -13,12 +13,15 @@ import {
 } from '@workspace/api-zod';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { currentInstance, db, chunkedUploadsTable } from '@workspace/db';
-import { eq } from 'drizzle-orm';
+import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable } from '@workspace/db';
+import { materializeChunkedUpload } from '../lib/chunkedUploads';
+import { logger } from "../lib/logger";
+import { storageInstanceRestricted } from '../lib/objectStorage';
+import { and, eq, lt } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +41,7 @@ import {
   requestTeamId,
   requireAdmin,
   requireCoordinator,
+  requireWolverinesCoordinator,
   requireWorkspaceAccess,
   requireWorkspaceAccessOrCoordinator,
 } from "../middlewares/adminAuth";
@@ -62,7 +66,7 @@ import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-router.get('/storage/cad-status', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+router.get('/storage/cad-status', requireWolverinesCoordinator, async (req: Request, res: Response): Promise<void> => {
   const status = getCadStorageStatus();
   if (
     status.usingBackupStorage &&
@@ -108,7 +112,7 @@ const SIGNED_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
  * message, and nothing is lost: uploads and downloads resume at reset.
  */
 const STORAGE_PAUSED_MESSAGE =
-  'File storage is temporarily paused (team quota exceeded). Nothing is lost — try again after it resets.';
+  'Uploads are busy right now. Nothing was lost — try again in a moment.';
 function storageRestricted(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
   return /exceed_egress_quota|spend ?caps?|restricted|quota exceeded|upgrade.*plan/i.test(message);
@@ -383,6 +387,14 @@ router.post('/storage/uploads/chunk-url', requireAdmin, async (req: Request, res
   }
   try {
     let storageInstance = parsed.data.storageInstance ?? currentInstance();
+    // If that instance is already known to be refusing storage work (over
+    // quota), write to the other instance from the start. Minting can still
+    // succeed on a restricted project while reads fail, so waiting for a
+    // mint error is not enough - the parts would land where nothing can
+    // read them back.
+    if (storageInstanceRestricted(storageInstance) && hasSecondaryStorage()) {
+      storageInstance = storageInstance === 'primary' ? 'secondary' : 'primary';
+    }
     let signedUrl: string;
     try {
       signedUrl = await objectStorageService.mintChunkUpload(
@@ -462,6 +474,9 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
     sizeBytes: Number(sizeBytes) || 0,
     totalParts: Number(totalParts),
     partSizeBytes: Number(partSizeBytes) || 0,
+    // Remember where the parts actually live so later reads (download,
+    // preview conversion) go to the same instance.
+    storageInstance: storageInstance ?? currentInstance(),
   };
   try {
     // Manifests carry the uploader's team; a foreign manifest under the same
@@ -504,7 +519,11 @@ router.post('/storage/uploads/chunk-complete', requireAdmin, async (req: Request
 
 router.post(
   '/storage/uploads',
-  express.raw({ type: CHAT_UPLOAD_CONTENT_TYPES, limit: '100mb' }),
+  // Bounded to just over the single-upload threshold. The body parser stops
+  // reading once the limit is passed, so an oversized request is refused
+  // while it streams instead of after 100 MB has been buffered in this
+  // process. Anything larger belongs on the chunked path.
+  express.raw({ type: CHAT_UPLOAD_CONTENT_TYPES, limit: CHUNKED_UPLOAD_THRESHOLD_BYTES + 1024 * 1024 }),
   requireAdmin,
   async (req: Request, res: Response) => {
     try {
@@ -563,11 +582,20 @@ router.post(
 router.post(
   '/storage/parts-robot-previews',
   requireAdmin,
-  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  // The storage bucket refuses anything over its own file_size_limit, so
+  // buffering more than that here only risked the API process. Larger
+  // previews go through the chunked upload endpoints.
+  express.raw({ type: 'application/octet-stream', limit: MAX_STORAGE_UPLOAD_BYTES + 1024 * 1024 }),
   async (req: Request, res: Response): Promise<void> => {
     const data = req.body as Buffer | undefined;
     if (!data || !Buffer.isBuffer(data)) {
       res.status(400).json({ error: 'No preview file data received' });
+      return;
+    }
+    if (data.length > MAX_STORAGE_UPLOAD_BYTES) {
+      res.status(413).json({
+        error: `File too big for a single upload (max ${Math.floor(MAX_STORAGE_UPLOAD_BYTES / (1024 * 1024))} MB). Send it as a chunked upload instead.`,
+      });
       return;
     }
     const fileName = typeof req.query.fileName === 'string' ? req.query.fileName.trim() : '';
@@ -605,7 +633,10 @@ const CAD_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
 router.post(
   '/storage/cad-models',
   requireWorkspaceAccess('cad'),
-  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  // Same reasoning as the other single-request uploads: never buffer more
+  // than the storage bucket can actually hold. Bigger CAD files use the
+  // chunked endpoints so they never pass through this process at all.
+  express.raw({ type: 'application/octet-stream', limit: MAX_STORAGE_UPLOAD_BYTES + 1024 * 1024 }),
   async (req: Request, res: Response): Promise<void> => {
     const data = req.body as Buffer | undefined;
     if (!data || !Buffer.isBuffer(data)) {
@@ -624,6 +655,12 @@ router.post(
     const { kind } = resolved;
     if (data.length === 0) {
       res.status(400).json({ error: 'The CAD file is empty' });
+      return;
+    }
+    if (data.length > MAX_STORAGE_UPLOAD_BYTES) {
+      res.status(413).json({
+        error: `File too big for a single upload (max ${Math.floor(MAX_STORAGE_UPLOAD_BYTES / (1024 * 1024))} MB). Send it as a chunked upload instead.`,
+      });
       return;
     }
     if (data.length > CAD_UPLOAD_MAX_BYTES) {
@@ -667,6 +704,435 @@ router.post(
       if (storageRestricted(error)) { res.status(503).json({ error: STORAGE_PAUSED_MESSAGE }); return; }
       res.status(500).json({ error: 'Unable to store this CAD file' });
     }
+  },
+);
+
+/**
+ * POST /storage/cad-preview-from-object
+ *
+ * Starts a server-side preview build for a CAD file that is ALREADY stored.
+ * The old flow downloaded the source into the browser tab and uploaded it
+ * back, so a 1 GB model meant 1 GB down plus 1 GB up before any conversion
+ * started - which is why big files stalled or failed outright.
+ *
+ * Conversion is CPU-bound and can take many minutes on a big model, so it
+ * runs as a JOB: this returns a job id immediately, the client polls
+ * GET /storage/cad-preview-from-object/:jobId, and the preview is served
+ * when it is ready. The browser only ever receives the small result.
+ */
+/**
+ * Which storage instance holds a stored object ("secondary" when the path
+ * says so, otherwise the current one).
+ */
+function objectStorageInstanceFor(objectPath: string): 'primary' | 'secondary' | null {
+  if (objectPath.startsWith('/objects/secondary/')) return 'secondary';
+  if (objectPath.startsWith('/objects/chunk/secondary/')) return 'secondary';
+  return null;
+}
+
+/**
+ * Reads a finished preview manifest back from storage. This is what makes a
+ * preview survive an instance restart: the job map is in memory, the
+ * preview itself is not.
+ */
+/** Reads one persisted preview file (overview or tile) back from storage. */
+async function readPreviewObject(previewId: string, name: string): Promise<Buffer | null> {
+  for (const instance of ['primary', 'secondary'] as const) {
+    try {
+      const stored = await objectStorageService.readFromPath(`previews/${previewId}/${name}`, instance);
+      if (stored) return stored.data;
+    } catch {
+      // Try the next instance.
+    }
+  }
+  return null;
+}
+
+async function readPersistedPreview(
+  previewId: string,
+): Promise<{ overviewBytes: number; detailBytes: number; triangles: number; tiles: unknown[] } | null> {
+  for (const instance of ['primary', 'secondary'] as const) {
+    try {
+      const stored = await objectStorageService.readFromPath(`previews/${previewId}/manifest.json`, instance);
+      if (!stored) continue;
+      return JSON.parse(stored.data.toString('utf8')) as {
+        overviewBytes: number;
+        detailBytes: number;
+        triangles: number;
+        tiles: unknown[];
+      };
+    } catch {
+      // Try the next instance.
+    }
+  }
+  return null;
+}
+
+/** The model is larger than this server can convert; not a failure to hide. */
+class PreviewTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PreviewTooLargeError";
+    Object.setPrototypeOf(this, PreviewTooLargeError.prototype);
+  }
+}
+
+type CadPreviewManifest = {
+  overviewBytes: number;
+  detailBytes: number;
+  triangles: number;
+  tiles: unknown[];
+};
+const CAD_PREVIEW_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * The job lives in the database, not in process memory: a free instance is
+ * restarted by the platform from time to time, and converting a very large
+ * model takes many minutes. In memory, a restart threw the work away and
+ * the conversion could start over forever. On disk the job survives, and
+ * resumeStalePreviewJobs picks it back up on the next boot.
+ */
+async function readCadPreviewJob(jobId: string) {
+  const [job] = await db.select().from(cadPreviewJobsTable)
+    .where(eq(cadPreviewJobsTable.id, jobId)).limit(1);
+  return job ?? null;
+}
+
+async function writeCadPreviewJob(
+  jobId: string,
+  patch: {
+    status?: "preparing" | "ready" | "failed";
+    previewId?: string | null;
+    error?: string | null;
+    manifest?: CadPreviewManifest | null;
+  },
+): Promise<void> {
+  await db.update(cadPreviewJobsTable)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(cadPreviewJobsTable.id, jobId));
+}
+
+async function pruneCadPreviewJobs(): Promise<void> {
+  const cutoff = new Date(Date.now() - CAD_PREVIEW_JOB_TTL_MS);
+  await db.delete(cadPreviewJobsTable)
+    .where(and(
+      lt(cadPreviewJobsTable.updatedAt, cutoff),
+      eq(cadPreviewJobsTable.status, "ready"),
+    ));
+}
+
+router.post(
+  '/storage/cad-preview-from-object',
+  requireWorkspaceAccessOrCoordinator('cad'),
+  async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { objectPath?: unknown; format?: unknown };
+    const teamId = await requestTeamId(req);
+    const objectPath = typeof body.objectPath === 'string' ? body.objectPath.trim() : '';
+    const formatHeader = typeof body.format === 'string' ? body.format.toLowerCase() : '';
+    const sourceFormat = formatHeader === 'x_t' || formatHeader === 'x-b'
+      ? (formatHeader === 'x_t' ? 'x_t' : 'x_b')
+      : null;
+    if (!objectPath) {
+      res.status(400).json({ error: 'An object path is required' });
+      return;
+    }
+    if (!sourceFormat) {
+      res.status(400).json({ error: 'Parasolid format must be x_t or x_b' });
+      return;
+    }
+    await pruneCadPreviewJobs();
+    const jobId = randomUUID();
+    await db.insert(cadPreviewJobsTable).values({
+      id: jobId,
+      teamId,
+      objectPath,
+      format: sourceFormat,
+      status: 'preparing',
+    }).onConflictDoNothing();
+
+    // Run the conversion in the background: a big model can take many
+    // minutes, and the browser should never be stuck on one request.
+    void runCadPreviewJob(jobId, objectPath, sourceFormat);
+    res.status(202).json({ jobId, status: 'preparing' });
+  },
+);
+
+/**
+ * Converts one stored CAD file into a progressive preview. Runs in the
+ * background and records its result on the job row, so a restart
+ * mid-conversion loses nothing: the job is picked up again on the next boot.
+ */
+/**
+ * How large a source model this server may convert.
+ *
+ * The converter needs roughly three times the source size in memory, and the
+ * API process needs its own share of the box. Converting a model that cannot
+ * fit does not fail politely: the process is killed and the platform restarts
+ * the service, turning one big file into a restart loop. So the size is
+ * checked first and an oversized model is reported instead of attempted.
+ *
+ * The limit scales with the machine: a bigger Render instance converts
+ * bigger models with no code change.
+ */
+function maxPreviewSourceBytes(): number {
+  const configured = Number(process.env.CAD_PREVIEW_MAX_SOURCE_MB);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.floor(configured * 1024 * 1024);
+  }
+  const megabyte = 1024 * 1024;
+  const available = usableMemoryBytes();
+  if (available === null) {
+    // No limit could be read: assume a small instance rather than trusting
+    // the host's memory, which is what made a 512 MB box look unlimited.
+    return 48 * megabyte;
+  }
+  if (available >= 3 * 1024 * megabyte) return 600 * megabyte;
+  if (available >= 1536 * megabyte) return 200 * megabyte;
+  // A 512 MB instance: only small models fit alongside the API process.
+  return 48 * megabyte;
+}
+
+/**
+ * The memory this container may actually use.
+ *
+ * `os.totalmem()` inside a container reports the HOST's memory, not the
+ * limit the container is held to, so trusting it made a 512 MB instance look
+ * like it had many gigabytes. The cgroup limit is the real number.
+ */
+function usableMemoryBytes(): number | null {
+  for (const path of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
+    try {
+      const raw = readFileSync(path, "utf8").trim();
+      if (raw === "max") continue;
+      const value = Number(raw);
+      // A cgroup limit of a huge number means "no limit set".
+      if (Number.isFinite(value) && value > 0 && value < Number.MAX_SAFE_INTEGER) {
+        return value;
+      }
+    } catch {
+      // No cgroup file at this path; try the next one.
+    }
+  }
+  return null;
+}
+
+async function runCadPreviewJob(jobId: string, objectPath: string, sourceFormat: "x_t" | "x_b"): Promise<void> {
+    void (async () => {
+      let tempRoot: string | null = null;
+      try {
+        tempRoot = await mkdtemp(join(tmpdir(), 'robotics-cad-preview-'));
+        const inputPath = join(tempRoot, sourceFormat === 'x_t' ? 'source.x_t' : 'source.x_b');
+        // Paths look like /objects/chunk/<uploadId> or
+        // /objects/chunk/secondary/<uploadId> (the instance segment sits
+        // between "chunk" and the upload id).
+        const chunkParts = objectPath.replace(/^\/objects\//, '').split('/');
+        let chunkId: string | null = null;
+        if (chunkParts[0] === 'chunk') {
+          chunkId = chunkParts[1] === 'secondary' ? (chunkParts[2] ?? null) : (chunkParts[1] ?? null);
+        }
+        if (chunkId) {
+          // Sign the parts on the instance that actually holds them.
+          const { getChunkUpload } = await import('../lib/chunkedUploads');
+          const manifest = await getChunkUpload(chunkId);
+          const partsInstance = manifest?.storageInstance === 'secondary' ? 'secondary' : 'primary';
+          await materializeChunkedUpload(
+            chunkId,
+            inputPath,
+            (path) => objectStorageService.signDownloadUrl(path, 900, partsInstance),
+          );
+        } else {
+          await objectStorageService.downloadObjectToFile(objectPath, inputPath);
+        }
+        const sourceBytes = (await stat(inputPath)).size;
+        const limit = maxPreviewSourceBytes();
+        if (sourceBytes > limit) {
+          throw new PreviewTooLargeError(
+            `This model is ${Math.round(sourceBytes / (1024 * 1024))} MB; previews on this server are limited to ${Math.round(limit / (1024 * 1024))} MB. Download the file instead.`,
+          );
+        }
+        const progressiveDir = join(tempRoot, 'progressive');
+        const output = await new Promise<string>((resolve, reject) => {
+          execFile(
+            PARASOLID_PREVIEW_CADPROGRESSIVE_PATH,
+            [
+              inputPath,
+              progressiveDir,
+              '--sag',
+              '0.01',
+              '--angle',
+              '8',
+              '--overview-sag',
+              '0.8',
+              '--overview-angle',
+              '20',
+            ],
+            {
+              timeout: PARASOLID_PROGRESSIVE_PREVIEW_TIMEOUT_MS,
+              maxBuffer: 4 * 1024 * 1024,
+              windowsHide: true,
+              env: {
+                ...process.env,
+                RAYON_NUM_THREADS: '2',
+                XT_NO_COONS: '1',
+              },
+            },
+            (error, stdout, stderr) => {
+              if (error) reject(error);
+              else resolve(`${stdout}\n${stderr}`);
+            },
+          );
+        });
+        requireCompleteCadconvertFaceSummary(output);
+        const rawManifest = JSON.parse(
+          await readFile(join(progressiveDir, 'manifest.json'), 'utf8'),
+        ) as unknown;
+        const manifest = parseProgressiveManifest(rawManifest);
+        const totalBytes = manifest.overviewBytes + manifest.detailBytes;
+        if (totalBytes > PARASOLID_PROGRESSIVE_MAX_OUTPUT_BYTES) {
+          throw new Error('The progressive converter returned an oversized preview');
+        }
+        const overviewPath = join(progressiveDir, 'overview.glb');
+        const overviewStat = await stat(overviewPath);
+        if (
+          overviewStat.size !== manifest.overviewBytes ||
+          !(await isValidGlbFile(overviewPath, overviewStat.size))
+        ) {
+          throw new Error('The progressive converter returned an invalid overview GLB');
+        }
+        for (const tile of manifest.tiles) {
+          const tilePath = join(progressiveDir, 'tiles', `${tile.id}.glb`);
+          const tileStat = await stat(tilePath);
+          if (tileStat.size !== tile.bytes || !(await isValidGlbFile(tilePath, tileStat.size))) {
+            throw new Error(`The progressive converter returned an invalid tile ${tile.id}`);
+          }
+        }
+        while (progressivePreviewFiles.size >= PARASOLID_PROGRESSIVE_MAX_CACHED_PREVIEWS) {
+          const oldestId = progressivePreviewFiles.keys().next().value;
+          if (!oldestId) break;
+          removeProgressivePreview(oldestId);
+        }
+        // Deterministic id: the same stored file always maps to the same
+        // preview, so a finished preview can be found again after a restart.
+        const previewId = createHash('sha1')
+          .update(`${objectPath}:${sourceFormat}`)
+          .digest('hex')
+          .slice(0, 32);
+        progressivePreviewFiles.set(previewId, {
+          root: tempRoot,
+          expiresAt: Date.now() + PARASOLID_PROGRESSIVE_TTL_MS,
+          tileIds: new Set(manifest.tiles.map((tile) => tile.id)),
+        });
+        // Persist the finished preview to storage: the local temp copy dies
+        // with the instance, and a 10-minute conversion must not be lost
+        // because the free instance restarted.
+        try {
+          const previewRoot = `previews/${previewId}`;
+          const target = objectStorageInstanceFor(objectPath) ?? 'primary';
+          await objectStorageService.uploadToPath(
+            `${previewRoot}/overview.glb`,
+            await readFile(overviewPath),
+            'model/gltf-binary',
+            target,
+          );
+          for (const tile of manifest.tiles) {
+            await objectStorageService.uploadToPath(
+              `${previewRoot}/tiles/${tile.id}.glb`,
+              await readFile(join(progressiveDir, 'tiles', `${tile.id}.glb`)),
+              'model/gltf-binary',
+              target,
+            );
+          }
+          await objectStorageService.uploadToPath(
+            `${previewRoot}/manifest.json`,
+            Buffer.from(JSON.stringify({
+              overviewBytes: manifest.overviewBytes,
+              detailBytes: manifest.detailBytes,
+              triangles: manifest.triangles,
+              tiles: manifest.tiles,
+            }), 'utf8'),
+            'application/json',
+            target,
+          );
+        } catch (persistError) {
+          logger.warn({ err: persistError, jobId }, 'Could not persist the CAD preview to storage');
+        }
+        tempRoot = null;
+        await writeCadPreviewJob(jobId, {
+          status: 'ready',
+          previewId,
+          manifest: {
+            overviewBytes: manifest.overviewBytes,
+            detailBytes: manifest.detailBytes,
+            triangles: manifest.triangles,
+            tiles: manifest.tiles,
+          },
+        });
+      } catch (error) {
+        logger.error({ err: error, jobId }, 'Stored CAD preview failed');
+        if (tempRoot) {
+          await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+        }
+        await writeCadPreviewJob(jobId, {
+          status: 'failed',
+          error: error instanceof PreviewTooLargeError
+            ? error.message
+            : 'Could not build a preview for this CAD file.',
+        });
+      }
+    })();
+}
+
+/**
+ * Restarts conversions that were interrupted by a restart. A job left
+ * "preparing" means the process died mid-conversion, so it is picked back
+ * up here; without this a long conversion on a free instance could restart
+ * forever and never finish.
+ */
+export async function resumeStalePreviewJobs(): Promise<void> {
+  try {
+    const stale = await db.select().from(cadPreviewJobsTable)
+      .where(eq(cadPreviewJobsTable.status, 'preparing'))
+      .limit(10);
+    for (const job of stale) {
+      if (job.format !== 'x_t' && job.format !== 'x_b') continue;
+      logger.warn({ jobId: job.id }, 'Resuming an interrupted CAD preview job');
+      void runCadPreviewJob(job.id, job.objectPath, job.format);
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Could not resume interrupted CAD preview jobs');
+  }
+}
+
+/**
+ * GET /storage/cad-preview-from-object/:jobId
+ *
+ * Reports on a preview build. "ready" means the progressive preview is
+ * available and can be rendered by the client.
+ */
+router.get(
+  '/storage/cad-preview-from-object/:jobId',
+  requireWorkspaceAccessOrCoordinator('cad'),
+  async (req: Request, res: Response) => {
+    const jobId = typeof req.params.jobId === 'string' ? req.params.jobId : '';
+    const job = await readCadPreviewJob(jobId);
+    if (!job) {
+      // The instance may have restarted mid-conversion. A finished preview
+      // was persisted to storage, so look there before giving up.
+      const persisted = await readPersistedPreview(jobId);
+      if (persisted) {
+        res.json({ status: 'ready', previewId: jobId, ...persisted, elapsedMs: 0 });
+        return;
+      }
+      res.status(404).json({ error: 'Preview job not found. Start a new preview.' });
+      return;
+    }
+    res.json({
+      status: job.status,
+      ...(job.previewId ? { previewId: job.previewId } : {}),
+      ...(job.manifest ? job.manifest : {}),
+      ...(job.error ? { error: job.error } : {}),
+      elapsedMs: Date.now() - job.updatedAt.getTime(),
+    });
   },
 );
 
@@ -886,7 +1352,20 @@ router.get(
       : req.params.previewId;
     const cached = progressivePreviewFiles.get(previewId);
     if (!cached) {
-      res.status(404).json({ error: 'This progressive CAD preview has expired' });
+      // The instance restarted and the local copy is gone; the persisted
+      // copy in storage is the same preview, so serve that instead of
+      // failing the preview.
+      const stored = await readPreviewObject(previewId, 'overview.glb');
+      if (!stored) {
+        res.status(404).json({ error: 'This progressive CAD preview has expired' });
+        return;
+      }
+      res
+        .status(200)
+        .setHeader('Content-Type', 'model/gltf-binary')
+        .setHeader('Content-Length', String(stored.length))
+        .setHeader('Cache-Control', 'private, max-age=3600');
+      res.end(stored);
       return;
     }
     cached.expiresAt = Date.now() + PARASOLID_PROGRESSIVE_TTL_MS;
@@ -919,6 +1398,18 @@ router.get(
       : req.params.tileId;
     const cached = progressivePreviewFiles.get(previewId);
     if (!cached || !cached.tileIds.has(tileId) || !/^g\d+$/.test(tileId)) {
+      // The local copy is gone (instance restarted); the persisted copy in
+      // storage is the same tile.
+      const stored = await readPreviewObject(previewId, `tiles/${tileId}.glb`);
+      if (stored) {
+        res
+          .status(200)
+          .setHeader('Content-Type', 'model/gltf-binary')
+          .setHeader('Content-Length', String(stored.length))
+          .setHeader('Cache-Control', 'private, max-age=3600');
+        res.end(stored);
+        return;
+      }
       res.status(404).json({ error: 'This progressive CAD detail tile was not found' });
       return;
     }

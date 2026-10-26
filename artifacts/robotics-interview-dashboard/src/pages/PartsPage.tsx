@@ -9,6 +9,7 @@ import {
   Camera,
   Check,
   ExternalLink,
+  Info,
   Loader2,
   Minus,
   Package,
@@ -50,6 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PartsRobotDetailsDialog } from "@/components/PartsRobotDetailsDialog";
+import { PartsInventoryDetailsDialog } from "@/components/PartsInventoryDetailsDialog";
 import {
   PartsImageIdentifyDialog,
   type PartsImageReviewedPart,
@@ -337,12 +339,14 @@ function PartCard({
   robots,
   onSaveStock,
   onSetAllocation,
+  onOpenDetails,
   busy,
 }: {
   item: PartsCatalogItem;
   robots: { id: string; name: string }[];
   onSaveStock: (item: PartsCatalogItem, quantity: number) => Promise<void>;
   onSetAllocation: (item: PartsCatalogItem, robotId: string, quantity: number) => Promise<void>;
+  onOpenDetails: (item: PartsCatalogItem) => void;
   busy: boolean;
 }) {
   const currentRobotId = item.allocations[0]?.robotId ?? "";
@@ -369,7 +373,15 @@ function PartCard({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-foreground">{item.name}</h3>
+            <button
+              type="button"
+              onClick={() => onOpenDetails(item)}
+              className="inline-flex min-w-0 items-center gap-1.5 text-left font-semibold text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Open details for ${item.name}`}
+            >
+              <span>{item.name}</span>
+              <Info size={15} className="shrink-0 text-primary" aria-hidden="true" />
+            </button>
             <Badge variant="secondary">{item.vendorName}</Badge>
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -461,7 +473,7 @@ function PartCard({
                     String(item.allocations.find((allocation) => allocation.robotId === nextRobotId)?.quantity ?? 0),
                   );
                 }}
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 aria-label={`Choose a robot for ${item.name}`}
                 disabled={robots.length === 0}
               >
@@ -532,11 +544,12 @@ export default function PartsPage() {
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
+  const [selectedPart, setSelectedPart] = useState<PartsCatalogItem | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
     vendorKey: inventoryVendor || undefined,
-    manualOnly: true,
+    inventoryOnly: true,
     limit: pageSize,
     offset: 0,
   }, {
@@ -544,7 +557,7 @@ export default function PartsPage() {
       queryKey: getListPartsCatalogQueryKey({
         search: inventorySearch.trim() || undefined,
         vendorKey: inventoryVendor || undefined,
-        manualOnly: true,
+        inventoryOnly: true,
         limit: pageSize,
         offset: 0,
       }),
@@ -1245,20 +1258,20 @@ export default function PartsPage() {
                                   type="button"
                                   size="icon"
                                   variant="outline"
-                                  className="size-8"
+                                  className="size-10"
                                   aria-label={`Decrease quantity of ${product.title}`}
                                   onClick={() => setDraftQuantity(product.url, quantity - 1)}
                                 >
                                   <Minus size={14} aria-hidden="true" />
                                 </Button>
-                                <span className="w-7 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
+                                <span className="w-8 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
                                   {quantity}
                                 </span>
                                 <Button
                                   type="button"
                                   size="icon"
                                   variant="outline"
-                                  className="size-8"
+                                  className="size-10"
                                   aria-label={`Increase quantity of ${product.title}`}
                                   onClick={() => setDraftQuantity(product.url, quantity + 1)}
                                 >
@@ -1531,7 +1544,7 @@ export default function PartsPage() {
                         <select
                           value={customVendor}
                           onChange={(event) => setCustomVendor(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
                           <option value="">Choose supplier</option>
                           {VENDOR_GROUPS.map((group) => (
@@ -1652,7 +1665,7 @@ export default function PartsPage() {
                             setInventoryVendor(event.target.value);
                             setPageSize(100);
                           }}
-                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base md:text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
                           <option value="">All suppliers</option>
                           {VENDOR_GROUPS.map((group) => (
@@ -1676,7 +1689,7 @@ export default function PartsPage() {
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)}>
-                      <Camera size={14} aria-hidden="true" /> Identify from photo
+                      <Camera size={14} aria-hidden="true" /> Scan with camera
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
                       <Plus size={14} aria-hidden="true" /> Add custom part
@@ -1711,6 +1724,7 @@ export default function PartsPage() {
                         robots={robots}
                         onSaveStock={saveStock}
                         onSetAllocation={setAllocation}
+                        onOpenDetails={setSelectedPart}
                         busy={isMutating}
                       />
                     ))}
@@ -1733,6 +1747,11 @@ export default function PartsPage() {
          robot={selectedRobot}
          onClose={closeRobotDetails}
          onPreviewReplaced={refreshRobotDashboard}
+       />
+       <PartsInventoryDetailsDialog
+         item={selectedPart}
+         onClose={() => setSelectedPart(null)}
+         onSaved={refreshParts}
        />
     </main>
   );

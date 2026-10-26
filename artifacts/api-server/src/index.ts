@@ -8,7 +8,10 @@ import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
-import { startScheduledChatDispatcher } from "./routes/robotics";
+import { startAssistantPromptDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
+import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
+import { startMailboxPoller } from "./lib/maildrop";
+import { resumeStalePreviewJobs } from "./routes/storage";
 
 initRealtime();
 
@@ -91,8 +94,6 @@ async function removeTestAccounts(): Promise<void> {
 }
 
 
-
-
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
 async function ensureSchema(): Promise<void> {
@@ -101,6 +102,7 @@ async function ensureSchema(): Promise<void> {
     "application_imports",
     "assistant_conversations",
     "assistant_messages",
+    "assistant_prompt_runs",
     "assistant_skills",
     "audit_logs",
     "broadcast_acks",
@@ -120,6 +122,7 @@ async function ensureSchema(): Promise<void> {
     "code_presence",
     "custom_workspaces",
     "custom_workspace_versions",
+    "custom_workspace_files",
     "custom_workspace_data",
     "workspace_settings",
     "dashboard_charts",
@@ -222,11 +225,17 @@ async function ensureSchema(): Promise<void> {
        "access_mode" text not null default 'team' check ("access_mode" in ('team', 'owner', 'selected')),
        "allowed_interviewer_ids" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
+        "critique_rounds" integer not null default 0 check ("critique_rounds" between 0 and 5),
+        "verified_critique_rounds" integer not null default 0 check ("verified_critique_rounds" between 0 and 5),
+        "critique_findings" jsonb not null default '{}'::jsonb,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
     `alter table "custom_workspaces" add column if not exists "access_mode" text not null default 'team'`,
     `alter table "custom_workspaces" add column if not exists "allowed_interviewer_ids" jsonb not null default '[]'::jsonb`,
+    `alter table "custom_workspaces" add column if not exists "critique_rounds" integer not null default 0`,
+    `alter table "custom_workspaces" add column if not exists "verified_critique_rounds" integer not null default 0`,
+    `alter table "custom_workspaces" add column if not exists "critique_findings" jsonb not null default '{}'::jsonb`,
     `do $custom_access$
        begin
          if not exists (
@@ -248,11 +257,35 @@ async function ensureSchema(): Promise<void> {
        "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
        "html" text not null check (octet_length("html") <= 120000),
        "capabilities" jsonb not null default '[]'::jsonb,
+       "source_files" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
        "message" text not null default '',
        "created_at" timestamptz not null default now()
      )`,
+    `alter table "custom_workspace_versions" add column if not exists "source_files" jsonb not null default '[]'::jsonb`,
     `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
+    `create table if not exists "custom_workspace_files" (
+       "id" text primary key,
+       "team_id" text,
+       "workspace_id" text not null references "custom_workspaces"("id") on delete cascade,
+       "path" text not null,
+       "content" text not null check (octet_length("content") <= 120000),
+       "updated_by" text not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now(),
+       unique ("workspace_id", "path")
+     )`,
+    `create index if not exists "custom_workspace_files_scope_idx" on "custom_workspace_files" ("team_id", "workspace_id", "path")`,
+    `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+     select gen_random_uuid()::text, w."team_id", w."id", 'index.html', w."html", w."created_by"
+       from "custom_workspaces" w
+      where not exists (
+        select 1 from "custom_workspace_files" f
+         where f."workspace_id" = w."id" and f."path" = 'index.html'
+      )`,
+    `update "custom_workspace_versions"
+        set "source_files" = jsonb_build_array(jsonb_build_object('path', 'index.html', 'content', "html"))
+      where "source_files" = '[]'::jsonb`,
     `create table if not exists "custom_workspace_data" (
        "id" text primary key,
        "team_id" text,
@@ -277,7 +310,16 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "chat_message_reads" ("id" text primary key, "team_id" text, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "reader_id" text not null, "reader_name" text not null, "read_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
-    `create table if not exists "chat_settings" ("id" text primary key default '1', "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    // Invite-only chat channels. Admins (coordinators) create, rename, and
+    // manage them; membership gates every read and write. Messages reuse
+    // interview_chat_messages with conversation_scope='channel'.
+    `create table if not exists "chat_channels" ("id" text primary key, "team_id" text not null, "name" text not null, "normalized_name" text not null, "created_by" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_channels_team_name_unique" on "chat_channels" ("team_id", "normalized_name")`,
+    `create index if not exists "chat_channels_team_updated_idx" on "chat_channels" ("team_id", "updated_at" desc)`,
+    `create table if not exists "chat_channel_members" ("id" text primary key, "team_id" text not null, "channel_id" text not null references "chat_channels"("id") on delete cascade, "member_id" text not null, "member_name" text not null, "added_by" text not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_channel_members_channel_member_unique" on "chat_channel_members" ("channel_id", "member_id")`,
+    `create index if not exists "chat_channel_members_member_idx" on "chat_channel_members" ("member_id")`,
     `create table if not exists "chunked_uploads" ("upload_id" text primary key, "file_name" text not null, "content_type" text not null, "size_bytes" integer not null default 0, "total_parts" integer not null, "part_size_bytes" integer not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_polls" ("message_id" text primary key references "interview_chat_messages"("id") on delete cascade, "question" text not null, "options" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
@@ -331,6 +373,18 @@ async function ensureSchema(): Promise<void> {
     // first pass provably finite.
     `create table if not exists "parts_catalog_crawl_skips" ("vendor_key" text not null, "product_url" text not null, "reason" text not null, "attempts" integer not null default 1, "updated_at" timestamptz not null default now(), primary key ("vendor_key", "product_url"))`,
     `create table if not exists "parts_inventory" ("part_id" text primary key references "parts_catalog_items"("id") on delete cascade, "quantity_owned" integer not null default 0 check ("quantity_owned" >= 0), "updated_at" timestamptz not null default now())`,
+    `alter table "parts_inventory" add column if not exists "storage_location" text`,
+    `alter table "parts_inventory" add column if not exists "inventory_notes" text`,
+    `do $parts_inventory_details$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_inventory_storage_location_valid') then
+         alter table "parts_inventory" add constraint "parts_inventory_storage_location_valid"
+           check ("storage_location" is null or length("storage_location") <= 120);
+       end if;
+       if not exists (select 1 from pg_constraint where conname = 'parts_inventory_notes_valid') then
+         alter table "parts_inventory" add constraint "parts_inventory_notes_valid"
+           check ("inventory_notes" is null or length("inventory_notes") <= 2000);
+       end if;
+     end $parts_inventory_details$`,
     `create table if not exists "parts_robots" ("id" text primary key, "name" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_robots" add column if not exists "preview_object_path" text`,
     `alter table "parts_robots" add column if not exists "preview_file_name" text`,
@@ -486,10 +540,14 @@ async function ensureSchema(): Promise<void> {
     // Feature requests inbox for the site owner (Ishaan Bansal): every
     // team's requests land here. is_site_owner is set once by the migration
     // below; all statements idempotent.
+    `create table if not exists "cad_preview_jobs" ("id" text primary key, "team_id" text, "object_path" text not null, "format" text not null, "status" text not null default 'preparing', "preview_id" text, "error" text, "manifest" jsonb, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "ingested_emails" ("id" text primary key, "team_id" text, "mailbox" text not null, "message_id" text not null, "sender" text not null default '', "subject" text not null default '', "posted_message_id" text, "received_at" timestamptz, "ingested_at" timestamptz not null default now())`,
+    `create unique index if not exists "ingested_emails_mailbox_message_unique" on "ingested_emails" ("mailbox", "message_id")`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
     `alter table "applicants" add column if not exists "photo_thumb_url" text`,
+    `alter table "chunked_uploads" add column if not exists "storage_instance" text`,
     // Core tables below predate the boot-DDL array on the primary (created
     // via drizzle-kit push), but a FRESH secondary boots from this array
     // alone — so every table needs a CREATE here. All idempotent.
@@ -499,7 +557,26 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "personal_notepad" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "content" text not null default '<p></p>', "updated_at" timestamptz not null default now())`,
     `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,
     `create table if not exists "assistant_conversations" ("id" text primary key, "team_id" text, "title" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "assistant_conversations" add column if not exists "owner_id" text`,
     `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_prompt_runs" (
+       "id" text primary key,
+       "team_id" text not null,
+       "conversation_id" text not null,
+       "owner_id" text,
+       "account_id" text not null,
+       "prompt" text not null,
+       "payload" jsonb not null,
+       "status" text not null check ("status" in ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
+       "answer" text,
+       "error" text,
+       "activities" text not null default '[]',
+       "cancel_requested" boolean not null default false,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "assistant_prompt_runs_conversation_created_idx" on "assistant_prompt_runs" ("team_id", "conversation_id", "created_at")`,
+    `create unique index if not exists "assistant_prompt_runs_one_running_per_conversation" on "assistant_prompt_runs" ("team_id", "conversation_id") where "status" = 'running'`,
     `create table if not exists "assistant_skills" (
        "id" text primary key,
        "team_id" text not null,
@@ -508,9 +585,11 @@ async function ensureSchema(): Promise<void> {
        "instructions" text not null check (length("instructions") between 1 and 8000),
        "actions" jsonb not null default '[]'::jsonb check (jsonb_typeof("actions") = 'array'),
        "enabled" boolean not null default true,
+       "github_repository_url" text,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
+    `alter table "assistant_skills" add column if not exists "github_repository_url" text`,
     `create unique index if not exists "assistant_skills_team_name_unique" on "assistant_skills" ("team_id", lower("name"))`,
     `create index if not exists "assistant_skills_team_enabled_idx" on "assistant_skills" ("team_id", "enabled")`,
     `create table if not exists "onshape_mcp_connections" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "client_id" text not null, "access_token" jsonb not null, "refresh_token" jsonb, "expires_at" timestamptz not null, "scopes" text not null default '', "updated_at" timestamptz not null default now())`,
@@ -528,6 +607,12 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_mcp_oauth_states" add column if not exists "resource_uri" text not null default ''`,
     `create table if not exists "broadcasts" ("id" text primary key, "team_id" text, "message" text not null, "kind" text not null default 'message', "target_ip" text not null default '', "created_by" text not null default '', "created_at" timestamptz not null default now(), "expires_at" timestamptz not null default now())`,
     `create table if not exists "broadcast_acks" ("broadcast_id" text not null, "session_hash" text not null, "acked_at" timestamptz not null default now())`,
+    // One ack per (broadcast, session). Acks were written without a unique
+    // constraint, so every poll inserted another row; the "my broadcasts"
+    // join then returned the same broadcast once per accumulated row. Drop
+    // the duplicates before the index can be created.
+    `delete from "broadcast_acks" a using "broadcast_acks" b where a.ctid > b.ctid and a."broadcast_id" = b."broadcast_id" and a."session_hash" = b."session_hash"`,
+    `create unique index if not exists "broadcast_acks_broadcast_session_unique" on "broadcast_acks" ("broadcast_id", "session_hash")`,
     `create table if not exists "dashboard_charts" ("id" text primary key, "team_id" text, "owner_id" text, "source" text not null, "chart" text not null, "x_axis" text, "y_axis" text, "position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "data_snapshots" ("id" text primary key, "team_id" text, "label" text not null, "created_by" text not null default 'coordinator', "applicant_count" integer not null default 0, "payload" text not null, "created_at" timestamptz not null default now())`,
     `create table if not exists "display_settings" ("id" integer primary key default 1, "team_id" text, "custom_headline" text, "custom_subheadline" text, "show_names" boolean not null default true, "announce" boolean not null default true, "updated_at" timestamptz not null default now())`,
@@ -673,9 +758,29 @@ server.listen(port, () => {
         });
       }, 60 * 60 * 1000);
       catalogRefreshCheck.unref();
+      // Chunked uploads that nothing points at any more (a tab closed
+      // mid-upload, an attachment that was removed) keep their parts in
+      // storage forever otherwise, and a single abandoned CAD model can be
+      // hundreds of megabytes.
+      void sweepOrphanChunkUploads().catch((err) => {
+        logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+      });
+      const chunkSweepCheck = setInterval(() => {
+        void sweepOrphanChunkUploads().catch((err) => {
+          logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+        });
+      }, 60 * 60 * 1000);
+      chunkSweepCheck.unref();
       // Server-side scheduled chat delivery: posts due messages even when no
       // browser is open.
       startScheduledChatDispatcher();
+      // Persisted assistant prompts continue independently of the browser tab.
+      startAssistantPromptDispatcher();
+      // Team inbox: email forwarded into the team mailbox is posted into the
+      // chat. Inert until a mailbox and an allow list are configured.
+      startMailboxPoller("default");
+      // Pick up CAD preview conversions that a restart interrupted.
+      void resumeStalePreviewJobs();
       // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
       // The scheduled sync above only runs once a day, which is far too slow to
       // seed a 2,387-product catalog, so this loop owns the long first pass and

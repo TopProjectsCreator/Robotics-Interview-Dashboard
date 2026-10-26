@@ -880,3 +880,26 @@
     outline-color: Highlight !important;
   }
 }
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .cad-landing__brand-copy small { font-size: 11px; }
+  .cad-landing__workspace-kicker { font-size: 11px; }
+  .cad-landing__preview-pill { font-size: 11px; }
+  .cad-landing__result-meta { font-size: 11px; }
+  .cad-landing__workspace-sidebar-label { font-size: 11px; }
+  .cad-result__name-row span { font-size: 11px; }
+  .cad-result__body p.mono { font-size: 11px; }
+  .cad-landing__workspace-foot { font-size: 11px; }
+  .cad-landing__format-board-top { font-size: 11px; }
+  .cad-landing__model-top { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .cad-landing__hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
+}

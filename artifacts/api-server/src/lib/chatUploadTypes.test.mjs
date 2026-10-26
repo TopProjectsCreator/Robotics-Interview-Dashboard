@@ -57,6 +57,7 @@ async function loadStorage(t) {
       pool: {},
       currentInstance: () => "primary",
       chunkedUploadsTable: { uploadId: "upload_id" },
+      cadPreviewJobsTable: { id: "id", status: "status", objectPath: "object_path", format: "format", updatedAt: "updated_at", manifest: "manifest", previewId: "preview_id", error: "error" },
       teamsTable: {},
       DEFAULT_TEAM_ID: "default",
       normalizeTeamName: (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase(),
@@ -66,6 +67,7 @@ async function loadStorage(t) {
     namedExports: {
       MAX_STORAGE_UPLOAD_BYTES: 50 * 1024 * 1024,
       hasSecondaryStorage: () => false,
+      storageInstanceRestricted: () => false,
       getCadStorageStatus: () => ({
         usingBackupStorage: false,
         lastFailoverAt: null,
@@ -82,6 +84,7 @@ async function loadStorage(t) {
       authenticatedInterviewerId: () => "account-1",
       requireAdmin: (_req, _res, next) => next(),
       requireCoordinator: (_req, _res, next) => next(),
+      requireWolverinesCoordinator: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
       requestTeamId: async () => "default",

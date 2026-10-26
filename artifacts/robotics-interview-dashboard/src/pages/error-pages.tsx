@@ -265,7 +265,7 @@ function Mark() {
       <BrandMark />
       <span className="leading-none text-white">
         <b className="block text-[15px] tracking-[.18em]">ROBOTICS</b>
-        <small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">
+        <small className="mono text-[11px] sm:text-[9px] uppercase tracking-[.3em] opacity-60">
           Tryout control
         </small>
       </span>
@@ -304,7 +304,7 @@ function ErrorStatePage({ config, target, retry }: ErrorStatePageProps) {
 
   return (
     <main
-      className="noise relative flex min-h-[100dvh] overflow-hidden bg-[#172a3a] text-white"
+      className="noise relative flex min-h-[100dvh] overflow-x-clip bg-[#172a3a] text-white"
       data-testid="page-error-state"
     >
       {/* decorative rings — same language as the login hero */}
@@ -398,7 +398,7 @@ function ErrorStatePage({ config, target, retry }: ErrorStatePageProps) {
               <BrandMark />
               <span className="leading-none text-[#182232]">
                 <b className="block text-[15px] tracking-[.18em]">ROBOTICS</b>
-                <small className="mono text-[9px] uppercase tracking-[.3em] opacity-60">
+                <small className="mono text-[11px] sm:text-[9px] uppercase tracking-[.3em] opacity-60">
                   Tryout control
                 </small>
               </span>

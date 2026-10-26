@@ -222,7 +222,7 @@ function JavaEditor({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-auto bg-[#1e1e1e]" data-testid="code-editor">
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-auto bg-[#1e1e1e]" data-testid="code-editor">
       <div className={`select-none px-3 py-4 text-right text-[#858585] ${EDITOR_FONT}`} aria-hidden="true">
         {lines.map((_, index) => (
           <div key={index}>{index + 1}</div>
@@ -296,6 +296,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<SideTab>("explorer");
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(true);
   const [bottomTab, setBottomTab] = useState<BottomTab>("problems");
   const [bottomOpen, setBottomOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -449,6 +450,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   const openFile = (id: string) => {
     setOpenIds((current) => (current.includes(id) ? current : [...current, id]));
     setActiveId(id);
+    setMobilePanelOpen(false);
   };
 
   const closeFile = (id: string) => {
@@ -949,9 +951,15 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
       ? { queryKey: getListCodeRevisionsQueryKey(projectId), refetchInterval: streamHealthy ? false : (10000 )}
       : { queryKey: ["code-revisions"], enabled: false },
   } as never) as unknown as { data?: { revisions: { id: string; message: string; author: string | null; createdAt: string }[] } };
+  const activeSideLabel = {
+    explorer: "Explorer",
+    git: "Git",
+    ai: "AI assistant",
+    deploy: "Deploy",
+  }[sideTab];
 
   return (
-    <div className="space-y-4" data-testid="code-workspace">
+    <div className="code-workspace min-w-0 space-y-4" data-testid="code-workspace">
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-primary">Code workspace</p>
@@ -961,13 +969,13 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             commit to any git endpoint, and deploy over USB.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="code-project-actions flex flex-wrap items-center gap-2">
           <select
             value={projectId ?? ""}
             onChange={(event) => setProjectId(event.target.value || null)}
             aria-label="Code project"
             data-testid="code-project-select"
-            className="h-9 rounded-lg border border-border bg-card px-3 text-sm"
+            className="code-project-select h-9 min-w-0 max-w-full rounded-lg border border-border bg-card px-3 text-base md:text-sm"
           >
             {projectList.map((item) => (
               <option key={item.id} value={item.id}>
@@ -979,11 +987,11 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             <Plus size={14} aria-hidden="true" /> Project
           </Button>
           {project && (
-            <Button type="button" variant="ghost" size="sm" onClick={deleteProject} data-testid="code-delete-project">
+            <Button type="button" variant="ghost" size="sm" onClick={deleteProject} aria-label="Delete project" title="Delete project" data-testid="code-delete-project">
               <Trash2 size={14} aria-hidden="true" />
             </Button>
           )}
-          <div className="flex -space-x-1.5" title="Collaborators here now">
+          <div className="flex -space-x-1.5" title="Collaborators here now" aria-label="Collaborators here now">
             {roster.slice(0, 6).map((person) => (
               <span
                 key={person.displayName}
@@ -1018,9 +1026,9 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
           </Button>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-[#1e1e1e] text-[#d4d4d4]">
+        <div className="code-ide overflow-hidden rounded-2xl border border-border bg-[#1e1e1e] text-[#d4d4d4]">
           {/* IDE toolbar */}
-          <div className="flex items-center gap-2 border-b border-white/10 bg-[#252526] px-3 py-2">
+          <div className="code-ide-toolbar flex min-w-0 items-center gap-2 border-b border-white/10 bg-[#252526] px-3 py-2">
             <span className="flex gap-1.5" aria-hidden="true">
               <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
               <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
@@ -1029,9 +1037,9 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             <span className="mono ml-2 truncate text-[11px] text-[#9d9d9d]" data-testid="code-project-name">
               {project.name} · SDK {project.sdkVersion}
             </span>
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-[#9d9d9d]">
+            <span className="code-toolbar-status ml-auto flex shrink-0 items-center gap-2 text-[11px] text-[#9d9d9d]">
               <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
+                className={`code-collab-status inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
                   collabStatus === "connected" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"
                 }`}
                 data-testid="code-collab-status"
@@ -1039,16 +1047,16 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                 <Users size={11} aria-hidden="true" />
                 {collabStatus === "connected" ? `Live${peers.length ? ` · ${peers.length}` : ""}` : collabStatus}
               </span>
-              <span data-testid="code-save-status" className="inline-flex items-center gap-1">
+              <span data-testid="code-save-status" className="code-save-status inline-flex items-center gap-1">
                 {saveStatus === "saving" ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
                 {saveStatus}
               </span>
             </span>
           </div>
 
-          <div className="flex min-h-[540px]">
+          <div className="code-ide-body flex min-h-[540px]">
             {/* Activity bar */}
-            <div className="flex w-12 flex-col items-center gap-1 border-r border-white/10 bg-[#252526] py-2" role="tablist" aria-label="IDE side panels">
+            <div className="code-activity-bar flex w-12 shrink-0 flex-col items-center gap-1 border-r border-white/10 bg-[#252526] py-2" role="group" aria-label="IDE side panels">
               {(
                 [
                   { key: "explorer", icon: Files, label: "Explorer" },
@@ -1060,21 +1068,44 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                 <button
                   key={key}
                   type="button"
-                  role="tab"
-                  aria-selected={sideTab === key}
+                  aria-pressed={sideTab === key}
+                  aria-controls="code-side-panel"
                   title={label}
                   aria-label={label}
                   data-testid={`code-side-${key}`}
-                  onClick={() => setSideTab(key)}
-                  className={`rounded-lg p-2.5 transition ${sideTab === key ? "bg-white/10 text-white" : "text-[#858585] hover:text-white"}`}
+                  onClick={() => {
+                    setSideTab(key);
+                    setMobilePanelOpen(true);
+                  }}
+                  className={`code-side-button flex items-center justify-center rounded-lg p-2.5 transition ${sideTab === key ? "bg-white/10 text-white" : "text-[#858585] hover:text-white"}`}
                 >
                   <Icon size={19} aria-hidden="true" />
+                  <span className="code-side-label">{label}</span>
                 </button>
               ))}
             </div>
 
             {/* Side panel */}
-            <div className="hidden w-[280px] shrink-0 flex-col border-r border-white/10 bg-[#252526] sm:flex" data-testid="code-side-panel">
+            <div
+              id="code-side-panel"
+              role="region"
+              aria-label={`${activeSideLabel} panel`}
+              className={`code-side-panel hidden w-[280px] shrink-0 flex-col border-r border-white/10 bg-[#252526] sm:flex ${mobilePanelOpen ? "code-mobile-panel-open" : ""}`}
+              data-testid="code-side-panel"
+            >
+              <div className="code-mobile-panel-heading hidden items-center justify-between border-b border-white/10 px-3 py-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">{activeSideLabel}</span>
+                <button
+                  type="button"
+                  aria-label="Return to editor"
+                  data-testid="code-mobile-panel-close"
+                  onClick={() => setMobilePanelOpen(false)}
+                  className="flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg text-[12px] text-[#d4d4d4] hover:bg-white/10"
+                >
+                  <ChevronRight size={14} aria-hidden="true" />
+                  Editor
+                </button>
+              </div>
               {sideTab === "explorer" && (
                 <div className="flex min-h-0 flex-1 flex-col">
                   <div className="flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#9d9d9d]">
@@ -1089,7 +1120,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                     </span>
                   </div>
                   <div className="px-3 pb-2">
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter files" aria-label="Filter files" data-testid="code-search" className="h-8 border-white/10 bg-[#1e1e1e] text-sm text-white placeholder:text-[#6a6a6a]" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter files" aria-label="Filter files" data-testid="code-search" className="h-8 border-white/10 bg-[#1e1e1e] text-base md:text-sm text-white placeholder:text-[#6a6a6a]" />
                   </div>
                   <div className="min-h-0 flex-1 overflow-auto px-1 pb-3">
                     {fileList.length === 0 && (
@@ -1107,7 +1138,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                           <button
                             type="button"
                             onClick={() => setCollapsedDirs((current) => ({ ...current, [dir]: !collapsed }))}
-                            className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[12px] font-semibold text-[#c5c5c5] hover:bg-white/5"
+                            className="code-dir-toggle flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[12px] font-semibold text-[#c5c5c5] hover:bg-white/5"
                           >
                             {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                             {collapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
@@ -1300,31 +1331,33 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
           </div>
 
           {/* Editor column */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="code-editor-column flex min-w-0 flex-1 flex-col">
             {/* Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10 bg-[#252526] px-2" role="tablist" aria-label="Open files">
-              {openIds.map((id) => {
-                const file = fileList.find((entry) => entry.id === id);
-                if (!file) return null;
-                const active = id === activeId;
-                return (
-                  <div
-                    key={id}
-                    role="tab"
-                    aria-selected={active}
-                    data-testid={`code-tab-${file.path}`}
-                    className={`flex shrink-0 items-center gap-1.5 border-t-2 px-3 py-2 text-[12px] ${active ? "border-[#0e639c] bg-[#1e1e1e] text-white" : "border-transparent text-[#9d9d9d] hover:text-white"}`}
-                  >
-                    <button type="button" onClick={() => setActiveId(id)} className="truncate">
-                      {fileNameOf(file.path)}
-                    </button>
-                    <button type="button" aria-label={`Close ${file.path}`} onClick={() => closeFile(id)} className="rounded p-0.5 hover:bg-white/10">
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  </div>
-                );
-              })}
-              <div className="ml-auto flex items-center gap-2 py-1 pr-1">
+            <div className="code-tabs-row flex min-w-0 items-center gap-1 border-b border-white/10 bg-[#252526] px-2">
+              <div className="code-open-tabs flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" role="tablist" aria-label="Open files">
+                {openIds.map((id) => {
+                  const file = fileList.find((entry) => entry.id === id);
+                  if (!file) return null;
+                  const active = id === activeId;
+                  return (
+                    <div
+                      key={id}
+                      role="tab"
+                      aria-selected={active}
+                      data-testid={`code-tab-${file.path}`}
+                      className={`flex shrink-0 items-center gap-1.5 border-t-2 px-2 py-2 text-[12px] sm:px-3 ${active ? "border-[#0e639c] bg-[#1e1e1e] text-white" : "border-transparent text-[#9d9d9d] hover:text-white"}`}
+                    >
+                      <button type="button" onClick={() => setActiveId(id)} className="max-w-32 truncate sm:max-w-none">
+                        {fileNameOf(file.path)}
+                      </button>
+                      <button type="button" aria-label={`Close ${file.path}`} onClick={() => closeFile(id)} className="flex min-h-10 min-w-10 items-center justify-center rounded hover:bg-white/10 sm:min-h-0 sm:min-w-0">
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="code-editor-actions flex shrink-0 items-center gap-2 py-1">
                 {peers.filter((peer) => peer.name !== displayName).slice(0, 4).map((peer) => (
                   <span key={peer.name} title={`${peer.name} is editing here`} className="h-5 w-5 rounded-full text-center text-[9px] font-bold leading-5 text-[#1d2c36]" style={{ backgroundColor: peer.color }}>
                     {peer.name.slice(0, 1).toUpperCase()}
@@ -1338,7 +1371,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                     void flushActiveFile().then(() => setNotice("Saved."));
                   }}
                   data-testid="code-save"
-                  className="h-7 bg-[#0e639c] text-white hover:bg-[#1177bb]"
+                  className="h-9 bg-[#0e639c] text-white hover:bg-[#1177bb] sm:h-7"
                 >
                   <Save size={13} /> Save
                 </Button>
@@ -1346,7 +1379,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             </div>
 
             {/* Editor */}
-            <div className="flex min-h-[380px] flex-1 flex-col">
+            <div className="code-editor-stage flex min-h-[380px] flex-1 flex-col">
               {!activeFile || !collab ? (
                 <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-[#858585]">
                   {fileList.length === 0 ? "Seed the BIOBUZZ starter from the Explorer to begin." : "Pick a file from the Explorer to start editing together."}
@@ -1375,7 +1408,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                     setBottomOpen(true);
                   }}
                   data-testid="code-bottom-problems"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] ${bottomTab === "problems" && bottomOpen ? "text-white" : "text-[#9d9d9d] hover:text-white"}`}
+                  className={`flex min-h-10 items-center gap-1.5 px-3 py-1.5 text-[12px] ${bottomTab === "problems" && bottomOpen ? "text-white" : "text-[#9d9d9d] hover:text-white"}`}
                 >
                   <AlertCircle size={13} aria-hidden="true" />
                   Problems {errorCount > 0 && <span className="rounded-full bg-red-500/20 px-1.5 text-red-300">{errorCount}</span>}
@@ -1389,16 +1422,16 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                     setBottomOpen(true);
                   }}
                   data-testid="code-bottom-terminal"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] ${bottomTab === "terminal" && bottomOpen ? "text-white" : "text-[#9d9d9d] hover:text-white"}`}
+                  className={`flex min-h-10 items-center gap-1.5 px-3 py-1.5 text-[12px] ${bottomTab === "terminal" && bottomOpen ? "text-white" : "text-[#9d9d9d] hover:text-white"}`}
                 >
                   <SquareTerminal size={13} aria-hidden="true" /> Terminal
                 </button>
-                <button type="button" aria-label={bottomOpen ? "Collapse panel" : "Expand panel"} onClick={() => setBottomOpen((open) => !open)} className="ml-auto rounded p-1.5 text-[#9d9d9d] hover:text-white">
+                <button type="button" aria-label={bottomOpen ? "Collapse panel" : "Expand panel"} onClick={() => setBottomOpen((open) => !open)} className="ml-auto flex min-h-10 min-w-10 items-center justify-center rounded p-1.5 text-[#9d9d9d] hover:text-white">
                   {bottomOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
               </div>
               {bottomOpen && (
-                <div className="max-h-44 min-h-[104px] overflow-auto border-t border-white/10 px-3 py-2 text-[12px]" data-testid="code-bottom-panel">
+                <div className="code-bottom-panel max-h-44 min-h-[104px] overflow-auto border-t border-white/10 px-3 py-2 text-[12px]" data-testid="code-bottom-panel">
                   {bottomTab === "problems" ? (
                     problems.length === 0 && deployProblems.length === 0 ? (
                       <p className="flex items-center gap-1.5 text-[#6a6a6a]">
@@ -1452,12 +1485,12 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
             </div>
 
             {/* Status bar */}
-            <div className="mono flex items-center gap-4 overflow-x-auto bg-[#0e639c] px-3 py-1 text-[11px] text-white" data-testid="code-statusbar">
+            <div className="code-statusbar mono flex min-w-0 items-center gap-4 overflow-x-auto bg-[#0e639c] px-3 py-1 text-[11px] text-white" data-testid="code-statusbar">
               <span>SDK {BIOBUZZ_SDK_VERSION}</span>
               <span>JDK 21 · Java 8</span>
-              <span className="truncate">{activeFile ? activeFile.path : "no file open"}</span>
-              <span className="ml-auto shrink-0">{branch}</span>
-              <span className="shrink-0">{roster.length > 0 ? `${roster.length} here` : "solo"}</span>
+              <span className="code-status-file min-w-0 truncate">{activeFile ? activeFile.path : "no file open"}</span>
+              <span className="code-status-branch ml-auto shrink-0">{branch}</span>
+              <span className="code-status-roster shrink-0">{roster.length > 0 ? `${roster.length} here` : "solo"}</span>
             </div>
           </div>
         </div>
@@ -1477,7 +1510,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
                 type="button"
                 onClick={() => downloadBlob(entry.name.split("/").pop() ?? entry.name, entry.content, "text/x-java-source")}
                 data-testid={`code-onbot-${entry.name}`}
-                className="mono rounded-lg border border-border px-2.5 py-1.5 text-[11px] hover:border-primary"
+                className="code-onbot-export-button mono rounded-lg border border-border px-2.5 py-1.5 text-[11px] hover:border-primary"
               >
                 {entry.name}
               </button>
@@ -1492,14 +1525,14 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
 function FileRow({ file, active, onOpen, onDelete }: { file: CodeFile; active: boolean; onOpen: () => void; onDelete: () => void }) {
   return (
     <div
-      className={`group flex items-center gap-1 rounded px-2 py-1 text-[12.5px] ${active ? "bg-[#094771] text-white" : "text-[#c5c5c5] hover:bg-white/5 hover:text-white"}`}
+      className={`code-file-row group flex items-center gap-1 rounded px-2 py-1 text-[12.5px] ${active ? "bg-[#094771] text-white" : "text-[#c5c5c5] hover:bg-white/5 hover:text-white"}`}
       data-testid={`code-file-${file.path}`}
     >
-      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+      <button type="button" onClick={onOpen} className="code-file-open flex min-w-0 flex-1 items-center gap-1.5 text-left">
         <FileText size={13} className="shrink-0 text-[#9d9d9d]" aria-hidden="true" />
         <span className="truncate">{fileNameOf(file.path)}</span>
       </button>
-      <button type="button" title={`Delete ${file.path}`} aria-label={`Delete ${file.path}`} onClick={onDelete} className="rounded p-0.5 text-[#858585] opacity-0 hover:bg-white/10 hover:text-red-300 focus:opacity-100 group-hover:opacity-100">
+      <button type="button" title={`Delete ${file.path}`} aria-label={`Delete ${file.path}`} onClick={onDelete} className="code-file-delete rounded p-0.5 text-[#858585] opacity-0 hover:bg-white/10 hover:text-red-300 focus:opacity-100 group-hover:opacity-100">
         <Trash2 size={12} aria-hidden="true" />
       </button>
     </div>

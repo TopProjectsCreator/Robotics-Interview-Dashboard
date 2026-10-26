@@ -49,4 +49,29 @@ describe("chat attachment cleanup", () => {
     )).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the storage instance on a chunked attachment path", () => {
+    // The instance segment used to be swallowed by the id group, so the
+    // delete went to /objects/chunk/secondary and the object was never
+    // removed.
+    expect(chatAttachmentObjectIds(
+      "[model.step](/api/storage/objects/chunk/secondary/8f3e1c22-1111-4222-8333-444455556666)",
+    )).toEqual(["chunk/secondary/8f3e1c22-1111-4222-8333-444455556666"]);
+    expect(chatAttachmentObjectIds(
+      "[model.step](/api/storage/objects/chunk/8f3e1c22-1111-4222-8333-444455556666)",
+    )).toEqual(["chunk/8f3e1c22-1111-4222-8333-444455556666"]);
+  });
+
+  it("deletes a chunked attachment through its instance-prefixed path", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await cleanupChatMessageAttachments(
+      "[model.step](/api/storage/objects/chunk/secondary/8f3e1c22-1111-4222-8333-444455556666)",
+    )).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${import.meta.env.BASE_URL}api/storage/objects/chunk/secondary/8f3e1c22-1111-4222-8333-444455556666`,
+      { method: "DELETE", credentials: "include" },
+    );
+  });
 });

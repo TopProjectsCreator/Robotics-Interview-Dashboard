@@ -1310,9 +1310,9 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
-          description: Conversation scope. Shared is the team channel; direct requires author and peer.
+          description: Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.
         - name: author
           in: query
           required: false
@@ -1325,6 +1325,12 @@ paths:
           schema:
             type: string
           description: Configured interviewer label for the direct conversation.
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
       responses:
         "200":
           description: Interviewer chat
@@ -1467,7 +1473,7 @@ paths:
     get:
       operationId: getChatConversations
       tags: [queue]
-      summary: List direct conversations involving the current interviewer
+      summary: List direct conversations and channels involving the current interviewer
       responses:
         "200":
           description: Direct conversation summaries, newest activity first
@@ -1475,6 +1481,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatConversationList"
+  /queue/chat/channels:
+    get:
+      operationId: listChatChannels
+      tags: [queue]
+      summary: List invite-only channels visible to the signed-in interviewer
+      description: Members see only their channels; admins (coordinators) see every team channel.
+      responses:
+        "200":
+          description: Channels with members and latest activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannelList"
+    post:
+      operationId: createChatChannel
+      tags: [queue]
+      summary: Create an invite-only channel (admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatChannelInput"
+      responses:
+        "201":
+          description: Channel created; the creating admin is added as a member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannel"
+        "400":
+          description: Missing or invalid name/members
+        "403":
+          description: Admins only
+        "409":
+          description: A channel with that name already exists
+  /queue/chat/channels/{channelId}:
+    patch:
+      operationId: updateChatChannel
+      tags: [queue]
+      summary: Rename a channel and/or replace its invited members (admins only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatChannelUpdateInput"
+      responses:
+        "200":
+          description: Updated channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatChannel"
+        "404":
+          description: Channel not found
+    delete:
+      operationId: deleteChatChannel
+      tags: [queue]
+      summary: Delete a channel and its messages (admins only)
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Channel and its messages deleted
+        "404":
+          description: Channel not found
   /queue/chat/{messageId}/poll:
     post:
       operationId: createChatPoll
@@ -1617,7 +1700,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
         - name: author
           in: query
@@ -1629,6 +1712,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Invite-only channel id for channel-scope whiteboards.
       responses:
         "200":
           description: Available interviewer whiteboards
@@ -1669,7 +1758,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [shared, direct]
+            enum: [shared, direct, channel]
             default: shared
         - name: author
           in: query
@@ -1681,6 +1770,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Invite-only channel id for channel-scope whiteboards.
       responses:
         "200":
           description: Interviewer whiteboard
@@ -1990,6 +2085,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/questions/{questionId}/answer:
+    post:
+      operationId: answerAssistantQuestion
+      tags: [assistant]
+      summary: Submit answers to a pending assistant question
+      parameters:
+        - name: questionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQuestionAnswersInput"
+      responses:
+        "200":
+          description: Answers submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submitted]
+                properties:
+                  submitted: { type: boolean }
+        "404":
+          description: Question is no longer pending
+  /assistant/questions/pending:
+    get:
+      operationId: getPendingAssistantQuestions
+      tags: [assistant]
+      summary: List pending assistant questions for the signed-in coordinator
+      responses:
+        "200":
+          description: Pending questions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPendingQuestionsResponse"
+  /assistant/custom-workspace-builder/runs/latest:
+    get:
+      operationId: getLatestAssistantBuilderRun
+      tags: [assistant]
+      summary: Get the signed-in coordinator's latest custom workspace builder run
+      responses:
+        "200":
+          description: Latest builder run, if one exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantBuilderRunResponse"
   /assistant/skills:
     get:
       operationId: listAssistantSkills
@@ -2408,6 +2555,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantHistory"
+  /assistant/conversations/{conversationId}/queue:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    get:
+      operationId: getAssistantPromptQueue
+      tags: [assistant]
+      summary: Get persisted prompt run and queue statuses
+      responses:
+        "200":
+          description: Prompt runs for the authorized conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptQueue"
+        "404":
+          description: Conversation not found
+    post:
+      operationId: queueAssistantPrompt
+      tags: [assistant]
+      summary: Queue an assistant prompt behind the active run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantQueueInput"
+      responses:
+        "201":
+          description: Prompt added to the conversation queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptRun"
+        "404":
+          description: Conversation not found
+  /assistant/conversations/{conversationId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    post:
+      operationId: stopAssistantPrompt
+      tags: [assistant]
+      summary: Stop the active assistant prompt
+      responses:
+        "200":
+          description: Stop requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantPromptQueue"
+        "404":
+          description: Conversation not found
   /parts/dashboard:
     get:
       operationId: getPartsDashboard
@@ -2439,6 +2637,11 @@ paths:
           schema:
             type: boolean
           description: When true, only return manually saved catalog items, excluding synced supplier feed records.
+        - name: inventoryOnly
+          in: query
+          schema:
+            type: boolean
+          description: When true, return manually saved items and supplier catalog items with owned stock or team allocations.
         - name: limit
           in: query
           schema:
@@ -2681,6 +2884,69 @@ paths:
                 $ref: "#/components/schemas/PartsCatalogItem"
         "409":
           description: Owned quantity cannot be less than allocated quantity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/catalog/{partId}/details:
+    get:
+      operationId: getPartsCatalogDetails
+      tags: [parts]
+      summary: Get a team-scoped inventory part and supplier quote history
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Inventory part details, reusable team locations, and supplier quote history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogDetails"
+        "404":
+          description: Catalog part not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePartsCatalogDetails
+      tags: [parts]
+      summary: Update saved product image, cost, location, or inventory notes
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsCatalogDetailsUpdateInput"
+      responses:
+        "200":
+          description: Updated inventory part and supplier quote history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsCatalogDetails"
+        "400":
+          description: Invalid part details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Catalog part not found
           content:
             application/json:
               schema:
@@ -4276,7 +4542,7 @@ components:
           minimum: 0
     PartsCatalogItem:
       type: object
-      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
+      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, storageLocation, inventoryNotes, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -4298,6 +4564,12 @@ components:
         imageUrl:
           type: [string, "null"]
           format: uri
+        storageLocation:
+          type: [string, "null"]
+          maxLength: 120
+        inventoryNotes:
+          type: [string, "null"]
+          maxLength: 2000
         unitCost:
           type: ["number", "null"]
           minimum: 0
@@ -4360,6 +4632,22 @@ components:
             $ref: "#/components/schemas/PartsCatalogItem"
         total:
           type: integer
+    PartsCatalogDetails:
+      type: object
+      required: [item, priceSnapshots, locations]
+      properties:
+        item:
+          $ref: "#/components/schemas/PartsCatalogItem"
+        priceSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartsPriceSnapshot"
+        locations:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 120
     PartsCatalogSearchResult:
       type: object
       required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, currency, priceIsStartingAt, inStock]
@@ -4642,6 +4930,27 @@ components:
         costCurrency:
           type: ["string", "null"]
           pattern: "^[A-Z]{3}$"
+    PartsCatalogDetailsUpdateInput:
+      type: object
+      minProperties: 1
+      properties:
+        imageUrl:
+          type: ["string", "null"]
+          format: uri
+          maxLength: 2000
+        unitCost:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 99999999.99
+        costCurrency:
+          type: ["string", "null"]
+          pattern: "^[A-Z]{3}$"
+        storageLocation:
+          type: ["string", "null"]
+          maxLength: 120
+        inventoryNotes:
+          type: ["string", "null"]
+          maxLength: 2000
     PartsRobotAllocationInput:
       type: object
       required: [quantity]
@@ -5824,12 +6133,16 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label receiving a direct message.
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id receiving the message; only channel members (and admins) may post.
         parentMessageId:
           type: string
           nullable: true
@@ -5862,12 +6175,16 @@ components:
           description: Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label receiving a scheduled direct message.
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to.
         parentMessageId:
           type: string
           nullable: true
@@ -5915,10 +6232,14 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for channel-scope scheduled messages.
         recipient:
           type: string
           nullable: true
@@ -5966,10 +6287,14 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id when scope is channel; peer carries the channel id.
         parentMessageId:
           type: string
           nullable: true
@@ -6029,10 +6354,14 @@ components:
             minLength: 1
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for channel-scope read receipts.
     ChatMessagesReadResult:
       type: object
       required: [recorded]
@@ -6091,7 +6420,7 @@ components:
           minimum: 0
     ChatConversationSummary:
       type: object
-      required: [peer, lastMessageAt, lastMessageAuthor, lastMessage]
+      required: [peer, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
       properties:
         peer:
           type: string
@@ -6101,9 +6430,11 @@ components:
           type: string
         lastMessage:
           type: string
+        isUnread:
+          type: boolean
     ChatConversationList:
       type: object
-      required: [items, shared]
+      required: [items, shared, channels]
       properties:
         items:
           type: array
@@ -6114,6 +6445,27 @@ components:
           description: Latest team-channel activity, null when the channel is empty
           allOf:
             - $ref: "#/components/schemas/ChatConversationSummary"
+        channels:
+          type: array
+          description: Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first.
+          items:
+            $ref: "#/components/schemas/ChannelActivity"
+    ChannelActivity:
+      type: object
+      required: [channelId, channelName, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]
+      properties:
+        channelId:
+          type: string
+        channelName:
+          type: string
+        lastMessageAt:
+          type: string
+        lastMessageAuthor:
+          type: string
+        lastMessage:
+          type: string
+        isUnread:
+          type: boolean
     ChatReaction:
       type: object
       required: [emoji, count, authors]
@@ -6126,6 +6478,100 @@ components:
           type: array
           items:
             type: string
+    ChatChannelRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    ChatChannelMember:
+      type: object
+      required: [id, displayName, role]
+      properties:
+        id:
+          type: string
+          description: Interviewer account id.
+        displayName:
+          type: string
+        role:
+          type: string
+          description: "coordinator, treasurer, or interviewer"
+        addedBy:
+          type: string
+          description: Display name of the admin that invited this person.
+    ChatChannel:
+      type: object
+      required: [id, name, createdBy, createdAt, updatedAt, members, youAreMember, canManage]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdBy:
+          type: string
+          description: Display name of the admin that created the channel.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatChannelMember"
+        youAreMember:
+          type: boolean
+          description: True when the signed-in account is invited to this channel.
+        canManage:
+          type: boolean
+          description: True for admins, who can rename, invite, and delete.
+        lastMessageAt:
+          type: [string, "null"]
+          format: date-time
+          description: Newest message time in the channel, null when empty.
+        lastMessageAuthor:
+          type: [string, "null"]
+        lastMessage:
+          type: [string, "null"]
+    ChatChannelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatChannel"
+    ChatChannelInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: Channel display name; must be unique within the team (case-insensitive).
+        memberIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+          description: Interviewer account ids to invite; the creating admin is always included.
+    ChatChannelUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        memberIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+          description: Full replacement of the invited members.
     ChatReactionInput:
       type: object
       required: [emoji, author]
@@ -6174,10 +6620,15 @@ components:
             $ref: "#/components/schemas/InterviewChatMessage"
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
+        channel:
+          type: ["object", "null"]
+          description: Channel details when scope is channel.
+          allOf:
+            - $ref: "#/components/schemas/ChatChannelRef"
     ChatCustomEmoji:
       type: object
       required: [id, name, imagePath, createdBy, createdAt]
@@ -6237,12 +6688,16 @@ components:
           description: Serialized whiteboard scene or collaborative document state
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: string
           nullable: true
           description: Configured interviewer label for a direct whiteboard
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id for a channel whiteboard
     InterviewWhiteboardUpdateInput:
       type: object
       required: [title, data]
@@ -6269,7 +6724,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
@@ -6287,7 +6742,7 @@ components:
             $ref: "#/components/schemas/InterviewWhiteboard"
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: string
           nullable: true
@@ -6387,7 +6842,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: [string, "null"]
         createdAt:
@@ -6406,10 +6861,13 @@ components:
           maxLength: 120
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: [string, "null"]
+        channelId:
+          type: [string, "null"]
+          description: Invite-only channel id for a channel-scope board.
     BoardCardInput:
       type: object
       required: [title]
@@ -6589,7 +7047,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
         peer:
           type: [string, "null"]
         createdAt:
@@ -6612,10 +7070,13 @@ components:
           maxLength: 120
         scope:
           type: string
-          enum: [shared, direct]
+          enum: [shared, direct, channel]
           default: shared
         recipient:
           type: [string, "null"]
+        channelId:
+          type: [string, "null"]
+          description: Invite-only channel id for a channel-scope spreadsheet.
     SpreadsheetUpdateInput:
       type: object
       required: [expectedRevision]
@@ -6883,6 +7344,13 @@ components:
                 type: string
               objectPath:
                 type: string
+        mcpContinuation:
+          type: object
+          description: "Continue a pending coordinator request after its custom MCP endpoint has connected."
+          required: [endpointUrl]
+          properties:
+            endpointUrl:
+              type: string
         chatContext:
           type: array
           description: "Recent interviewer chat messages for conversational context."
@@ -6894,9 +7362,119 @@ components:
                 type: string
               message:
                 type: string
+    AssistantQueueInput:
+      allOf:
+        - $ref: "#/components/schemas/AssistantInput"
+      required: [question]
+    AssistantPromptRun:
+      type: object
+      required: [id, conversationId, prompt, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled, interrupted]
+        answer:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    AssistantPromptQueue:
+      type: object
+      required: [items, isRunning]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantPromptRun"
+        isRunning:
+          type: boolean
+    AssistantQuestionAnswersInput:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          additionalProperties: true
+    AssistantPendingQuestionsResponse:
+      type: object
+      required: [questions]
+      properties:
+        questions:
+          type: array
+          items:
+            type: object
+            required: [id, questions]
+            properties:
+              id:
+                type: string
+              questions:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+    AssistantBuilderRun:
+      type: object
+      required: [id, status, prompt, question, answers, activities, result, error, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [running, waiting_for_answer, completed, failed, interrupted]
+        prompt:
+          type: string
+        question:
+          type: ["object", "null"]
+          required: [id, questions]
+          properties:
+            id:
+              type: string
+            questions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+        answers:
+          type: object
+          additionalProperties: true
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantActivity"
+        result:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AssistantBuilderRunResponse:
+      type: object
+      required: [run]
+      properties:
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/AssistantBuilderRun"
+            - type: "null"
     AssistantSkill:
       type: object
-      required: [id, name, description, instructions, actions, enabled, createdAt, updatedAt]
+      required: [id, name, description, instructions, actions, enabled, githubRepositoryUrl, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -6912,6 +7490,11 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
+          description: Optional public GitHub repository URL
         createdAt:
           type: string
           format: date-time
@@ -6950,6 +7533,10 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
     AssistantSkillUpdate:
       type: object
       minProperties: 1
@@ -6974,6 +7561,10 @@ components:
             type: string
         enabled:
           type: boolean
+        githubRepositoryUrl:
+          type: ["string", "null"]
+          maxLength: 500
+          pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$"
     AssistantResponse:
       type: object
       required: [answer]
@@ -6995,6 +7586,12 @@ components:
           type: string
         detail:
           type: string
+        input:
+          type: string
+          description: "Redacted, size-limited tool input for coordinator review."
+        output:
+          type: string
+          description: "Size-limited tool result for coordinator review."
     GenerateImageInput:
       type: object
       required: [prompt]
@@ -7538,7 +8135,7 @@ components:
           maxLength: 200000
     CustomWorkspace:
       type: object
-      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt]
+      required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt, critiqueRounds, verifiedCritiqueRounds]
       properties:
         id:
           type: string
@@ -7570,6 +8167,14 @@ components:
         updatedAt:
           type: string
           format: date-time
+        critiqueRounds:
+          type: integer
+          minimum: 0
+          maximum: 5
+        verifiedCritiqueRounds:
+          type: integer
+          minimum: 0
+          maximum: 5
     CustomWorkspaceEnvelope:
       type: object
       required: [workspace]

@@ -1,24 +1,24 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-  getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
   getListAssistantConversationsQueryKey,
-   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey, getGetSystemUsageQueryKey,
+   getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
-  useAskAssistant, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
+   useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
+   useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
@@ -40,7 +40,6 @@ import {
   useEditOwnFeatureRequest, useDeleteOwnFeatureRequest,
   useGetSiteStats, getGetSiteStatsQueryKey,
   useInterpretApplicantSearch,
-  useGetSystemUsage,
   useCreateSpreadsheet,
   getInterviewChat,
   getAssistantConversationMessages,
@@ -52,12 +51,18 @@ import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPic
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { AssistantModelPicker, type AssistantThinkingLevel } from "./components/AssistantModelPicker";
+import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
-import { loadDisabledTools, saveDisabledTools } from "./components/assistantTools";
+import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { readableBrandForeground } from "./lib/team-branding";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import { useVisualViewport } from "./hooks/use-visual-viewport";
+import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
+import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
+import { classifyFile } from "./lib/fileFormats";
+import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AssistantInput, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
@@ -77,16 +82,20 @@ const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").t
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
+import AboutPage from "@/pages/about";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
 import CodeLanding from "@/pages/code-landing";
 import CadLanding from "@/pages/cad-landing";
 import PartsPage from "@/pages/PartsPage";
+import { PrivacyPolicy, TermsOfUse } from "@/pages/legal";
 import "@/index.css";
 import { KOKORO_TEST_PHRASE, TTS_ENGINES, clearLocalTtsCaches, getSelectedEngine, setSelectedEngine, speakSystemVoice, speakWithEngine, warmEngine, type TtsEngineId } from "./lib/localTts";
 const WhiteboardEditor = lazy(() => import("./components/WhiteboardEditor").then((m) => ({ default: m.WhiteboardEditor })));
+const RechartsView = lazy(() => import("./components/RechartsView").then((m) => ({ default: m.RechartsView })));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor").then((m) => ({ default: m.DocumentEditor })));
 import { BoardEditor } from "./components/BoardEditor";
+import { ModalOverlay, useModalOverlay } from "./components/ModalOverlay";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
 const ChatStlViewer = lazy(() => import("./components/ChatStlViewer").then((m) => ({ default: m.ChatStlViewer })));
@@ -212,7 +221,14 @@ function expireSessionOnError(error: unknown) {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error) => !isExpiredSessionError(error) && failureCount < 3,
+      // A 4xx will not change on its own: retrying a 404 or a 400 only
+      // delays the "this record is gone" answer the UI is waiting for.
+      retry: (failureCount, error) => {
+        if (isExpiredSessionError(error)) return false;
+        const status = error && typeof error === "object" ? (error as { status?: unknown }).status : undefined;
+        if (typeof status === "number" && status >= 400 && status < 500) return false;
+        return failureCount < 3;
+      },
     },
   },
   queryCache: new QueryCache({
@@ -248,6 +264,19 @@ export const queryClient = new QueryClient({
   mutationCache: new MutationCache({ onError: expireSessionOnError }),
 });
 const categories = ["advance", "hold", "decline", "unranked"];
+// Labels for the three decision lanes. Shared by the lane cards and the
+// touch-friendly lane picker that replaces drag-and-drop on phones.
+const DECISION_LANE_LABELS: Record<string, string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" };
+const DECISION_LANES = categories.slice(0, 3);
+// The interviewer's own decision, as opposed to the AI recommendation. Both
+// are shown side by side on the roster so nobody mistakes one for the other.
+const INTERVIEW_DECISIONS = ["Undecided", "Strong Yes", "Yes", "Maybe", "No", "Strong No"];
+function interviewDecisionTone(decision: string): "neutral" | "teal" | "yellow" | "red" | "blue" {
+  if (decision === "Strong Yes" || decision === "Yes") return "teal";
+  if (decision === "Strong No" || decision === "No") return "red";
+  if (decision === "Maybe") return "yellow";
+  return "neutral";
+}
 const statuses = ["queued", "in_progress", "completed"];
 type BrowserSpeechResult = { 0?: { transcript?: string } };
 type BrowserSpeechEvent = { results: ArrayLike<BrowserSpeechResult> };
@@ -271,7 +300,7 @@ function Logo({ dark = false, teamName = "Robotics team" }: { dark?: boolean; te
 }
 
 function IconButton({ label, children, onClick, testId }: { label: string; children: ReactNode; onClick?: () => void; testId: string }) {
-  return <button aria-label={label} data-testid={testId} onClick={onClick} className="flex h-9 w-9 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-white text-[#436070] transition hover:border-[#16869a] hover:text-[#16869a]">{children}</button>;
+  return <button aria-label={label} data-testid={testId} onClick={onClick} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-white text-[#436070] transition hover:border-[#16869a] hover:text-[#16869a]">{children}</button>;
 }
 
 function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "teal" | "yellow" | "red" | "blue" }) {
@@ -315,7 +344,7 @@ function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const dark = mounted && theme === "dark";
-  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
+  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
 }
 
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
@@ -332,7 +361,9 @@ function SignalChips({ signals }: { signals: ApplicantSignals }) {
   return <span className="flex flex-wrap items-center gap-1">{visible.map(c => <span key={c.label} title={c.title} className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c.className}`}>{c.label}</span>)}</span>;
 }
 function Toggle({ on, onChange, testId, label }: { on: boolean; onChange: (v: boolean) => void; testId: string; label: string }) {
-  return <button role="switch" aria-checked={on} aria-label={label} data-testid={testId} onClick={() => onChange(!on)} className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} /></button>;
+  // The visible pill stays 24px tall, but the button keeps a 44px hit area so
+  // the switch is reachable with a thumb.
+  return <button role="switch" aria-checked={on} aria-label={label} data-testid={testId} onClick={() => onChange(!on)} className="relative h-11 w-12 shrink-0 transition"><span className={`absolute left-0 top-1/2 h-6 w-11 -translate-y-1/2 rounded-full transition ${on ? "bg-[#16869a]" : "bg-[#cbd9da]"}`} /><span className={`absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-all ${on ? "translate-x-[22px]" : "translate-x-0.5"}`} /></button>;
 }
 function Segmented<T extends string | number>({ options, value, onChange, testId }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void; testId: string }) {
   return <div className="flex rounded-lg border border-[#dce5e5] bg-[#f3f6f5] p-1" data-testid={testId}>{options.map(o => <button key={String(o.value)} onClick={() => onChange(o.value)} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition ${o.value === value ? "bg-white text-[#183a4b] shadow-sm" : "text-[#7c8c91] hover:text-[#385762]"}`}>{o.label}</button>)}</div>;
@@ -359,12 +390,12 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
   const isCoordinatorMenu = session.data?.role === "coordinator";
   return <div ref={ref} className="relative">
-    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
-    {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl">
+    <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
+    {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-2xl">
       <div className="border-b border-border px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">Interviewer account</p></div>
       <div className="p-2">
-        {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><Settings size={16} /> Settings</button>}
-        <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-popover-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><FileText size={16} /> Notepad</button>
+        {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[hsl(var(--popover-foreground))] transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><Settings size={16} /> Settings</button>}
+        <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[hsl(var(--popover-foreground))] transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><FileText size={16} /> Notepad</button>
         <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive transition hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover dark:text-[#f1aaa4] dark:hover:bg-[#40221f] dark:focus-visible:bg-[#40221f] dark:focus-visible:text-[#f1aaa4]"><LogOut size={16} /> End session</button>
       </div>
     </div>}
@@ -452,7 +483,7 @@ export function FeatureRequestSection() {
   };
   const requestMessageAndActions = (item: FeatureRequest) => editingRequestId === item.id
     ? <div className="mt-2">
-        <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} rows={3} maxLength={2000} aria-label="Edit app adjustment" data-testid={`input-edit-feature-request-${item.id}`} className="w-full resize-y rounded-lg border border-[#cbd7da] bg-white px-3 py-2 text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" />
+        <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} rows={3} maxLength={2000} aria-label="Edit app adjustment" data-testid={`input-edit-feature-request-${item.id}`} className="w-full resize-y rounded-lg border border-[#cbd7da] bg-white px-3 py-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3]" />
         {editError && <p role="alert" className="mt-1 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{editError}</p>}
         <div className="mt-2 flex justify-end gap-2">
           <button type="button" onClick={() => { setEditingRequestId(null); setEditError(""); }} className="rounded-md border border-[#cbd7da] px-2.5 py-1.5 text-xs font-semibold text-[#527079] dark:border-[#395563] dark:text-[#c3d3db]">Cancel</button>
@@ -491,16 +522,16 @@ export function FeatureRequestSection() {
     <div className="mt-3">
       <button type="button" onClick={() => { setDraft(""); setError(""); setDialogOpen(true); }} data-testid="button-request-feature" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={14} /> Suggest an app adjustment</button>
     </div>
-    {dialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#112433]/55 p-4" data-testid="dialog-feature-request"><div role="dialog" aria-modal="true" aria-label="Suggest an app adjustment" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
+    {dialogOpen && <ModalOverlay onClose={() => setDialogOpen(false)} label="Suggest an app adjustment" testId="dialog-feature-request" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
       <p className="text-base font-semibold text-[#182232] dark:text-[#e8eef2]">Suggest an app adjustment</p>
       <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Describe the idea — Ishaan reads every request.</p>
-      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4} maxLength={2000} autoFocus placeholder="e.g. A dark big-screen theme for night events…" aria-label="Feature request" data-testid="input-feature-request" className="mt-3 h-28 w-full resize-y rounded-xl border border-[#cbd7da] bg-white px-4 py-3 text-sm text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={4} maxLength={2000} autoFocus placeholder="e.g. A dark big-screen theme for night events…" aria-label="Feature request" data-testid="input-feature-request" className="mt-3 h-28 w-full resize-y rounded-xl border border-[#cbd7da] bg-white px-4 py-3 text-base md:text-sm text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
       {error && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="feature-request-error">{error}</p>}
       <div className="mt-4 flex gap-2">
         <button type="button" disabled={createRequest.isPending} onClick={submit} data-testid="button-send-feature-request" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"><Send size={15} /> {createRequest.isPending ? "Sending…" : "Send request"}</button>
         <button type="button" onClick={() => setDialogOpen(false)} data-testid="button-cancel-feature-request" className="rounded-xl border border-[#cbd7da] px-4 py-2.5 text-sm font-semibold text-[#527079] transition hover:border-[#16869a] dark:border-[#395563] dark:text-[#c3d3db]">Cancel</button>
       </div>
-    </div></div>}
+    </ModalOverlay>}
     {isOwner && <div className="mt-4" data-testid="site-inbox">
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#7c8c91] dark:text-[#93a8b2]">Site inbox · every team</p>
       {stats.data && <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -564,6 +595,7 @@ function AdminOnlyRoute({ children }: { children: ReactNode }) {
 }
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
+  const { overlayProps, panelProps } = useModalOverlay({ label: "Workspace settings", onClose });
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
   const qc = useQueryClient();
@@ -579,6 +611,43 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const [mailbox, setMailbox] = useState<{ configured: boolean; allowedSenders: number } | null>(null);
+  const [mailboxResult, setMailboxResult] = useState<string | null>(null);
+  const [mailboxBusy, setMailboxBusy] = useState(false);
+  const loadMailbox = async () => {
+    setMailboxBusy(true);
+    try {
+      const token = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox`, {
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.ok) setMailbox(await response.json() as { configured: boolean; allowedSenders: number });
+    } catch {
+      // Leave the panel as-is when the check cannot run.
+    } finally {
+      setMailboxBusy(false);
+    }
+  };
+  const syncMailbox = async () => {
+    setMailboxBusy(true);
+    try {
+      const token = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox/sync`, {
+        method: "POST",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const result = await response.json() as { posted?: number; reason?: string };
+      setMailboxResult(result.posted ? `${result.posted} new email(s) posted into the chat.` : result.reason ?? "No new mail.");
+      await loadMailbox();
+    } catch {
+      setMailboxResult("Could not check the inbox right now.");
+    } finally {
+      setMailboxBusy(false);
+    }
+  };
+  useEffect(() => { void loadMailbox(); }, []);
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
@@ -841,8 +910,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const dangerButton = "rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]";
   const sectionLabel = "mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]";
   const divider = "mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]";
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
-    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
+  return <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
+    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
       <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding is shared with your teammates.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
       <div className="mt-4 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
         <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Your name" className={`${field} w-44`} /></SettingRow>
@@ -854,6 +923,17 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
+      {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-inbox">
+        <p className={sectionLabel}>Team inbox</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Email sent to the team address is posted into the team chat. Nothing is posted unless the address is set up and the sender is on the allow list.</p>
+        <SettingRow title="Inbox" detail={mailbox === null ? "Checking…" : mailbox.configured ? "Connected — new mail appears in the chat" : "Not set up yet"}>
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-semibold ${mailbox?.configured ? "text-[#168069] dark:text-[#6fce8f]" : "text-[#8a8f93]"}`}>{mailbox?.configured ? "Connected" : "Not set up"}</span>
+            <button type="button" disabled={mailboxBusy} onClick={() => void syncMailbox()} data-testid="button-team-inbox-check" className={ghostButton}>{mailboxBusy ? "Checking…" : "Check now"}</button>
+          </div>
+        </SettingRow>
+        {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}
+      </div>}
       {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-branding">
         <p className={sectionLabel}>Team branding</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
@@ -894,7 +974,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
-        <SettingRow title="Instant updates" detail="Pushes changes in about a second via Supabase Realtime. Polling stays on as backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
+        <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
       </div>
       <div className={divider}><p className={sectionLabel}>Notifications</p>
@@ -908,7 +988,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
             <form onSubmit={e => { e.preventDefault(); void changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? ""); }} className="flex flex-wrap gap-2">
-              <input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="Type new password, press Enter" data-testid={`input-settings-password-${account.id}`} className={`${field} h-9 min-w-[160px] flex-1 text-xs`} />
+              <input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="Type new password, press Enter" data-testid={`input-settings-password-${account.id}`} className={`${field} h-9 min-w-[160px] flex-1 text-base md:text-xs`} />
               <button type="submit" disabled={passwordBusy} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">Save</button>
               <button type="button" disabled={passwordBusy} onClick={() => void changeInterviewerPassword(account.id, null)} data-testid={`button-settings-reset-password-${account.id}`} className={dangerButton}>Reset</button>
             </form>
@@ -920,7 +1000,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 placeholder={`Rename ${account.displayName}`}
                 aria-label={`Rename ${account.displayName}`}
                 data-testid={`input-settings-name-${account.id}`}
-                className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-xs text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
+                className="h-9 min-w-[150px] flex-1 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-xs text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
               />
               <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
             </form>
@@ -934,7 +1014,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className={divider}><p className={sectionLabel}>Workspace access</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
         <div className="mt-3 overflow-x-auto rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
-          <table className="w-full min-w-[420px] text-left text-xs">
+          <table className="w-full min-w-[min(420px,100%)] text-left text-xs">
             <thead className="bg-[#f8fbfa] text-[#63747c] dark:bg-[#10202a] dark:text-[#a9bcc6]">
               <tr>
                 <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
@@ -965,9 +1045,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                         disabled={isAdmin || workspaceVisibilityBusy}
                         data-testid={`toggle-visibility-${key}-${account.id}`}
                         onClick={() => toggleVisibility(key, account.id)}
-                        className={`relative mx-auto block h-6 w-11 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${hasAccess ? "bg-[#16869a]" : "bg-[#cbd9da]"}`}
+                        className={`relative mx-auto block h-11 w-12 transition disabled:cursor-not-allowed disabled:opacity-70`}
                       >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hasAccess ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+                        <span className={`absolute left-0 top-1/2 h-6 w-11 -translate-y-1/2 rounded-full transition ${hasAccess ? "bg-[#16869a]" : "bg-[#cbd9da]"}`} />
+                        <span className={`absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-all ${hasAccess ? "translate-x-[22px]" : "translate-x-0.5"}`} />
                       </button>
                     </td>
                     );
@@ -1012,7 +1093,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
-            <input value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} placeholder="Label (optional, e.g. MacBook)" aria-label="Passkey label" data-testid="input-passkey-label" className={`${field} h-9 min-w-[160px] flex-1 text-xs`} />
+            <input value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} placeholder="Label (optional, e.g. MacBook)" aria-label="Passkey label" data-testid="input-passkey-label" className={`${field} h-9 min-w-[160px] flex-1 text-base md:text-xs`} />
             <button type="button" disabled={passkeyBusy} onClick={() => void addPasskey()} data-testid="button-add-passkey" className="rounded-lg bg-[#16869a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">{passkeyBusy ? "Waiting for device…" : "Add passkey"}</button>
           </div>
           {passkeyNotice && <p className="text-[11px] font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="passkey-success">{passkeyNotice}</p>}
@@ -1201,39 +1282,24 @@ function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: 
 }
 
 type ChatAttachmentSheet = { name: string; rows: string[][] };
-type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "spreadsheet" | "step" | "stl" | "text" | "video";
+type ChatAttachmentKind = "3mf" | "audio" | "document" | "image" | "model" | "obj" | "parasolid" | "pdf" | "ply" | "presentation" | "spreadsheet" | "step" | "stl" | "text" | "video";
 
 function attachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
 }
 
 function attachmentKind(name: string, contentType: string): ChatAttachmentKind {
-  const extension = attachmentExtension(name);
-  if (contentType.startsWith("image/") || ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)) return "image";
-  if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
-  if (contentType === "model/gltf-binary" || extension === "glb") return "model";
-  if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
-  // 3MF is a ZIP of XML mesh data, so it renders in the browser like STL.
-  if (["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) || extension === "3mf") return "3mf";
-  // Plain triangle meshes; three.js parses both without a CAD kernel.
-  if (contentType === "model/obj" || extension === "obj") return "obj";
-  if (contentType === "model/ply" || contentType === "application/ply" || extension === "ply") return "ply";
-  if (
-    contentType === "model/step" ||
-    contentType === "application/step" ||
-    contentType === "application/x-step" ||
-    ["step", "stp", "iges", "igs", "brep", "brp"].includes(extension)
-  ) return "step";
-  if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
-  if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
-  if (contentType === "application/pdf" || extension === "pdf") return "pdf";
-  if (
-    contentType.includes("spreadsheet") ||
-    contentType === "application/vnd.ms-excel" ||
-    ["csv", "tsv", "xls", "xlsx"].includes(extension)
-  ) return ["csv", "tsv"].includes(extension) || contentType.startsWith("text/") ? "text" : "spreadsheet";
-  if (contentType.startsWith("text/") || ["log", "md", "rtf", "txt"].includes(extension)) return "text";
-  return "document";
+  const format = classifyFile(name, contentType);
+  switch (format) {
+    case "three-mf": return "3mf";
+    case "glb": return "model";
+    case "step":
+    case "iges":
+    case "brep": return "step";
+    case "presentation": return "presentation";
+    case "archive": return "document";
+    default: return format;
+  }
 }
 
 function isHeicAttachment(name: string, contentType: string): boolean {
@@ -1291,10 +1357,10 @@ function ChatAttachmentTable({ rows, label }: { rows: string[][]; label: string 
 
 function ChatAttachmentDocument({ name, html, objectUrl }: { name: string; html: string | null; objectUrl: string | null }) {
   if (html) {
-    return <div className="rounded-xl border border-[#dce9e8] bg-white p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><div className="prose prose-sm max-w-none text-[#52666e]" dangerouslySetInnerHTML={{ __html: html }} /></div>;
+    return <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]"><p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} /></div>;
   }
   if (!objectUrl) return null;
-  return <div className="rounded-xl border border-[#dce9e8] bg-white p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" /></div>;
+  return <div className="rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]"><p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p><iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" /></div>;
 }
 
 function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {
@@ -1342,6 +1408,25 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
         if (!active) return;
         setContentType(resolvedType);
         const resolvedKind = attachmentKind(name, resolvedType);
+        const ensureDownloadUrl = () => {
+          if (attachmentBlobRef.current && objectUrlsRef.current.size) return;
+          const url = URL.createObjectURL(blob);
+          createdUrls.add(url);
+          attachmentBlobRef.current = blob;
+          setObjectUrl(url);
+        };
+        if (isOfficePreviewAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = await parseOfficePreview(blob, name);
+          if (active) setText(preview);
+          return;
+        }
+        if (isJsonAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = formatJsonPreview(await blob.text());
+          if (active) setText(preview);
+          return;
+        }
         if (resolvedKind === "text") {
           const raw = await blob.text();
           if (active) setText(raw.slice(0, 250000));
@@ -1422,7 +1507,10 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     }
   };
 
-  if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+  if (failed) return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46] dark:border-[#70413b] dark:bg-[#2c1d1d] dark:text-[#f1aaa4]" role="alert">
+    <p>Couldn’t preview {name}. The file may be malformed or use unsupported content.</p>
+    <a href={objectUrl ?? appRelativeUrl(src)} download={name} className="mt-1 inline-block font-semibold underline underline-offset-2">Download {name}</a>
+  </div>;
   if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {
     return <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
       Couldn’t play {name} in this browser. Try opening it in an app that supports this format.
@@ -1444,7 +1532,7 @@ function AuthenticatedChatAttachment({ src, name }: { src: string; name: string 
     const delimiter = extension === "tsv" ? "\t" : text.split("\n")[0]?.includes("\t") ? "\t" : ",";
     const isDelimited = ["csv", "tsv"].includes(extension) || contentType === "text/csv" || contentType === "text/tab-separated-values";
     const rows = isDelimited ? parseDelimitedPreview(text, delimiter) : [];
-    return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre className="max-h-[360px] overflow-auto rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e]">{text}</pre>}</div>;
+    return <div className="my-2 space-y-2">{rows.length > 0 ? <ChatAttachmentTable rows={rows} label={name} /> : <pre aria-label={`Preview of ${name}`} data-testid="text-attachment-preview" className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]">{text}</pre>}</div>;
   }
   if (sheets.length) return <div className="my-2 space-y-3">{sheets.map(sheet => <ChatAttachmentTable key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />)}</div>;
   if (kind === "image" && objectUrl) return <img src={objectUrl} alt={name} loading="lazy" onError={() => void handleImageError()} className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain" />;
@@ -1474,6 +1562,109 @@ function sanitizeSvg(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+type ParsedChatIframe =
+  | { ok: true; source: string; src: string; host: string; title: string; width: number | null; height: number | null }
+  | { ok: false; source: string; reason: string };
+
+const CHAT_IFRAME_MAX_WIDTH = 1280;
+const CHAT_IFRAME_MIN_HEIGHT = 160;
+const CHAT_IFRAME_MAX_HEIGHT = 900;
+
+// Chat messages may embed live pages: paste <iframe> HTML into the composer and
+// the rendered message shows the preview. The snippet is parsed for shape only
+// and re-rendered as a React <iframe> — srcdoc, style, and event handlers are
+// ignored, and src must be an absolute cross-origin https link so an embed can
+// never script this app. The same-origin block is why sandbox tokens may
+// include allow-same-origin: the embedded frame stays on its own origin.
+function parseChatIframeEmbed(text: string): ParsedChatIframe {
+  const source = text.replace(/\s+/g, " ").trim();
+  const opener = text.match(/^<iframe\b([^>]*?)>/i)?.[1] ?? "";
+  const attributes: Record<string, string> = {};
+  const attributePattern = /([a-zA-Z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let attribute: RegExpExecArray | null;
+  while ((attribute = attributePattern.exec(opener))) {
+    const key = attribute[1].toLowerCase();
+    const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? "";
+    if (!(key in attributes)) attributes[key] = value;
+  }
+  const rawSrc = (attributes.src ?? "").trim();
+  if (!rawSrc) return { ok: false, source, reason: "the snippet has no src link" };
+  let embedUrl: URL | null = null;
+  try {
+    embedUrl = new URL(rawSrc, window.location.href);
+  } catch {
+    embedUrl = null;
+  }
+  if (!embedUrl || embedUrl.protocol !== "https:") return { ok: false, source, reason: "only https links can be embedded" };
+  if (embedUrl.username || embedUrl.password) return { ok: false, source, reason: "links containing login details cannot be embedded" };
+  if (embedUrl.origin === window.location.origin) return { ok: false, source, reason: "dashboard pages cannot embed themselves" };
+  const host = embedUrl.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.includes(":") || /^(\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+    return { ok: false, source, reason: "local and internal network links cannot be embedded" };
+  }
+  const dimension = (value: string | undefined): number | null => {
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+  };
+  const title = (attributes.title ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
+  return {
+    ok: true,
+    source,
+    src: embedUrl.toString(),
+    host,
+    title: title || `${host} embed`,
+    width: dimension(attributes.width),
+    height: dimension(attributes.height),
+  };
+}
+
+// ``` fences are documentation rather than embeds: a snippet quoted inside a
+// fence keeps rendering as text.
+function isInsideFencedBlock(source: string, index: number): boolean {
+  const fences = source.slice(0, index).match(/^[ \t]{0,3}```/gm);
+  return (fences?.length ?? 0) % 2 === 1;
+}
+
+function ChatIframeEmbed({ embed }: { embed: ParsedChatIframe }) {
+  const [collapsed, setCollapsed] = useState(false);
+  if (!embed.ok) {
+    return <div className="my-2 space-y-1 rounded-xl border border-[#e0b8b4] bg-[#fff5f3] p-3 text-xs dark:border-[#7d4038] dark:bg-[#22191b]" data-testid="chat-iframe-blocked">
+      <p className="font-semibold text-[#a34d46] dark:text-[#e89087]">Embed not shown — {embed.reason}.</p>
+      <code className="block break-all font-mono text-[10px] leading-4 text-[#8a6257] dark:text-[#c9998f]">{embed.source.slice(0, 300)}{embed.source.length > 300 ? "…" : ""}</code>
+    </div>;
+  }
+  const width = embed.width ? Math.min(embed.width, CHAT_IFRAME_MAX_WIDTH) : null;
+  const height = embed.height ? Math.min(Math.max(embed.height, CHAT_IFRAME_MIN_HEIGHT), CHAT_IFRAME_MAX_HEIGHT) : null;
+  const frameStyle = width && height
+    ? { aspectRatio: `${width} / ${height}`, width: "100%", display: "block", border: "none" }
+    : height
+      ? { height: `${height}px`, width: "100%", display: "block", border: "none" }
+      : { aspectRatio: "16 / 9", width: "100%", display: "block", border: "none" };
+  return <div className="my-2 overflow-hidden rounded-xl border border-[#dce9e8] bg-white dark:border-[#2a3f52] dark:bg-[#10232d]" data-testid="chat-iframe-embed">
+    <div className="flex items-center gap-2 border-b border-[#eef3f2] bg-[#f7faf9] px-3 py-1.5 dark:border-[#2a3f52] dark:bg-[#14212a]">
+      <Globe size={13} className="shrink-0 text-[#16869a]" />
+      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[#52666e] dark:text-[#a8bac8]">{embed.title}</span>
+      <a href={embed.src} target="_blank" rel="noreferrer" title={`Open ${embed.host} in a new tab`} aria-label={`Open ${embed.host} in a new tab`} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] dark:text-[#a8bac8] dark:hover:bg-[#1c3542]"><ExternalLink size={13} /></a>
+      <button type="button" onClick={() => setCollapsed(current => !current)} aria-expanded={!collapsed} aria-label={collapsed ? "Show embed" : "Hide embed"} data-testid="chat-iframe-toggle" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] dark:text-[#a8bac8] dark:hover:bg-[#1c3542]"><ChevronDown size={13} className={`transition-transform ${collapsed ? "-rotate-90" : ""}`} /></button>
+    </div>
+    {collapsed
+      ? <button type="button" onClick={() => setCollapsed(false)} data-testid="chat-iframe-restore" className="flex h-24 w-full items-center justify-center gap-2 text-[11px] font-semibold text-[#7c8c91] transition hover:bg-[#edf4f3] dark:text-[#93a8b2] dark:hover:bg-[#1c3542]"><Globe size={13} /> Embed hidden — click to show</button>
+      : <div style={width ? { maxWidth: `${width}px` } : undefined}>
+        <iframe
+          src={embed.src}
+          title={embed.title}
+          loading="lazy"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation allow-modals"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
+          style={frameStyle}
+        />
+      </div>}
+  </div>;
 }
 
 const MARKDOWN_MAX_CHARS = 50000;
@@ -1560,7 +1751,7 @@ function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right"
   ));
 }
 
-const RAW_BLOCK_TAGS = ["details", "svg"] as const;
+const RAW_BLOCK_TAGS = ["details", "svg", "iframe"] as const;
 
 type RawBlockTag = (typeof RAW_BLOCK_TAGS)[number];
 type RawBlock = { tag: RawBlockTag; text: string };
@@ -1587,6 +1778,12 @@ function findRawBlocks(source: string): RawBlock[] {
   let match: RegExpExecArray | null;
   while ((match = opener.exec(source))) {
     const tag = match[1].toLowerCase() as RawBlockTag;
+    if (match[0].endsWith("/>") && tag === "iframe") {
+      // Self-closing embeds (<iframe … />) are already complete blocks.
+      blocks.push({ tag, text: match[0] });
+      opener.lastIndex = match.index + match[0].length;
+      continue;
+    }
     const close = findRawBlockClose(source, tag, match.index + match[0].length);
     if (close < 0) continue;
     blocks.push({ tag, text: source.slice(match.index, close) });
@@ -1751,6 +1948,12 @@ function MarkdownContent({
     flush();
     if (rawBlock.tag === "details") {
       blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} />);
+    } else if (rawBlock.tag === "iframe") {
+      // A snippet quoted inside a ``` fence is code, not a live embed.
+      const embed = parseChatIframeEmbed(rawBlock.text);
+      blocks.push(isInsideFencedBlock(capped, start)
+        ? <p key={`iframe-${key++}`} className="whitespace-pre-wrap font-mono text-xs">{rawBlock.text.slice(0, 2000)}</p>
+        : <ChatIframeEmbed key={`embed-${key++}`} embed={embed} />);
     } else {
       const cleanSvg = sanitizeSvg(rawBlock.text);
       if (cleanSvg) {
@@ -1869,6 +2072,18 @@ const CHAT_PAGE_SIZE = 30;
 
 /** How many recent chat messages the assistant is given for an @ai mention. */
 const CHAT_CONTEXT_MESSAGE_LIMIT = 100;
+
+/**
+ * Object ids may carry an instance segment ("secondary/<uuid>") so the file
+ * is served from the storage instance that actually holds it. Both the plain
+ * and the instance-prefixed shapes are valid; only a malformed response
+ * (empty, or extra path segments) is a real failure.
+ */
+function isValidObjectId(value: string): boolean {
+  if (!value) return false;
+  const withoutInstance = value.startsWith("secondary/") ? value.slice("secondary/".length) : value;
+  return withoutInstance.length > 0 && !withoutInstance.includes("/");
+}
 /** Chat message cap, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 2000;
 
@@ -2041,14 +2256,15 @@ function formatDuration(totalSeconds: number): string {
 }
 
 function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
+  const { overlayProps, panelProps } = useModalOverlay({ label: `Usage for ${ip}`, onClose });
   const stats = useGetPresenceStats(
     { ip },
     { query: { queryKey: getGetPresenceStatsQueryKey({ ip }), enabled: Boolean(ip) } },
   );
   const maxSeconds = Math.max(...(stats.data?.pages.map((p) => p.seconds) ?? [1]), 1);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={onClose} data-testid="presence-stats-modal">
-      <div onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Usage for ${ip}`} className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+    <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={onClose} data-testid="presence-stats-modal">
+      <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Usage for ${ip}`} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Session history</p>
@@ -2132,9 +2348,9 @@ function BroadcastCard() {
   return (
     <Section title="Broadcast" kicker="Message the other admin">
       <form onSubmit={submit} className="mt-1 space-y-2">
-        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-sm outline-none focus:border-[#16869a]" />
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-base md:text-sm outline-none focus:border-[#16869a]" />
         <div className="flex gap-2">
-          <select value={targetIp} onChange={(event) => setTargetIp(event.target.value)} data-testid="select-broadcast-target" aria-label="Broadcast target" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]">
+          <select value={targetIp} onChange={(event) => setTargetIp(event.target.value)} data-testid="select-broadcast-target" aria-label="Broadcast target" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs outline-none focus:border-[#16869a]">
             <option value="">Everyone online</option>
             {onlineIps.map((ip) => <option key={ip} value={ip}>{ip}</option>)}
           </select>
@@ -2156,6 +2372,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
   const queryClient = useQueryClient();
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
   const [kickTarget, setKickTarget] = useState<string | null>(null);
+  const { overlayProps, panelProps } = useModalOverlay({ label: `Kick ${kickTarget ?? "session"}`, onClose: () => setKickTarget(null), enabled: Boolean(kickTarget) });
   if (presence.isLoading) return <Section title="Live now" kicker="Who is online"><Skeleton className="h-14" /></Section>;
   if (presence.isError || !presence.data) return <Section title="Live now" kicker="Who is online"><p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p></Section>;
   const entries = presence.data.entries;
@@ -2198,7 +2415,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
                   This device
                 </span>
               ) : (
-                <button onClick={() => setKickTarget(entry.ip)} title={`Kick ${entry.ip}`} data-testid={`button-kick-${entry.ip}`} className="ml-auto rounded-full border border-[#e8c4c0] bg-white px-2.5 py-1 text-[10px] font-bold text-[#b34a42] transition hover:bg-[#fff1ef]">
+                <button onClick={() => setKickTarget(entry.ip)} title={`Kick ${entry.ip}`} aria-label={`Kick session ${entry.ip}`} data-testid={`button-kick-${entry.ip}`} className="ml-auto rounded-full border border-[#e8c4c0] bg-white px-2.5 py-1 text-[10px] font-bold text-[#b34a42] transition hover:bg-[#fff1ef]">
                   Kick
                 </button>
               )}
@@ -2211,8 +2428,8 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
       )}
       {selectedIp && <PresenceIpModal ip={selectedIp} onClose={() => setSelectedIp(null)} />}
       {kickTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setKickTarget(null)} data-testid="kick-confirm">
-          <div onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Kick ${kickTarget}`} className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+        <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setKickTarget(null)} data-testid="kick-confirm">
+          <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Kick ${kickTarget}`} className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
             <h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Kick {kickTarget}?</h2>
             <p className="mt-2 text-sm leading-6 text-[#52666e]">They will be logged out and removed from Live now. They must log in again to return.</p>
             <div className="mt-5 flex justify-end gap-2">
@@ -2243,7 +2460,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
 }
 
 function FullscreenButton({ active, onClick, dark = false }: { active: boolean; onClick: () => void; dark?: boolean }) {
-  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a] dark:border-[#31495a] dark:bg-[#16262f] dark:text-[#c3d3db] dark:hover:border-[#6fc3cf] dark:hover:text-[#6fc3cf]"}`}>
+  return <button onClick={onClick} aria-label={active ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={active} data-testid="button-fullscreen" className={`flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold transition sm:px-3 ${dark ? "border-[#617d86] text-[#c0d0d3] hover:border-[#f8c84a] hover:text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a] hover:text-[#16869a] dark:border-[#31495a] dark:bg-[#16262f] dark:text-[#c3d3db] dark:hover:border-[#6fc3cf] dark:hover:text-[#6fc3cf]"}`}>
     {active ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     <span className="hidden sm:inline">{active ? "Exit fullscreen" : "Fullscreen"}</span>
   </button>;
@@ -2370,6 +2587,7 @@ function randomTeamCodeSuggestion(): string {
 }
 
 function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (response: { token?: string; label?: string; interviewerId?: string; teamId?: string; teamName?: string }) => void }) {
+  const { overlayProps, panelProps } = useModalOverlay({ label: "Create a new team", onClose });
   const [wizardStep, setWizardStep] = useState<"team" | "code" | "admin">("team");
   const [teamName, setTeamName] = useState("");
   const [teamCode, setTeamCode] = useState(() => randomTeamCodeSuggestion());
@@ -2429,8 +2647,8 @@ function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated:
     : wizardStep === "code"
       ? "Share this code with your teammates so they can join. Type your own or roll a random one."
       : "You will be the first admin. Sign in with this name and password from now on.";
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4" onClick={onClose} data-testid="new-team-wizard">
-    <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create a new team" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
+  return <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4" onClick={onClose} data-testid="new-team-wizard">
+    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Create a new team" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
       <div className="flex items-start justify-between gap-3">
         <div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">New team · {stepLabel}</p><h2 className="mt-1 text-xl font-semibold tracking-[-.02em]">{heading}</h2><p className="mt-1 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">{description}</p></div>
         <button onClick={onClose} aria-label="Close new team" data-testid="button-close-new-team" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button>
@@ -2884,6 +3102,47 @@ function Login() {
   );
 }
 
+/**
+ * Live-connection indicator.
+ *
+ * The old pill was a hardcoded green dot reading "Synced moments ago" on
+ * every page, whether or not the realtime stream was up. On a day-of tool
+ * that is worse than no indicator: a coordinator sees green and assumes the
+ * board is current. This one reports the real transport state.
+ *
+ * - Live: the realtime stream is connected, so updates arrive as they happen.
+ * - Polling: the stream dropped and the app fell back to interval polling.
+ * - Offline: no stream and no polling, so the board may be stale.
+ */
+function SyncStatus() {
+  const streamHealthy = useRealtimeHealthy();
+  const { settings } = useWorkspaceSettings();
+  const polling = settings.autoRefresh && settings.refreshMs;
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
+  const [browserOnline, setBrowserOnline] = useState(online);
+  useEffect(() => {
+    const goOnline = () => setBrowserOnline(true);
+    const goOffline = () => setBrowserOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+  const state = !browserOnline
+    ? { label: "Offline", dot: "bg-[#b34a42] dark:bg-[#e89890]", text: "text-[#a34d46] dark:text-[#e89890]", hint: "This device is offline. Changes will fail until the connection returns." }
+    : streamHealthy
+      ? { label: "Live", dot: "bg-[#28a47f] dark:bg-[#6fce8f]", text: "text-[#527079] dark:text-[#9db2bd]", hint: "Connected. Changes from your team appear as they happen." }
+      : polling
+        ? { label: "Polling", dot: "bg-[#c99a1f] dark:bg-[#e8c46a]", text: "text-[#8a6d1c] dark:text-[#e8c46a]", hint: "Realtime is reconnecting. The board is refreshing on an interval instead, so it can lag by a few seconds." }
+        : { label: "Offline", dot: "bg-[#b34a42] dark:bg-[#e89890]", text: "text-[#a34d46] dark:text-[#e89890]", hint: "No realtime connection and auto-refresh is off, so this board may be stale." };
+  return <div className="inline-flex items-center gap-2 text-xs" title={state.hint} data-testid="sync-status" data-state={streamHealthy ? "live" : polling ? "polling" : "offline"}>
+    <span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden="true" />
+    <span className={state.text} role="status" aria-live="polite">{state.label}</span>
+  </div>;
+}
+
 function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
@@ -2916,6 +3175,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     myLabel: session.data?.label ?? "",
     viewingPeer: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer")?.trim() || null,
     viewingShared: shellPathForNotify === "/chat" && !new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer"),
+    viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
     enabled: session.data?.authenticated === true,
   });
   const qc = useQueryClient();
@@ -3092,7 +3352,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
-      {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-20 bg-black/45 backdrop-blur-[1px] lg:hidden" data-testid="button-close-mobile-navigation" />}
+      {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-25 bg-black/45 backdrop-blur-[1px] lg:hidden" data-testid="button-close-mobile-navigation" />}
       <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform lg:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
@@ -3134,7 +3394,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         </nav>
         {workspaceArea === "interview" && displayPromoVisible && (
           <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4">
-            <button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-2 top-2 rounded-md p-1 text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button>
+            <button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-md text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button>
             <div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div>
             <p className="mt-2 text-[11px] leading-5 text-[#87a3ac]">Changes sync to the big screen and the event workspace.</p>
             <Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link>
@@ -3143,22 +3403,24 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
       </aside>
       <div className="lg:pl-[248px]">
-        <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9">
+        <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9"
+          style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] dark:text-[#9db2bd] dark:hover:bg-[#1e3340] lg:hidden"><Menu size={21} /></button>
           <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold dark:text-[#e8eef2]">Team workspace</p></div>
           <div className="ml-1 flex shrink-0 items-center gap-0.5 sm:ml-2 sm:gap-2">
-            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="rounded-lg p-2 transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>
+            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>
             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
             <ThemeToggle />
-            <div className="hidden items-center gap-2 text-xs text-[#60757c] dark:text-[#9db2bd] sm:flex"><span className="h-2 w-2 rounded-full bg-[#28a47f] dark:bg-[#6fce8f]" /> Synced moments ago</div>
+            <div className="hidden items-center sm:flex"><SyncStatus /></div>
             <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
           </div>
         </header>
-        <main className="mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9">
+        <main className="mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9"
+          style={{ paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           {children}
         </main>
-        {pendingBroadcast && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/55 p-4" data-testid="broadcast-popup"><div role="dialog" aria-modal="true" aria-label="Admin message" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></div></div>}
+        {pendingBroadcast && <ModalOverlay onClose={() => dismissBroadcast(pendingBroadcast.id)} label="Admin message" testId="broadcast-popup" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></ModalOverlay>}
       </div>
     </div>
   );
@@ -3236,8 +3498,8 @@ function loadCustomCharts(): CustomChartConfig[] {
 function CustomChartView({ data, chart, colorIndex, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; chart: CustomChartType; colorIndex: number; xAxisLabel: string; yAxisLabel: string }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (!data.length || total <= 0) return <p className="text-sm text-[#7c8c91]">No signal yet.</p>;
-  if (chart === "pie") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Measure · {yAxisLabel}</span><span>Grouped by · {xAxisLabel}</span></div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={data} dataKey="value" nameKey="label" innerRadius={55} outerRadius={85} paddingAngle={2} strokeWidth={0}>{data.map((entry, index) => <Cell key={`${entry.label}-${index}`} fill={CHART_PALETTE[index % CHART_PALETTE.length]} />)}</Pie><RechartsTooltip /></PieChart></ResponsiveContainer></div><div className="mt-3 space-y-1.5">{data.map((entry, index) => <div key={`${entry.label}-${index}`} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_PALETTE[index % CHART_PALETTE.length] }} /><span className="min-w-0 flex-1 truncate font-medium text-[#52666e]">{entry.label}</span><span className="mono text-[#7b8a8f]">{entry.value}</span></div>)}</div></div>;
-  if (chart === "line") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel}</span><span>X · {xAxisLabel}</span></div><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 5, right: 10, bottom: 28, left: -14 }}><CartesianGrid strokeDasharray="3 3" stroke="#e4eceb" /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#7b8a8f" }} interval="preserveStart" angle={-25} dy={10} label={{ value: xAxisLabel, position: "insideBottom", offset: -18, fontSize: 10, fill: "#7b8a8f" }} /><YAxis allowDecimals={yAxisLabel !== "Applicant count"} tick={{ fontSize: 10, fill: "#7b8a8f" }} label={{ value: yAxisLabel, angle: -90, position: "insideLeft", fontSize: 10, fill: "#7b8a8f" }} /><RechartsTooltip /><Line type="monotone" dataKey="value" stroke="#16869a" strokeWidth={2} dot={{ r: 3, fill: "#16869a" }} /></LineChart></ResponsiveContainer></div></div>;
+  if (chart === "pie") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Measure · {yAxisLabel}</span><span>Grouped by · {xAxisLabel}</span></div><Suspense fallback={<div className="h-[220px] animate-pulse rounded-xl bg-[#eef3f2]" />}><RechartsView kind="pie" data={data} xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} /></Suspense><div className="mt-3 space-y-1.5">{data.map((entry, index) => <div key={`${entry.label}-${index}`} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_PALETTE[index % CHART_PALETTE.length] }} /><span className="min-w-0 flex-1 truncate font-medium text-[#52666e]">{entry.label}</span><span className="mono text-[#7b8a8f]">{entry.value}</span></div>)}</div></div>;
+  if (chart === "line") return <div><div className="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel}</span><span>X · {xAxisLabel}</span></div><Suspense fallback={<div className="h-[220px] animate-pulse rounded-xl bg-[#eef3f2]" />}><RechartsView kind="line" data={data} xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} /></Suspense></div>;
   return <Bars data={data} max={Math.max(...data.map(item => item.value), 1)} color={CUSTOM_CHART_BAR_COLORS[colorIndex % CUSTOM_CHART_BAR_COLORS.length]} xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} />;
 }
 
@@ -3320,7 +3582,7 @@ function CustomCharts() {
     });
   };
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
-  return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with the other admins."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
+  return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with the other admins."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
 function WorkspaceOverview() {
@@ -3347,9 +3609,21 @@ function WorkspaceOverview() {
             <h1 className="text-3xl font-semibold tracking-[-.05em] sm:text-[2.6rem]">Choose a workspace</h1>
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
-          <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-            {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {isCoordinator && (
+              <Link
+                href="/custom-workspaces"
+                data-testid="link-create-workspace"
+                className="inline-flex items-center gap-2 rounded-full border border-[#16869a] bg-[#16869a] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#116f80] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-2 dark:border-[#73c9c0] dark:bg-[#73c9c0] dark:text-[#10232b] dark:hover:bg-[#8bd8cf] dark:focus-visible:ring-offset-[#101b23]"
+              >
+                <Plus size={14} aria-hidden="true" />
+                Create workspace
+              </Link>
+            )}
+            <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
+              {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
+            </span>
+          </div>
         </header>
         {visibleList.length === 0 && (
           <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
@@ -3578,19 +3852,6 @@ function WorkspaceOverview() {
 function InterviewOverview() {
   const summary = useGetDashboardSummary({ query: { queryKey: getGetDashboardSummaryQueryKey() } });
   const roster = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
-  const usage = useGetSystemUsage({ query: { queryKey: getGetSystemUsageQueryKey() } });
-  const usageBars = useMemo(() => {
-    const u = usage.data;
-    if (!u) return [];
-    const mb = (bytes: number) => bytes / (1024 * 1024);
-    const fmtMb = (bytes: number) => `${mb(bytes) >= 100 ? Math.round(mb(bytes)) : mb(bytes).toFixed(1)} MB`;
-    const rows: { label: string; value: number }[] = [
-      { label: `Database · ${fmtMb(u.databaseBytes)} of ${fmtMb(u.databaseQuotaBytes)}`, value: Math.min(100, Math.round((u.databaseBytes / Math.max(1, u.databaseQuotaBytes)) * 100)) },
-    ];
-    if (u.storageBytes !== null && u.storageBytes !== undefined) rows.push({ label: `Uploads · ${fmtMb(u.storageBytes)} of ${fmtMb(u.storageQuotaBytes)}`, value: Math.min(100, Math.round((u.storageBytes / Math.max(1, u.storageQuotaBytes)) * 100)) });
-    if (u.authUsers !== null && u.authUsers !== undefined) rows.push({ label: `Auth users · ${u.authUsers} of ${u.authUsersQuota ?? 50000}`, value: Math.min(100, Math.round((u.authUsers / Math.max(1, u.authUsersQuota ?? 50000)) * 100)) });
-    return rows;
-  }, [usage.data]);
   const mix = useMemo(() => {
     const genders = new Map<string, number>();
     const skills = new Map<string, number>();
@@ -3605,10 +3866,32 @@ function InterviewOverview() {
     const skillMix = (["BUILD", "CAD", "CODE", "Unknown"] as const).filter(l => (skills.get(l) ?? 0) > 0).map(l => ({ label: l === "Unknown" ? "Unknown" : l[0] + l.slice(1).toLowerCase(), value: skills.get(l) ?? 0 }));
     return { genderMix, skillMix };
   }, [roster.data]);
+  // What the interviewers actually decided, counted from the roster. The
+  // dashboard summary reports the *AI* recommendation, which is a different
+  // signal; this is the human one, and it is the number a team is asked for
+  // when it picks a roster.
+  const decisionMix = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of roster.data?.items ?? []) {
+      const key = a.interviewDecision?.trim() || "Undecided";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const order = ["Strong Yes", "Yes", "Maybe", "No", "Strong No", "Undecided"];
+    return order.filter(decision => (counts.get(decision) ?? 0) > 0).map(decision => ({ label: decision, value: counts.get(decision) ?? 0 }));
+  }, [roster.data]);
+  const laneMix = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of roster.data?.items ?? []) {
+      const key = a.category || "unranked";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const order = ["advance", "hold", "decline", "unranked"];
+    return order.filter(lane => (counts.get(lane) ?? 0) > 0).map(lane => ({ label: lane[0].toUpperCase() + lane.slice(1), value: counts.get(lane) ?? 0 }));
+  }, [roster.data]);
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, team." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Supabase usage" kicker="Measured live from the database"><Bars data={usageBars} max={100} color="teal" xAxisLabel="Resource" yAxisLabel="Usage %" /><p className="mt-3 text-xs text-[#7c8c91]">{usage.data ? `${usage.data.applicantCount} applicant rows` : "Loading usage…"}</p></Section><Section title="Plan quotas" kicker="Free-tier defaults, override with env"><div className="space-y-2 text-xs leading-5 text-[#52666e]"><p>Database <strong>500 MB</strong> · Uploads <strong>1 GB</strong> · Auth users <strong>50,000</strong> — override with <span className="mono">SUPABASE_DB_QUOTA_MB</span>, <span className="mono">SUPABASE_STORAGE_QUOTA_MB</span>, <span className="mono">SUPABASE_MAU_QUOTA</span>.</p><p>API requests and egress need a Supabase access token, so they are not shown here.</p></div></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Team decisions" kicker="What your interviewers actually said"><Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />{!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}</Section><Section title="Roster lanes" kicker="Where applicants sit right now"><Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
 }
 function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
@@ -3619,6 +3902,7 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
   const [label, setLabel] = useState("");
   const [error, setError] = useState("");
   const [target, setTarget] = useState<{ id: string; label: string } | null>(null);
+  const { overlayProps, panelProps } = useModalOverlay({ label: "Confirm restore version", onClose: () => setTarget(null), enabled: Boolean(target) });
   const [confirm, setConfirm] = useState("");
   const [preview, setPreview] = useState<{ added: number; removed: number; changed: number; unchanged: number; addedNames: string[]; removedNames: string[]; labelsChanged?: boolean; labelsBefore?: string[]; labelsNow?: string[]; chartsChanged?: boolean; chartsBefore?: number; chartsNow?: number } | null>(null);
   const refreshBoards = () => {
@@ -3655,10 +3939,10 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
   };
   return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5" data-testid="version-history-panel">
     <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Version history</p><h2 className="mt-1 font-semibold">Restore any point in time</h2><p className="mt-1 text-xs text-[#587278]">Every restore saves the present first, so you can always go back and forth. Imports save a version automatically.</p></div><IconButton label="Close version history" testId="button-close-history" onClick={onClose}><X size={16} /></IconButton></div>
-    <div className="mt-4 flex flex-wrap items-center gap-2"><input value={label} onChange={event => setLabel(event.target.value)} placeholder="Label for this version (optional)" data-testid="input-snapshot-label" className="h-10 min-w-[220px] flex-1 rounded-lg border border-[#c4dcda] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button onClick={saveNow} disabled={create.isPending} data-testid="button-save-version" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{create.isPending ? "Saving..." : "Save version now"}</button></div>
+    <div className="mt-4 flex flex-wrap items-center gap-2"><input value={label} onChange={event => setLabel(event.target.value)} placeholder="Label for this version (optional)" data-testid="input-snapshot-label" className="h-10 min-w-[220px] flex-1 rounded-lg border border-[#c4dcda] bg-white px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button onClick={saveNow} disabled={create.isPending} data-testid="button-save-version" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{create.isPending ? "Saving..." : "Save version now"}</button></div>
     <div className="mt-4 space-y-2">{snapshots.isLoading ? [1, 2].map(i => <Skeleton key={i} className="h-14" />) : snapshots.data && snapshots.data.items.length > 0 ? snapshots.data.items.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e3ebeb] bg-white p-3" data-testid={`snapshot-${item.id}`}><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.label}</p><p className="mt-0.5 text-[11px] text-[#718189]">{item.applicantCount} applicants · by {item.createdBy} · {new Date(item.createdAt).toLocaleString()}</p></div><button onClick={() => openRestore(item.id, item.label)} data-testid={`button-restore-${item.id}`} className="rounded-lg border border-[#c4dcda] px-3 py-2 text-xs font-semibold text-[#385762] hover:border-[#16869a] hover:text-[#16869a]">Restore</button></div>) : <p className="text-sm text-[#7c8c91]">No versions yet. Save one before your next big change.</p>}</div>
     {error && <p className="mt-3 text-xs text-[#ad4b43]" data-testid="history-error">{error}</p>}
-    {target && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setTarget(null)} data-testid="restore-dialog"><div onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm restore version" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Restore “{target.label}”?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">The current data is saved as a new version first, so you can undo this restore afterward.</p>{preview ? <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3 text-sm text-[#38555e]"><p><strong>+{preview.added}</strong> would return{preview.addedNames.length > 0 ? ` (${preview.addedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>-{preview.removed}</strong> would leave{preview.removedNames.length > 0 ? ` (${preview.removedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>{preview.changed}</strong> would change, <strong>{preview.unchanged}</strong> stay the same</p>{preview.labelsChanged && <p className="mt-1">Interviewer labels: <strong>{(preview.labelsNow ?? []).join(", ")}</strong> → <strong>{(preview.labelsBefore ?? []).join(", ")}</strong></p>}{preview.chartsChanged && <p className="mt-1">Custom charts: <strong>{preview.chartsNow}</strong> now vs <strong>{preview.chartsBefore}</strong> in version</p>}</div> : <p className="mt-3 text-sm text-[#7c8c91]">Loading preview…</p>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={confirm} onChange={event => setConfirm(event.target.value)} autoFocus data-testid="input-restore-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setTarget(null)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmRestore} disabled={confirm !== RESET_CONFIRM_PHRASE || restore.isPending} data-testid="button-confirm-restore" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{restore.isPending ? "Restoring..." : "Restore version"}</button></div></div></div>}
+    {target && <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setTarget(null)} data-testid="restore-dialog"><div {...panelProps} onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm restore version" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Restore “{target.label}”?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">The current data is saved as a new version first, so you can undo this restore afterward.</p>{preview ? <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3 text-sm text-[#38555e]"><p><strong>+{preview.added}</strong> would return{preview.addedNames.length > 0 ? ` (${preview.addedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>-{preview.removed}</strong> would leave{preview.removedNames.length > 0 ? ` (${preview.removedNames.join(", ")})` : ""}</p><p className="mt-1"><strong>{preview.changed}</strong> would change, <strong>{preview.unchanged}</strong> stay the same</p>{preview.labelsChanged && <p className="mt-1">Interviewer labels: <strong>{(preview.labelsNow ?? []).join(", ")}</strong> → <strong>{(preview.labelsBefore ?? []).join(", ")}</strong></p>}{preview.chartsChanged && <p className="mt-1">Custom charts: <strong>{preview.chartsNow}</strong> now vs <strong>{preview.chartsBefore}</strong> in version</p>}</div> : <p className="mt-3 text-sm text-[#7c8c91]">Loading preview…</p>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={confirm} onChange={event => setConfirm(event.target.value)} autoFocus data-testid="input-restore-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setTarget(null)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmRestore} disabled={confirm !== RESET_CONFIRM_PHRASE || restore.isPending} data-testid="button-confirm-restore" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{restore.isPending ? "Restoring..." : "Restore version"}</button></div></div></div>}
   </div>;
 }
 
@@ -3701,7 +3985,13 @@ function Applicants() {
     ? (selectedApplicant.error as { status?: unknown }).status
     : undefined;
   useEffect(() => {
-    const missingFromRoster = selected && list.isSuccess && !list.data.items.some(applicant => applicant.id === selected);
+    // The roster list is filtered, so an applicant dropping out of it usually
+    // means the filters changed or they were moved to another lane -- not
+    // that they are gone. Only the unfiltered roster is authoritative here,
+    // so narrowing a search or moving someone between lanes never throws
+    // away unsaved notes.
+    const listFiltered = Boolean(params.search || params.category || params.grade);
+    const missingFromRoster = !listFiltered && selected && list.isSuccess && !list.data.items.some(applicant => applicant.id === selected);
     if (
       selected === "" ||
       missingFromRoster ||
@@ -3709,7 +3999,7 @@ function Applicants() {
     ) {
       closeApplicant();
     }
-  }, [selected, list.isSuccess, list.data, selectedApplicant.isError, selectedApplicantErrorStatus, closeApplicant]);
+  }, [selected, list.isSuccess, list.data, params.search, params.category, params.grade, selectedApplicant.isError, selectedApplicantErrorStatus, closeApplicant]);
   const skillRank = (s: ApplicantSignals) => s.skill === "BUILD" ? 0 : s.skill === "CAD" ? 1 : s.skill === "CODE" ? 2 : 3;
   const genderRank = (s: ApplicantSignals) => s.gender === "M" ? 0 : s.gender === "F" ? 1 : 2;
   const items = useMemo(() => {
@@ -3724,19 +4014,23 @@ function Applicants() {
   const interpretSearch = useInterpretApplicantSearch();
   const qc = useQueryClient();
   const [dragId, setDragId] = useState<string | null>(null);
+  // Moving an applicant into a lane is the one action that used to require
+  // HTML5 drag-and-drop, which touch browsers cannot perform. This is the
+  // shared path for both the drag target and the touch-friendly lane picker.
+  const moveToLane = (applicantId: string, cat: string) => {
+    update.mutate({ id: applicantId, data: { category: cat } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+        setDragId(null);
+      },
+      onError: () => setDragId(null),
+    });
+  };
   const onDrop = (cat: string) => {
-    if (dragId) {
-      update.mutate({ id: dragId, data: { category: cat } }, {
-        onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
-          qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-          qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
-          qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
-          setDragId(null);
-        },
-        onError: () => setDragId(null),
-      });
-    }
+    if (dragId) moveToLane(dragId, cat);
   };
   const regenerateAllScores = async () => {
     if (regenAll.running) return;
@@ -3789,7 +4083,7 @@ function Applicants() {
         {regenAll.error ? <h2 className="mt-1 font-semibold">{regenAll.error}</h2> : regenAll.running
           ? <h2 className="mt-1 font-semibold">Regenerating {regenAll.done} of {regenAll.total} — {regenAll.current}…</h2>
           : <h2 className="mt-1 font-semibold">{regenAll.cancelled ? `Stopped after ${regenAll.done} of ${regenAll.total}` : `Finished ${regenAll.done} of ${regenAll.total}`}{regenAll.failed.length > 0 ? ` · ${regenAll.failed.length} failed` : regenAll.done > 0 ? " · all saved" : ""}</h2>}
-        {!regenAll.error && <p className="mt-1 text-xs text-[#587278]">{regenAll.running ? "Scores regenerate one by one to stay under the free AI tier limit. Keep this tab open." : regenAll.failed.length > 0 ? `Failed: ${regenAll.failed.join(", ")}. Re-run to retry them.` : "Every applicant now has a fresh evaluation from their transcript."}</p>}
+        {!regenAll.error && <p className="mt-1 text-xs text-[#587278]">{regenAll.running ? "Scores regenerate one by one so the assistant stays responsive. Keep this tab open." : regenAll.failed.length > 0 ? `Failed: ${regenAll.failed.join(", ")}. Re-run to retry them.` : "Every applicant now has a fresh evaluation from their transcript."}</p>}
       </div>{regenAll.running
         ? <button onClick={() => { regenAllCancel.current = true; }} data-testid="button-cancel-regen-all" className="shrink-0 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2.5 text-sm font-semibold text-[#a34d46]">Cancel</button>
         : <button onClick={() => setRegenAll(prev => ({ ...prev, finished: false, error: "" }))} data-testid="button-dismiss-regen-all" className="shrink-0 rounded-lg border border-[#cbd9da] bg-white px-4 py-2.5 text-sm font-semibold text-[#385762]">Dismiss</button>}</div>
@@ -3798,29 +4092,29 @@ function Applicants() {
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="flex flex-wrap gap-2">
-         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
-        <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-        <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
-        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
+         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
+        <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
+        <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
          </div>
-          {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="ai-search-panel mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="ai-search-input h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="ai-search-submit flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="ai-search-error mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="ai-search-result mt-2 text-xs leading-5 text-[#48656b]">Using <code className="ai-search-query rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
+          {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="ai-search-panel mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="ai-search-input h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="ai-search-submit flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="ai-search-error mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="ai-search-result mt-2 text-xs leading-5 text-[#48656b]">Using <code className="ai-search-query rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
          <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]" data-testid="applicant-search-help">Qualifiers: <code className="font-mono text-[#526d75]">name:</code>, <code className="font-mono text-[#526d75]">age:</code>, <code className="font-mono text-[#526d75]">gender:</code>, <code className="font-mono text-[#526d75]">grade:</code>, <code className="font-mono text-[#526d75]">skill:</code>, <code className="font-mono text-[#526d75]">recommendation:</code>, <code className="font-mono text-[#526d75]">category:</code>, <code className="font-mono text-[#526d75]">status:</code>, <code className="font-mono text-[#526d75]">invalid:true</code>. Combine with <code className="font-mono text-[#526d75]">AND</code>, <code className="font-mono text-[#526d75]">OR</code>, <code className="font-mono text-[#526d75]">NOT</code>, parentheses, or <code className="font-mono text-[#526d75]">IF … THEN …</code>. Quote values with spaces.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <div className="overflow-hidden rounded-2xl border border-[#dce5e5] bg-white">
           <div className="flex items-center justify-between border-b border-[#e5ecec] px-5 py-4"><div><h2 className="font-semibold">Review queue <span className="mono ml-2 text-xs text-[#16869a]">{list.data?.total ?? 0}</span></h2></div><span className="flex items-center gap-2 text-xs text-[#7c8c91]"><Filter size={14} /> filtered view</span></div>
-          {!items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p>{search.trim() && <p className="mt-1 break-words text-sm text-[#526d75]">Active search: <code className="font-mono">{search.trim()}</code></p>}<p className="mt-1 text-sm text-[#7c8c91]">Try widening the search or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => openApplicant(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} />)}</div>}
+          {!items.length ? <div className="p-12 text-center"><UsersRound className="mx-auto text-[#b8c6c9]" /><p className="mt-3 font-semibold">No applicants match these filters.</p>{search.trim() && <p className="mt-1 break-words text-sm text-[#526d75]">Active search: <code className="font-mono">{search.trim()}</code></p>}<p className="mt-1 text-sm text-[#7c8c91]">Try widening the search or reset the filters.</p></div> : <div className="divide-y divide-[#edf1f1]">{items.map((a, i) => <ApplicantRow key={a.id} applicant={a} index={i} onSelect={() => openApplicant(a.id)} onDragStart={() => setDragId(a.id)} onDragEnd={() => setDragId(null)} onMove={(lane) => moveToLane(a.id, lane)} />)}</div>}
         </div>
-        <div className="space-y-3">{categories.slice(0,3).map(cat => <DropLane key={cat} category={cat} applicants={items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={openApplicant} onDragStart={setDragId} onDragEnd={() => setDragId(null)} />)}</div>
+        <div className="space-y-3">{DECISION_LANES.map(cat => <DropLane key={cat} category={cat} applicants={items.filter(a => a.category === cat) ?? []} onDrop={() => onDrop(cat)} onSelect={openApplicant} onDragStart={setDragId} onDragEnd={() => setDragId(null)} onMove={(applicantId, lane) => moveToLane(applicantId, lane)} />)}</div>
       </div>
     </>}
     {selected && <ApplicantDetail id={selected} onClose={closeApplicant} />}
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoThumbUrl ?? a.photoUrl} alt="" loading="lazy" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge><SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
-function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void }) { const labels: Record<string,string> = { advance: "Advance", hold: "Hold & discuss", decline: "Decline" }; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <button key={a.id} draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="mb-2 flex w-full cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button>)}</div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd, onMove }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void; onMove: (lane: string) => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex flex-wrap cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoThumbUrl ?? a.photoUrl} alt="" loading="lazy" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge>{(a.interviewDecision?.trim() && a.interviewDecision.trim() !== "Undecided") && <Badge tone={interviewDecisionTone(a.interviewDecision.trim())}>{a.interviewDecision.trim()}</Badge>}<SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`touch-target shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><label className="sr-only" htmlFor={`lane-select-${a.id}`}>Decision lane for {a.name}</label><select id={`lane-select-${a.id}`} value={a.category ?? ""} onChange={event => onMove(event.target.value)} data-testid={`select-applicant-lane-${a.id}`} className="touch-target h-9 w-full shrink-0 basis-full rounded-lg border border-[#dce5e5] bg-white px-2 text-base md:text-xs text-[#52666e] outline-none focus:border-[#16869a] sm:w-24 sm:basis-auto"><option value="">No lane</option>{DECISION_LANES.map(lane => <option key={lane} value={lane}>{DECISION_LANE_LABELS[lane]}</option>)}</select><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd, onMove }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void; onMove: (applicantId: string, lane: string) => void }) { const labels = DECISION_LANE_LABELS; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <div key={a.id} className="mb-2 flex items-center gap-2"><button draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="flex min-w-0 flex-1 cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button><label className="sr-only" htmlFor={`lane-select-lane-${a.id}`}>Decision lane for {a.name}</label><select id={`lane-select-lane-${a.id}`} value={a.category ?? ""} onChange={event => onMove(a.id, event.target.value)} data-testid={`select-lane-applicant-${a.id}`} className="touch-target h-9 w-20 shrink-0 rounded-lg border border-[#cbd9da] bg-white px-1.5 text-base md:text-[11px] text-[#52666e] outline-none focus:border-[#16869a]"><option value="">No lane</option>{DECISION_LANES.map(lane => <option key={lane} value={lane}>{DECISION_LANE_LABELS[lane]}</option>)}</select></div>)}</div>; }
 type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
 
 const EXPORT_FORMATS: { value: ExportFormat; label: string; extension: string; mime: string }[] = [
@@ -3893,7 +4187,7 @@ function ExportPanel({ applicants, onClose }: { applicants: Applicant[]; onClose
   };
   return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5" data-testid="export-panel">
     <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Roster export</p><h2 className="mt-1 font-semibold">Download {applicants.length} applicant{applicants.length === 1 ? "" : "s"}</h2><p className="mt-1 text-xs text-[#587278]">Exports the current filtered view with headers the importer understands, so files round-trip.</p></div><IconButton label="Close export" testId="button-close-export" onClick={onClose}><X size={16} /></IconButton></div>
-    <div className="mt-4 flex flex-wrap items-center gap-3"><select value={format} onChange={event => setFormat(event.target.value as ExportFormat)} data-testid="select-export-format" className="h-10 rounded-lg border border-[#c4dcda] bg-white px-3 text-sm outline-none focus:border-[#16869a]">{EXPORT_FORMATS.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><button disabled={!applicants.length || busy} onClick={download} data-testid="button-download-export" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Download size={15} /> {busy ? "Preparing..." : `Download ${fileName}`}</button></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3"><select value={format} onChange={event => setFormat(event.target.value as ExportFormat)} data-testid="select-export-format" className="h-10 rounded-lg border border-[#c4dcda] bg-white px-3 text-base md:text-sm outline-none focus:border-[#16869a]">{EXPORT_FORMATS.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><button disabled={!applicants.length || busy} onClick={download} data-testid="button-download-export" className="flex items-center gap-2 rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Download size={15} /> {busy ? "Preparing..." : `Download ${fileName}`}</button></div>
     {error && <p className="mt-3 text-xs text-[#ad4b43]" data-testid="export-error">{error}</p>}
   </div>;
 }
@@ -3975,6 +4269,7 @@ const printFieldOptions: { key: PrintField; label: string }[] = [
 ];
 
 function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose: () => void }) {
+  const { overlayProps, panelProps } = useModalOverlay({ label: "Choose what to print", onClose });
   const [fields, setFields] = useState<Record<PrintField, boolean>>({
     name: true, grade: true, score: true, recommendation: true,
     category: false, status: false, email: false, notes: false,
@@ -3999,8 +4294,8 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
     email: applicant.email || "—",
     notes: applicant.notes || "—",
   }[key]);
-  return <div className="print-modal fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-5" onClick={onClose}>
-    <section onClick={e => e.stopPropagation()} className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+  return <div {...overlayProps} data-testid="print-roster" className="print-modal fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-5" onClick={onClose}>
+    <section {...panelProps} role="dialog" aria-modal="true" aria-label="Choose what to print" onClick={e => e.stopPropagation()} className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
       <div className="flex items-start justify-between gap-4"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Output / roster</p><h2 className="mt-2 text-2xl font-semibold">Choose what to print</h2><p className="mt-1 text-sm text-[#718189]">This prints the current filtered applicant list, not the entire private file by default.</p></div><IconButton label="Close print options" testId="button-close-print" onClick={onClose}><X size={16} /></IconButton></div>
       <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">{printFieldOptions.map(({ key, label }) => <label key={key} className="flex items-center gap-2 rounded-lg border border-[#e1e9e8] px-3 py-2 text-xs font-medium"><input type="checkbox" checked={fields[key]} onChange={e => setFields(current => ({ ...current, [key]: e.target.checked }))} className="h-4 w-4 accent-[#16869a]" />{label}</label>)}</div>
       <div className="mt-6 overflow-hidden rounded-xl border border-[#dce5e5]"><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-[#f3f7f6]"><tr>{selectedFields.map(field => <th key={field.key} className="whitespace-nowrap px-3 py-3 font-semibold text-[#52666e]">{field.label}</th>)}</tr></thead><tbody className="divide-y divide-[#edf1f1]">{applicants.slice(0, 12).map(applicant => <tr key={applicant.id}>{selectedFields.map(field => <td key={field.key} className="max-w-[220px] truncate px-3 py-3 text-[#52666e]">{valueFor(applicant, field.key)}</td>)}</tr>)}</tbody></table></div>{applicants.length > 12 && <p className="border-t border-[#edf1f1] px-3 py-2 text-[11px] text-[#7c8c91]">Preview shows 12 rows. Printing includes all {applicants.length} filtered applicants.</p>}</div>
@@ -4014,7 +4309,12 @@ function PrintRoster({ applicants, onClose }: { applicants: Applicant[]; onClose
   </div>;
 }
 
-function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) { const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id) } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); useEffect(() => { if (detail.data) { setNotes(detail.data.notes); setEditName(detail.data.name); setEditGrade(detail.data.grade); setEditEmail(detail.data.email ?? ""); setEditScore(String(detail.data.aiScore)); setEditRec(detail.data.aiRecommendation); } }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate) => update.mutate({ id: a.id, data }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
+function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {  const { overlayProps, panelProps } = useModalOverlay({ label: "Applicant details", onClose });
+ const detail = useGetApplicant(id, { query: { enabled: Boolean(id), queryKey: getGetApplicantQueryKey(id), retry: false } }); const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const update = useUpdateApplicant(); const remove = useDeleteApplicant(); const regen = useRegenerateApplicant(); const photoUpload = useRequestUploadUrl(); const [photoError, setPhotoError] = useState(""); const [notes, setNotes] = useState(""); const [editName, setEditName] = useState(""); const [editGrade, setEditGrade] = useState(""); const [editEmail, setEditEmail] = useState(""); const [editScore, setEditScore] = useState(""); const [editRec, setEditRec] = useState(""); // Fields the interviewer has edited but not yet saved. A remote refresh (a
+  // teammate saving, the window regaining focus, our own save round-trip)
+  // must never overwrite typing in progress, so incoming data only fills
+  // the fields nobody has touched.
+  const dirtyFields = useRef<Set<string>>(new Set()); const seededId = useRef<string | null>(null); useEffect(() => { const incoming = detail.data; if (!incoming) return; if (seededId.current !== incoming.id) { seededId.current = incoming.id; dirtyFields.current = new Set(); setNotes(incoming.notes); setEditName(incoming.name); setEditGrade(incoming.grade); setEditEmail(incoming.email ?? ""); setEditScore(String(incoming.aiScore)); setEditRec(incoming.aiRecommendation); return; } if (!dirtyFields.current.has("notes")) setNotes(incoming.notes); if (!dirtyFields.current.has("name")) setEditName(incoming.name); if (!dirtyFields.current.has("grade")) setEditGrade(incoming.grade); if (!dirtyFields.current.has("email")) setEditEmail(incoming.email ?? ""); if (!dirtyFields.current.has("score")) setEditScore(String(incoming.aiScore)); if (!dirtyFields.current.has("recommendation")) setEditRec(incoming.aiRecommendation); }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate, savedFields: string[] = []) => update.mutate({ id: a.id, data }, { onSuccess: () => { for (const field of savedFields) dirtyFields.current.delete(field); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }, ["name", "grade", "email", "score", "recommendation"]); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { dirtyFields.current.delete("score"); dirtyFields.current.delete("recommendation"); setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) { setPhotoError("Images must be under 5 MB."); return; }
     // Shrink a list-view thumbnail in this tab (no new dependencies): rows
     // load the ~15 KB thumb instead of the multi-MB original, which stays
@@ -4062,8 +4362,8 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
     }
   };
   const destroy = async () => { if (remove.isPending || !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
-  if (readOnly) return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
-  return <div className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => setEditName(e.target.value)} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => setEditGrade(e.target.value)} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => setEditEmail(e.target.value)} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => setEditScore(e.target.value)} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => setEditRec(e.target.value)} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-2 gap-3"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Admin decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes })} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
+  if (readOnly) return <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
+  return <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => { dirtyFields.current.add("name"); setEditName(e.target.value); }} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => { dirtyFields.current.add("grade"); setEditGrade(e.target.value); }} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => { dirtyFields.current.add("email"); setEditEmail(e.target.value); }} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => { dirtyFields.current.add("score"); setEditScore(e.target.value); }} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => { dirtyFields.current.add("recommendation"); setEditRec(e.target.value); }} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Admin decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => { dirtyFields.current.add("notes"); setNotes(e.target.value); }} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes }, ["notes"])} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
 
@@ -4190,8 +4490,8 @@ function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="display-text-card">
     <div><p className="text-sm font-semibold">Big-screen text</p><p className="mt-1 text-xs text-[#7c8c91]">Edits stay here as a draft — the big screen does not change until you push. Check the preview, then push when it looks right. The announce switch mutes spoken announcements (manual tests still speak).</p></div>
     <div className="mt-3 grid gap-2 sm:grid-cols-2">
-      <label className="text-xs font-semibold text-[#63747c]">Heading<input value={headline} onChange={e => setHeadline(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-headline" placeholder="Automatic heading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
-      <label className="text-xs font-semibold text-[#63747c]">Subheading<input value={subheading} onChange={e => setSubheading(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-subheading" placeholder="Automatic subheading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
+      <label className="text-xs font-semibold text-[#63747c]">Heading<input value={headline} onChange={e => setHeadline(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-headline" placeholder="Automatic heading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
+      <label className="text-xs font-semibold text-[#63747c]">Subheading<input value={subheading} onChange={e => setSubheading(e.target.value)} maxLength={200} disabled={settings.isLoading} data-testid="input-display-subheading" placeholder="Automatic subheading" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label>
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <button onClick={push} disabled={update.isPending || settings.isLoading || !dirty} data-testid="button-display-text-save" title="Publish this draft to the big screen" className="flex h-10 items-center gap-2 rounded-xl bg-[#183a4b] px-4 text-xs font-semibold text-white disabled:opacity-50"><Check size={15} /> {update.isPending ? "Pushing…" : "Push to big screen"}</button>
@@ -4294,7 +4594,7 @@ function AudioCard() {
       <div><p className="text-sm font-semibold">Big-screen audio</p><p className="mt-1 text-xs text-[#7c8c91]">These buttons live here, the sound comes out of the big screen. {detail}.</p></div>
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <select value={engine} onChange={e => pick(e.target.value as TtsEngineId)} data-testid="select-tts-engine" aria-label="Announcement voice" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
+      <select value={engine} onChange={e => pick(e.target.value as TtsEngineId)} data-testid="select-tts-engine" aria-label="Announcement voice" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
         {TTS_ENGINES.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
       </select>
       <button onClick={() => void previewHere()} disabled={previewing || sending || clearing || saying} data-testid="button-audio-preview-here" title="Hear the selected voice on this machine only — nothing plays on the big screen" className="flex h-10 items-center gap-2 rounded-xl border border-[#16869a] px-4 text-xs font-semibold text-[#12737d] hover:bg-[#e3f4f2] disabled:opacity-50"><Volume1 size={15} /> {previewing ? "Playing here…" : "Preview voice here"}</button>
@@ -4302,7 +4602,7 @@ function AudioCard() {
       {engine !== "system" && <button onClick={() => void redownload()} disabled={clearing || sending || saying} data-testid="button-audio-redownload" title="Delete downloaded voice files here and on the big screen, then reload (fixes garbled speech from a bad download)" className="flex h-10 items-center gap-2 rounded-xl border border-[#d5e0e0] px-4 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50"><RefreshCw size={15} className={clearing ? "animate-spin" : ""} /> {clearing ? "Clearing…" : "Redownload voices"}</button>}
     </div>
     <div className="mt-3 flex flex-wrap items-stretch gap-2">
-      <textarea value={sayText} onChange={e => setSayText(e.target.value)} maxLength={500} rows={2} disabled={saying || sending || clearing} data-testid="input-audio-say" placeholder="Type a custom announcement — spoken only, display text stays as-is…" className="min-h-[68px] min-w-0 flex-1 resize-y rounded-xl border border-[#d5e0e0] bg-white p-3 text-sm text-[#182232] outline-none focus:border-[#16869a]" />
+      <textarea value={sayText} onChange={e => setSayText(e.target.value)} maxLength={500} rows={2} disabled={saying || sending || clearing} data-testid="input-audio-say" placeholder="Type a custom announcement — spoken only, display text stays as-is…" className="min-h-[68px] min-w-0 flex-1 resize-y rounded-xl border border-[#d5e0e0] bg-white p-3 text-base md:text-sm text-[#182232] outline-none focus:border-[#16869a]" />
       <button onClick={sayIt} disabled={!sayText.trim() || saying || sending || clearing} data-testid="button-audio-say" title="Speak this text on the big screen without changing its text" className="flex items-center gap-2 rounded-xl bg-[#16869a] px-4 text-xs font-semibold text-white disabled:opacity-50"><Megaphone size={15} /> {saying ? "Sending…" : "Announce it"}</button>
     </div>
     {note && <p className="mt-2 text-xs text-[#7c8c91]" data-testid="audio-note">{note}</p>}
@@ -4336,6 +4636,26 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
     onMark(a.id, { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
     setEditing(null);
   };
+  // Marking a late or absent student as "here" throws away a recorded
+  // arrival time, an agreed makeup date, and the excused flag. That is a
+  // legitimate correction, but never a silent one.
+  const markHere = async (a: Applicant) => {
+    setEditing(null);
+    if (a.attendance === "here") {
+      onMark(a.id, { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
+      return;
+    }
+    if (a.attendance === "late" || a.attendance === "absent") {
+      const ok = await confirmAction({
+        title: `Mark ${a.name} as here?`,
+        detail: "This clears their recorded arrival time, makeup date, and excused flag.",
+        confirmLabel: "Mark as here",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    onMark(a.id, { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
+  };
   const excusedToggle = (id: string) => <div className="flex shrink-0 overflow-hidden rounded-lg border border-[#d5e0e0]" role="group" aria-label="Excused status">
     <button onClick={() => setExcusedDraft(true)} data-testid={`button-excused-${id}`} title="Mark excused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-[#28a47f] text-white" : "bg-white text-[#63747c] hover:bg-[#eef3f2]"}`}>Excused</button>
     <button onClick={() => setExcusedDraft(false)} data-testid={`button-unexcused-${id}`} title="Mark unexcused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-white text-[#63747c] hover:bg-[#eef3f2]" : "bg-[#3d4b54] text-white"}`}>Unexcused</button>
@@ -4366,20 +4686,20 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
               </span>
             </span>
             <div className="flex shrink-0 gap-1">
-              <button onClick={() => { setEditing(null); onMark(a.id, { attendance: a.attendance === "here" ? "unmarked" : "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} disabled={pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
+              <button onClick={() => { void markHere(a); }} disabled={pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
               <button onClick={() => { if (lateOpen) setEditing(null); else openEditor(a, "late"); }} disabled={pending} data-testid={`button-attendance-late-${a.id}`} title="Mark late" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "late" ? "bg-[#c99a1f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Late</button>
               <button onClick={() => { if (absentOpen) setEditing(null); else openEditor(a, "absent"); }} disabled={pending} data-testid={`button-attendance-absent-${a.id}`} title="Mark absent" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Absent</button>
             </div>
           </div>
           {lateOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input type="time" value={draft} onChange={e => setDraft(e.target.value)} data-testid={`input-late-time-${a.id}`} aria-label={`Arrival time for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            <input type="time" value={draft} onChange={e => setDraft(e.target.value)} data-testid={`input-late-time-${a.id}`} aria-label={`Arrival time for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" />
             {excusedToggle(a.id)}
             <button onClick={() => saveEditor(a, "late")} disabled={pending || !draft} data-testid={`button-late-save-${a.id}`} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
             <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-late-clear-${a.id}`} title="Clear late mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
             <button onClick={() => setEditing(null)} data-testid={`button-late-cancel-${a.id}`} className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Cancel</button>
           </div>}
           {absentOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input type="date" value={draft} min={localYMD()} onChange={e => setDraft(e.target.value)} data-testid={`input-makeup-date-${a.id}`} aria-label={`Makeup date for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            <input type="date" value={draft} min={localYMD()} onChange={e => setDraft(e.target.value)} data-testid={`input-makeup-date-${a.id}`} aria-label={`Makeup date for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" />
             {excusedToggle(a.id)}
             <button onClick={() => saveEditor(a, "absent")} disabled={pending} data-testid={`button-absent-save-${a.id}`} title={draft ? "Save with makeup date" : "Save absent without makeup date"} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
             <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-absent-clear-${a.id}`} title="Clear absent mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
@@ -4434,6 +4754,7 @@ const CHAT_FILE_ACCEPT = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.oasis.opendocument.text",
+  "application/json",
   "application/vnd.oasis.opendocument.spreadsheet",
   "application/vnd.oasis.opendocument.presentation",
   "text/csv",
@@ -4448,10 +4769,14 @@ const CHAT_FILE_ACCEPT = [
   ".flac",
   ".doc",
   ".docx",
+  ".odt",
+  ".ods",
+  ".odp",
   ".xls",
   ".xlsx",
   ".ppt",
   ".pptx",
+  ".json",
   ".csv",
   ".tsv",
 ].join(",");
@@ -4463,6 +4788,9 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   csv: "text/csv",
   doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet",
+  odp: "application/vnd.oasis.opendocument.presentation",
   flac: "audio/flac",
   gif: "image/gif",
   glb: "model/gltf-binary",
@@ -4488,6 +4816,7 @@ const CHAT_EXTENSION_TYPES: Record<string, string> = {
   png: "image/png",
   ppt: "application/vnd.ms-powerpoint",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  json: "application/json",
   svg: "image/svg+xml",
   tif: "image/tiff",
   tiff: "image/tiff",
@@ -4526,6 +4855,8 @@ function chatFileType(file: File): string {
     "application/vnd.oasis.opendocument.presentation",
     "application/vnd.oasis.opendocument.spreadsheet",
     "application/vnd.oasis.opendocument.text",
+    "application/json",
+    "application/ld+json",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -4673,28 +5004,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
   });
+  // Invite-only channels: the strip lists accessible channels plus the
+  // active channel selection (deep linkable via ?channel=).
+  const [conversationChannelId, setConversationChannelId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("channel")?.trim() || null;
+  });
   const activeInterviewer = session.data?.label ?? "Interviewer";
-  const dmLastSeenRef = useRef<Record<string, string>>({});
-  const [dmLastSeen, setDmLastSeen] = useState<Record<string, string>>({});
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("robotics-dm-last-seen");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, string>;
-        dmLastSeenRef.current = parsed;
-        setDmLastSeen(parsed);
-      }
-    } catch { /* private browsing etc. */ }
-  }, []);
-  const markDmRead = useCallback((peer: string, at?: string) => {
-    const stamp = at ?? new Date().toISOString();
-    const next = { ...dmLastSeenRef.current, [peer.trim().toLowerCase()]: stamp };
-    dmLastSeenRef.current = next;
-    setDmLastSeen(next);
-    try {
-      window.localStorage.setItem("robotics-dm-last-seen", JSON.stringify(next));
-    } catch { /* private browsing etc. */ }
-  }, []);
   const conversations = useGetChatConversations({
     query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )},
   });
@@ -4704,19 +5020,110 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     for (const item of conversations.data?.items ?? []) {
       const peer = item.peer.trim().toLowerCase();
       if (!peer || peer === active) continue;
-      if (item.lastMessageAuthor.trim().toLowerCase() === activeInterviewer.trim().toLowerCase()) continue;
-      const seen = dmLastSeen[peer];
-      if (!seen || item.lastMessageAt > seen) unread.add(peer);
+      if (item.isUnread) unread.add(peer);
     }
     return unread;
-  }, [conversations.data, dmLastSeen, conversationPeer, activeInterviewer]);
-  useEffect(() => {
-    if (!conversationPeer) return;
-    const item = (conversations.data?.items ?? []).find(
-      (entry) => entry.peer.trim().toLowerCase() === conversationPeer.trim().toLowerCase(),
-    );
-    markDmRead(conversationPeer, item?.lastMessageAt);
-  }, [conversationPeer, conversations.data, markDmRead]);
+  }, [conversations.data, conversationPeer]);
+  const channelsQuery = useListChatChannels({
+    query: { queryKey: getListChatChannelsQueryKey(), refetchInterval: streamHealthy ? false : 5000 },
+  });
+  const channels = useMemo(() => channelsQuery.data?.items ?? [], [channelsQuery.data]);
+  const activeChannel = useMemo(
+    () => channels.find(channel => channel.id === conversationChannelId) ?? null,
+    [channels, conversationChannelId],
+  );
+  const canManageChannels = session.data?.role === "coordinator";
+  const unreadChannels = useMemo(() => {
+    const active = conversationChannelId ?? "";
+    const unread = new Set<string>();
+    for (const item of conversations.data?.channels ?? []) {
+      if (item.channelId === active) continue;
+      if (item.isUnread) unread.add(item.channelId);
+    }
+    return unread;
+  }, [conversations.data, conversationChannelId]);
+  const channelAccountsQuery = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  const channelAccounts = useMemo(() => channelAccountsQuery.data?.items ?? [], [channelAccountsQuery.data]);
+  const createChannelMutation = useCreateChatChannel();
+  const updateChannelMutation = useUpdateChatChannel();
+  const deleteChannelMutation = useDeleteChatChannel();
+  // "" = create dialog, a channel id = manage that channel.
+  const [channelDialogId, setChannelDialogId] = useState<string | null>(null);
+  const [channelDialogOpen, setChannelDialogOpen] = useState(false);
+  const [channelNameDraft, setChannelNameDraft] = useState("");
+  const [channelMemberIdsDraft, setChannelMemberIdsDraft] = useState<string[]>([]);
+  const [channelDialogError, setChannelDialogError] = useState("");
+  const openCreateChannelDialog = () => {
+    setChannelDialogId("");
+    setChannelNameDraft("");
+    setChannelMemberIdsDraft([]);
+    setChannelDialogError("");
+    setChannelDialogOpen(true);
+  };
+  const openManageChannelDialog = (channelId: string) => {
+    const channel = channels.find(entry => entry.id === channelId);
+    if (!channel) return;
+    setChannelDialogId(channelId);
+    setChannelNameDraft(channel.name);
+    setChannelMemberIdsDraft(channel.members.map(member => member.id));
+    setChannelDialogError("");
+    setChannelDialogOpen(true);
+  };
+  const closeChannelDialog = () => {
+    setChannelDialogOpen(false);
+    setChannelDialogId(null);
+  };
+  const invalidateChannelData = () => {
+    void qc.invalidateQueries({ queryKey: getListChatChannelsQueryKey() });
+    void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
+  };
+  const toggleChannelMemberDraft = (accountId: string) => {
+    setChannelMemberIdsDraft(current => current.includes(accountId)
+      ? current.filter(id => id !== accountId)
+      : [...current, accountId]);
+  };
+  const submitChannelDialog = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = channelNameDraft.trim().replace(/\s+/g, " ");
+    if (!name) { setChannelDialogError("Give the channel a name."); return; }
+    setChannelDialogError("");
+    try {
+      if (channelDialogId) {
+        await updateChannelMutation.mutateAsync({ channelId: channelDialogId, data: { name, memberIds: channelMemberIdsDraft } });
+      } else {
+        const created = await createChannelMutation.mutateAsync({
+          data: { name, memberIds: channelMemberIdsDraft.length ? channelMemberIdsDraft : undefined },
+        });
+        setConversationPeer(null);
+        setConversationChannelId(created.id);
+      }
+      invalidateChannelData();
+      closeChannelDialog();
+    } catch (error) {
+      setChannelDialogError(serverErrorMessage(error, "Couldn't save the channel. Try again."));
+    }
+  };
+  const deleteActiveChannel = async () => {
+    const channelId = channelDialogId;
+    if (!channelId) return;
+    if (!(await confirmAction({
+      title: `Delete ${activeChannel?.name ?? "this channel"}?`,
+      detail: "The channel and every message in it are removed permanently. This cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete channel",
+    }))) return;
+    try {
+      await deleteChannelMutation.mutateAsync({ channelId });
+      invalidateChannelData();
+      if (conversationChannelId === channelId) {
+        setConversationChannelId(null);
+        setConversationPeer(null);
+      }
+      closeChannelDialog();
+    } catch (error) {
+      setChannelDialogError(serverErrorMessage(error, "Couldn't delete the channel. Try again."));
+    }
+  };
   const mentionLabels = useMemo(() => {
     const unique = new Map<string, string>();
     for (const label of [...interviewerLabels, activeInterviewer]) {
@@ -4725,14 +5132,25 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     }
     return [...unique.values()];
   }, [activeInterviewer, interviewerLabels]);
-  const conversationScope = conversationPeer ? "direct" : "shared";
-  const conversationId = `${conversationScope}:${activeInterviewer}:${conversationPeer ?? ""}`;
+  const conversationScope: "shared" | "direct" | "channel" = conversationChannelId
+    ? "channel"
+    : conversationPeer ? "direct" : "shared";
+  const conversationId = `${conversationScope}:${activeInterviewer}:${conversationChannelId ?? conversationPeer ?? ""}`;
   const chatParams = useMemo(() => ({
     limit: CHAT_PAGE_SIZE,
-    scope: conversationScope as "shared" | "direct",
+    scope: conversationScope,
     author: activeInterviewer,
     ...(conversationPeer ? { peer: conversationPeer } : {}),
-  }), [activeInterviewer, conversationPeer, conversationScope]);
+    ...(conversationChannelId ? { channelId: conversationChannelId } : {}),
+  }), [activeInterviewer, conversationPeer, conversationChannelId, conversationScope]);
+  // Every chat message and shared-workspace create posts the same conversation
+  // targeting; build it once so channels always carry the channelId.
+  const conversationTarget = useMemo(() => ({
+    scope: conversationScope,
+    ...(conversationChannelId
+      ? { channelId: conversationChannelId }
+      : conversationPeer ? { recipient: conversationPeer } : {}),
+  }), [conversationScope, conversationPeer, conversationChannelId]);
   const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
@@ -4741,6 +5159,16 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const chatMessageInputRef = useRef<HTMLTextAreaElement>(null);
+  // The software keyboard shrinks the visual viewport without resizing the
+  // layout viewport, so the composer has to be lifted manually.
+  const { keyboardInset, keyboardOpen } = useVisualViewport();
+  useEffect(() => {
+    if (!keyboardOpen) return;
+    const frame = requestAnimationFrame(() => {
+      chatMessageInputRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [keyboardOpen, keyboardInset]);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
@@ -4749,7 +5177,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
-  const scopedChatItems = chat.data?.scope === conversationScope && chat.data.peer === (conversationPeer ?? null)
+  const scopedChatItems = chat.data && chat.data.scope === conversationScope
+    && (conversationChannelId
+      ? chat.data.channel?.id === conversationChannelId
+      : chat.data.peer === (conversationPeer ?? null))
     ? chat.data.items
     : [];
   const visibleOlderChat = olderChatConversationId === conversationId ? olderChat : [];
@@ -4788,6 +5219,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           messageIds: unreadIds,
           scope: conversationScope,
           ...(conversationPeer ? { peer: conversationPeer } : {}),
+          ...(conversationChannelId ? { channelId: conversationChannelId } : {}),
         },
       }, {
         onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
@@ -4800,7 +5232,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (node) observer.observe(node);
     }
     return () => observer.disconnect();
-  }, [activeInterviewer, chatItems, chatParams, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
+  }, [activeInterviewer, chatItems, chatParams, conversationChannelId, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
   const [pinnedPreviewIndex, setPinnedPreviewIndex] = useState(0);
   const pinnedChatMessages = useMemo(() => chatItems
     .filter(item => Boolean(item.pinnedAt))
@@ -4863,7 +5295,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     if (options.length < 2) { setPollError("Add at least two options."); return; }
     setPollError("");
     try {
-      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), scope: conversationScope, ...(conversationPeer ? { recipient: conversationPeer } : {}), ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
+      const posted = await sendChat.mutateAsync({ data: { author: activeInterviewer, message: question.slice(0, 200), ...conversationTarget, ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}) } });
       await createPollMutation.mutateAsync({ messageId: posted.id, data: { question: question.slice(0, 200), options: options.slice(0, 8) } });
       setPollOpen(false);
       resetPollDraft();
@@ -4971,16 +5403,20 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [scheduling, setScheduling] = useState(false);
   const scheduledForConversation = useMemo(() => scheduledItems
     .filter(item => (item.status === "pending" || item.status === "sending")
-      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+      && item.scope === conversationScope
+      && (item.channelId ?? null) === (conversationChannelId ?? null)
+      && (item.recipient ?? null) === (conversationPeer ?? null))
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
-    [scheduledItems, conversationScope, conversationPeer]);
+    [scheduledItems, conversationScope, conversationPeer, conversationChannelId]);
   // Dialog list also surfaces failed deliveries (with the error) so they can
   // be dismissed or recreated instead of vanishing silently.
   const scheduledDialogItems = useMemo(() => scheduledItems
     .filter(item => (item.status === "pending" || item.status === "sending" || item.status === "failed")
-      && item.scope === conversationScope && (item.recipient ?? null) === (conversationPeer ?? null))
+      && item.scope === conversationScope
+      && (item.channelId ?? null) === (conversationChannelId ?? null)
+      && (item.recipient ?? null) === (conversationPeer ?? null))
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt)),
-    [scheduledItems, conversationScope, conversationPeer]);
+    [scheduledItems, conversationScope, conversationPeer, conversationChannelId]);
   const openScheduleMenu = () => {
     setScheduleError("");
     setScheduleNotice("");
@@ -5087,7 +5523,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             });
             if (!response.ok) fail(`CAD upload failed (HTTP ${response.status}). Try again.`);
             objectId = requested.objectPath.replace(/^\/objects\//, "");
-            if (!objectId || objectId.includes("/")) fail("CAD upload failed (bad response). Try again.");
+            if (!isValidObjectId(objectId)) fail("CAD upload failed (bad response). Try again.");
           } else if (shouldUseChunkedUpload(prepared.blob.size)) {
             // Big files go part-by-part straight to storage so the API
             // never has to hold the whole thing in memory.
@@ -5131,7 +5567,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         if (!useSignedUpload && !chunked) {
           const parsed = await (response as Response).json() as { objectPath?: unknown };
           objectId = typeof parsed?.objectPath === "string" ? parsed.objectPath.replace(/^\/objects\//, "") : "";
-          if (!objectId || objectId.includes("/")) fail("Upload failed (bad response). Try again.");
+          if (!isValidObjectId(objectId)) fail("Upload failed (bad response). Try again.");
         }
       } catch (error) {
         if (error instanceof Error && error.message.startsWith("USER:")) throw error;
@@ -5193,8 +5629,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       await createScheduledChat.mutateAsync({
         data: {
           message: body,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
           ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
           ...(pollSpec ? { poll: pollSpec } : {}),
           scheduledAt: target.toISOString(),
@@ -5227,7 +5662,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     answer: string;
     activities: { tool: string; detail: string }[];
     conversationAuthor: string;
-    scope: "shared" | "direct";
+    scope: "shared" | "direct" | "channel";
+    channelId: string | null;
     recipient: string | null;
     idempotencyKey: string;
   } | null>(null);
@@ -5303,7 +5739,10 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     setCreateMenuOpen(false);
     const currentPath = location.split("?")[0];
     const returnPath = currentPath === "/queue" || currentPath === "/chat" ? currentPath : "/chat";
-    const returnTo = conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
+    const selectedConversation = conversationChannelId
+      ? `${returnPath}?channel=${encodeURIComponent(conversationChannelId)}`
+      : conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
+    const returnTo = selectedConversation;
     setLocation(`/spreadsheets/${id}?returnTo=${encodeURIComponent(returnTo)}`);
   };
   const createSharedDocument = async () => {
@@ -5316,8 +5755,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           title: "Untitled document",
           data: JSON.stringify({ kind: "document", elements: [], yState: "" }),
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       setActiveWhiteboardId(saved.id);
@@ -5327,8 +5765,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author: activeInterviewer,
           message: `[[document:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5346,8 +5783,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       const saved = await createBoardMutation.mutateAsync({
         data: {
           title: "Interview coordination board",
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       setActiveBoardId(saved.id);
@@ -5356,8 +5792,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author: activeInterviewer,
           message: `[[board:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5374,16 +5809,14 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       const saved = await createSpreadsheetMutation.mutateAsync({
         data: {
           title: "Tryout worksheet",
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await sendChat.mutateAsync({
         data: {
           author: activeInterviewer,
           message: `[[spreadsheet:${saved.id}]] ${saved.title}`,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
         },
       });
       await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5402,8 +5835,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             data: {
               title,
               data,
-              scope: conversationScope,
-              ...(conversationPeer ? { recipient: conversationPeer } : {}),
+              ...conversationTarget,
             },
           });
       setActiveWhiteboardId(saved.id);
@@ -5413,8 +5845,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           data: {
             author: activeInterviewer,
             message: `[[whiteboard:${saved.id}]] ${saved.title}`,
-            scope: conversationScope,
-            ...(conversationPeer ? { recipient: conversationPeer } : {}),
+            ...conversationTarget,
           },
         });
         await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -5713,6 +6144,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setConversationPeer(null);
     }
   }, [activeInterviewer, conversationPeer, interviewerLabels]);
+  // A channel that disappears (deleted or membership revoked) drops the
+  // viewer back to the team channel instead of a dead 400 conversation.
+  useEffect(() => {
+    if (!conversationChannelId || channelsQuery.isPending) return;
+    if (!channels.some(channel => channel.id === conversationChannelId)) {
+      setConversationChannelId(null);
+      setConversationPeer(null);
+    }
+  }, [channels, channelsQuery.isPending, conversationChannelId]);
   useEffect(() => {
     setOlderChatConversationId(conversationId);
     setOlderChat([]);
@@ -5908,7 +6348,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           conversationAuthor: pendingReply.conversationAuthor,
           message: pendingReply.answer,
           scope: pendingReply.scope,
-          ...(pendingReply.recipient ? { recipient: pendingReply.recipient } : {}),
+          ...(pendingReply.channelId ? { channelId: pendingReply.channelId } : pendingReply.recipient ? { recipient: pendingReply.recipient } : {}),
           activities: pendingReply.activities,
           idempotencyKey: pendingReply.idempotencyKey,
         },
@@ -5917,15 +6357,17 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         limit: CHAT_PAGE_SIZE,
         scope: pendingReply.scope,
         author: pendingReply.conversationAuthor,
-        ...(pendingReply.scope === "direct" && pendingReply.recipient ? { peer: pendingReply.recipient } : {}),
+        ...(pendingReply.channelId ? { channelId: pendingReply.channelId } : pendingReply.scope === "direct" && pendingReply.recipient ? { peer: pendingReply.recipient } : {}),
       };
       void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(retryChatParams) });
       setFailedAiReply(null);
       setAiReplyRetryError("");
       setAiReplySavedNotice(
-        pendingReply.scope === "direct" && pendingReply.recipient
-          ? `AI reply saved to your direct chat with ${pendingReply.recipient}.`
-          : "AI reply saved to team chat.",
+        pendingReply.scope === "channel" && pendingReply.channelId
+          ? "AI reply saved to the channel."
+          : pendingReply.scope === "direct" && pendingReply.recipient
+            ? `AI reply saved to your direct chat with ${pendingReply.recipient}.`
+            : "AI reply saved to team chat.",
       );
     } catch {
       setAiReplyRetryError("Retry failed: we still couldn't confirm whether the answer was saved. You can retry again safely; it reuses the same key and won't create a duplicate.");
@@ -5962,14 +6404,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         data: {
           author,
           message: submitted,
-          scope: conversationScope,
-          ...(conversationPeer ? { recipient: conversationPeer } : {}),
+          ...conversationTarget,
           ...(replyingTo?.id ? { parentMessageId: replyingTo.id } : {}),
         },
       }), 30000, "send");
       userPosted = true;
       const configuredSlowmode = slowmodeConfig.data?.slowmodeSeconds ?? 0;
-      if (configuredSlowmode > 0 && conversationScope === "shared") startSlowmodeCountdown(configuredSlowmode);
+      if (configuredSlowmode > 0 && (conversationScope === "shared" || conversationScope === "channel")) startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
       if (/@ai\b/i.test(submitted)) {
@@ -5984,7 +6425,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             getInterviewChat({
               limit: CHAT_CONTEXT_MESSAGE_LIMIT,
               scope: conversationScope,
-              ...(conversationPeer ? { peer: conversationPeer } : {}),
+              ...(conversationChannelId ? { channelId: conversationChannelId } : conversationPeer ? { peer: conversationPeer } : {}),
             }),
             15000,
             "history",
@@ -6002,7 +6443,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           activities: response.activities ?? [],
           conversationAuthor: author,
           scope: conversationScope,
-          recipient: conversationPeer,
+          channelId: conversationChannelId,
+          recipient: conversationPeer ?? null,
           idempotencyKey: crypto.randomUUID(),
         };
         setAiReplySavedNotice("");
@@ -6012,8 +6454,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
             author: "AI assistant",
             conversationAuthor: assistantReplyForRetry.conversationAuthor,
             message: assistantReplyForRetry.answer,
-            scope: assistantReplyForRetry.scope,
-            ...(assistantReplyForRetry.recipient ? { recipient: assistantReplyForRetry.recipient } : {}),
+            ...conversationTarget,
             activities: assistantReplyForRetry.activities,
             idempotencyKey: assistantReplyForRetry.idempotencyKey,
           },
@@ -6083,8 +6524,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     const editing = editingMessageId === item.id;
     const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer, mentionPeople);
     return <div key={item.id} id={`chat-message-${item.id}`} data-chat-message-id={item.id} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
-      {!item.deletedAt && <div className="pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-        <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+      {!item.deletedAt && <div className="chat-message-actions pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <div className="chat-message-quick-react flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
           {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
         </div>
         <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
@@ -6109,7 +6550,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {formatChatDateTime(item.createdAt)}
         </time>
       </div>
-        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm text-[#7c8c91] dark:text-[#a8bbc2]"><span className="mr-2 inline-flex rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>This message was deleted. <time dateTime={item.deletedAt}>Deleted {formatChatDateTime(item.deletedAt)}</time></p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
+        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm text-[#7c8c91] dark:text-[#a8bbc2]"><span className="mr-2 inline-flex rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>This message was deleted. <time dateTime={item.deletedAt}>Deleted {formatChatDateTime(item.deletedAt)}</time></p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
            const sharedBoard = parseBoardChatMessage(item.message);
@@ -6172,8 +6613,29 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     </div>;
   };
    const directTargets = interviewerLabels.filter(label => label.toLowerCase() !== activeInterviewer.toLowerCase());
-   return <section className="chat-panel rounded-3xl border border-[#dce5e5] bg-white p-5">
-      <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">Type <strong>@ai</strong> for an applicant-aware response.</p></div><Bot size={20} className="text-[#16869a]" /></div>
+   const stripChannels = useMemo(() => {
+     const activityChannels = conversations.data?.channels ?? [];
+     if (activityChannels.length) return activityChannels;
+     // Before the first conversations load, fall back to the channel list so
+     // invites are still shown.
+     return channels.map(channel => ({
+       channelId: channel.id,
+       channelName: channel.name,
+       lastMessageAt: channel.updatedAt,
+       lastMessageAuthor: "",
+       lastMessage: "",
+     }));
+   }, [conversations.data, channels]);
+   // Members of the managed channel missing from the picker list (a removed
+   // account row, for instance) stay visible so nothing silently drops out.
+   const missingChannelAccounts = useMemo(() => {
+     if (!channelDialogId) return [];
+     const known = new Set(channelAccounts.map(account => account.id));
+     return (channels.find(channel => channel.id === channelDialogId)?.members ?? [])
+       .filter(member => !known.has(member.id));
+   }, [channelAccounts, channels, channelDialogId]);
+   return <section className="chat-panel relative rounded-3xl border border-[#dce5e5] bg-white p-5">
+      <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : conversationChannelId ? (activeChannel?.name ?? "Channel") : "Team channel"}</h2><p className="mt-1 text-xs text-[#7c8c91]">{conversationChannelId && activeChannel ? `Invite-only · ${activeChannel.members.length} invited` : <>Type <strong>@ai</strong> for an applicant-aware response.</>}</p></div><Bot size={20} className="text-[#16869a]" /></div>
       {mentionAttention && <button
         type="button"
         onClick={() => {
@@ -6197,12 +6659,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        </div>
        <div className="mt-3 flex flex-wrap items-center gap-2">
          <span className="mr-1 text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Conversation</span>
-         <button type="button" onClick={() => setConversationPeer(null)} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
-         {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => setConversationPeer(label)} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
+         <button type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(null); }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${!conversationPeer && !conversationChannelId ? "border-[#183a4b] bg-[#183a4b] text-white" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#183a4b]"}`} data-testid="button-chat-team">Team</button>
+         {directTargets.map(label => { const hasUnread = unreadPeers.has(label.trim().toLowerCase()); return <button key={`direct-${label}`} type="button" onClick={() => { setConversationChannelId(null); setConversationPeer(label); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${conversationPeer?.toLowerCase() === label.toLowerCase() ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-direct-${label.toLowerCase().replaceAll(" ", "-")}`} title={hasUnread ? "New direct message" : undefined}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`unread-dot-${label.toLowerCase().replaceAll(" ", "-")}`} aria-label="Unread" />}<span>To {label}</span></button>; })}
+         {stripChannels.map(channelItem => { const activeChannelButton = conversationChannelId === channelItem.channelId; const hasUnread = unreadChannels.has(channelItem.channelId); return <button key={`channel-${channelItem.channelId}`} type="button" onClick={() => { setConversationPeer(null); setConversationChannelId(channelItem.channelId); }} className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${activeChannelButton ? "border-[#16869a] bg-[#e3f4f2] text-[#12737d]" : hasUnread ? "border-[#e0b8b4] bg-[#fff5f3] text-[#a34d46]" : "border-[#d5e0e0] bg-white text-[#52666e] hover:border-[#16869a]"}`} data-testid={`button-chat-channel-${channelItem.channelId.slice(0, 8)}`} title={channelItem.lastMessage ? `${channelItem.lastMessageAuthor}: ${channelItem.lastMessage}` : "Invite-only channel"}>{hasUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d13b30]" data-testid={`channel-unread-dot-${channelItem.channelId.slice(0, 8)}`} aria-label="Unread" />}<span className="flex items-center gap-1"><UsersRound size={11} className="shrink-0 opacity-70" /><span>{channelItem.channelName}</span></span></button>; })}
+         {canManageChannels && conversationChannelId && <button type="button" onClick={() => openManageChannelDialog(conversationChannelId)} data-testid="button-manage-channel" aria-label="Manage this channel" title="Rename, invite, or delete this channel" className="flex items-center gap-1.5 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#12737d] transition hover:border-[#16869a]"><Settings size={12} /><span>Manage</span></button>}
+         {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a]"><Plus size={12} /><span>Channel</span></button>}
        </div>
-       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants.</p>
+       <p className="mt-2 text-[11px] leading-4 text-[#8a999d]">{conversationChannelId ? (activeChannel ? `Invite-only — only ${activeChannel.members.length} invited people${canManageChannels ? " (and admins)" : ""} can read or post here.` : "Invite-only channel.") : "Your identity comes from your signed interviewer session. Direct messages are visible only to the two participants."}</p>
      </div>
-       <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`chat-message-feed mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-7 w-7 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
+       <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`chat-message-feed mt-4 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form
         onSubmit={submitChat}
         onDragEnter={handleChatDragEnter}
@@ -6210,12 +6675,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         onDragLeave={handleChatDragLeave}
         onDrop={handleChatDrop}
         data-testid="chat-composer-dropzone"
-        className={`chat-composer-dropzone mt-3 space-y-2 ${chatFileDragActive ? "is-dragging-files" : ""}`}
+        className={`chat-composer-dropzone mt-3 space-y-2 ${chatFileDragActive ? "is-dragging-files" : ""} ${keyboardOpen ? "chat-composer-keyboard sticky z-20 -mx-5 rounded-3xl bg-white px-5 pb-[calc(1.25rem+var(--kb-inset,0px))] pt-1 shadow-[0_-8px_20px_rgba(24,58,75,0.08)]" : ""}`}
+        style={keyboardOpen ? { bottom: keyboardInset } : undefined}
       >
-       {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
-       {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} aria-label={`Remove ${f.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
+       {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
+       {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} data-testid={`button-remove-chat-file-${f.id}`} aria-label={`Remove ${f.name}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
-           {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
+           {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
             <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People and applicants</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Applicant mentions are chat references; applicants aren’t notified.</p></div>
             <div className="max-h-64 overflow-y-auto p-1.5">
                {filteredMentionPeople.map((person, index) => <button
@@ -6238,8 +6704,8 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                {filteredMentionPeople.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">No matching people or applicants.</p>}
             </div>
          </div>}
-          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-64 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, 3D models, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
-            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 w-72 rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
+          {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,320px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, 3D models, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
+            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,340px)] w-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
            dark={theme === "dark"}
            customEmojis={customEmojiItems}
@@ -6247,28 +6713,28 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
            onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
            onSelect={value => { insertAtCursor(value); setEmojiOpen(false); }}
          />}
-            {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 w-60 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
-            {scheduleOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 w-[340px] max-w-[calc(100vw-3rem)] rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="chat-schedule-menu" role="dialog" aria-label="Schedule message send">
+            {voiceMenuOpen && !isRecording && !isDictating && <div className="absolute bottom-[calc(100%+10px)] right-8 z-30 max-h-[min(60dvh,320px)] w-60 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="voice-mode-menu"><button type="button" onClick={startDictation} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-dictation"><Type size={16} className="text-primary" /><span><span className="block">Dictate text</span><span className="block text-[11px] font-normal text-muted-foreground">Speak into the message box</span></span></button><button type="button" onClick={() => { setVoiceMenuOpen(false); void startVoiceRecording(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-start-audio-recording"><Mic size={16} className="text-primary" /><span><span className="block">Record audio</span><span className="block text-[11px] font-normal text-muted-foreground">Send your voice as an audio file</span></span></button></div>}
+            {scheduleOpen && <div className="absolute bottom-[calc(100%+10px)] right-0 z-30 max-h-[min(70dvh,420px)] w-[340px] max-w-[calc(100vw-3rem)] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white p-3 shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="chat-schedule-menu" role="dialog" aria-label="Schedule message send">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-[#183a4b]">Schedule send</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[#8a999d]">{conversationChannelId ? `Sends to ${activeChannel?.name ?? "the channel"}` : conversationPeer ? `Sends to ${conversationPeer}` : "Sends to the team channel"} · sends automatically, even with this browser closed.</p>
                 </div>
-                <button type="button" onClick={() => setScheduleOpen(false)} aria-label="Close schedule menu" data-testid="button-close-schedule-menu" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
+                <button type="button" onClick={() => setScheduleOpen(false)} aria-label="Close schedule menu" data-testid="button-close-schedule-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
               </div>
               {message.trim() || chatFiles.length > 0 ? <p className="mt-2 truncate rounded-lg bg-[#f4f8f7] px-2.5 py-2 text-xs text-[#52666e]" data-testid="schedule-draft-preview">“{(message.trim() || `${chatFiles.length} attachment${chatFiles.length === 1 ? "" : "s"}`).slice(0, 120)}{(message.trim() || "").length > 120 ? "…" : ""}”{pollOpen && (pollQuestion.trim() || pollOptions.some(option => option.trim())) ? " + poll" : ""}</p> : <p className="mt-2 rounded-lg bg-[#fff8e1] px-2.5 py-2 text-[11px] text-[#8a6508]">Write a message, attach a file, or draft a poll first — then pick a time.</p>}
               {replyingTo && <p className="mt-1.5 text-[11px] text-[#527079]">Will send as a reply to {replyingTo.author}.</p>}
               <div className="mt-2">
                 <label htmlFor="input-schedule-natural-language" className="text-[11px] font-semibold text-[#63747c] dark:text-[#b5c5cb]">Describe when to send</label>
                 <div className="mt-1 flex gap-2">
-                  <input id="input-schedule-natural-language" type="text" value={scheduleText} onChange={event => setScheduleText(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void interpretScheduleTime(); } }} maxLength={300} placeholder="e.g. tomorrow at 9am" data-testid="input-schedule-natural-language" className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
+                  <input id="input-schedule-natural-language" type="text" value={scheduleText} onChange={event => setScheduleText(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void interpretScheduleTime(); } }} maxLength={300} placeholder="e.g. tomorrow at 9am" data-testid="input-schedule-natural-language" className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a] dark:border-[#395563] dark:bg-[#1b303b] dark:text-[#e5edf3] dark:placeholder:text-[#72848d]" />
                   <button type="button" onClick={() => void interpretScheduleTime()} disabled={!scheduleText.trim() || interpretScheduledChatTime.isPending} data-testid="button-interpret-schedule-time" className="shrink-0 rounded-lg border border-[#16869a] px-3 text-[11px] font-semibold text-[#12737d] transition hover:bg-[#e3f4f2] disabled:opacity-50 dark:text-[#8fd7e0] dark:hover:bg-[#15323a]">{interpretScheduledChatTime.isPending ? "Asking…" : "Ask AI"}</button>
                 </div>
                 <p className="mt-1 text-[10px] text-[#8a999d] dark:text-[#93a8b2]">AI fills your local date and time below; you can adjust either field.</p>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <label className="block text-[11px] font-semibold text-[#63747c]">Date<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} data-testid="input-schedule-date" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
-                <label className="block text-[11px] font-semibold text-[#63747c]">Time<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} data-testid="input-schedule-time" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+                <label className="block text-[11px] font-semibold text-[#63747c]">Date<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} data-testid="input-schedule-date" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
+                <label className="block text-[11px] font-semibold text-[#63747c]">Time<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} data-testid="input-schedule-time" className="mt-1 h-9 w-full rounded-lg border border-[#d5e0e0] px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" /></label>
               </div>
               {scheduleError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="schedule-error">{scheduleError}</p>}
               {scheduleNotice && <p className="mt-2 text-xs font-medium text-[#16869a]" role="status" data-testid="schedule-notice">{scheduleNotice}</p>}
@@ -6287,13 +6753,16 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                         ? <p className="mt-0.5 text-[11px] text-[#ad4b43]">Failed — {item.lastError ?? "couldn't deliver"}</p>
                         : <p className="mt-0.5 text-[11px] text-[#7c8c91]">{formatScheduledAt(item.scheduledAt)} · {formatScheduleCountdown(item.scheduledAt, clock)}{item.parentMessageId ? ` · reply` : ""}{item.poll ? ` · poll` : ""}{item.status === "sending" ? " · sending…" : ""}</p>}
                     </div>
-                    <button type="button" onClick={() => cancelScheduledMessage(item.id)} disabled={deleteScheduledChat.isPending} aria-label={item.status === "failed" ? "Dismiss failed scheduled message" : "Cancel scheduled message"} data-testid={`button-cancel-scheduled-${item.id}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><X size={13} /></button>
+                    <button type="button" onClick={() => cancelScheduledMessage(item.id)} disabled={deleteScheduledChat.isPending} aria-label={item.status === "failed" ? "Dismiss failed scheduled message" : "Cancel scheduled message"} data-testid={`button-cancel-scheduled-${item.id}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><X size={13} /></button>
                   </div>)}
                 </div>
               </div>}
             </div>}
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
             <div className="chat-composer-layout">
+              <div className="chat-composer-more">
+                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+              </div>
               <div className="chat-composer-input min-w-0">
                 <textarea
                    ref={chatMessageInputRef}
@@ -6307,13 +6776,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : undefined}
                    data-testid="input-interviewer-chat"
                    rows={1}
-                   className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
+                   className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
                    placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
                  />
-                {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-7 w-7 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-7 w-7 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-7 w-7 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown formatting is supported</span></div>}
+                {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
               <div className="chat-composer-actions" data-testid="chat-composer-actions">
-                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+                
                  <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
                  <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
                  <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
@@ -6334,7 +6803,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        {chatImageError && <p className="text-xs text-[#ad4b43]" data-testid="chat-image-error">{chatImageError}</p>}
         {failedAiReply && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert" data-testid="ai-reply-retry">
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">We couldn’t confirm the AI reply to {failedAiReply.scope === "direct" && failedAiReply.recipient ? failedAiReply.recipient : "team chat"}.</p>
+            <p className="font-semibold">We couldn’t confirm the AI reply to {failedAiReply.scope === "channel" && failedAiReply.channelId ? "the channel" : failedAiReply.scope === "direct" && failedAiReply.recipient ? failedAiReply.recipient : "team chat"}.</p>
             <p className="mt-0.5 text-xs">Your prompt is already in chat. Retry will check and save the same answer as {failedAiReply.conversationAuthor} without asking the AI again.</p>
             {aiReplyRetryError && <p className="mt-1 text-xs font-medium" data-testid="ai-reply-retry-error">{aiReplyRetryError}</p>}
           </div>
@@ -6344,11 +6813,11 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
         {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>
-          <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
+          <input value={pollQuestion} onChange={event => setPollQuestion(event.target.value)} placeholder="Ask a question" data-testid="input-poll-question" className="h-9 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
           <div className="space-y-1.5">
             {pollOptions.map((option, index) => (
               <div key={index} className="flex items-center gap-1.5">
-                <input value={option} onChange={event => setPollOptions(current => current.map((value, i) => i === index ? event.target.value : value))} placeholder={`Option ${index + 1}`} data-testid={`input-poll-option-${index}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
+                <input value={option} onChange={event => setPollOptions(current => current.map((value, i) => i === index ? event.target.value : value))} placeholder={`Option ${index + 1}`} data-testid={`input-poll-option-${index}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]" />
                 {pollOptions.length > 2 && <button type="button" onClick={() => setPollOptions(current => current.filter((_, i) => i !== index))} aria-label={`Remove option ${index + 1}`} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e0b8b4] text-[#a34d46] hover:bg-[#fff1ef] dark:border-[#7d4038] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><X size={13} /></button>}
               </div>
             ))}
@@ -6367,6 +6836,59 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
            : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
+       {channelDialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#183a4b]/40 p-4" role="dialog" aria-modal="true" aria-label={channelDialogId ? "Channel settings" : "New invite-only channel"} data-testid="chat-channel-dialog">
+         <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-[#dce5e5] bg-white p-5 shadow-2xl">
+           <div className="flex items-start justify-between gap-3">
+             <div className="min-w-0"><h3 className="font-semibold text-[#385762]">{channelDialogId ? "Channel settings" : "New invite-only channel"}</h3><p className="mt-1 text-xs text-[#7c8c91]">{channelDialogId ? "Rename the channel or change who is invited." : "Only invited people (and admins) can read or post in it."}</p></div>
+             <button type="button" onClick={closeChannelDialog} aria-label="Close channel dialog" data-testid="button-close-channel-dialog" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1]"><X size={15} /></button>
+           </div>
+           <form onSubmit={submitChannelDialog} className="mt-4">
+             <label htmlFor="input-channel-name" className="block text-[11px] font-semibold text-[#63747c]">Channel name</label>
+             <input
+               id="input-channel-name"
+               autoFocus
+               value={channelNameDraft}
+               onChange={event => setChannelNameDraft(event.target.value)}
+               maxLength={80}
+               placeholder="e.g. Build captains"
+               data-testid="input-channel-name"
+               className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]"
+             />
+             <div className="mt-3">
+               <p className="text-[11px] font-semibold text-[#63747c]">Invited people</p>
+               <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-1.5" data-testid="channel-member-picker">
+                 {channelAccounts.map(account => {
+                   const checked = channelMemberIdsDraft.includes(account.id);
+                   const roleLabel = account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member";
+                   return <label key={account.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition ${checked ? "bg-[#e3f4f2]" : "hover:bg-white"}`} data-testid={`channel-member-option-${account.id}`}>
+                     <input type="checkbox" checked={checked} onChange={() => toggleChannelMemberDraft(account.id)} className="h-4 w-4 accent-[#16869a]" aria-label={`Invite ${account.displayName}`} />
+                     <span className="min-w-0 flex-1 truncate font-medium text-[#183a4b]">{account.displayName}{session.data?.interviewerId === account.id ? " (you)" : ""}</span>
+                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[.08em] text-[#7c8c91]">{roleLabel}</span>
+                   </label>;
+                 })}
+                 {missingChannelAccounts.map(member => {
+                   const roleLabel = member.role === "coordinator" ? "Admin" : member.role === "treasurer" ? "Treasurer" : "Team member";
+                   return <label key={member.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition bg-[#e3f4f2] hover:bg-[#d9efec]`}>
+                     <input type="checkbox" checked={channelMemberIdsDraft.includes(member.id)} onChange={() => toggleChannelMemberDraft(member.id)} className="h-4 w-4 accent-[#16869a]" aria-label={`Invite ${member.displayName}`} />
+                     <span className="min-w-0 flex-1 truncate font-medium text-[#183a4b]">{member.displayName}</span>
+                     <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[.08em] text-[#7c8c91]">{roleLabel}</span>
+                   </label>;
+                 })}
+                 {channelAccounts.length === 0 && missingChannelAccounts.length === 0 && <p className="px-2 py-3 text-xs text-[#7c8c91]">{channelAccountsQuery.isPending ? "Loading people…" : "No teammates to invite yet."}</p>}
+               </div>
+             </div>
+             {channelDialogError && <p className="mt-2 text-xs font-semibold text-[#ad4b43]" data-testid="channel-dialog-error">{channelDialogError}</p>}
+             <div className="mt-4 flex gap-2">
+               <button type="submit" disabled={createChannelMutation.isPending || updateChannelMutation.isPending} data-testid="button-save-channel" className="flex-1 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{channelDialogId ? "Save changes" : "Create channel"}</button>
+               <button type="button" onClick={closeChannelDialog} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e]">Cancel</button>
+             </div>
+           </form>
+           {channelDialogId && <div className="mt-4 border-t border-[#edf1f1] pt-3">
+             <button type="button" onClick={() => void deleteActiveChannel()} disabled={deleteChannelMutation.isPending} data-testid="button-delete-channel" aria-label="Delete this channel" className="flex items-center gap-1.5 rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={13} /><span>Delete channel</span></button>
+             <p className="mt-1.5 text-[11px] text-[#8a999d]">Deleting removes the channel and every message in it.</p>
+           </div>}
+         </div>
+       </div>}
   </section>;
 }
 function Queue() { const streamHealthy = useRealtimeHealthy();
@@ -6391,7 +6913,31 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const labelsDirty = useRef(false);
   const boardDirty = useRef(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const { overlayProps, panelProps } = useModalOverlay({ label: "Confirm reset interview progress", onClose: () => setResetOpen(false), enabled: resetOpen });
   const [resetConfirm, setResetConfirm] = useState("");
+  // Queue search and keyboard focus. During a live tryout the person running
+  // the queue has to find an applicant by name and act on them without
+  // leaving the page, so both are first-class here.
+  const [queueSearch, setQueueSearch] = useState("");
+  const [focusedApplicantId, setFocusedApplicantId] = useState<string | null>(null);
+  const queueSearchRef = useRef<HTMLInputElement>(null);
+  const saveNote = async (id: string, note: string, original: string) => {
+    if (note === original) return;
+    await updateApplicant.mutateAsync({ id, data: { notes: note } });
+    qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+  };
+  const assignInterviewer = (id: string, interviewer: string) => {
+    updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
+  };
+  const finishApplicant = (id: string) => {
+    advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
+  };
+  const setDecision = (id: string, decision: string) => {
+    updateApplicant.mutate({ id, data: { interviewDecision: decision } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
+  };
   useEffect(() => {
     if (!resetOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -6408,6 +6954,58 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     if (!remaining.data || boardDirty.current) return;
     setBoard(remaining.data.items.filter(applicant => applicant.interviewStatus !== "completed"));
   }, [remaining.data]);
+  // Keyboard shortcuts for the live interview loop. An interviewer is looking
+  // at the applicant, not the screen, so the actions that happen on every
+  // interview have to be one key away:
+  //   /      focus the queue search
+  //   Enter  finish the applicant you are on
+  //   1-6    record the interview decision
+  //   n / p  move to the next / previous applicant in the queue
+  // Nothing fires while typing in a field.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const node = event.target as HTMLElement | null;
+      const typing = Boolean(node && (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.tagName === "SELECT" || node.isContentEditable));
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        queueSearchRef.current?.focus();
+        return;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      const data = queue.data;
+      if (!data) return;
+      const mine = data.currentApplicants.filter(candidate => candidate.interviewer === session.data?.label);
+      const focused = focusedApplicantId ? mine.find(candidate => candidate.id === focusedApplicantId) : undefined;
+      const current = focused ?? mine[0];
+      if (event.key === "n" || event.key === "p") {
+        if (!mine.length) return;
+        event.preventDefault();
+        const index = current ? mine.findIndex(candidate => candidate.id === current.id) : -1;
+        const next = event.key === "n" ? index + 1 : index - 1;
+        const wrapped = ((next % mine.length) + mine.length) % mine.length;
+        setFocusedApplicantId(mine[wrapped]?.id ?? null);
+        return;
+      }
+      if (!current) return;
+      if (event.key === "Enter") {
+        // Only when the keyboard is not already on a control: otherwise
+        // pressing Enter on the Finish button would finish the next
+        // applicant as well.
+        const onControl = Boolean(node?.closest("button, a, [role='button'], [role='link'], summary"));
+        if (onControl) return;
+        event.preventDefault();
+        finishApplicant(current.id);
+        return;
+      }
+      const decisionIndex = Number.parseInt(event.key, 10);
+      if (Number.isInteger(decisionIndex) && decisionIndex >= 1 && decisionIndex <= INTERVIEW_DECISIONS.length) {
+        event.preventDefault();
+        setDecision(current.id, INTERVIEW_DECISIONS[decisionIndex - 1]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [queue.data, session.data?.label, focusedApplicantId]);
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
   if (queue.isError || !queue.data) return <ErrorState onRetry={() => queue.refetch()} />;
   const q = queue.data;
@@ -6415,17 +7013,16 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     ? q.currentApplicants.filter(applicant => applicant.interviewer === session.data?.label)
     : [];
   const unassignedApplicant = q.currentApplicants.find(applicant => !applicant.interviewer);
-  const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: board.filter(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: board.filter(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
+  // Queue search narrows the board so a coordinator can find a person by name
+  // mid-interview without leaving the page.
+  const boardMatches = (predicate: (applicant: Applicant) => boolean) => {
+    const query = queueSearch.trim().toLowerCase();
+    const members = board.filter(predicate);
+    if (!query) return members;
+    return members.filter(applicant => applicant.name.toLowerCase().includes(query) || (applicant.grade ?? "").toLowerCase().includes(query));
+  };
+  const boardColumns = [...q.interviewerLabels.map(label => ({ key: label, label, members: boardMatches(applicant => (applicant.interviewer ?? "") === label) })), { key: "__unassigned", label: "", members: boardMatches(applicant => !q.interviewerLabels.includes(applicant.interviewer ?? "")) }];
   const boardIndex = new Map(board.map((applicant, index) => [applicant.id, index] as const));
-  const saveNote = (id: string, note: string, original: string) => {
-    if (note !== original) updateApplicant.mutate({ id, data: { notes: note } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
-  const assignInterviewer = (id: string, interviewer: string) => {
-    updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
-  const finishApplicant = (id: string) => {
-    advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
   const recallApplicant = async (id: string, name: string) => {
     if (callback.isPending || !(await confirmAction({ title: `Call ${name} back?`, detail: "They return to the front of the queue and the big screen will announce it.", confirmLabel: "Call back" }))) return;
     callback.mutate({ data: { applicantId: id } }, { onSuccess: () => { { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } finished.refetch(); } });
@@ -6458,11 +7055,10 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     next.splice(at < 0 ? next.length : at, 0, dragged);
     finishBoardDrop(next, dragged, targetLabel);
   };
-  const dropOnColumn = (targetLabel: string) => {
-    if (!drag) return;
-    const dragged = board.find(item => item.id === drag);
-    if (!dragged) { setDrag(null); return; }
-    const next = board.filter(item => item.id !== drag);
+  const moveToColumn = (applicantId: string, targetLabel: string) => {
+    const dragged = board.find(item => item.id === applicantId);
+    if (!dragged) return;
+    const next = board.filter(item => item.id !== applicantId);
     let at = next.length;
     for (let i = next.length - 1; i >= 0; i--) {
       const member = next[i];
@@ -6472,6 +7068,11 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     }
     next.splice(at, 0, dragged);
     finishBoardDrop(next, dragged, targetLabel);
+  };
+  const dropOnColumn = (targetLabel: string) => {
+    if (!drag) return;
+    moveToColumn(drag, targetLabel);
+    setDrag(null);
   };
   const moveInBoard = (id: string, direction: -1 | 1) => {
     const index = board.findIndex(item => item.id === id);
@@ -6505,17 +7106,24 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail={`Showing applicants assigned to ${session.data?.label ?? "your interviewer account"}.`} action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />Live sync every 3 seconds</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
+    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail={`Showing applicants assigned to ${session.data?.label ?? "your interviewer account"}.`} action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2" data-testid="queue-sync-label"><span className={`h-2 w-2 rounded-full ${streamHealthy ? "animate-pulse bg-[#28a47f]" : refreshMs ? "bg-[#c99a1f]" : "bg-[#b34a42]"}`} />{streamHealthy ? "Live updates on" : refreshMs ? `Realtime reconnecting — refreshing every ${Math.round(refreshMs / 1000)}s` : "Realtime off — this board may be stale"}</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
       <div className="flex items-center gap-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] px-3 py-2 text-xs text-[#527079]"><ShieldCheck size={15} className="text-[#16869a]" />Signed in as <strong>{session.data?.label ?? "interviewer"}</strong></div>
+      <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+        <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#819198]" />
+          <input ref={queueSearchRef} value={queueSearch} onChange={event => setQueueSearch(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { setQueueSearch(""); event.currentTarget.blur(); } }} data-testid="input-queue-search" aria-label="Search the interview queue" placeholder="Search the queue…" className="h-9 w-full rounded-lg border border-[#dce5e5] bg-white pl-9 pr-3 text-base md:text-sm outline-none focus:border-[#16869a]" />
+        </div>
+        <p className="hidden text-[11px] text-[#7c8c91] lg:block"><kbd className="rounded border border-[#d5e0e0] bg-[#f4f7f7] px-1.5 py-0.5 font-mono text-[10px]">/</kbd> search · <kbd className="rounded border border-[#d5e0e0] bg-[#f4f7f7] px-1.5 py-0.5 font-mono text-[10px]">1</kbd>–<kbd className="rounded border border-[#d5e0e0] bg-[#f4f7f7] px-1.5 py-0.5 font-mono text-[10px]">6</kbd> decision · <kbd className="rounded border border-[#d5e0e0] bg-[#f4f7f7] px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd> finish</p>
+      </div>
     </section>
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="relative overflow-hidden rounded-3xl bg-[#172a3a] p-7 text-white">
         <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full border border-[#f8c84a]/20" />
         <div className="relative">
-          <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]">{visibleApplicants.length} assigned to you / {q.currentApplicants.length} active</span></div>
+          <div className="flex items-center justify-between"><Badge tone="yellow">Interviewing now</Badge><span className="mono text-xs text-[#89a4ab]" role="status" aria-live="polite" data-testid="queue-assigned-count">{visibleApplicants.length} assigned to you / {q.currentApplicants.length} active</span></div>
           <div className={`mt-8 grid gap-4 ${visibleApplicants.length > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } })} />) : <div className="py-10 text-[#acc2c7]"><p>No applicant is assigned to your interviewer account right now.</p>{session.data?.label && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, session.data?.label ?? "")} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
+            {visibleApplicants.length ? visibleApplicants.map((applicant, index) => <InterviewApplicantCard key={applicant.id} applicant={applicant} index={index} interviewerLabels={q.interviewerLabels} onAssign={assignInterviewer} onSaveNote={saveNote} onFinish={finishApplicant} focused={focusedApplicantId === applicant.id} onUpdate={data => updateApplicant.mutate({ id: applicant.id, data }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } })} />) : <div className="py-10 text-[#acc2c7]"><p>No applicant is assigned to your interviewer account right now.</p>{session.data?.label && unassignedApplicant && <button onClick={() => assignInterviewer(unassignedApplicant.id, session.data?.label ?? "")} disabled={updateApplicant.isPending} data-testid="button-claim-next-applicant" className="mt-4 rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Claim next available applicant</button>}</div>}
           </div>
         </div>
       </section>
@@ -6530,18 +7138,18 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
       <Section title="Corresponding interviewers" kicker="Add as many interviewers as you need; these labels also appear on the public display.">
         <div id="interviewer-settings" />
         <div className="space-y-2">
-          {labels.map((label, index) => <div key={`label-row-${index}`} className="flex items-center gap-2"><span className="mono w-6 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><input value={label} onChange={event => { labelsDirty.current = true; setLabels(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item)); }} className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#16869a]" /><button disabled={labels.length <= 1} onClick={() => { labelsDirty.current = true; setLabels(current => current.filter((_, itemIndex) => itemIndex !== index)); }} className="rounded-lg px-2 text-xs text-[#bd5047] disabled:opacity-30">Remove</button></div>)}
+          {labels.map((label, index) => <div key={`label-row-${index}`} className="flex items-center gap-2"><span className="mono w-6 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><input value={label} onChange={event => { labelsDirty.current = true; setLabels(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item)); }} className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button disabled={labels.length <= 1} onClick={() => { labelsDirty.current = true; setLabels(current => current.filter((_, itemIndex) => itemIndex !== index)); }} className="rounded-lg px-2 text-xs text-[#bd5047] disabled:opacity-30">Remove</button></div>)}
           <div className="flex flex-wrap gap-2 pt-2"><button onClick={() => { labelsDirty.current = true; setLabels(current => [...current, `Interviewer ${current.length + 1}`]); }} className="rounded-lg border border-[#cbd9da] px-3 py-2 text-xs font-semibold text-[#385762]">+ Add interviewer</button><button onClick={saveLabels} disabled={updateSettings.isPending} data-testid="button-save-interviewer-labels" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{updateSettings.isPending ? "Saving..." : "Save labels"}</button></div>
         </div>
       </Section>
     </div>
-    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5" data-testid="group-board"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Interview groups</h2><p className="mt-1 text-xs text-[#7c8c91]">Drag applicants between interviewers to assign them. Drag within or across columns, or use ↑↓, to set the overall interview order. Numbers show queue position.</p></div><UsersRound size={20} className="text-[#16869a]" /></div>{remaining.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16" />)}</div> : remaining.isError ? <ErrorState compact onRetry={() => remaining.refetch()} /> : <div className="mt-4 grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">{boardColumns.map(column => <div key={column.key} onDragOver={event => event.preventDefault()} onDrop={() => dropOnColumn(column.label)} data-testid={`group-column-${column.label.toLowerCase().replaceAll(" ", "-") || "unassigned"}`} className="min-h-[140px] rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-2"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{column.label || "Unassigned"}</p><span className="mono text-xs text-[#809196]">{column.members.length}</span></div>{column.members.length ? column.members.map(applicant => { const position = (boardIndex.get(applicant.id) ?? 0) + 1; return <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => dropOnCard(applicant.id, column.label)} data-testid={`group-card-${applicant.id}`} className="mb-2 flex cursor-grab items-center gap-2 rounded-xl border border-[#d7e4e3] bg-white px-3 py-2.5 text-left shadow-sm"><GripVertical size={14} className="shrink-0 text-[#b4c1c4]" /><span className="mono w-6 shrink-0 text-xs text-[#16869a]">{String(position).padStart(2, "0")}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{applicant.name}</span><span className="block text-[10px] text-[#819196]">Grade {applicant.grade}{position <= q.interviewerLabels.length ? " · up now" : ""}</span></span><button onClick={() => moveInBoard(applicant.id, -1)} aria-label={`Move ${applicant.name} earlier`} data-testid={`button-group-up-${applicant.id}`} className="shrink-0 text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => moveInBoard(applicant.id, 1)} aria-label={`Move ${applicant.name} later`} data-testid={`button-group-down-${applicant.id}`} className="shrink-0 text-[#779096] hover:text-[#16869a]">↓</button></div>; }) : <p className="px-2 py-6 text-center text-xs text-[#819196]">Drop applicants here</p>}</div>)}</div>}</section>
+    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5" data-testid="group-board"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Interview groups</h2><p className="mt-1 text-xs text-[#7c8c91]">Drag applicants between interviewers to assign them. Drag within or across columns, or use ↑↓, to set the overall interview order. On a phone, use the Interviewer picker on each card. Numbers show queue position.</p></div><UsersRound size={20} className="text-[#16869a]" /></div>{remaining.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16" />)}</div> : remaining.isError ? <ErrorState compact onRetry={() => remaining.refetch()} /> : <div className="mt-4 grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">{boardColumns.map(column => <div key={column.key} onDragOver={event => event.preventDefault()} onDrop={() => dropOnColumn(column.label)} data-testid={`group-column-${column.label.toLowerCase().replaceAll(" ", "-") || "unassigned"}`} className="min-h-[140px] rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-2"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{column.label || "Unassigned"}</p><span className="mono text-xs text-[#809196]">{column.members.length}</span></div>{column.members.length ? column.members.map(applicant => { const position = (boardIndex.get(applicant.id) ?? 0) + 1; return <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => dropOnCard(applicant.id, column.label)} data-testid={`group-card-${applicant.id}`} className="mb-2 flex cursor-grab flex-col gap-1.5 rounded-xl border border-[#d7e4e3] bg-white px-3 py-2.5 text-left shadow-sm"><div className="flex items-center gap-2"><GripVertical size={14} className="shrink-0 text-[#b4c1c4]" /><span className="mono w-6 shrink-0 text-xs text-[#16869a]">{String(position).padStart(2, "0")}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{applicant.name}</span><span className="block text-[10px] text-[#819196]">Grade {applicant.grade}{position <= q.interviewerLabels.length ? " · up now" : ""}</span></span><button onClick={() => moveInBoard(applicant.id, -1)} aria-label={`Move ${applicant.name} earlier`} data-testid={`button-group-up-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => moveInBoard(applicant.id, 1)} aria-label={`Move ${applicant.name} later`} data-testid={`button-group-down-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a]">↓</button></div><label className="sr-only" htmlFor={`group-interviewer-${applicant.id}`}>Interviewer for {applicant.name}</label><select id={`group-interviewer-${applicant.id}`} value={applicant.interviewer ?? ""} onChange={event => moveToColumn(applicant.id, event.target.value)} data-testid={`select-group-interviewer-${applicant.id}`} className="touch-target h-9 w-full rounded-lg border border-[#cbd9da] bg-white px-2 text-base md:text-[11px] text-[#52666e] outline-none focus:border-[#16869a]"><option value="">Unassigned</option>{q.interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></div>; }) : <p className="px-2 py-6 text-center text-xs text-[#819196]">Drop applicants here</p>}</div>)}</div>}</section>
     <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Finished — call back</h2><p className="mt-1 text-xs text-[#7c8c91]">Finished someone by accident? Send them back to the front. The big screen and audio will announce that they aren&apos;t done yet.</p></div><PhoneCall size={20} className="text-[#16869a]" /></div>{finished.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : finished.data && finished.data.total > 0 ? <div className="mt-4 grid gap-2 md:grid-cols-2">{finished.data.items.map(applicant => <div key={applicant.id} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`finished-applicant-${applicant.id}`}><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e5f3f1] text-xs font-bold text-[#16869a]">{applicant.name.slice(0, 1)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{applicant.name}</p><p className="text-xs text-[#7c8c91]">Grade {applicant.grade}</p></div><button onClick={() => recallApplicant(applicant.id, applicant.name)} disabled={callback.isPending} data-testid={`button-recall-${applicant.id}`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50"><PhoneCall size={13} /> Call back</button></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">Nobody finished yet.</p>}{callback.isError && <p className="mt-2 text-xs text-[#ad4b43]">Callback failed. Try again.</p>}</section>
-    {resetOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setResetOpen(false)} data-testid="reset-dialog"><div onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm reset interview progress" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Reset interview progress?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">This takes every applicant back to the start of the queue. Here is exactly what happens:</p><ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#52666e]"><li>All <strong>completed</strong> interviews move back to <strong>queued</strong> (completed count returns to 0).</li><li>Queue order is rebuilt and active recall flags are cleared.</li><li>The big screen switches back to calling the front of the queue.</li></ul><p className="mt-3 text-sm leading-6 text-[#52666e]">Preserved: applicant data, files, notes, decisions, and lanes.</p><label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={resetConfirm} onChange={event => setResetConfirm(event.target.value)} autoFocus data-testid="input-reset-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setResetOpen(false)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmResetProgress} disabled={resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending} data-testid="button-confirm-reset" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div></div></div>}
+    {resetOpen && <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setResetOpen(false)} data-testid="reset-dialog"><div {...panelProps} onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm reset interview progress" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Reset interview progress?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">This takes every applicant back to the start of the queue. Here is exactly what happens:</p><ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#52666e]"><li>All <strong>completed</strong> interviews move back to <strong>queued</strong> (completed count returns to 0).</li><li>Queue order is rebuilt and active recall flags are cleared.</li><li>The big screen switches back to calling the front of the queue.</li></ul><p className="mt-3 text-sm leading-6 text-[#52666e]">Preserved: applicant data, files, notes, decisions, and lanes.</p><label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={resetConfirm} onChange={event => setResetConfirm(event.target.value)} autoFocus data-testid="input-reset-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setResetOpen(false)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmResetProgress} disabled={resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending} data-testid="button-confirm-reset" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div></div></div>}
   </div>;
 }
 
-const interviewDecisions = ["Undecided", "Strong Yes", "Yes", "Maybe", "No", "Strong No"];
+const interviewDecisions = INTERVIEW_DECISIONS;
 
 function readableTranscript(raw: string | null | undefined): Array<{ question: string; type: string; typeLabel: string; answer: string; options: string[]; selected: string[] }> {
   if (!raw?.trim()) return [];
@@ -6570,29 +7178,49 @@ function readableTranscript(raw: string | null | undefined): Array<{ question: s
   }
 }
 
-function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign, onSaveNote, onFinish, onUpdate }: {
+function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign, onSaveNote, onFinish, onUpdate, focused = false }: {
   applicant: QueueApplicant;
   index: number;
   interviewerLabels: string[];
   onAssign: (id: string, interviewer: string) => void;
-  onSaveNote: (id: string, note: string, original: string) => void;
+  onSaveNote: (id: string, note: string, original: string) => Promise<void>;
   onFinish: (id: string) => void;
   onUpdate: (data: ApplicantUpdate) => void;
+  focused?: boolean;
 }) { const streamHealthy = useRealtimeHealthy();
   const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: streamHealthy ? false : (5000 )} });
   const [notes, setNotes] = useState(applicant.notes);
   const notesEditing = useRef(false);
-  useEffect(() => { if (!notesEditing.current) setNotes(detail.data?.notes ?? applicant.notes); }, [detail.data?.notes, applicant.notes]);
+  // True while the note on screen differs from the stored one. A poll or a
+  // teammate's write must not overwrite typing that has not reached the
+  // server yet -- and if the save fails, the text stays put so it can be
+  // retried instead of silently disappearing.
+  const notesDirty = useRef(false);
+  const [notesError, setNotesError] = useState("");
+  useEffect(() => { const serverNotes = detail.data?.notes ?? applicant.notes; if (serverNotes === notes) { notesDirty.current = false; return; } if (!notesEditing.current && !notesDirty.current) setNotes(serverNotes); }, [detail.data?.notes, applicant.notes, notes]);
   const a = detail.data;
   const transcript = readableTranscript(a?.transcript);
   const looksMalformed = Boolean(a && (/https?:\/\//i.test(a.name) || /@/.test(a.name) || a.name.length > 60));
   const displayName = looksMalformed ? "Record needs review" : a?.name ?? applicant.name;
-  return <article className="rounded-2xl border border-[#365968] bg-[#1d3545] p-5" data-testid={`current-applicant-${applicant.id}`}>
+  // Keyboard focus moves between applicants; bring the focused one into view
+  // so the shortcut does not act on something off-screen.
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    cardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focused]);
+  return <article ref={cardRef} className={`rounded-2xl border bg-[#1d3545] p-5 ${focused ? "border-[#f8c84a] ring-2 ring-[#f8c84a]/60" : "border-[#365968]"}`} data-testid={`current-applicant-${applicant.id}`}>
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0"><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 break-words text-2xl font-semibold tracking-[-.05em]">{displayName}</h2><p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#acc2c7]"><span>Grade {a?.grade ?? applicant.grade}</span><span>·</span><span>{applicant.aiScore < 0 ? "invalid score" : `${applicant.aiScore.toFixed(1)} AI score`}</span></p>{looksMalformed && <p className="mt-2 break-all text-xs text-[#d2e1e3]">Imported name: {a?.name}</p>}{looksMalformed && <p className="mt-2 text-xs font-semibold text-[#f8c84a]">This applicant record looks malformed. Verify it before making a decision.</p>}</div>
-      <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-${applicant.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50">Finish</button></div>
+      <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-${applicant.id}`} className={`hidden items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold sm:flex ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="hidden rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50 sm:block">Finish</button></div>
     </div>
-    {detail.isLoading ? <div className="mt-5 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-24" /></div> : a && <details open className="mt-5 rounded-xl border border-[#486b77] bg-[#162d3d] p-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-[.12em] text-[#d2e1e3]">Full applicant file</summary>
+    {detail.isLoading ? <div className="mt-5 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-24" /></div> : null}
+    {/* The controls you actually use while interviewing come before the long
+        application file, so a phone does not make you scroll past a whole
+        transcript to reach the notes field. */}
+    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm text-white"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<span className="mt-0.5 block text-[10px] font-normal text-[#8fa6ac]">Also moves the roster lane</span><select value={applicant.interviewDecision} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm font-semibold text-white">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
+    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => { notesDirty.current = true; setNotesError(""); setNotes(event.target.value); }} onFocus={() => { notesEditing.current = true; }} onBlur={() => { notesEditing.current = false; void onSaveNote(applicant.id, notes, detail.data?.notes ?? applicant.notes).then(() => { notesDirty.current = false; setNotesError(""); }).catch(() => { setNotesError("Note not saved. Check your connection and try again."); }); }} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-base md:text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>{notesError && <p role="alert" className="mt-2 text-xs font-semibold text-[#ff9b8f]" data-testid={`note-error-${applicant.id}`}>{notesError}</p>}
+    {a && <details className="mt-4 rounded-xl border border-[#486b77] bg-[#162d3d] p-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-[.12em] text-[#d2e1e3]">Full applicant file</summary>
       <div className="mt-4 grid gap-4 text-sm text-[#d2e1e3]">
         <div className="grid gap-2 sm:grid-cols-2"><p className="flex min-w-0 items-start gap-2 break-all"><Mail size={14} className="mt-0.5 shrink-0 text-[#f8c84a]" />{a.email || "No email provided"}</p><p className="text-[#acc2c7]">Interview status: <strong className="text-white">{a.interviewStatus}</strong></p></div>
         <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">Application responses</p><div className="grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Robotics experience</p><p className="mt-1">{a.roboticsExperience || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">10-hour commitment</p><p className="mt-1">{a.commit10Hours || "Not provided"}</p></div><div className="rounded-lg bg-[#1d3545] p-3"><p className="text-[10px] uppercase text-[#7f9da6]">Parent volunteer</p><p className="mt-1">{a.parentVolunteer || "Not provided"}</p></div></div></div>
@@ -6600,8 +7228,12 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
         <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#f8c84a]">AI readout</p><p className="leading-6">{a.aiSummary || "No AI summary available."}</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><p><strong className="text-[#51d2ad]">Strengths:</strong> {a.aiStrengths || "Not listed"}</p><p><strong className="text-[#ff9b8f]">Concerns:</strong> {a.aiConcerns || "Not listed"}</p></div></div>
       </div>
     </details>}
-    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm text-white"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<select value={applicant.interviewDecision} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-sm font-semibold text-white">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
-    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => setNotes(event.target.value)} onFocus={() => { notesEditing.current = true; }} onBlur={() => { notesEditing.current = false; onSaveNote(applicant.id, notes, detail.data?.notes ?? applicant.notes); }} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>
+    {/* Sticky action bar: on a phone the applicant file is long, and the
+        buttons that end the interview have to stay in reach. */}
+    <div className="sticky bottom-0 -mx-5 mt-4 flex items-center justify-end gap-2 border-t border-[#365968] bg-[#1d3545]/95 px-5 py-3 backdrop-blur sm:hidden">
+      <button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-mobile-${applicant.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-semibold ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback set" : "Callback"}</button>
+      <button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-mobile-${applicant.id}`} className="rounded-lg bg-[#f8c84a] px-4 py-2.5 text-xs font-bold text-[#182232] disabled:opacity-50">Finish</button>
+    </div>
   </article>;
 }
 
@@ -6732,32 +7364,18 @@ function Display() { const streamHealthy = useRealtimeHealthy();
   return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark teamName={d.teamName} /><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Robotics team · Live interview operations</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer>{!isPreview && <audio ref={audioRef} preload="none" data-testid="display-announcement-audio" />}</main>;
 }
 
-function ImageStudio() {
-  const generate = useGenerateAssistantImage();
-  const [prompt, setPrompt] = useState("");
-  const [size, setSize] = useState("1024x1024");
-  const [image, setImage] = useState<{ imageUrl: string; prompt: string } | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const value = prompt.trim();
-    if (!value || generate.isPending) return;
-    setLoaded(false);
-    generate.mutate({ data: { prompt: value, size } }, {
-      onSuccess: response => setImage({ imageUrl: response.imageUrl, prompt: response.prompt }),
-    });
-  };
-  return <Section title="Image studio" kicker="Keyless AI images for posters and the big screen" className="order-4"><form onSubmit={submit} className="space-y-2"><textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={3} maxLength={500} placeholder="Describe a poster for your robotics team..." data-testid="input-image-prompt" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-sm outline-none focus:border-[#16869a]" /><div className="flex items-center gap-2"><select value={size} onChange={event => setSize(event.target.value)} data-testid="select-image-size" className="h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs outline-none focus:border-[#16869a]"><option value="1024x1024">Large 1024</option><option value="512x512">Fast 512</option></select><button disabled={generate.isPending || !prompt.trim()} data-testid="button-generate-image" className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50">{generate.isPending ? "Creating..." : "Generate image"}</button></div></form>{generate.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="image-error">The image could not be created. Try again.</p>}{image && <div className="mt-3 overflow-hidden rounded-xl border border-[#e3ebeb]">{!loaded && <Skeleton className="aspect-square w-full" />}<img src={image.imageUrl} alt={image.prompt} onLoad={() => setLoaded(true)} className={loaded ? "block w-full" : "hidden"} data-testid="generated-image" /><div className="flex items-center justify-between gap-2 p-2"><p className="min-w-0 flex-1 truncate text-[11px] text-[#718189]">{image.prompt}</p><a href={image.imageUrl} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] font-semibold text-[#16869a]">Full size</a></div></div>}<p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Free keyless rendering. Only your prompt is sent — no applicant data. First view develops in ~30s.</p></Section>;
-}
-
 const ACTIVE_CONVERSATION_KEY = "robotics-active-conversation";
 const PARTS_ACTIVE_CONVERSATION_KEY = "robotics-parts-active-conversation";
 const PARTS_CONVERSATION_PREFIX = "[Parts] ";
 
-function readStoredConversationId(partsMode = false): string {
+function storedConversationKey(partsMode: boolean, identity: string): string {
+  const base = partsMode ? PARTS_ACTIVE_CONVERSATION_KEY : ACTIVE_CONVERSATION_KEY;
+  return `${base}:${identity || "signed-out"}`;
+}
+
+function readStoredConversationId(partsMode = false, identity = ""): string {
   try {
-    const key = partsMode ? PARTS_ACTIVE_CONVERSATION_KEY : ACTIVE_CONVERSATION_KEY;
-    return window.localStorage.getItem(key) ?? "";
+    return window.localStorage.getItem(storedConversationKey(partsMode, identity)) ?? "";
   } catch {
     return "";
   }
@@ -6767,6 +7385,14 @@ function conversationTitleForWorkspace(title: string, partsMode: boolean): strin
   return partsMode && title.startsWith(PARTS_CONVERSATION_PREFIX)
     ? title.slice(PARTS_CONVERSATION_PREFIX.length)
     : title;
+}
+
+function sameCustomMcpEndpoint(left: string, right: string): boolean {
+  try {
+    return new URL(left).toString() === new URL(right).toString();
+  } catch {
+    return false;
+  }
 }
 
 function timeAgo(iso: string): string {
@@ -6846,6 +7472,11 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
                 <p className="mt-1 truncate text-xs leading-none text-[#7c8c91]" title={activity.detail}>
                   {activity.detail || "—"}
                 </p>
+                {(activity.input || activity.output) && <details className="mt-1.5">
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
+                  {activity.input && <><span className="mt-1 block text-[10px] font-semibold uppercase">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.input}</pre></>}
+                  {activity.output && <><span className="mt-1 block text-[10px] font-semibold uppercase">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.output}</pre></>}
+                </details>}
               </div>
               <Check size={12} className="mt-1 shrink-0 text-[#3aa582]" />
             </div>
@@ -6857,14 +7488,49 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
 }
 
 function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
+  const assistantSession = useGetSession({
+    query: { queryKey: getGetSessionQueryKey() },
+  });
+  const canManageAssistantTools = assistantSession.data?.role === "coordinator";
+  const assistantIdentity = `${assistantSession.data?.interviewerId ?? ""}:${assistantSession.data?.teamId ?? ""}`;
+  const assistantIdentityRef = useRef(assistantIdentity);
+  assistantIdentityRef.current = assistantIdentity;
+  const [conversationScopeIdentity, setConversationScopeIdentity] = useState(assistantIdentity);
   const [question, setQuestion] = useState("");
   const questionDraftRef = useRef("");
   const onshapeRetryQuestionRef = useRef("");
-  const [history, setHistory] = useState<{ q: string; a: string; activities: AssistantActivity[] }[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode));
+  const [history, setHistory] = useState<{
+    q: string;
+    a: string;
+    activities: AssistantActivity[];
+    connectionRequest?: AssistantMcpConnectionRequest;
+    connectionRequestDismissed?: boolean;
+    continuationToken?: string;
+  }[]>([]);
+  const assistantScopeReady = conversationScopeIdentity === assistantIdentity;
+  const visibleHistory = assistantScopeReady ? history : [];
+  const [activeConversationId, setActiveConversationId] = useState<string>(() => readStoredConversationId(partsMode, assistantIdentity));
+  const activeConversationIdRef = useRef(activeConversationId);
+  activeConversationIdRef.current = activeConversationId;
+  const pendingMcpContinuationRef = useRef<{
+    token: string;
+    identity: string;
+    conversationId: string;
+    endpointUrl: string;
+    payload: AssistantInput;
+  } | null>(null);
+  const [mcpContinuationView, setMcpContinuationView] = useState<{
+    token: string;
+    question: string;
+    endpointUrl: string;
+    status: "ready" | "connecting" | "continuing" | "failed";
+    error: string;
+  } | null>(null);
+  const activeStreamKindRef = useRef<"normal" | "mcp-continuation">("normal");
+  const currentAssistantSessionRef = useRef(assistantIdentity);
+  currentAssistantSessionRef.current = assistantIdentity;
   const [renamingId, setRenamingId] = useState("");
   const [renameValue, setRenameValue] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     try {
       return window.localStorage.getItem("robotics-assistant-model") ?? "";
@@ -6883,6 +7549,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     }
   });
   const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
+  const [dynamicAssistantTools, setDynamicAssistantTools] = useState<AssistantToolItem[]>([]);
+  const [dynamicAssistantToolsError, setDynamicAssistantToolsError] = useState("");
   const rememberDisabledTools = (tools: string[]) => {
     setDisabledTools(tools);
     saveDisabledTools(tools);
@@ -6908,6 +7576,54 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [customMcpApiKeyPrefix, setCustomMcpApiKeyPrefix] = useState("");
   const [customMcpBusy, setCustomMcpBusy] = useState(false);
   const [customMcpError, setCustomMcpError] = useState("");
+  const refreshAssistantToolCatalog = useCallback(async () => {
+    if (!canManageAssistantTools) {
+      setDynamicAssistantTools([]);
+      setDynamicAssistantToolsError("");
+      return;
+    }
+    const requestIdentity = assistantIdentity;
+    try {
+      const authToken = getStoredAuthToken();
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/tools`, {
+        credentials: "include",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      });
+      const result = await response.json() as {
+        tools?: { name?: unknown; description?: unknown }[];
+        errors?: { onshape?: boolean; customMcp?: boolean };
+      };
+      if (!response.ok) throw new Error("Could not load connected assistant tools.");
+      if (assistantIdentityRef.current !== requestIdentity) return;
+      const tools = (result.tools ?? []).filter((tool): tool is { name: string; description?: unknown } =>
+        typeof tool.name === "string" && /^(?:onshape_[a-zA-Z0-9_-]{1,55}|custom_mcp_[a-zA-Z0-9_-]{0,54})$/.test(tool.name),
+      );
+      setDynamicAssistantTools(tools.map((tool) => {
+        const service = tool.name.startsWith("onshape_") ? "Onshape" : "Custom MCP";
+        const operation = tool.name.replace(/^(?:onshape_|custom_mcp_)/, "").replace(/[_-]+/g, " ");
+        const title = operation.replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tool";
+        const description = typeof tool.description === "string" ? tool.description.trim().slice(0, 180) : "";
+        return {
+          name: tool.name,
+          label: `${service}: ${title}`,
+          hint: description || `${service} MCP tool; treated as write-capable.`,
+          write: true,
+        };
+      }));
+      setDynamicAssistantToolsError(
+        result.errors?.onshape || result.errors?.customMcp
+          ? "Some connected MCP tools could not be loaded. Reopen settings to retry."
+          : "",
+      );
+    } catch {
+      if (assistantIdentityRef.current === requestIdentity) {
+        setDynamicAssistantToolsError("Connected MCP tools could not be loaded. Reopen settings to retry.");
+      }
+    }
+  }, [assistantIdentity, canManageAssistantTools]);
+  useEffect(() => {
+    void refreshAssistantToolCatalog();
+  }, [refreshAssistantToolCatalog, onshapeConnected, customMcpConnected]);
   const attachmentUpload = useRequestUploadUrl();
   const attachmentPreview = usePreviewImport();
   const streamAbort = useRef<AbortController | null>(null);
@@ -6926,10 +7642,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   };
-  const availableModel = modelOptions.find((item) => item.id === selectedModel)?.id
-    ?? modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
-    ?? modelOptions[0]?.id
-    ?? "";
+  const availableModel = resolveAssistantModelSelection(
+    selectedModel,
+    assistantConfig.data?.textModel,
+    modelOptions,
+  );
   const thinkingLevel = thinkingByModel[availableModel] ?? "auto";
   const rememberThinkingLevel = (level: AssistantThinkingLevel) => {
     const next = { ...thinkingByModel, [availableModel]: level };
@@ -6942,10 +7659,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   };
   useEffect(() => {
     if (!modelOptions.length) return;
-    const nextModel = modelOptions.some((item) => item.id === selectedModel)
-      ? selectedModel
-      : modelOptions.find((item) => item.id === assistantConfig.data?.textModel)?.id
-        ?? modelOptions[0].id;
+    const nextModel = resolveAssistantModelSelection(
+      selectedModel,
+      assistantConfig.data?.textModel,
+      modelOptions,
+    );
     if (nextModel !== selectedModel) setSelectedModel(nextModel);
     try {
       window.localStorage.setItem("robotics-assistant-model", nextModel);
@@ -6953,7 +7671,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   }, [assistantConfig.data?.textModel, modelOptions, selectedModel]);
-  const conversations = useListAssistantConversations({ query: { queryKey: getListAssistantConversationsQueryKey(), refetchInterval: streamHealthy ? false : (3000 )} });
+  const conversations = useListAssistantConversations({ query: { queryKey: [...getListAssistantConversationsQueryKey(), assistantIdentity], refetchInterval: streamHealthy ? false : (3000 )} });
   const scopedConversations = useMemo(
     () => (conversations.data?.items ?? []).filter((item) =>
       partsMode
@@ -6964,20 +7682,80 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   );
   const activeMessages = useGetAssistantConversationMessages(activeConversationId, undefined, {
     query: {
-      queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId),
-      enabled: Boolean(activeConversationId),
+      queryKey: [...getGetAssistantConversationMessagesQueryKey(activeConversationId), assistantIdentity],
+      enabled: Boolean(activeConversationId && assistantSession.data?.interviewerId),
       refetchInterval: streamHealthy ? false : (3000),
+    },
+  });
+  const assistantPromptQueue = useGetAssistantPromptQueue(activeConversationId, {
+    query: {
+      queryKey: [...getGetAssistantPromptQueueQueryKey(activeConversationId), assistantIdentity],
+      enabled: Boolean(activeConversationId && assistantSession.data?.interviewerId),
+      refetchInterval: query =>
+        isStreaming || query.state.data?.isRunning ||
+        query.state.data?.items.some(item => item.status === "queued")
+          ? 1500
+          : false,
     },
   });
   const createConversation = useCreateAssistantConversation();
   const renameConversation = useRenameAssistantConversation();
   const deleteConversation = useDeleteAssistantConversation();
-  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }), enabled: !partsMode } });
-  const prompts = partsMode
-    ? ["Find verified 8 mm parts across suppliers.", "Add a robot named Prototype.", "Show parts available for a robot."]
-    : ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
+  const queuePrompt = useQueueAssistantPrompt();
+  const stopPrompt = useStopAssistantPrompt();
+  const prompts = !canManageAssistantTools
+    ? ["What can my connected Onshape MCP do?", "Summarize information from my custom MCP server.", "Use my connected MCP tools to answer a question."]
+    : partsMode
+      ? ["Find verified 8 mm parts across suppliers.", "Add a robot named Prototype.", "Show parts available for a robot."]
+      : ["Who are the strongest builders with 10+ hours?", "Compare the top two unranked applicants.", "Which concerns need a human follow-up?"];
 
   useEffect(() => {
+    streamAbort.current?.abort();
+    setQuestion("");
+    questionDraftRef.current = "";
+    setHistory([]);
+    setActiveConversationId(readStoredConversationId(partsMode, assistantIdentity));
+    setAttachments([]);
+    setAttachError("");
+    setStreamingText("");
+    setIsStreaming(false);
+    setStreamError("");
+    setLiveActivities([]);
+    liveActivitiesRef.current = [];
+    onshapeConnectedRef.current = false;
+    setOnshapeConnected(false);
+    setOnshapeReconnectRequired(false);
+    setOnshapeError("");
+    setCustomMcpConnected(false);
+    setCustomMcpEndpoint("");
+    setCustomMcpApiKeyRequired(false);
+    setCustomMcpApiKey("");
+    setCustomMcpApiKeyHeader("X-API-Key");
+    setCustomMcpApiKeyPrefix("");
+    setCustomMcpError("");
+    setConversationScopeIdentity(assistantIdentity);
+    pendingMcpContinuationRef.current = null;
+    continuationLaunchTokenRef.current = null;
+    setMcpContinuationView(null);
+  }, [assistantIdentity, partsMode]);
+
+  useEffect(() => {
+    const pending = pendingMcpContinuationRef.current;
+    if (
+      pending &&
+      (pending.identity !== assistantIdentity || pending.conversationId !== activeConversationId)
+    ) {
+      pendingMcpContinuationRef.current = null;
+      continuationLaunchTokenRef.current = null;
+      setMcpContinuationView(null);
+      if (activeStreamKindRef.current === "mcp-continuation") {
+        streamAbort.current?.abort();
+      }
+    }
+  }, [activeConversationId, assistantIdentity]);
+
+  useEffect(() => {
+    if (!assistantSession.data?.interviewerId) return;
     let active = true;
     const check = async () => {
       try {
@@ -6997,9 +7775,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     };
     void check();
     return () => { active = false; };
-  }, []);
+  }, [assistantIdentity]);
 
   useEffect(() => {
+    if (!assistantSession.data?.interviewerId) return;
     let active = true;
     const authToken = getStoredAuthToken();
     void fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
@@ -7014,17 +7793,55 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       }
     }).catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [assistantIdentity]);
 
-  const connectCustomMcp = async () => {
+  const confirmCustomMcpConnection = async (endpointUrl: string, authToken: string | null) => {
+    const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
+      credentials: "include",
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) return null;
+    const connection = await response.json() as { connected?: boolean; endpointUrl?: string };
+    return connection.connected && typeof connection.endpointUrl === "string" &&
+      sameCustomMcpEndpoint(connection.endpointUrl, endpointUrl)
+      ? connection.endpointUrl
+      : null;
+  };
+
+  const connectCustomMcp = async (endpointUrl = customMcpEndpoint) => {
+    const pending = pendingMcpContinuationRef.current;
+    const continuation = pending &&
+      pending.identity === currentAssistantSessionRef.current &&
+      pending.conversationId === activeConversationIdRef.current &&
+      sameCustomMcpEndpoint(pending.endpointUrl, endpointUrl)
+      ? pending
+      : null;
+    if (continuation) setMcpContinuationView({
+      token: continuation.token,
+      question: continuation.payload.question,
+      endpointUrl: continuation.endpointUrl,
+      status: "connecting",
+      error: "",
+    });
     setCustomMcpBusy(true);
     setCustomMcpError("");
-    const popup = customMcpApiKeyRequired
+    const usesApiKey = customMcpApiKeyRequired && endpointUrl === customMcpEndpoint;
+    const alreadyConnectedToTarget = customMcpConnected && endpointUrl === customMcpEndpoint;
+    setCustomMcpEndpoint(endpointUrl);
+    if (!alreadyConnectedToTarget) setCustomMcpConnected(false);
+    if (!usesApiKey) {
+      setCustomMcpApiKeyRequired(false);
+      setCustomMcpApiKey("");
+    }
+    const popup = usesApiKey
       ? null
       : window.open("about:blank", "custom-mcp-auth", "popup,width=620,height=760");
-    if (!customMcpApiKeyRequired && !popup) {
+    if (!usesApiKey && !popup) {
       setCustomMcpError("Allow pop-ups to sign in to this MCP server.");
       setCustomMcpBusy(false);
+      if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+        ? { ...current, status: "ready" }
+        : current);
       return;
     }
     try {
@@ -7034,8 +7851,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         credentials: "include",
         headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
         body: JSON.stringify({
-          endpointUrl: customMcpEndpoint,
-          ...(customMcpApiKeyRequired ? {
+          endpointUrl,
+          ...(usesApiKey ? {
             apiKey: customMcpApiKey,
             apiKeyHeader: customMcpApiKeyHeader,
             apiKeyPrefix: customMcpApiKeyPrefix,
@@ -7048,12 +7865,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       };
       if (!response.ok) throw new Error(result.error || "Could not connect to the MCP server.");
       if (result.connected) {
+        const confirmedEndpoint = await confirmCustomMcpConnection(result.endpointUrl ?? endpointUrl, authToken);
+        if (!confirmedEndpoint) throw new Error("The MCP connection could not be confirmed. You can retry the connection.");
         setCustomMcpConnected(true);
         setCustomMcpApiKeyRequired(false);
         setCustomMcpApiKey("");
-        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        setCustomMcpEndpoint(confirmedEndpoint);
         popup?.close();
         setCustomMcpBusy(false);
+        if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
         return;
       }
       if (result.apiKeyRequired) {
@@ -7061,7 +7881,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         setCustomMcpApiKey("");
         setCustomMcpApiKeyHeader(result.apiKeyHeader ?? "X-API-Key");
         setCustomMcpApiKeyPrefix(result.apiKeyPrefix ?? "");
-        setCustomMcpEndpoint(result.endpointUrl ?? customMcpEndpoint);
+        setCustomMcpEndpoint(result.endpointUrl ?? endpointUrl);
         popup?.close();
         setCustomMcpBusy(false);
         return;
@@ -7070,47 +7890,56 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       if (!popup) throw new Error("Allow pop-ups to sign in to this MCP server.");
       popup.location.href = result.authorizationUrl;
       let checks = 0;
+      let checking = false;
       const poll = window.setInterval(async () => {
+        if (checking) return;
+        checking = true;
         checks += 1;
-        if (popup.closed) {
-          try {
-            const status = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
-              credentials: "include",
-              headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-            });
-            const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-            if (status.ok && connection.connected) {
-              setCustomMcpConnected(true);
-              setCustomMcpEndpoint(connection.endpointUrl ?? customMcpEndpoint);
-            }
-          } catch { /* the normal connection status check will recover later */ }
-          window.clearInterval(poll);
-          setCustomMcpBusy(false);
-          return;
-        }
-        if (checks > 180) {
-          window.clearInterval(poll);
-          setCustomMcpBusy(false);
-          return;
-        }
         try {
-          const status = await fetch(`${import.meta.env.BASE_URL}api/assistant/custom-mcp/connection`, {
-            credentials: "include",
-            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-          });
-          const connection = await status.json() as { connected?: boolean; endpointUrl?: string };
-          if (status.ok && connection.connected) {
+          const confirmedEndpoint = await confirmCustomMcpConnection(endpointUrl, authToken);
+          if (confirmedEndpoint) {
             setCustomMcpConnected(true);
-            setCustomMcpEndpoint(connection.endpointUrl ?? customMcpEndpoint);
+            setCustomMcpEndpoint(confirmedEndpoint);
             setCustomMcpBusy(false);
             window.clearInterval(poll);
+            if (continuation) void resumeMcpContinuation(continuation, confirmedEndpoint);
+            return;
           }
-        } catch { /* wait for OAuth callback */ }
+          if (popup.closed) {
+            setCustomMcpError("MCP sign-in was not completed. You can retry the connection.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          } else if (checks > 180) {
+            setCustomMcpError("MCP sign-in is taking too long. Check the sign-in window or retry.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          }
+        } catch {
+          if (popup.closed) {
+            setCustomMcpError("Could not confirm the MCP connection. You can retry the connection.");
+            if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+              ? { ...current, status: "ready" }
+              : current);
+            window.clearInterval(poll);
+            setCustomMcpBusy(false);
+          }
+        } finally {
+          checking = false;
+        }
       }, 1500);
     } catch (error) {
       popup?.close();
       setCustomMcpError(error instanceof Error ? error.message : "Could not connect to this MCP server.");
       setCustomMcpBusy(false);
+      if (continuation) setMcpContinuationView(current => current?.token === continuation.token
+        ? { ...current, status: "ready" }
+        : current);
     }
   };
 
@@ -7250,13 +8079,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
 
   useEffect(() => {
     try {
-      const key = partsMode ? PARTS_ACTIVE_CONVERSATION_KEY : ACTIVE_CONVERSATION_KEY;
+      const key = storedConversationKey(partsMode, assistantIdentity);
       if (activeConversationId) window.localStorage.setItem(key, activeConversationId);
       else window.localStorage.removeItem(key);
     } catch {
       // Private browsing etc.
     }
-  }, [activeConversationId, partsMode]);
+  }, [activeConversationId, assistantIdentity, partsMode]);
 
   const creatingRef = useRef(false);
   useEffect(() => {
@@ -7281,8 +8110,59 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
 
   useEffect(() => {
     if (isStreaming || ask.isPending) return;
-    setHistory(activeMessages.data?.items.map(item => ({ q: item.question, a: item.answer, activities: item.activities ?? [] })) ?? []);
+    setHistory(current => {
+      const items = activeMessages.data?.items ?? [];
+      // The server copy of the transcript arrives a beat after the stream ends.
+      // Hold on to the turn that was just streamed until it is saved, so the
+      // answer (and the MCP prompt that belongs to it) never blinks out.
+      const savedQuestions = new Set(items.map(item => item.question));
+      const pending = current.filter(entry => !savedQuestions.has(entry.q));
+      // The server never stores an MCP connection request, so the saved copy
+      // of the turn would come back without it. Carry the request (and the
+      // fact that it was dismissed) over from the streamed turn it replaces.
+      const streamedByQuestion = new Map<string, typeof current>();
+      for (const entry of current) {
+        const matching = streamedByQuestion.get(entry.q) ?? [];
+        matching.push(entry);
+        streamedByQuestion.set(entry.q, matching);
+      }
+      return [
+        ...items.map(item => {
+          const streamed = streamedByQuestion.get(item.question)?.shift();
+          return {
+            q: item.question,
+            a: item.answer,
+            activities: item.activities ?? [],
+            ...(streamed?.connectionRequest ? { connectionRequest: streamed.connectionRequest } : {}),
+            ...(streamed?.connectionRequestDismissed ? { connectionRequestDismissed: true } : {}),
+            ...(streamed?.continuationToken ? { continuationToken: streamed.continuationToken } : {}),
+          };
+        }),
+        ...pending,
+      ];
+    });
   }, [activeConversationId, activeMessages.data, isStreaming, ask.isPending]);
+
+  const completedPromptIds = useRef(new Set<string>());
+  useEffect(() => {
+    const newlyCompleted = (assistantPromptQueue.data?.items ?? []).some(item => {
+      if (item.status !== "completed" || completedPromptIds.current.has(item.id)) return false;
+      completedPromptIds.current.add(item.id);
+      return true;
+    });
+    if (!newlyCompleted || !activeConversationId) return;
+    void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
+    void queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    void queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+    if (partsMode) {
+      void queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
+    }
+    void refreshOnshapeStatus(true);
+  }, [activeConversationId, assistantPromptQueue.data?.items, partsMode]);
 
   const attachFile = async (file: File) => {
     setAttachError("");
@@ -7306,121 +8186,321 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     }
   };
 
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!question.trim() || !activeConversationId || isStreaming) return;
-    const q = question.trim();
-    onshapeRetryQuestionRef.current = q;
-    questionDraftRef.current = "";
-    setQuestion("");
+  const continuationLaunchTokenRef = useRef<string | null>(null);
+  const runAssistantStream = async (
+    payload: AssistantInput,
+    requestIdentity: string,
+    continuation?: { token: string; endpointUrl: string },
+  ): Promise<boolean> => {
+    const q = payload.question;
+    const conversationId = payload.conversationId ?? "";
+    const requestPayload: AssistantInput = { ...payload };
+    const controller = new AbortController();
+    activeStreamKindRef.current = continuation ? "mcp-continuation" : "normal";
     setStreamError("");
     setStreamingText("");
     setLiveActivities([]);
     liveActivitiesRef.current = [];
     streamAbort.current?.abort();
-    const controller = new AbortController();
     streamAbort.current = controller;
     setIsStreaming(true);
-    const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload = { question: q, model: availableModel || undefined, ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}), conversationId: activeConversationId, applicantIds: partsMode ? [] : selected.length ? selected : undefined, ...(attachedFiles.length ? { attachments: attachedFiles } : {}), ...(disabledTools.length ? { disabledTools } : {}) };
     const authToken = getStoredAuthToken();
-    void (async () => {
-      try {
-        const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/ask/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-          body: JSON.stringify(payload),
-          credentials: "include",
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) throw new Error(`Stream failed with status ${response.status}`);
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let finalAnswer = "";
-        let serverError = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-          for (const part of parts) {
-            const line = part.split("\n").find(entry => entry.startsWith("data:"));
-            if (!line) continue;
-            let message: { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string } | null = null;
-            try {
-              message = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; answer?: string; model?: string; activities?: AssistantActivity[]; activity?: AssistantActivity; error?: string };
-            } catch {
-              continue;
-            }
-            if (!message) continue;
-            if (typeof message.model === "string" && message.model) {
-              rememberModel(message.model);
-              payload.model = message.model;
-            }
-            if (typeof message.delta === "string" && message.delta) {
-              finalAnswer += message.delta;
-              setStreamingText(current => current + (message.delta as string));
-            } else if (message.error) {
-              serverError = message.error;
-            } else if (message.activity) {
-              const activity = message.activity;
-              liveActivitiesRef.current = [...liveActivitiesRef.current, activity];
-              setLiveActivities(liveActivitiesRef.current);
-            } else if (message.done) {
-              if (typeof message.answer === "string" && message.answer) finalAnswer = message.answer;
-              if (Array.isArray(message.activities)) {
-                liveActivitiesRef.current = message.activities;
-                setLiveActivities(message.activities);
-              }
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/assistant/ask/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+        body: JSON.stringify(requestPayload),
+        credentials: "include",
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(`Stream failed with status ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalAnswer = "";
+      let connectionRequest: AssistantMcpConnectionRequest | undefined;
+      let serverError = "";
+      let serverCancelled = false;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.split("\n").find(entry => entry.startsWith("data:"));
+          if (!line) continue;
+          let message: {
+            delta?: string;
+            done?: boolean;
+            answer?: string;
+            model?: string;
+            activities?: AssistantActivity[];
+            activity?: AssistantActivity;
+            connectionRequest?: AssistantMcpConnectionRequest;
+            error?: string;
+            cancelled?: boolean;
+          } | null = null;
+          try {
+            message = JSON.parse(line.slice(5).trim()) as {
+              delta?: string;
+              done?: boolean;
+              answer?: string;
+              model?: string;
+              activities?: AssistantActivity[];
+              activity?: AssistantActivity;
+              connectionRequest?: AssistantMcpConnectionRequest;
+              error?: string;
+              cancelled?: boolean;
+            };
+          } catch {
+            continue;
+          }
+          if (!message) continue;
+          if (message.cancelled) serverCancelled = true;
+          if (
+            message.connectionRequest?.type === "custom_mcp_connection" &&
+            typeof message.connectionRequest.endpointUrl === "string"
+          ) {
+            connectionRequest = message.connectionRequest;
+          }
+          if (typeof message.model === "string" && message.model) {
+            rememberModel(message.model);
+            requestPayload.model = message.model;
+          }
+          if (typeof message.delta === "string" && message.delta) {
+            finalAnswer += message.delta;
+            setStreamingText(current => current + (message.delta as string));
+          } else if (message.error) {
+            serverError = message.error;
+          } else if (message.activity) {
+            liveActivitiesRef.current = [...liveActivitiesRef.current, message.activity];
+            setLiveActivities(liveActivitiesRef.current);
+          } else if (message.done) {
+            if (typeof message.answer === "string" && message.answer) finalAnswer = message.answer;
+            if (Array.isArray(message.activities)) {
+              liveActivitiesRef.current = message.activities;
+              setLiveActivities(message.activities);
             }
           }
         }
-        if (serverError) throw new Error(serverError);
-        setHistory(current => [...current, { q, a: finalAnswer.trim() || "I could not produce an answer for that question.", activities: liveActivitiesRef.current }]);
-        setAttachments([]);
-        queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-        queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
-        if (partsMode) {
-          queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
+      }
+      if (serverError) throw new Error(serverError);
+      if (
+        assistantIdentityRef.current !== requestIdentity ||
+        activeConversationIdRef.current !== conversationId
+      ) return false;
+      if (continuation && pendingMcpContinuationRef.current?.token !== continuation.token) return false;
+      if (serverCancelled) {
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(conversationId) });
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+        if (continuation) {
+          continuationLaunchTokenRef.current = null;
+          setMcpContinuationView({
+            token: continuation.token,
+            question: q,
+            endpointUrl: continuation.endpointUrl,
+            status: "failed",
+            error: "The assistant stopped before finishing. Retry the original request.",
+          });
         }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        // Streaming failed mid-flight; fall back to the classic request.
-        ask.mutate({ data: payload }, {
-          onSuccess: response => {
-            if (response.model) rememberModel(response.model);
-            setHistory(current => [...current, { q, a: response.answer, activities: response.activities ?? [] }]);
-            setAttachments([]);
-            void refreshOnshapeStatus(true);
-            queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(activeConversationId) });
-            queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
-            queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
-            if (partsMode) {
-              queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
-              queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
-            }
-          },
-          onError: fallback => {
-            setStreamError(serverErrorMessage(fallback, "The assistant could not answer that just now. Try again."));
-            void refreshOnshapeStatus(true);
-          },
+        return false;
+      }
+      const answer = finalAnswer.trim() || "I could not produce an answer for that question.";
+      if (continuation) {
+        setHistory(current => current.map(entry =>
+          entry.continuationToken === continuation.token
+            ? { ...entry, a: answer, activities: liveActivitiesRef.current }
+            : entry,
+        ));
+        pendingMcpContinuationRef.current = null;
+        continuationLaunchTokenRef.current = null;
+        setMcpContinuationView(null);
+      } else {
+        const continuationToken = connectionRequest && !partsMode && canManageAssistantTools
+          ? crypto.randomUUID()
+          : undefined;
+        setHistory(current => [...current, {
+          q,
+          a: answer,
+          activities: liveActivitiesRef.current,
+          ...(connectionRequest ? { connectionRequest } : {}),
+          ...(continuationToken ? { continuationToken } : {}),
+        }]);
+        if (connectionRequest && !partsMode && canManageAssistantTools) {
+          const token = continuationToken!;
+          const resumePayload = { ...requestPayload };
+          delete resumePayload.mcpContinuation;
+          pendingMcpContinuationRef.current = {
+            token,
+            identity: requestIdentity,
+            conversationId,
+            endpointUrl: connectionRequest.endpointUrl,
+            payload: resumePayload,
+          };
+          setMcpContinuationView({
+            token,
+            question: q,
+            endpointUrl: connectionRequest.endpointUrl,
+            status: "ready",
+            error: "",
+          });
+        }
+      }
+      setAttachments([]);
+      void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+      void queryClient.invalidateQueries({ queryKey: getListAssistantConversationsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+      if (partsMode) {
+        void queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
+        void queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
+      }
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return false;
+      if (assistantIdentityRef.current !== requestIdentity || activeConversationIdRef.current !== conversationId) return false;
+      if (continuation) {
+        const message = serverErrorMessage(
+          error,
+          "The response stream disconnected. Your original request is ready to retry.",
+        );
+        continuationLaunchTokenRef.current = null;
+        setMcpContinuationView({
+          token: continuation.token,
+          question: q,
+          endpointUrl: continuation.endpointUrl,
+          status: "failed",
+          error: message,
         });
-      } finally {
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantConversationMessagesQueryKey(conversationId) });
+      } else {
+        questionDraftRef.current = questionDraftRef.current || q;
+        setQuestion(current => current || q);
+        setStreamError(serverErrorMessage(
+          error,
+          "The response stream disconnected. The server may still be processing this prompt; check its status before retrying.",
+        ));
+      }
+      void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(conversationId) });
+      return false;
+    } finally {
+      if (streamAbort.current === controller) {
         setIsStreaming(false);
         setStreamingText("");
-        void refreshOnshapeStatus(true);
+        activeStreamKindRef.current = "normal";
+        if (assistantIdentityRef.current === requestIdentity) void refreshOnshapeStatus(true);
       }
-    })();
+    }
+  };
+
+  const resumeMcpContinuation = async (
+    pending: NonNullable<typeof pendingMcpContinuationRef.current>,
+    confirmedEndpointUrl?: string,
+  ) => {
+    if (
+      pendingMcpContinuationRef.current?.token !== pending.token ||
+      currentAssistantSessionRef.current !== pending.identity ||
+      activeConversationIdRef.current !== pending.conversationId ||
+      continuationLaunchTokenRef.current === pending.token ||
+      isStreaming
+    ) return;
+    // Reserve this turn before the confirmation request so double clicks or
+    // duplicate completion signals cannot race into two assistant streams.
+    continuationLaunchTokenRef.current = pending.token;
+    setMcpContinuationView({
+      token: pending.token,
+      question: pending.payload.question,
+      endpointUrl: pending.endpointUrl,
+      status: "continuing",
+      error: "",
+    });
+    const authToken = getStoredAuthToken();
+    const confirmedEndpoint = confirmedEndpointUrl ??
+      await confirmCustomMcpConnection(pending.endpointUrl, authToken).catch(() => null);
+    if (
+      pendingMcpContinuationRef.current?.token !== pending.token ||
+      continuationLaunchTokenRef.current !== pending.token ||
+      currentAssistantSessionRef.current !== pending.identity ||
+      activeConversationIdRef.current !== pending.conversationId
+    ) return;
+    if (!confirmedEndpoint || !sameCustomMcpEndpoint(confirmedEndpoint, pending.endpointUrl)) {
+      continuationLaunchTokenRef.current = null;
+      setMcpContinuationView({
+        token: pending.token,
+        question: pending.payload.question,
+        endpointUrl: pending.endpointUrl,
+        status: "failed",
+        error: "The MCP connection could not be confirmed. Retry the connection to continue.",
+      });
+      return;
+    }
+    await runAssistantStream({
+      ...pending.payload,
+      mcpContinuation: { endpointUrl: confirmedEndpoint },
+    }, pending.identity, { token: pending.token, endpointUrl: pending.endpointUrl });
+  };
+
+  const invalidatePendingMcpContinuation = () => {
+    pendingMcpContinuationRef.current = null;
+    continuationLaunchTokenRef.current = null;
+    setMcpContinuationView(null);
+  };
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!question.trim() || !activeConversationId) return;
+    const requestIdentity = assistantIdentity;
+    const q = question.trim();
+    // A new manual turn takes precedence over an unstarted MCP continuation.
+    invalidatePendingMcpContinuation();
+    const hasPersistedWork = (assistantPromptQueue.data?.items ?? []).some(item =>
+      item.status === "queued" || item.status === "running",
+    );
+    if (isStreaming || hasPersistedWork) {
+      if (queuePrompt.isPending || stopPrompt.isPending) return;
+      const queuedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
+      const queuedPayload: AssistantInput = {
+        question: q,
+        model: availableModel || undefined,
+        ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+        conversationId: activeConversationId,
+        ...(canManageAssistantTools && queuedFiles.length ? { attachments: queuedFiles } : {}),
+        ...(disabledTools.length ? { disabledTools } : {}),
+      };
+      queuePrompt.mutate({ conversationId: activeConversationId, data: queuedPayload }, {
+        onSuccess: () => {
+          if (assistantIdentityRef.current !== requestIdentity) return;
+          questionDraftRef.current = "";
+          setQuestion("");
+          setAttachments([]);
+          setStreamError("");
+          void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+        },
+        onError: error => {
+          if (assistantIdentityRef.current !== requestIdentity) return;
+          setStreamError(serverErrorMessage(error, "Could not queue this prompt. Your text is still here so you can retry."));
+        },
+      });
+      return;
+    }
+    if (ask.isPending) return;
+    onshapeRetryQuestionRef.current = q;
+    questionDraftRef.current = "";
+    setQuestion("");
+    setStreamError("");
+    const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
+    const payload: AssistantInput = {
+      question: q,
+      model: availableModel || undefined,
+      ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+      conversationId: activeConversationId,
+      ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}),
+      ...(disabledTools.length ? { disabledTools } : {}),
+    };
+    void runAssistantStream(payload, requestIdentity);
   };
 
   const newConversation = () => {
@@ -7469,31 +8549,164 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     });
   };
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
+  const promptRuns = assistantPromptQueue.data?.items ?? [];
+  const assistantIsWorking = isStreaming || promptRuns.some(item =>
+    item.status === "queued" || item.status === "running",
+  );
+  const stopAssistant = () => {
+    if (!activeConversationId || stopPrompt.isPending) return;
+    stopPrompt.mutate({ conversationId: activeConversationId }, {
+      onSuccess: () => {
+        setStreamError("");
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantPromptQueueQueryKey(activeConversationId) });
+      },
+      onError: error => setStreamError(serverErrorMessage(error, "Could not stop the assistant. Try again.")),
+    });
+  };
+  const assistantHeading = canManageAssistantTools
+    ? {
+      eyebrow: partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace",
+      title: partsMode ? "Parts assistant." : "Ask the room.",
+      detail: partsMode
+        ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases."
+        : "A focused control-room assistant with saved conversations for each decision thread.",
+    }
+    : {
+      eyebrow: "Your private MCP connections",
+      title: "Your MCP assistant.",
+      detail: "Use your own connected Onshape or custom MCP services. Provider credentials and tools are private to your account.",
+    };
 
   return <div className="fade-up">
-    <PageHeading eyebrow={partsMode ? "Robotics inventory / AI workspace" : "Decision support / AI workspace"} title={partsMode ? "Parts assistant." : "Ask the room."} detail={partsMode ? "Search verified supplier products, add parts and robots, update stock, and manage robot allocations. It never places purchases." : "A focused control-room assistant with saved conversations for each decision thread."} stacked action={<div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2"><Badge tone="blue"><Sparkles size={12} className="mr-1" /> {partsMode ? "Parts workspace" : `Context: ${selected.length ? `${selected.length} selected` : "all applicants"}`}</Badge><AssistantModelPicker model={availableModel} models={modelOptions} loading={assistantModels.isLoading} error={assistantModels.isError} onChange={rememberModel} thinkingLevel={thinkingLevel} onThinkingLevelChange={rememberThinkingLevel} disabledTools={disabledTools} onDisabledToolsChange={rememberDisabledTools} onshapeConnected={onshapeConnected} onshapeBusy={onshapeBusy} onshapeError={onshapeError} onConnectOnshape={connectOnshape} onDisconnectOnshape={disconnectOnshape} customMcpEndpoint={customMcpEndpoint} onCustomMcpEndpointChange={updateCustomMcpEndpoint} customMcpConnected={customMcpConnected} customMcpApiKeyRequired={customMcpApiKeyRequired} customMcpApiKey={customMcpApiKey} customMcpApiKeyHeader={customMcpApiKeyHeader} customMcpApiKeyPrefix={customMcpApiKeyPrefix} onCustomMcpApiKeyChange={setCustomMcpApiKey} onCustomMcpApiKeyHeaderChange={setCustomMcpApiKeyHeader} onCustomMcpApiKeyPrefixChange={setCustomMcpApiKeyPrefix} customMcpBusy={customMcpBusy} customMcpError={customMcpError} onConnectCustomMcp={connectCustomMcp} onDisconnectCustomMcp={disconnectCustomMcp} /></div>} />
-    <div className="grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)_330px]">
+    <PageHeading
+      eyebrow={assistantHeading.eyebrow}
+      title={assistantHeading.title}
+      detail={assistantHeading.detail}
+      stacked
+      action={
+        <div className="assistant-model-actions flex flex-row flex-nowrap items-center gap-2">
+          <Badge tone="blue">
+            <Sparkles size={12} className="mr-1" />
+            {canManageAssistantTools
+              ? partsMode ? "Parts workspace" : "Team assistant"
+              : "Private MCP access"}
+          </Badge>
+          <AssistantModelPicker
+            model={availableModel}
+            models={modelOptions}
+            loading={assistantModels.isLoading}
+            error={assistantModels.isError}
+            onChange={rememberModel}
+            canManageAssistantTools={canManageAssistantTools}
+            thinkingLevel={thinkingLevel}
+            onThinkingLevelChange={rememberThinkingLevel}
+            disabledTools={disabledTools}
+            onDisabledToolsChange={rememberDisabledTools}
+            dynamicTools={dynamicAssistantTools}
+            dynamicToolsError={dynamicAssistantToolsError}
+            onshapeConnected={assistantScopeReady && onshapeConnected}
+            onshapeBusy={assistantScopeReady && onshapeBusy}
+            onshapeError={assistantScopeReady ? onshapeError : ""}
+            onConnectOnshape={connectOnshape}
+            onDisconnectOnshape={disconnectOnshape}
+            customMcpEndpoint={assistantScopeReady ? customMcpEndpoint : ""}
+            onCustomMcpEndpointChange={updateCustomMcpEndpoint}
+            customMcpConnected={assistantScopeReady && customMcpConnected}
+            customMcpApiKeyRequired={assistantScopeReady && customMcpApiKeyRequired}
+            customMcpApiKey={assistantScopeReady ? customMcpApiKey : ""}
+            customMcpApiKeyHeader={assistantScopeReady ? customMcpApiKeyHeader : "X-API-Key"}
+            customMcpApiKeyPrefix={assistantScopeReady ? customMcpApiKeyPrefix : ""}
+            onCustomMcpApiKeyChange={setCustomMcpApiKey}
+            onCustomMcpApiKeyHeaderChange={setCustomMcpApiKeyHeader}
+            onCustomMcpApiKeyPrefixChange={setCustomMcpApiKeyPrefix}
+            customMcpBusy={assistantScopeReady && customMcpBusy}
+            customMcpError={assistantScopeReady ? customMcpError : ""}
+            onConnectCustomMcp={() => void connectCustomMcp()}
+            onDisconnectCustomMcp={disconnectCustomMcp}
+          />
+        </div>
+      }
+    />
+    <div
+      className={assistantWorkspaceGridClass(partsMode && canManageAssistantTools)}
+      data-testid="assistant-workspace-grid"
+    >
       <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-1" data-testid="assistant-history-sidebar">
         <button onClick={newConversation} disabled={createConversation.isPending} data-testid="button-new-chat" className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#183a4b] text-sm font-semibold text-white disabled:opacity-50"><Plus size={16} /> New chat</button>
         <p className="mono mt-5 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Previous chats</p>
         <div className="mt-2 max-h-[52vh] space-y-1 overflow-y-auto xl:max-h-[62vh]">
           {conversations.isLoading && [1, 2, 3].map(i => <Skeleton key={i} className="h-12" />)}
-          {scopedConversations.map(conversation => <div key={conversation.id} className={`rounded-xl border p-2 transition ${conversation.id === activeConversationId ? "border-[#a9d3ce] bg-[#eff8f6]" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9]"}`}>{renamingId === conversation.id ? <form onSubmit={event => saveRename(event, conversation.id)} className="flex items-center gap-1"><input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} data-testid="input-rename-conversation" className="min-w-0 flex-1 rounded-md border border-[#b7d5d1] bg-white px-2 py-1.5 text-xs outline-none focus:border-[#16869a]" /><button type="submit" aria-label="Save conversation name" className="rounded-md p-1 text-[#16869a] hover:bg-[#dff2ee]"><Check size={14} /></button><button type="button" onClick={() => setRenamingId("")} aria-label="Cancel rename" className="rounded-md p-1 text-[#718189] hover:bg-[#edf1f1]"><X size={14} /></button></form> : <div className="flex items-center gap-1"><button onClick={() => { setActiveConversationId(conversation.id); setHistory([]); }} className="min-w-0 flex-1 text-left" data-testid={`button-assistant-conversation-${conversation.id}`}><p className="truncate text-xs font-semibold text-[#38555e]">{conversationTitleForWorkspace(conversation.title, partsMode)}</p><p className="mt-1 text-[10px] text-[#819197]">{timeAgo(conversation.updatedAt)}{conversation.messageCount > 0 ? ` · ${conversation.messageCount} ${conversation.messageCount === 1 ? "exchange" : "exchanges"}` : ""}</p></button><button onClick={() => { setRenamingId(conversation.id); setRenameValue(conversationTitleForWorkspace(conversation.title, partsMode)); }} aria-label={`Rename ${conversationTitleForWorkspace(conversation.title, partsMode)}`} title="Rename conversation" data-testid={`button-rename-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#7d9398] hover:bg-[#dff2ee] hover:text-[#16869a]"><Pencil size={13} /></button><button onClick={() => deleteConversationById(conversation.id, conversation.title)} aria-label={`Delete ${conversationTitleForWorkspace(conversation.title, partsMode)}`} title="Delete conversation" data-testid={`button-delete-assistant-conversation-${conversation.id}`} className="rounded-md p-1 text-[#a34d46] hover:bg-[#fff1ef]"><Trash2 size={13} /></button></div>}</div>)}
+          {scopedConversations.map(conversation => <div key={conversation.id} className={`rounded-xl border p-2 transition ${conversation.id === activeConversationId ? "border-[#a9d3ce] bg-[#eff8f6]" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9]"}`}>{renamingId === conversation.id ? <form onSubmit={event => saveRename(event, conversation.id)} className="flex items-center gap-1"><input autoFocus value={renameValue} onChange={event => setRenameValue(event.target.value)} data-testid="input-rename-conversation" className="min-w-0 flex-1 rounded-md border border-[#b7d5d1] bg-white px-2 py-1.5 text-base md:text-xs outline-none focus:border-[#16869a]" /><button type="submit" aria-label="Save conversation name" className="flex h-11 w-11 items-center justify-center rounded-md text-[#16869a] hover:bg-[#dff2ee]"><Check size={14} /></button><button type="button" onClick={() => setRenamingId("")} aria-label="Cancel rename" className="flex h-11 w-11 items-center justify-center rounded-md text-[#718189] hover:bg-[#edf1f1]"><X size={14} /></button></form> : <div className="flex items-center gap-1"><button onClick={() => { setActiveConversationId(conversation.id); setHistory([]); }} className="min-w-0 flex-1 text-left" data-testid={`button-assistant-conversation-${conversation.id}`}><p className="truncate text-xs font-semibold text-[#38555e]">{conversationTitleForWorkspace(conversation.title, partsMode)}</p><p className="mt-1 text-[10px] text-[#819197]">{timeAgo(conversation.updatedAt)}{conversation.messageCount > 0 ? ` · ${conversation.messageCount} ${conversation.messageCount === 1 ? "exchange" : "exchanges"}` : ""}</p></button><button onClick={() => { setRenamingId(conversation.id); setRenameValue(conversationTitleForWorkspace(conversation.title, partsMode)); }} aria-label={`Rename ${conversationTitleForWorkspace(conversation.title, partsMode)}`} title="Rename conversation" data-testid={`button-rename-assistant-conversation-${conversation.id}`} className="flex h-11 w-11 items-center justify-center rounded-md text-[#7d9398] hover:bg-[#dff2ee] hover:text-[#16869a]"><Pencil size={13} /></button><button onClick={() => deleteConversationById(conversation.id, conversation.title)} aria-label={`Delete ${conversationTitleForWorkspace(conversation.title, partsMode)}`} title="Delete conversation" data-testid={`button-delete-assistant-conversation-${conversation.id}`} className="flex h-11 w-11 items-center justify-center rounded-md text-[#a34d46] hover:bg-[#fff1ef]"><Trash2 size={13} /></button></div>}</div>)}
           {!conversations.isLoading && !scopedConversations.length && <p className="px-1 py-4 text-xs leading-5 text-[#7c8c91]">No saved conversations yet. Start a new chat above.</p>}
         </div>
       </aside>
-      <section className="relative order-1 min-h-[560px] rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
-        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">This conversation is shared with the admin team.</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="rounded-lg p-2 text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
+      <section className="relative order-1 min-h-[560px] min-w-0 rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
+        <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">{canManageAssistantTools ? "Shared with coordinators in this team." : "Only you can access this conversation."}</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="flex h-11 w-11 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
         
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
-          {!activeMessages.isLoading && !history.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
-          {history.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} /></div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-0 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
+          {!activeMessages.isLoading && !visibleHistory.length && !ask.isPending && <div className="py-12 text-center"><p className="text-lg font-semibold">{partsMode ? "What should we do with parts?" : "What should we look at?"}</p><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#7c8c91]">{partsMode ? "Ask to find a product, add a robot or part, change stock, or assign inventory." : "Ask for a shortlist, a comparison, or a question to use in this conversation."}</p><div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">{prompts.map((prompt, i) => <button key={prompt} onClick={() => setQuestion(prompt)} data-testid={`button-prompt-${i}`} className="rounded-full border border-[#cfe1e1] px-3 py-2 text-xs text-[#44646d] transition hover:border-[#16869a] hover:text-[#16869a]">{prompt}</button>)}</div></div>}
+          {visibleHistory.map((item, i) => <div key={`${item.q}-${i}`} className="space-y-3"><div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e]" data-testid={`assistant-question-${i}`}>{item.q}</div><div className="group relative flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid={`assistant-answer-${i}`}><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1"><MarkdownContent source={item.a} className="text-[#52666e]" /><ActivityPills activities={item.activities} />{assistantScopeReady && !partsMode && item.connectionRequest && <AssistantMcpConnectionPrompt
+            request={item.connectionRequest}
+            connected={customMcpConnected && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            busy={customMcpBusy && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            continuing={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "continuing"}
+            continuationError={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "failed" ? mcpContinuationView.error : ""}
+            apiKeyRequired={customMcpApiKeyRequired && sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl)}
+            apiKey={sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl) ? customMcpApiKey : ""}
+            apiKeyHeader={customMcpApiKeyHeader}
+            apiKeyPrefix={customMcpApiKeyPrefix}
+            error={sameCustomMcpEndpoint(customMcpEndpoint, item.connectionRequest.endpointUrl) ? customMcpError : ""}
+            onApiKeyChange={setCustomMcpApiKey}
+            onApiKeyHeaderChange={setCustomMcpApiKeyHeader}
+            onApiKeyPrefixChange={setCustomMcpApiKeyPrefix}
+            onConnect={(endpointUrl) => void connectCustomMcp(endpointUrl)}
+            onResume={mcpContinuationView?.token === item.continuationToken && mcpContinuationView?.status === "failed"
+              ? () => {
+                const pending = pendingMcpContinuationRef.current;
+                if (pending) void resumeMcpContinuation(pending);
+              }
+              : undefined}
+            onDismiss={() => {
+              const pending = pendingMcpContinuationRef.current;
+              if (pending?.token === item.continuationToken) {
+                invalidatePendingMcpContinuation();
+              }
+              setHistory(current => current.map((entry, index) =>
+                index === i ? { ...entry, connectionRequest: undefined, connectionRequestDismissed: true } : entry,
+              ));
+            }}
+          />}</div><CopyButton text={item.a} testId={`button-copy-assistant-answer-${i}`} className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-lg border border-[#e1e9e8] bg-white/90 text-[#7c8c91] opacity-100 shadow-sm backdrop-blur transition hover:border-[#16869a] hover:text-[#16869a] md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100" /></div></div>)}
+          {promptRuns.length > 0 && <section
+            aria-label="Assistant prompt queue"
+            aria-live="polite"
+            data-testid="assistant-prompt-queue"
+            className="space-y-2 rounded-xl border border-border bg-card p-3 text-card-foreground"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt status</p>
+            {promptRuns.map(run => {
+              const statusLabel = run.status === "running" ? "Running" :
+                run.status === "queued" ? "Queued" :
+                run.status === "completed" ? "Completed" :
+                run.status === "failed" ? "Failed" :
+                run.status === "cancelled" ? "Stopped" : "Interrupted";
+              const isFailure = run.status === "failed" || run.status === "interrupted";
+              return <div
+                key={run.id}
+                data-testid={`assistant-prompt-run-${run.id}`}
+                className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-border/70 px-3 py-2 text-xs"
+              >
+                <span className="min-w-0 flex-1 whitespace-pre-wrap">{run.prompt}</span>
+                <span className={isFailure ? "font-semibold text-destructive" : "font-semibold text-muted-foreground"}>{statusLabel}</span>
+                {run.error && <p className="w-full text-destructive" role={isFailure ? "alert" : undefined}>{run.error}</p>}
+              </div>;
+            })}
+          </section>}
           {ask.isPending && <div className="flex items-center gap-3 text-sm text-[#7c8c91]" data-testid="assistant-loading"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</div>}
-          {isStreaming && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>Reading the field...</span>}<ActivityPills activities={liveActivities} /></div></div>}
-          {ask.isError && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
-          {streamError && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
-          {onshapeReconnectRequired && !onshapeConnected && (
+          {isStreaming && assistantScopeReady && <div className="flex max-w-[90%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e]" data-testid="assistant-streaming"><Bot size={17} className="mt-1 shrink-0 text-[#16869a]" /><div className="min-w-0 flex-1">{activeStreamKindRef.current === "mcp-continuation" && <p className="mb-2 text-xs font-semibold text-[#16869a]" data-testid="assistant-mcp-continuing">Continuing your original request with the connected MCP tools…</p>}{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim() ? <p className="whitespace-pre-wrap">{streamingText.replace(/<(?:tool_call|dots_function_call)>[\s\S]*?(<\/tool_call>|$)/g, "").trim()}</p> : <span className="flex items-center gap-3 text-[#7c8c91]"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:100ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#16869a] [animation-delay:200ms]" /></span>{activeStreamKindRef.current === "mcp-continuation" ? "Continuing your request…" : "Reading the field..."}</span>}<ActivityPills activities={liveActivities} /></div></div>}
+          {ask.isError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-error">{serverErrorMessage(ask.error, "The assistant could not answer that just now. Try again.")}</p>}
+          {streamError && assistantScopeReady && <p className="text-sm text-[#b34a42]" data-testid="assistant-stream-error">{streamError}</p>}
+          {assistantScopeReady && onshapeReconnectRequired && !onshapeConnected && (
             <div
               className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
               role="alert"
@@ -7513,12 +8726,26 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             </div>
           )}
         </div>
-        {attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
+        {assistantScopeReady && canManageAssistantTools && attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
         {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
-        <form onSubmit={submit} className="flex gap-2 border-t border-[#edf1f1] pt-4">{!partsMode && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}<input value={question} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-sm outline-none focus:border-[#16869a]" /><button disabled={ask.isPending || isStreaming || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 items-center gap-2 rounded-xl bg-[#183a4b] px-5 text-sm font-semibold text-white disabled:opacity-45"><ArrowRight size={16} /> Ask</button></form>
+        <form onSubmit={submit} className="flex w-full min-w-0 gap-2 border-t border-[#edf1f1] pt-4">
+          {!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}
+          <input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 w-0 min-w-0 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-base md:text-sm outline-none focus:border-[#16869a]" />
+          {assistantIsWorking ? question.trim() ? (
+            <button type="submit" disabled={!assistantScopeReady || queuePrompt.isPending || !activeConversationId} data-testid="button-queue-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5">
+              <Send size={16} /> {queuePrompt.isPending ? "Queueing…" : "Queue"}
+            </button>
+          ) : (
+            <button type="button" onClick={stopAssistant} disabled={!assistantScopeReady || stopPrompt.isPending || !activeConversationId} aria-label="Stop assistant" data-testid="button-stop-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl border border-destructive/40 px-3 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-45 sm:px-5">
+              <X size={16} /> {stopPrompt.isPending ? "Stopping…" : "Stop"}
+            </button>
+          ) : (
+            <button type="submit" disabled={!assistantScopeReady || ask.isPending || !question.trim() || !activeConversationId} data-testid="button-ask-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5"><ArrowRight size={16} /> Ask</button>
+          )}
+        </form>
         {!activeConversationId && !conversations.isLoading && <p className="pt-3 text-center text-xs text-[#7c8c91]">Starting your first chat…</p>}
       </section>
-      {partsMode ? (
+      {partsMode && canManageAssistantTools ? (
         <Section title="Parts tools" kicker="Shared catalog and robot inventory" className="order-3">
           <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
             <li>Search official supplier product pages with verified prices and images.</li>
@@ -7526,12 +8753,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             <li>Supplier search is broad discovery, not a complete catalog. No supplier order or payment is submitted.</li>
           </ul>
         </Section>
-      ) : (
-        <>
-          <Section title="Focus the context" kicker="Optional: select applicants for a sharper answer" className="order-3"><div className="space-y-2">{list.data && list.data.total > 8 && <p className="px-2 text-[11px] text-[#8a999d]">Showing first 8 of {list.data.total} — search on the Applicants page for the rest.</p>}{list.isLoading ? [1,2,3].map(i => <Skeleton key={i} className="h-12" />) : list.data?.items.slice(0,8).map(applicant => <label key={applicant.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f1f6f5]"><input type="checkbox" checked={selected.includes(applicant.id)} onChange={event => setSelected(current => event.target.checked ? [...current, applicant.id] : current.filter(id => id !== applicant.id))} data-testid={`checkbox-assistant-${applicant.id}`} className="h-4 w-4 accent-[#16869a]" /><span className="min-w-0 flex-1 truncate text-xs font-medium">{applicant.name}</span><span className="mono text-[10px] text-[#16869a]">{applicant.aiScore.toFixed(1)}</span></label>)}</div>{selected.length > 0 && <button onClick={() => setSelected([])} data-testid="button-clear-assistant-selection" className="mt-4 text-xs font-semibold text-[#16869a]">Clear selection</button>}</Section>
-          <ImageStudio />
-        </>
-      )}
+      ) : null}
     </div>
   </div>;
 }
@@ -7607,7 +8829,7 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#b4c1c4]" />Unmarked</span>
     </div>
     <div className="mt-2 overflow-x-auto">
-      <div className="grid min-w-[520px] gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      <div className="grid min-w-[min(520px,100%)] gap-1.5 sm:min-w-[520px]" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {Array.from({ length: rows * cols }, (_, i) => {
           const row = Math.floor(i / cols);
           const col = i % cols;
@@ -7645,9 +8867,33 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const markAttendance = (id: string, patch: AttendancePatch) => {
     updateApplicant.mutate({ id, data: patch }, { onSuccess: invalidate });
   };
-  const markAllHere = () => {
-    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && a.attendance !== "here");
+  const markAllHere = async () => {
+    // Only students nobody has classified yet. Marking a late or absent
+    // student as "here" used to wipe their recorded arrival time, agreed
+    // makeup date, and excused flag -- in bulk, with no confirmation.
+    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && a.attendance === "unmarked");
+    const preserved = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && (a.attendance === "late" || a.attendance === "absent")).length;
+    if (!todo.length) return;
+    if (!(await confirmAction({
+      title: `Mark ${todo.length} student${todo.length === 1 ? "" : "s"} as here?`,
+      detail: preserved
+        ? `Only students nobody has classified yet are marked. ${preserved} late or absent record${preserved === 1 ? "" : "s"} keep their arrival time, makeup date, and excused flag.`
+        : "Only students nobody has classified yet are marked.",
+      confirmLabel: "Mark them here",
+    }))) return;
     todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
+  };
+  const excuseAllOutstanding = async () => {
+    // Close out every late/absent record without touching the recorded
+    // arrival time or the agreed makeup date.
+    const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused !== true);
+    if (!todo.length) return;
+    if (!(await confirmAction({
+      title: `Excuse ${todo.length} late/absent record${todo.length === 1 ? "" : "s"}?`,
+      detail: "Only the excused flag is set. Arrival times and makeup dates are kept.",
+      confirmLabel: "Excuse them",
+    }))) return;
+    todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendanceExcused: true } }, { onSuccess: invalidate }));
   };
   const [statusFilter, setStatusFilter] = useState<"all" | "remaining" | "completed">("all");
   const [attFilter, setAttFilter] = useState<"all" | "here" | "late" | "absent" | "unmarked" | "excused">("all");
@@ -7748,15 +8994,16 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
         {filterButton("all", "All students", all.length)}
         {filterButton("remaining", "To check in", eligible.length)}
         {filterButton("completed", "Finished", all.filter(a => a.interviewStatus === "completed").length)}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" data-testid="input-attendance-search" aria-label="Search students" className="h-9 min-w-[180px] flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-sm text-[#182232] outline-none focus:border-[#16869a] sm:max-w-xs" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" data-testid="input-attendance-search" aria-label="Search students" className="h-9 min-w-[180px] flex-1 rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm text-[#182232] outline-none focus:border-[#16869a] sm:max-w-xs" />
       </div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select value={sort} onChange={e => setSort(e.target.value as "name" | "seat" | "status")} data-testid="select-attendance-sort" aria-label="Sort check-in list" className="h-9 rounded-lg border border-[#d5e0e0] bg-white px-2 text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
+        <select value={sort} onChange={e => setSort(e.target.value as "name" | "seat" | "status")} data-testid="select-attendance-sort" aria-label="Sort check-in list" className="h-9 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs font-semibold text-[#182232] outline-none focus:border-[#16869a]">
           <option value="name">Sort: Name</option>
           <option value="seat">Sort: Seat</option>
           <option value="status">Sort: Needs attention</option>
         </select>
-        <button onClick={markAllHere} disabled={updateApplicant.isPending || !eligible.length} data-testid="button-attendance-all-here" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+        <button onClick={() => { void markAllHere(); }} disabled={updateApplicant.isPending || !eligible.length} data-testid="button-attendance-all-here" title="Mark every unclassified student as here (late and absent records are left alone)" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+        <button onClick={() => { void excuseAllOutstanding(); }} disabled={updateApplicant.isPending || !(late + absent)} data-testid="button-attendance-excuse-all" title="Set the excused flag on every late/absent record (arrival times and makeup dates are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Excuse late/absent</button>
         <button onClick={clearMarks} disabled={updateApplicant.isPending} data-testid="button-attendance-clear" title="Reset everyone to unmarked (seats are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Clear marks</button>
         <button onClick={() => void copySummary()} data-testid="button-attendance-copy" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2]">{copied ? "Copied!" : "Copy summary"}</button>
       </div>
@@ -7791,11 +9038,14 @@ function Router() {
     <ErrorBoundary FallbackComponent={CrashFallback}>
       <Switch>
         <Route path="/" component={PublicDashboard} />
+        <Route path="/about" component={AboutPage} />
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />
         <Route path="/parts-landing" component={PartsLanding} />
         <Route path="/code-landing" component={CodeLanding} />
         <Route path="/cad-landing" component={CadLanding} />
+        <Route path="/privacy" component={PrivacyPolicy} />
+        <Route path="/terms" component={TermsOfUse} />
         <Route path="/auth" component={Login} />
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>
@@ -7821,5 +9071,5 @@ function Router() {
   );
 }
 function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
-export { InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
+export { ConversationAssistant, InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;

@@ -2,6 +2,8 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 
 import { getStoredAuthToken } from "../authSession";
+import { classifyFile } from "../lib/fileFormats";
+import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "../lib/officePreview";
 import { ChatGlbViewer } from "./ChatGlbViewer";
 import { ChatParasolidViewer } from "./ChatParasolidViewer";
 import { ChatStlViewer } from "./ChatStlViewer";
@@ -62,6 +64,7 @@ type WorkspaceAttachmentKind =
   | "obj"
   | "parasolid"
   | "pdf"
+  | "presentation"
   | "ply"
   | "spreadsheet"
   | "step"
@@ -79,40 +82,16 @@ function workspaceAttachmentExtension(name: string): string {
  * stored content type is vague; otherwise the content type decides.
  */
 export function workspaceAttachmentKind(name: string, contentType: string): WorkspaceAttachmentKind {
-  const extension = workspaceAttachmentExtension(name);
-  if (
-    contentType.startsWith("image/") ||
-    ["avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"].includes(extension)
-  )
-    return "image";
-  if (contentType === "model/x-parasolid" || ["x_b", "x_t"].includes(extension)) return "parasolid";
-  if (contentType === "model/gltf-binary" || extension === "glb") return "model";
-  if (contentType === "model/stl" || contentType === "application/sla" || extension === "stl") return "stl";
-  if (
-    ["model/3mf", "application/3mf", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml"].includes(contentType) ||
-    extension === "3mf"
-  )
-    return "3mf";
-  if (contentType === "model/obj" || extension === "obj") return "obj";
-  if (contentType === "model/ply" || contentType === "application/ply" || extension === "ply") return "ply";
-  if (
-    contentType === "model/step" ||
-    contentType === "application/step" ||
-    contentType === "application/x-step" ||
-    ["step", "stp", "iges", "igs", "brep", "brp"].includes(extension)
-  )
-    return "step";
-  if (contentType.startsWith("video/") || ["avi", "m4v", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
-  if (contentType.startsWith("audio/") || ["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav"].includes(extension)) return "audio";
-  if (contentType === "application/pdf" || extension === "pdf") return "pdf";
-  if (
-    contentType.includes("spreadsheet") ||
-    contentType === "application/vnd.ms-excel" ||
-    ["csv", "tsv", "xls", "xlsx"].includes(extension)
-  )
-    return ["csv", "tsv"].includes(extension) || contentType.startsWith("text/") ? "text" : "spreadsheet";
-  if (contentType.startsWith("text/") || ["log", "md", "rtf", "txt"].includes(extension)) return "text";
-  return "document";
+  const format = classifyFile(name, contentType);
+  switch (format) {
+    case "three-mf": return "3mf";
+    case "glb": return "model";
+    case "step":
+    case "iges":
+    case "brep": return "step";
+    case "archive": return "document";
+    default: return format;
+  }
 }
 
 function normalizeWorkspaceFileType(type: string): string {
@@ -247,6 +226,25 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         if (!active) return;
         setContentType(resolvedType);
         const resolvedKind = workspaceAttachmentKind(name, resolvedType);
+        const ensureDownloadUrl = () => {
+          if (attachmentBlobRef.current && objectUrlsRef.current.size) return;
+          const url = URL.createObjectURL(blob);
+          createdUrls.add(url);
+          attachmentBlobRef.current = blob;
+          setObjectUrl(url);
+        };
+        if (isOfficePreviewAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = await parseOfficePreview(blob, name);
+          if (active) setText(preview);
+          return;
+        }
+        if (isJsonAttachment(name, resolvedType)) {
+          ensureDownloadUrl();
+          const preview = formatJsonPreview(await blob.text());
+          if (active) setText(preview);
+          return;
+        }
         if (resolvedKind === "text") {
           const raw = await blob.text();
           if (active) setText(raw.slice(0, 250000));
@@ -325,7 +323,12 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
   };
 
   if (failed)
-    return <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46]">Couldn’t render {name}.</div>;
+    return (
+      <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46] dark:border-[#70413b] dark:bg-[#2c1d1d] dark:text-[#f1aaa4]" role="alert">
+        <p>Couldn’t preview {name}. The file may be malformed or use unsupported content.</p>
+        <a href={objectUrl ?? appRelativeWorkspaceUrl(src)} download={name} className="mt-1 inline-block font-semibold underline underline-offset-2">Download {name}</a>
+      </div>
+    );
   if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {
     return (
       <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
@@ -362,7 +365,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         {rows.length > 0 ? (
           <ChatAttachmentTableFallback rows={rows} label={name} />
         ) : (
-          <pre className="max-h-[360px] overflow-auto rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e]">
+          <pre aria-label={`Preview of ${name}`} data-testid="text-attachment-preview" className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]">
             {text}
           </pre>
         )}

@@ -1,10 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Buffer } from "node:buffer";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 
 import { MarkdownContent, renderInlineMarkdown } from "./App";
+import { officeAttachmentFixtures } from "./test-fixtures/officeAttachments";
 import { TooltipProvider } from "./components/ui/tooltip";
 
 vi.mock("@google/model-viewer", () => ({}));
@@ -347,6 +347,7 @@ const fixtures: Fixture[] = [
 ];
 
 beforeEach(() => {
+  delete window.officeParser;
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
@@ -422,11 +423,72 @@ describe("chat attachment inline previews", () => {
       <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
     );
 
-    await waitFor(() => fixture.assertPreview(container));
+    await waitFor(() => fixture.assertPreview(container), { timeout: 15_000 });
 
     const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
       .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
     expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
+  });
+
+  it.each(officeAttachmentFixtures)("$name renders readable office or JSON content inline", async fixture => {
+    const isJson = fixture.name.endsWith(".json") || fixture.contentType === "application/json";
+    if (!isJson) {
+      window.officeParser = {
+        parseOffice: vi.fn(async file => ({
+          toMarkdown: () => `# ${fixture.expectedText} · ${file instanceof File ? file.name : "office file"}`,
+        })),
+      };
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(await fixture.body.arrayBuffer(), {
+        status: 200,
+        headers: { "content-type": fixture.contentType },
+      }),
+    );
+
+    const { container } = render(
+      <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/fixture-${fixture.name})`)}</div>,
+    );
+
+    const preview = await screen.findByTestId("text-attachment-preview", undefined, { timeout: 15_000 });
+    expect(preview).toHaveTextContent(fixture.expectedText);
+    if (isJson) {
+      expect(() => JSON.parse(preview.textContent ?? "")).not.toThrow();
+      expect(preview.textContent).toContain('\n  "');
+    } else {
+      expect(window.officeParser?.parseOffice).toHaveBeenCalledWith(
+        expect.any(ArrayBuffer),
+        expect.objectContaining({ extractAttachments: false }),
+      );
+    }
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: "broken.pptx", contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", body: new Blob(["not a presentation"]) },
+    { name: "broken.json", contentType: "application/json", body: new Blob(['{"missing":'], { type: "application/json" }) },
+  ])("$name has an accessible download fallback when parsing fails", async fixture => {
+    if (fixture.name.endsWith(".pptx")) {
+      window.officeParser = { parseOffice: vi.fn().mockRejectedValue(new Error("Invalid presentation")) };
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(await fixture.body.arrayBuffer(), {
+        status: 200,
+        headers: { "content-type": fixture.contentType },
+      }),
+    );
+
+    const { container } = render(
+      <div>{renderInlineMarkdown(`[${fixture.name}](/api/storage/objects/broken-${fixture.name})`)}</div>,
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(`Couldn’t preview ${fixture.name}`);
+    expect(within(alert).getByRole("link", { name: `Download ${fixture.name}` })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^blob:/),
+    );
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
   });
 
   it("keeps a HEIC image preview when the browser reports a successful load", async () => {

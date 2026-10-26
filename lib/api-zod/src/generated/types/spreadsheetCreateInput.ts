@@ -16,4 +16,9 @@ export interface SpreadsheetCreateInput {
   scope: SpreadsheetCreateInputScope;
   /** @nullable */
   recipient?: string | null;
+  /**
+     * Invite-only channel id for a channel-scope spreadsheet.
+     * @nullable
+     */
+  channelId?: string | null;
 }

@@ -7,6 +7,7 @@
  */
 import type { AssistantInputAttachmentsItem } from './assistantInputAttachmentsItem';
 import type { AssistantInputChatContextItem } from './assistantInputChatContextItem';
+import type { AssistantInputMcpContinuation } from './assistantInputMcpContinuation';
 import type { AssistantInputThinkingLevel } from './assistantInputThinkingLevel';
 
 export interface AssistantInput {
@@ -24,6 +25,8 @@ export interface AssistantInput {
   disabledTools?: string[];
   /** Files attached in chat (already uploaded to storage). */
   attachments?: AssistantInputAttachmentsItem[];
+  /** Continue a pending coordinator request after its custom MCP endpoint has connected. */
+  mcpContinuation?: AssistantInputMcpContinuation;
   /** Recent interviewer chat messages for conversational context. */
   chatContext?: AssistantInputChatContextItem[];
 }

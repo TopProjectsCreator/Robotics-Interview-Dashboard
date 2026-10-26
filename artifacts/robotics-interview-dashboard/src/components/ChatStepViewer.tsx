@@ -78,7 +78,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
         const occt = await occtFactory({ locateFile: () => occtWasmUrl });
         if (!active) return;
 
-        const width = Math.max(host.clientWidth, 320);
+        const width = Math.max(host.clientWidth, 240);
         const height = 340;
         const viewerScene = new THREE.Scene();
         scene = viewerScene;
@@ -93,7 +93,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
         viewerRenderer.domElement.tabIndex = 0;
         // Without this the browser claims two-finger gestures for page scroll,
         // so OrbitControls never receives them.
-        viewerRenderer.domElement.style.touchAction = "none";
+        viewerRenderer.domElement.style.touchAction = "pan-y";
         host.appendChild(viewerRenderer.domElement);
 
         viewerScene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -117,7 +117,7 @@ export function ChatStepViewer({ name, src }: ChatStepViewerProps) {
 
         const resize = () => {
           if (!active) return;
-          const nextWidth = Math.max(host.clientWidth, 320);
+          const nextWidth = Math.max(host.clientWidth, 240);
           camera.aspect = nextWidth / height;
           camera.updateProjectionMatrix();
           viewerRenderer.setSize(nextWidth, height, false);

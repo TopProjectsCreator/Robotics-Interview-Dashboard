@@ -14,6 +14,7 @@ import {
   ALL_ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOL_GROUPS,
   WRITE_TOOL_NAMES,
+  type AssistantToolItem,
   loadDisabledTools,
   normalizeDisabledTools,
   saveDisabledTools,
@@ -33,10 +34,13 @@ type AssistantModelPickerProps = {
   loading: boolean;
   error: boolean;
   onChange: (model: string) => void;
+  canManageAssistantTools?: boolean;
   thinkingLevel?: AssistantThinkingLevel;
   onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
   disabledTools?: string[];
   onDisabledToolsChange?: (tools: string[]) => void;
+  dynamicTools?: AssistantToolItem[];
+  dynamicToolsError?: string;
   onshapeConnected?: boolean;
   onshapeBusy?: boolean;
   onshapeError?: string;
@@ -64,10 +68,13 @@ export function AssistantModelPicker({
   loading,
   error,
   onChange,
+  canManageAssistantTools = true,
   thinkingLevel = "auto",
   onThinkingLevelChange,
   disabledTools: controlledDisabled,
   onDisabledToolsChange,
+  dynamicTools = [],
+  dynamicToolsError = "",
   onshapeConnected = false,
   onshapeBusy = false,
   onshapeError = "",
@@ -91,12 +98,23 @@ export function AssistantModelPicker({
   const options = models.length ? models : model ? [{ id: model }] : [];
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
   const disabledTools = useMemo(
     () => normalizeDisabledTools(controlledDisabled ?? internalDisabled),
     [controlledDisabled, internalDisabled],
   );
   const disabledSet = useMemo(() => new Set(disabledTools), [disabledTools]);
-  const enabledCount = ALL_ASSISTANT_TOOL_NAMES.length - disabledTools.length;
+  const dynamicToolNames = useMemo(
+    () => dynamicTools.map((tool) => tool.name).filter((name) => !ALL_ASSISTANT_TOOL_NAMES.includes(name)),
+    [dynamicTools],
+  );
+  const availableToolNames = useMemo(
+    () => [...ALL_ASSISTANT_TOOL_NAMES, ...dynamicToolNames],
+    [dynamicToolNames],
+  );
+  const disabledCount = availableToolNames.filter((name) => disabledSet.has(name)).length;
+  const enabledCount = availableToolNames.length - disabledCount;
+  const readOnlyDisabledTools = [...new Set([...WRITE_TOOL_NAMES, ...dynamicToolNames])];
 
   const updateDisabled = (next: string[]) => {
     const normalized = normalizeDisabledTools(next);
@@ -121,6 +139,10 @@ export function AssistantModelPicker({
       else next.add(name);
     }
     updateDisabled([...next]);
+  };
+
+  const collapseSkillsForToolInteraction = () => {
+    if (skillsExpanded) setSkillsExpanded(false);
   };
 
   return (
@@ -193,12 +215,14 @@ export function AssistantModelPicker({
             <button
               type="button"
               aria-label="Assistant settings"
-              title={disabledTools.length ? `${enabledCount} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled` : "Assistant settings"}
+              title={!canManageAssistantTools
+                ? "Manage your MCP connections"
+                : disabledCount ? `${enabledCount} of ${availableToolNames.length} tools enabled` : "Assistant settings"}
               data-testid="assistant-tools-gear"
               className="assistant-tools-gear"
             >
               <Settings size={15} />
-              {disabledTools.length > 0 && (
+              {canManageAssistantTools && disabledCount > 0 && (
                 <span className="assistant-tools-gear-dot" aria-hidden="true" />
               )}
             </button>
@@ -206,12 +230,14 @@ export function AssistantModelPicker({
           <PopoverContent align="end" sideOffset={8} className="assistant-tools-popover">
             <div className="assistant-tools-head">
               <div>
-                <p className="assistant-tools-title">Assistant settings</p>
+                <p className="assistant-tools-title">{canManageAssistantTools ? "Assistant settings" : "Your assistant connections"}</p>
                 <p className="assistant-tools-subtitle" data-testid="assistant-tools-count">
-                  {enabledCount} of {ALL_ASSISTANT_TOOL_NAMES.length} enabled
+                  {canManageAssistantTools
+                    ? `${enabledCount} of ${availableToolNames.length} enabled`
+                    : "Private to your account"}
                 </p>
               </div>
-              <div className="assistant-tools-head-actions">
+              {canManageAssistantTools && <div className="assistant-tools-head-actions" onClickCapture={collapseSkillsForToolInteraction}>
                 <button
                   type="button"
                   className="assistant-tools-link"
@@ -223,13 +249,16 @@ export function AssistantModelPicker({
                 <button
                   type="button"
                   className="assistant-tools-link"
-                  onClick={() => updateDisabled([...WRITE_TOOL_NAMES])}
-                  disabled={disabledTools.length === WRITE_TOOL_NAMES.size && [...WRITE_TOOL_NAMES].every((name) => disabledSet.has(name))}
+                  onClick={() => updateDisabled(readOnlyDisabledTools)}
+                  disabled={readOnlyDisabledTools.every((name) => disabledSet.has(name))}
                 >
                   Read-only
                 </button>
-              </div>
+              </div>}
             </div>
+            {!canManageAssistantTools && (
+              <p className="assistant-tools-subtitle">Only you can use these connections. Provider credentials are not shared with your team.</p>
+            )}
             {(onConnectOnshape || onDisconnectOnshape) && (
               <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">
                 <div className="assistant-onshape-setting-copy">
@@ -324,8 +353,8 @@ export function AssistantModelPicker({
               )}
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
-            <AssistantSkillManager />
-            <div className="assistant-tools-groups">
+            {canManageAssistantTools && <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />}
+            {canManageAssistantTools && <div className="assistant-tools-groups" onClickCapture={collapseSkillsForToolInteraction}>
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);
                 const enabledInGroup = names.filter((name) => !disabledSet.has(name)).length;
@@ -369,10 +398,55 @@ export function AssistantModelPicker({
                   </fieldset>
                 );
               })}
-            </div>
-            <p className="assistant-tools-foot">
+              {dynamicToolNames.length > 0 && (
+                <fieldset className="assistant-tools-group" data-testid="assistant-dynamic-tools">
+                  <div className="assistant-tools-group-head">
+                    <Checkbox
+                      id="assistant-tools-group-dynamic"
+                      checked={
+                        dynamicToolNames.every((name) => disabledSet.has(name))
+                          ? false
+                          : dynamicToolNames.every((name) => !disabledSet.has(name))
+                            ? true
+                            : "indeterminate"
+                      }
+                      onCheckedChange={(checked) => toggleGroup(dynamicToolNames, checked === true)}
+                      aria-label="Connected service tools"
+                    />
+                    <label htmlFor="assistant-tools-group-dynamic" className="assistant-tools-group-label">
+                      Connected service tools
+                      <span className="assistant-tools-group-count">
+                        {dynamicToolNames.filter((name) => !disabledSet.has(name)).length}/{dynamicToolNames.length}
+                      </span>
+                    </label>
+                  </div>
+                  <p className="assistant-tools-group-desc">Tools discovered from your connected Onshape and custom MCP services.</p>
+                  <div className="assistant-tools-list">
+                    {dynamicTools.filter((tool) => dynamicToolNames.includes(tool.name)).map((tool) => (
+                      <label key={tool.name} className="assistant-tools-item" title={tool.hint}>
+                        <Checkbox
+                          checked={!disabledSet.has(tool.name)}
+                          onCheckedChange={(checked) => toggleTool(tool.name, checked === true)}
+                          aria-label={`${tool.label} tool`}
+                        />
+                        <span className="assistant-tools-item-text">
+                          <span className="assistant-tools-item-label">{tool.label}</span>
+                          <span className="assistant-tools-item-hint">{tool.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              {dynamicToolsError && (
+                <p role="status" className="assistant-tools-foot" data-testid="assistant-dynamic-tools-error">
+                  {dynamicToolsError}
+                </p>
+              )}
+            </div>}
+            {canManageAssistantTools && <p className="assistant-tools-foot">
               Disabled tools are hidden from the model and blocked if called.
-            </p>
+            </p>}
           </PopoverContent>
         </Popover>
       </div>

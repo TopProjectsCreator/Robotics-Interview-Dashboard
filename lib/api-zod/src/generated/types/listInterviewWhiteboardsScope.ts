@@ -12,4 +12,5 @@ export type ListInterviewWhiteboardsScope = typeof ListInterviewWhiteboardsScope
 export const ListInterviewWhiteboardsScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

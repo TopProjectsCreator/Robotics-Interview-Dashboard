@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { open } from 'node:fs/promises';
 import { pipeline } from "node:stream/promises";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { db, chunkedUploadsTable } from "@workspace/db";
 import { ObjectStorageService, type StorageInstance } from "./objectStorage";
+import { isPrivateObjectReferenced } from "./privateObjectReferences";
 
 const objectStorage = new ObjectStorageService();
 
@@ -63,10 +65,96 @@ export async function deleteChunkParts(
 }
 
 /**
+ * How long an unreferenced chunked upload is kept before it is swept.
+ *
+ * A tab that closes mid-upload (or a network drop on venue wifi) leaves the
+ * uploaded parts in storage with nothing pointing at them. Large CAD models
+ * are hundreds of megabytes, so without a sweep a single bad day can eat a
+ * team's whole storage quota.
+ */
+export const CHUNK_UPLOAD_ORPHAN_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Delete chunked uploads nothing points at any more: the uploaded file was
+ * never attached to a message or a model, or it was attached and the
+ * attachment has since been removed.
+ *
+ * Returns how many uploads were removed.
+ */
+export async function sweepOrphanChunkUploads(
+  options: { now?: number; limit?: number } = {},
+): Promise<number> {
+  const now = options.now ?? Date.now();
+  const limit = options.limit ?? 25;
+  const cutoff = new Date(now - CHUNK_UPLOAD_ORPHAN_TTL_MS);
+  const stale = await db
+    .select()
+    .from(chunkedUploadsTable)
+    .where(lt(chunkedUploadsTable.createdAt, cutoff))
+    .limit(limit);
+  let removed = 0;
+  for (const manifest of stale) {
+    const instance = (manifest.storageInstance === "secondary" ? "secondary" : "primary") as StorageInstance;
+    const objectPath = instance === "secondary"
+      ? `/objects/chunk/secondary/${manifest.uploadId}`
+      : `/objects/chunk/${manifest.uploadId}`;
+    // Still in use (a message, a CAD model, a robot preview): leave it.
+    if (await isPrivateObjectReferenced(objectPath)) continue;
+    try {
+      await deleteChunkParts(manifest.uploadId, manifest.totalParts, instance);
+    } catch {
+      // The parts may already be gone; the manifest still has to go.
+    }
+    await db
+      .delete(chunkedUploadsTable)
+      .where(eq(chunkedUploadsTable.uploadId, manifest.uploadId))
+      .catch(() => undefined);
+    removed += 1;
+  }
+  return removed;
+}
+
+/**
  * Streams a chunked object to the client one part at a time. Parts are
  * fetched with fetch() and piped, so peak memory stays at one stream rather
  * than the whole file.
  */
+/**
+ * Materializes a chunked upload as ONE local file. The preview converter needs
+ * a real file on disk, and streaming a 1 GB model through the browser (down
+ * to the tab, then back up to the API) was what made big CAD previews stall
+ * or fail. This assembles it server-side, straight from storage.
+ */
+export async function materializeChunkedUpload(
+  uploadId: string,
+  targetPath: string,
+  signPartUrl: (path: string) => Promise<string>,
+): Promise<{ contentType: string; fileName: string; sizeBytes: number }> {
+  const manifest = await getChunkUpload(uploadId);
+  if (!manifest) throw new Error('Chunked upload not found');
+  const handle = await open(targetPath, 'w');
+  try {
+    for (let index = 0; index < manifest.totalParts; index += 1) {
+      const signedUrl = await signPartUrl(chunkStoragePath(uploadId, index));
+      const upstream = await fetch(signedUrl);
+      if (!upstream.ok || !upstream.body) {
+        throw new Error(`Part ${index} is missing from storage`);
+      }
+      // Write each part straight into the open file handle.
+      for await (const chunk of upstream.body as unknown as AsyncIterable<Uint8Array>) {
+        await handle.write(chunk);
+      }
+    }
+  } finally {
+    await handle.close();
+  }
+  return {
+    contentType: manifest.contentType,
+    fileName: manifest.fileName,
+    sizeBytes: manifest.sizeBytes,
+  };
+}
+
 export async function streamChunkedUpload(
   uploadId: string,
   res: { write: (chunk: Uint8Array) => boolean; end: () => void; destroy?: (error?: Error) => void },

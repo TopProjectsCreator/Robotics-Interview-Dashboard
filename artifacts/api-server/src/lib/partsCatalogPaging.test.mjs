@@ -119,7 +119,7 @@ test("assistant catalog search pages beyond 100 matches without gaps or duplicat
       query: "widget",
       limit: 100,
       offset,
-    });
+    }, "team-a");
     assert.equal(response.activity.tool, "search_supplier_parts");
     return JSON.parse(response.content);
   };

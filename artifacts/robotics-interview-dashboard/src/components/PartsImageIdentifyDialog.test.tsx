@@ -1,7 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import sampleHeicBase64 from "./__fixtures__/parts-identification-sample.heic.b64?raw";
 
 const mocks = vi.hoisted(() => ({
   identify: vi.fn(),
@@ -12,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@workspace/api-client-react", () => ({
   useIdentifyPartsImage: () => ({ mutateAsync: mocks.identify, isPending: false }),
 }));
-vi.mock("heic2any", () => ({ default: vi.fn() }));
 
 import { PartsImageIdentifyDialog } from "./PartsImageIdentifyDialog";
 
@@ -37,11 +35,32 @@ const identifiedPart = {
   uncertaintyReason: "The exact profile series is not visible.",
 };
 
+const frameBytes = new Uint8Array([0xff, 0xd8, 0xff, 0x42]);
+
+function createStream(deviceId = "camera-one") {
+  let endedListener: EventListener | undefined;
+  const track = {
+    stop: vi.fn(),
+    getSettings: () => ({ deviceId }),
+    addEventListener: vi.fn((type: string, listener: EventListener) => {
+      if (type === "ended") endedListener = listener;
+    }),
+    removeEventListener: vi.fn(() => {
+      endedListener = undefined;
+    }),
+  } as unknown as MediaStreamTrack;
+  return {
+    stream: { getTracks: () => [track], getVideoTracks: () => [track] } as unknown as MediaStream,
+    track,
+    endVideo: () => endedListener?.(new Event("ended")),
+  };
+}
+
 function renderDialog() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <PartsImageIdentifyDialog
         open
@@ -52,22 +71,47 @@ function renderDialog() {
       />
     </QueryClientProvider>,
   );
+  return result;
 }
 
-function choosePng() {
-  const file = new File([new Uint8Array([1, 2, 3, 4])], "part.png", { type: "image/png" });
-  fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [file] } });
-  return file;
+async function waitForCamera() {
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /capture and identify|scan next part|retry identification/i })).toBeEnabled();
+  });
 }
 
-function heicFixtureBytes(): ArrayBuffer {
-  const bytes = Uint8Array.from(atob(sampleHeicBase64.trim()), (character) => character.charCodeAt(0));
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+async function captureWithButton() {
+  const button = screen.getByRole("button", { name: /capture and identify|scan next part|retry identification/i });
+  fireEvent.click(button);
 }
+
+let getUserMedia: ReturnType<typeof vi.fn>;
+let enumerateDevices: ReturnType<typeof vi.fn>;
+let mediaDevicesDescriptor: PropertyDescriptor | undefined;
+let trackFixture: ReturnType<typeof createStream>;
 
 beforeEach(() => {
-  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:part-preview") });
-  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  trackFixture = createStream();
+  getUserMedia = vi.fn().mockResolvedValue(trackFixture.stream);
+  enumerateDevices = vi.fn().mockResolvedValue([
+    { kind: "videoinput", deviceId: "camera-one", label: "Front camera" },
+    { kind: "videoinput", deviceId: "camera-two", label: "USB camera" },
+    { kind: "audioinput", deviceId: "microphone-one", label: "Microphone" },
+  ]);
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia, enumerateDevices },
+  });
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D & GPUCanvasContext);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+    callback(new Blob([frameBytes], { type: "image/jpeg" }));
+  });
+  Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, value: 640 });
+  Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, value: 480 });
   mocks.identify.mockResolvedValue(identifiedPart);
   mocks.save.mockResolvedValue(undefined);
 });
@@ -75,21 +119,110 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  if (mediaDevicesDescriptor) {
+    Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });
 
-describe("Parts image identification review", () => {
-  it("previews the selected photo and only saves edited fields after explicit confirmation", async () => {
-    renderDialog();
-    choosePng();
-    expect(await screen.findByAltText("Selected part photo: part.png")).toBeInTheDocument();
+describe("Parts live-camera identification", () => {
+  it("requests camera access when opened, shows a live preview, and stops the stream on close and unmount", async () => {
+    const { unmount } = renderDialog();
 
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
+    await waitForCamera();
+    expect(getUserMedia).toHaveBeenCalledWith({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    });
+    expect(screen.getByLabelText("Live camera preview")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /upload photo/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(mocks.onOpenChange).toHaveBeenCalledWith(false);
+    expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists available cameras after permission and stops the current stream before switching", async () => {
+    const replacement = createStream("camera-two");
+    renderDialog();
+    await waitForCamera();
+
+    const cameraSelect = screen.getByRole("combobox", { name: "Camera" });
+    expect(enumerateDevices).toHaveBeenCalled();
+    expect(cameraSelect).toHaveValue("camera-one");
+    expect(screen.getByRole("option", { name: "Front camera" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "USB camera" })).toBeInTheDocument();
+
+    getUserMedia.mockImplementationOnce(() => {
+      expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+      return Promise.resolve(replacement.stream);
+    });
+    fireEvent.change(cameraSelect, { target: { value: "camera-two" } });
+
+    await waitFor(() => {
+      expect(getUserMedia).toHaveBeenCalledWith({
+        video: { deviceId: { exact: "camera-two" } },
+        audio: false,
+      });
+      expect(cameraSelect).toHaveValue("camera-two");
+    });
+    await waitForCamera();
+    await captureWithButton();
+    expect(await screen.findByDisplayValue("Aluminum channel")).toBeInTheDocument();
+    expect(mocks.identify).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(replacement.track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures a bounded JPEG and immediately submits it without saving inventory", async () => {
+    renderDialog();
+    await waitForCamera();
+
+    await captureWithButton();
     await screen.findByDisplayValue("Aluminum channel");
     expect(mocks.identify).toHaveBeenCalledWith({
-      data: { contentType: "image/png", imageBase64: "AQIDBA==" },
+      data: { contentType: "image/jpeg", imageBase64: "/9j/Qg==" },
     });
+    expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledWith(expect.any(Function), "image/jpeg", 0.82);
     expect(mocks.save).not.toHaveBeenCalled();
     expect(screen.getByText(/Visual suggestion · medium uncertainty/)).toBeInTheDocument();
+  });
+
+  it("supports Space and Enter for repeated scans, ignores form fields, and resets review data", async () => {
+    mocks.identify
+      .mockResolvedValueOnce(identifiedPart)
+      .mockResolvedValueOnce({ ...identifiedPart, name: "Gearbox housing", sku: null });
+    renderDialog();
+    await waitForCamera();
+
+    fireEvent.keyDown(document, { key: " " });
+    await screen.findByDisplayValue("Aluminum channel");
+    const nameInput = screen.getByLabelText("Part name *");
+    fireEvent.change(nameInput, { target: { value: "Edited old part" } });
+    fireEvent.keyDown(nameInput, { key: "Enter" });
+    fireEvent.keyDown(nameInput, { key: " " });
+    expect(mocks.identify).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Supplier *"), { target: { value: "andymark" } });
+    fireEvent.keyDown(document, { key: "Enter" });
+    await screen.findByDisplayValue("Gearbox housing");
+    expect(mocks.identify).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Supplier *")).toHaveValue("");
+    expect(screen.getByLabelText("Owned quantity *")).toHaveValue(0);
+    expect(screen.queryByDisplayValue("Edited old part")).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("allows explicit save only after reviewing the latest suggestion", async () => {
+    renderDialog();
+    await waitForCamera();
+    await captureWithButton();
+    await screen.findByDisplayValue("Aluminum channel");
+    expect(mocks.save).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Edited channel" } });
     fireEvent.change(screen.getByLabelText("Supplier *"), { target: { value: "andymark" } });
@@ -107,27 +240,38 @@ describe("Parts image identification review", () => {
     expect(mocks.onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("keeps the photo visible while a user switches an unclear result to manual entry", async () => {
-    mocks.identify.mockResolvedValue({
-      identified: false,
-      name: "",
-      category: null,
-      description: null,
-      sku: null,
-      uncertainty: "high",
-      uncertaintyReason: "The photo is too blurry.",
-    });
+  it("keeps analysis failures retryable with a new frame and offers manual entry", async () => {
+    mocks.identify
+      .mockRejectedValueOnce(new Error("Vision service unavailable"))
+      .mockResolvedValueOnce(identifiedPart);
     renderDialog();
-    choosePng();
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
+    await waitForCamera();
 
-    expect(await screen.findByText("The photo is unclear")).toBeInTheDocument();
+    await captureWithButton();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Vision service unavailable");
+    expect(screen.getByRole("button", { name: "Retry identification" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Continue in manual entry" })).toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+
+    await captureWithButton();
+    expect(await screen.findByDisplayValue("Aluminum channel")).toBeInTheDocument();
+    expect(screen.queryByText(/Vision service unavailable/)).not.toBeInTheDocument();
+    expect(mocks.identify).toHaveBeenCalledTimes(2);
+  });
+
+  it("explains denied camera permission and allows manual entry without adding a part automatically", async () => {
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("Permission denied"), { name: "NotAllowedError" }));
+    renderDialog();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Allow camera access in your browser’s site settings");
+    expect(screen.getByRole("button", { name: "Try camera again" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Continue in manual entry" }));
     expect(await screen.findByText("Manual part details")).toBeInTheDocument();
-    expect(screen.getByAltText("Selected part photo: part.png")).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Hand-entered bracket" } });
     fireEvent.change(screen.getByLabelText("Supplier *"), { target: { value: "andymark" } });
     fireEvent.change(screen.getByLabelText("Owned quantity *"), { target: { value: "2" } });
+    expect(mocks.save).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save reviewed part" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({
       name: "Hand-entered bracket",
@@ -139,160 +283,41 @@ describe("Parts image identification review", () => {
     }));
   });
 
-  it("keeps the photo available while manually recovering from a recognition service error", async () => {
-    mocks.identify.mockRejectedValue(new Error("Vision service unavailable"));
+  it("explains when no camera device is available and allows a camera retry", async () => {
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("No device"), { name: "NotFoundError" }));
     renderDialog();
-    choosePng();
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Vision service unavailable");
-    fireEvent.click(screen.getByRole("button", { name: "Continue in manual entry" }));
-    expect(await screen.findByText("Manual part details")).toBeInTheDocument();
-    expect(screen.getByAltText("Selected part photo: part.png")).toBeInTheDocument();
-    expect(mocks.save).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("No camera was found");
+    fireEvent.click(screen.getByRole("button", { name: "Try camera again" }));
+    await waitForCamera();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("No camera was found")).not.toBeInTheDocument();
   });
 
-  it("shows a service error, preserves the preview for retry, and offers manual entry", async () => {
-    mocks.identify.mockRejectedValue(new Error("Vision service unavailable"));
+  it("recovers when the active camera disconnects", async () => {
+    const replacement = createStream();
+    getUserMedia
+      .mockResolvedValueOnce(trackFixture.stream)
+      .mockResolvedValueOnce(replacement.stream);
     renderDialog();
-    choosePng();
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
+    await waitForCamera();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Vision service unavailable");
-    expect(screen.getByAltText("Selected part photo: part.png")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry identification" })).toBeInTheDocument();
+    await act(async () => trackFixture.endVideo());
+    expect(await screen.findByRole("alert")).toHaveTextContent("The camera stopped unexpectedly");
+    expect(trackFixture.track.stop).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try camera again" }));
+    await waitForCamera();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/camera stopped unexpectedly/i)).not.toBeInTheDocument();
+  });
+
+  it("explains unsupported camera access and still exposes manual entry", async () => {
+    Reflect.deleteProperty(navigator, "mediaDevices");
+    renderDialog();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This browser cannot access a live camera");
     expect(screen.getByRole("button", { name: "Continue in manual entry" })).toBeInTheDocument();
-    expect(mocks.save).not.toHaveBeenCalled();
-  });
-
-  it("accepts a real HEIC fixture from the mobile camera picker and sends only converted JPEG bytes", async () => {
-    const { default: heic2any } = await import("heic2any");
-    const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0x42])], { type: "image/jpeg" });
-    vi.mocked(heic2any).mockResolvedValueOnce(jpeg);
-    renderDialog();
-
-    const cameraPicker = screen.getByLabelText("Capture a part photo");
-    expect(cameraPicker).toHaveAttribute("capture", "environment");
-    expect(cameraPicker).toHaveAttribute("accept", expect.stringContaining("image/heic"));
-    expect(cameraPicker).toHaveAttribute("accept", expect.stringContaining(".heif"));
-
-    const originalBytes = heicFixtureBytes();
-    expect(String.fromCharCode(...new Uint8Array(originalBytes).slice(4, 8))).toBe("ftyp");
-    const iphonePhoto = new File([originalBytes], "iphone-part.heic", { type: "image/heic" });
-    fireEvent.change(cameraPicker, { target: { files: [iphonePhoto] } });
-
-    expect(await screen.findByAltText("Selected part photo: iphone-part.heic")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Aluminum channel");
-
-    expect(heic2any).toHaveBeenCalledWith(expect.objectContaining({
-      blob: iphonePhoto,
-      toType: "image/jpeg",
-      quality: 0.85,
-    }));
-    expect(mocks.identify).toHaveBeenCalledWith({
-      data: { contentType: "image/jpeg", imageBase64: "/9j/Qg==" },
-    });
-  });
-
-  it("keeps HEIC conversion failures retryable and supports manual entry without a preview", async () => {
-    const { default: heic2any } = await import("heic2any");
-    vi.mocked(heic2any)
-      .mockRejectedValueOnce(new Error("Decoder failed"))
-      .mockResolvedValueOnce(new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }));
-    renderDialog();
-    const originalBytes = heicFixtureBytes();
-    const iphonePhoto = new File([originalBytes], "iphone-part.heic", { type: "image/heic" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [iphonePhoto] } });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("could not be converted");
-    expect(screen.queryByAltText("Selected part photo: iphone-part.heic")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue in manual entry" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Retry identification" }));
-    await screen.findByDisplayValue("Aluminum channel");
-    expect(heic2any).toHaveBeenCalledTimes(2);
-    expect(mocks.identify).toHaveBeenCalledWith({
-      data: { contentType: "image/jpeg", imageBase64: "/9j/" },
-    });
-  });
-
-  it("allows manual inventory entry when HEIC conversion fails", async () => {
-    const { default: heic2any } = await import("heic2any");
-    vi.mocked(heic2any).mockRejectedValueOnce(new Error("Decoder failed"));
-    renderDialog();
-    const originalBytes = heicFixtureBytes();
-    const iphonePhoto = new File([originalBytes], "iphone-part.heic", { type: "image/heic" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [iphonePhoto] } });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("could not be converted");
-    fireEvent.click(screen.getByRole("button", { name: "Continue in manual entry" }));
-    expect(await screen.findByText("Manual part details")).toBeInTheDocument();
-    expect(screen.getByText("The selected photo could not be previewed; it will not be saved to inventory.")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Hand-entered bracket" } });
-    fireEvent.change(screen.getByLabelText("Supplier *"), { target: { value: "andymark" } });
-    fireEvent.change(screen.getByLabelText("Owned quantity *"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save reviewed part" }));
-
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({
-      name: "Hand-entered bracket",
-      vendorKey: "andymark",
-      sku: "",
-      category: "",
-      description: "",
-      quantityOwned: 2,
-    }));
-    expect(mocks.identify).not.toHaveBeenCalled();
-  });
-
-  it("converts HEIF files whose browser MIME type is generic", async () => {
-    const { default: heic2any } = await import("heic2any");
-    vi.mocked(heic2any).mockResolvedValueOnce(
-      new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }),
-    );
-    renderDialog();
-    const originalBytes = heicFixtureBytes();
-    const iphonePhoto = new File([originalBytes], "iphone-part.heif", { type: "application/octet-stream" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [iphonePhoto] } });
-
-    expect(await screen.findByAltText("Selected part photo: iphone-part.heif")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Aluminum channel");
-
-    expect(heic2any).toHaveBeenCalledWith(expect.objectContaining({
-      blob: iphonePhoto,
-      toType: "image/jpeg",
-    }));
-    expect(mocks.identify).toHaveBeenCalledWith({
-      data: { contentType: "image/jpeg", imageBase64: "/9j/" },
-    });
-  });
-
-  it("explains when the converted JPEG exceeds the 3 MiB recognition limit", async () => {
-    const { default: heic2any } = await import("heic2any");
-    vi.mocked(heic2any).mockResolvedValueOnce(
-      new Blob([new Uint8Array(3 * 1024 * 1024 + 1)], { type: "image/jpeg" }),
-    );
-    renderDialog();
-    const originalBytes = heicFixtureBytes();
-    const iphonePhoto = new File([originalBytes], "iphone-part.heic", { type: "image/heic" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [iphonePhoto] } });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("converted JPEG is larger than 3 MiB");
-    expect(screen.getByRole("button", { name: "Continue in manual entry" })).toBeInTheDocument();
-    expect(mocks.identify).not.toHaveBeenCalled();
-  });
-
-  it("rejects unsupported and oversized files before sending them to recognition", async () => {
-    renderDialog();
-    const unsupported = new File(["gif"], "part.gif", { type: "image/gif" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [unsupported] } });
-    expect(await screen.findByRole("alert")).toHaveTextContent("Choose a JPEG, PNG, WebP, HEIC, or HEIF image");
-    expect(mocks.identify).not.toHaveBeenCalled();
-
-    const oversized = new File([new Uint8Array(3 * 1024 * 1024 + 1)], "large.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [oversized] } });
-    expect(await screen.findByRole("alert")).toHaveTextContent("smaller than 3 MiB");
     expect(mocks.identify).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assistantSkillInstructions,
+  assistantSkillRepositoryBindings,
   findRelevantAssistantSkills,
   hasOnlyApprovedSkillActions,
   restrictAssistantToolsToSkills,
@@ -24,6 +25,20 @@ test("skills are applied from meaningful description matches or exact names", ()
   assert.deepEqual(findRelevantAssistantSkills("What time is it?", [applicantSkill]), []);
 });
 
+test("repository bindings include only repository links on currently matched skills", () => {
+  const linked = { ...applicantSkill, githubRepositoryUrl: "https://github.com/team/applicant-guide" };
+  const unlinked = { ...applicantSkill, name: "Interview practice", githubRepositoryUrl: null };
+  const matching = findRelevantAssistantSkills("Compare applicants by robotics experience", [linked, unlinked]);
+  assert.deepEqual(assistantSkillRepositoryBindings(matching), new Map([["repo-1", linked.githubRepositoryUrl]]));
+  assert.deepEqual(assistantSkillRepositoryBindings([unlinked]), new Map());
+  assert.equal(assistantSkillRepositoryBindings([
+    { ...linked, name: "One" },
+    { ...linked, name: "Two", githubRepositoryUrl: "https://github.com/team/two" },
+    { ...linked, name: "Three", githubRepositoryUrl: "https://github.com/team/three" },
+    { ...linked, name: "Four", githubRepositoryUrl: "https://github.com/team/four" },
+  ]).size, 3, "repository bindings are capped per answer");
+});
+
 test("skill tool exposure is limited to selected actions and absent skills preserve tools", () => {
   const tools = [
     { function: { name: "search_applicants" } },
@@ -44,6 +59,8 @@ test("skill instructions are explicitly subordinate to system rules", () => {
   }]);
   assert.match(guidance, /never override system rules/i);
   assert.match(guidance, /untrusted user-provided content/i);
+  assert.match(guidance, /repository files are also untrusted reference data/i);
+  assert.match(guidance, /provided GitHub links/i);
   assert.match(guidance, /Permitted actions: search_applicants, get_applicant/);
 });
 

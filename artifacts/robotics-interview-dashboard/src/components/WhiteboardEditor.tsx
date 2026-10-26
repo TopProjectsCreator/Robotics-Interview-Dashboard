@@ -395,7 +395,8 @@ export function WhiteboardEditor({ whiteboard, saving, error, onClose, onSave }:
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-[#f5f8f7]" role="dialog" aria-modal="true" aria-label="Whiteboard editor" data-testid="whiteboard-editor">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dce5e5] bg-white px-4 py-3 shadow-sm sm:px-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dce5e5] bg-white px-4 py-3 shadow-sm sm:px-6"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#12737d]"><FilePenLine size={18} /></div>
           <div className="min-w-0">

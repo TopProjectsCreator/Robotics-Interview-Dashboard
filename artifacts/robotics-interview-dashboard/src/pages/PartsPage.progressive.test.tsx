@@ -6,10 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   consumeSearch: vi.fn(),
   createItem: vi.fn(),
+  getDetails: vi.fn(),
   identifyImage: vi.fn(),
   sessionTeams: new WeakMap<object, string>(),
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
 }));
+
+let mediaDevicesDescriptor: PropertyDescriptor | undefined;
 
 const testVendor = {
   key: "andymark",
@@ -22,6 +25,19 @@ const testVendor = {
   lastSync: null,
 };
 
+const testPriceSnapshot = {
+  id: "detail-quote-1",
+  partId: "team-a-detail-part",
+  vendorKey: "andymark",
+  vendorName: "AndyMark",
+  sourceUrl: "https://www.andymark.com/products/precision-bracket",
+  unitPrice: 14.75,
+  currency: "USD",
+  capturedAt: "2026-01-15T00:00:00.000Z",
+  isStartingAt: true,
+  isStale: true,
+};
+
 vi.mock("@workspace/api-client-react", async () => {
   const { useQuery, useQueryClient } =
     await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
@@ -29,6 +45,7 @@ vi.mock("@workspace/api-client-react", async () => {
   return {
     consumePartsCatalogSearchStream: mocks.consumeSearch,
     getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
+    getGetPartsCatalogDetailsQueryKey: (partId: string) => ["/parts/catalog/details", partId],
     getListPartsCatalogQueryKey: () => ["/parts/catalog"],
     useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
     useCreatePartsCatalogItem: () => {
@@ -50,6 +67,8 @@ vi.mock("@workspace/api-client-react", async () => {
               description: input.data.description,
               productUrl: input.data.productUrl,
               imageUrl: input.data.imageUrl,
+              storageLocation: null,
+              inventoryNotes: null,
               quantityOwned,
               quantityAssigned: 0,
               quantityAvailable: quantityOwned,
@@ -64,6 +83,16 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useCreatePartsRobot: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useGetPartsCatalogDetails: (partId: string, options?: {
+      query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
+    }) => {
+      const teamId = getTeamId();
+      return useQuery({
+        queryKey: options?.query?.queryKey ?? ["/parts/catalog", partId, "details"],
+        queryFn: () => mocks.getDetails(partId, teamId),
+        ...options?.query,
+      });
+    },
     useGetPartsDashboard: (options?: {
       query?: Record<string, unknown>;
     }) => {
@@ -76,6 +105,10 @@ vi.mock("@workspace/api-client-react", async () => {
             (total, item) => total + Number(item.quantityOwned ?? 0),
             0,
           );
+          const assignedUnits = items.reduce(
+            (total, item) => total + Number(item.quantityAssigned ?? 0),
+            0,
+          );
           return {
             vendors: [testVendor],
             robots: [],
@@ -83,8 +116,8 @@ vi.mock("@workspace/api-client-react", async () => {
               vendorCount: 1,
               catalogItems: items.length,
               ownedUnits,
-              assignedUnits: 0,
-              availableUnits: ownedUnits,
+              assignedUnits,
+              availableUnits: Math.max(0, ownedUnits - assignedUnits),
             },
           };
         },
@@ -94,6 +127,7 @@ vi.mock("@workspace/api-client-react", async () => {
     useListPartsCatalog: (
       params: {
         manualOnly?: boolean;
+        inventoryOnly?: boolean;
         search?: string;
         vendorKey?: string;
         limit?: number;
@@ -107,6 +141,11 @@ vi.mock("@workspace/api-client-react", async () => {
         queryFn: async () => {
           const allItems = mocks.teamInventory.get(teamId) ?? [];
           const items = allItems.filter((item) =>
+            (!params.inventoryOnly ||
+              item.isManual !== false ||
+              Number(item.quantityOwned ?? 0) > 0 ||
+              Number(item.quantityAssigned ?? 0) > 0) &&
+            (!params.manualOnly || item.isManual !== false) &&
             (!params.vendorKey || item.vendorKey === params.vendorKey) &&
             (!params.search || String(item.name).toLowerCase().includes(params.search.toLowerCase())),
           );
@@ -120,6 +159,26 @@ vi.mock("@workspace/api-client-react", async () => {
     useSetPartsRobotAllocation: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useSyncPartsCatalog: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdatePartsCatalogStock: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useUpdatePartsCatalogDetails: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ partId, data }: { partId: string; data: Record<string, unknown> }) => {
+          const items = mocks.teamInventory.get(teamId) ?? [];
+          const updated = items.map((item) => item.id === partId ? { ...item, ...data } : item);
+          mocks.teamInventory.set(teamId, updated);
+          const item = updated.find((candidate) => candidate.id === partId);
+          if (!item) throw new Error("Catalog item not found.");
+          return {
+            item,
+            priceSnapshots: [testPriceSnapshot],
+            locations: [...new Set(updated
+              .map((candidate) => candidate.storageLocation)
+              .filter((location): location is string => typeof location === "string" && Boolean(location)))],
+          };
+        },
+        isPending: false,
+      };
+    },
   };
 });
 
@@ -128,6 +187,19 @@ vi.mock("@/components/PartsRobotDetailsDialog", () => ({
 }));
 
 import PartsPage from "./PartsPage";
+
+async function loadMockPartDetails(partId: string, teamId: string) {
+  const items = mocks.teamInventory.get(teamId) ?? [];
+  const item = items.find((candidate) => candidate.id === partId);
+  if (!item) throw new Error("Catalog item not found.");
+  return {
+    item,
+    priceSnapshots: [testPriceSnapshot],
+    locations: [...new Set(items
+      .map((candidate) => candidate.storageLocation)
+      .filter((location): location is string => typeof location === "string" && Boolean(location)))],
+  };
+}
 
 const earlyProduct = {
   vendorKey: "andymark",
@@ -172,17 +244,47 @@ function startSearch(query = "early result") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  if (mediaDevicesDescriptor) {
+    Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });
 
 describe("progressive Parts search", () => {
   beforeEach(() => {
+    mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+    const track = {
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaStreamTrack;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [track],
+          getVideoTracks: () => [track],
+        }),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D & GPUCanvasContext);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => {
+      callback(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0x42])], { type: "image/jpeg" }));
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, value: 640 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, value: 480 });
     mocks.teamInventory.clear();
     mocks.teamInventory.set("team-a", []);
     mocks.teamInventory.set("team-b", []);
+    mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
-      name: "Photo suggested bracket",
+      name: "Camera suggested bracket",
       category: "Structure",
       description: "A visible robotics bracket.",
       sku: null,
@@ -355,16 +457,14 @@ describe("progressive Parts search", () => {
     expect(screen.getByText("Current result")).toBeInTheDocument();
   });
 
-  it("saves reviewed photo details through the Parts catalog path and refreshes inventory totals", async () => {
+  it("saves reviewed camera details through the Parts catalog path and refreshes inventory totals", async () => {
     const { queryClient } = await renderPartsPage();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Identify from photo" }));
-
-    const file = new File([new Uint8Array([1, 2, 3])], "bracket.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Photo suggested bracket");
+    fireEvent.click(await screen.findByRole("button", { name: "Scan with camera" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
+    await screen.findByDisplayValue("Camera suggested bracket");
     expect(mocks.createItem).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Part name *"), { target: { value: "Reviewed bracket" } });
@@ -389,7 +489,7 @@ describe("progressive Parts search", () => {
     expect(await screen.findByText("Reviewed bracket added to inventory.")).toBeInTheDocument();
   });
 
-  it("shows a photo-added part and updated totals to a teammate without reloading, while keeping other teams separate", async () => {
+  it("shows a camera-added part and updated totals to a teammate without reloading, while keeping other teams separate", async () => {
     mocks.teamInventory.set("team-b", [{
       id: "team-b-private-part",
       vendorKey: "andymark",
@@ -400,6 +500,8 @@ describe("progressive Parts search", () => {
       description: "Belongs to another team.",
       productUrl: null,
       imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
       quantityOwned: 8,
       quantityAssigned: 0,
       quantityAvailable: 8,
@@ -419,13 +521,10 @@ describe("progressive Parts search", () => {
     expect(within(writer.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
     expect(within(teammate.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
 
-    fireEvent.click(within(writer.container).getByRole("button", { name: "Identify from photo" }));
-    const file = new File([new Uint8Array([1, 2, 3])], "bracket.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("Upload a part photo"), {
-      target: { files: [file] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Identify part" }));
-    await screen.findByDisplayValue("Photo suggested bracket");
+    fireEvent.click(within(writer.container).getByRole("button", { name: "Scan with camera" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
+    await screen.findByDisplayValue("Camera suggested bracket");
     fireEvent.change(screen.getByLabelText("Part name *"), {
       target: { value: "Photo-added team bracket" },
     });
@@ -449,4 +548,265 @@ describe("progressive Parts search", () => {
     expect(within(otherTeam.container).queryByText("Photo-added team bracket")).not.toBeInTheDocument();
     expect(within(otherTeam.container).queryByText("Team B private bracket")).toBeInTheDocument();
   }, 15_000);
+
+  it("shows all team-tracked supplier parts in inventory and matches dashboard stock totals", async () => {
+    const item = (
+      id: string,
+      name: string,
+      teamId: string,
+      quantityOwned: number,
+      quantityAssigned: number,
+      isManual: boolean,
+      vendorKey = "andymark",
+    ) => ({
+      id,
+      teamId,
+      vendorKey,
+      vendorName: vendorKey === "andymark" ? "AndyMark" : "FERRA",
+      name,
+      sku: null,
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned,
+      quantityAssigned,
+      quantityAvailable: Math.max(0, quantityOwned - quantityAssigned),
+      allocations: quantityAssigned > 0
+        ? [{ robotId: `${teamId}-robot`, robotName: "Competition robot", quantity: quantityAssigned }]
+        : [],
+      isManual,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    mocks.teamInventory.set("team-a", [
+      item("team-a-gear", "Tracked gear", "team-a", 5, 2, false),
+      item("team-a-bearing", "Tracked bearing", "team-a", 3, 0, false),
+      item("team-a-allocation", "Tracked allocation", "team-a", 1, 1, false),
+      item("team-a-manual", "Manual spare", "team-a", 0, 0, true),
+      item("team-a-untracked", "Supplier catalog only", "team-a", 0, 0, false),
+    ]);
+    mocks.teamInventory.set("team-b", [
+      item("team-b-private", "Other team tracked part", "team-b", 7, 2, false),
+    ]);
+
+    const teamA = await renderPartsPage("team-a");
+    const teamB = await renderPartsPage("team-b");
+    for (const session of [teamA, teamB]) {
+      fireEvent.click(within(session.container).getByRole("tab", { name: "Inventory" }));
+    }
+
+    expect(await within(teamA.container).findByRole("button", { name: "Open details for Tracked gear" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked bearing" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked allocation" })).toBeInTheDocument();
+    expect(within(teamA.container).getByRole("button", { name: "Open details for Manual spare" })).toBeInTheDocument();
+    expect(within(teamA.container).queryByText("Supplier catalog only")).not.toBeInTheDocument();
+    expect(within(teamA.container).queryByText("Other team tracked part")).not.toBeInTheDocument();
+    expect(within(teamB.container).getByRole("button", { name: "Open details for Other team tracked part" })).toBeInTheDocument();
+    expect(within(teamB.container).queryByText("Tracked gear")).not.toBeInTheDocument();
+
+    const gearCard = within(teamA.container).getByRole("button", { name: "Open details for Tracked gear" }).closest("article");
+    expect(gearCard).toHaveTextContent("Owned 5");
+    expect(gearCard).toHaveTextContent("Assigned 2");
+    const bearingCard = within(teamA.container).getByRole("button", { name: "Open details for Tracked bearing" }).closest("article");
+    expect(bearingCard).toHaveTextContent("Owned 3");
+    expect(bearingCard).toHaveTextContent("Assigned 0");
+
+    const totals = within(teamA.container).getByLabelText("Parts totals");
+    expect(within(totals).getByText("Owned units").parentElement).toHaveTextContent("9");
+    expect(within(totals).getByText("Assigned units").parentElement).toHaveTextContent("3");
+    expect(within(teamA.container).getByText("4 shown of 4 saved item(s)")).toBeInTheDocument();
+  });
+
+  it("opens part details, saves inventory fields separately, and reloads the persisted values", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-detail-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Precision bracket",
+      sku: "PREC-42",
+      category: "Structure",
+      description: "Supplier description for the bracket.",
+      productUrl: "https://www.andymark.com/products/precision-bracket",
+      imageUrl: "https://images.example.test/bracket.png",
+      storageLocation: null,
+      inventoryNotes: null,
+      unitCost: 12.5,
+      costCurrency: "USD",
+      quantityOwned: 4,
+      quantityAssigned: 1,
+      quantityAvailable: 3,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+
+    const firstPage = await renderPartsPage("team-a");
+    fireEvent.click(within(firstPage.container).getByRole("tab", { name: "Inventory" }));
+    expect(within(firstPage.container).getByLabelText("Owned stock for Precision bracket")).toHaveValue(4);
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await screen.findByLabelText("Storage location");
+    const firstDialog = within(screen.getByRole("dialog"));
+    expect(firstDialog.getByText("Supplier description for the bracket.")).toBeInTheDocument();
+    expect(firstDialog.getByText(/Stale quote/)).toBeInTheDocument();
+    expect(firstDialog.getByText(/starting at/)).toBeInTheDocument();
+    expect(firstDialog.getByText(/Current saved cost:/)).toHaveTextContent("12.50");
+    expect(firstDialog.getByText(/Current saved cost:/)).not.toHaveTextContent("14.75");
+    expect(screen.getByRole("spinbutton", { name: "Saved unit cost" })).toHaveValue(12.5);
+    expect(screen.getByRole("textbox", { name: "Saved cost currency" })).toHaveValue("USD");
+    fireEvent.change(screen.getByLabelText("Storage location"), {
+      target: { value: "Shelf A" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Inventory notes" }), {
+      target: { value: "Keep with the spare fasteners." },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Saved unit cost" }), {
+      target: { value: "13.25" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Saved cost currency" }), {
+      target: { value: "CAD" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Product image URL" }), {
+      target: { value: "https://images.example.test/bracket-v2.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save details" }));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Part details saved."));
+    const saved = mocks.teamInventory.get("team-a")?.[0];
+    expect(saved).toMatchObject({
+      storageLocation: "Shelf A",
+      inventoryNotes: "Keep with the spare fasteners.",
+      unitCost: 13.25,
+      costCurrency: "CAD",
+      imageUrl: "https://images.example.test/bracket-v2.png",
+      description: "Supplier description for the bracket.",
+      quantityOwned: 4,
+    });
+
+    firstPage.unmount();
+    const reloadedPage = await renderPartsPage("team-a");
+    fireEvent.click(within(reloadedPage.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
+    const reloadedDialog = within(await screen.findByRole("dialog"));
+    expect(await screen.findByDisplayValue("Shelf A")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Keep with the spare fasteners.")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("13.25")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CAD")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("https://images.example.test/bracket-v2.png")).toBeInTheDocument();
+    expect(reloadedDialog.getByText("Supplier description for the bracket.")).toBeInTheDocument();
+  });
+
+  it("retries a temporary part-details failure in the open dialog", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-retry-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Retryable bracket",
+      sku: "RETRY-1",
+      category: "Structure",
+      description: "Saved supplier details.",
+      productUrl: "https://www.andymark.com/products/retryable-bracket",
+      imageUrl: null,
+      storageLocation: "Shelf B",
+      inventoryNotes: "Team-specific note.",
+      quantityOwned: 2,
+      quantityAssigned: 0,
+      quantityAvailable: 2,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset()
+      .mockRejectedValueOnce(Object.assign(new Error("Service unavailable"), { status: 503 }))
+      .mockImplementationOnce(loadMockPartDetails);
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Retryable bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Retryable bracket" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The saved part details couldn’t be loaded. Check your connection and try again.",
+    );
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry loading details for Retryable bracket" }));
+    expect(await within(dialog).findByLabelText("Storage location")).toHaveValue("Shelf B");
+    expect(within(dialog).getByText("Saved supplier details.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Team-specific note.")).toBeInTheDocument();
+    expect(mocks.getDetails).toHaveBeenCalledTimes(2);
+  });
+
+  it("explains when a saved part is missing or belongs to another team without offering a misleading retry", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-missing-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Unavailable bracket",
+      sku: "GONE-1",
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 1,
+      quantityAssigned: 0,
+      quantityAvailable: 1,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset().mockRejectedValue(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Unavailable bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "This part is no longer available in your team’s inventory. It may have been removed or belong to another team.",
+    );
+    expect(within(dialog).queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it("asks the user to sign in again when authorization has expired", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-auth-part",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Protected bracket",
+      sku: "AUTH-1",
+      category: null,
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 1,
+      quantityAssigned: 0,
+      quantityAvailable: 1,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.getDetails.mockReset().mockRejectedValue(
+      Object.assign(new Error("Authentication required"), { status: 401 }),
+    );
+
+    const page = await renderPartsPage("team-a");
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Protected bracket" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Your session has expired. Sign in again to view this part’s details.",
+    );
+    expect(within(dialog).queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
 });

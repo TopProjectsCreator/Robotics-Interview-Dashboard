@@ -1057,7 +1057,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { c
             </div>
             {(!recording || recordedCount > 0) && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input value={macroName} onChange={(event) => setMacroName(event.target.value.slice(0, 80))} aria-label="Macro name" placeholder="Name this macro" maxLength={80} className="h-9 w-full max-w-xs rounded-lg border border-border bg-background px-3 text-xs text-foreground outline-none focus:border-primary" />
+                <input value={macroName} onChange={(event) => setMacroName(event.target.value.slice(0, 80))} aria-label="Macro name" placeholder="Name this macro" maxLength={80} className="h-9 w-full max-w-xs rounded-lg border border-border bg-background px-3 text-base md:text-xs text-foreground outline-none focus:border-primary" />
                 {!recording && <span className="text-[11px] text-muted-foreground">Enter a name, start recording, make edits, then stop.</span>}
               </div>
             )}
@@ -1115,7 +1115,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { c
 
       {chartDialogOpen && chartRange && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setChartDialogOpen(false); }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="chart-dialog-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+          <section role="dialog" aria-modal="true" aria-labelledby="chart-dialog-title" className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-2xl">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"><BarChart3 size={17} /></div>
               <div className="min-w-0 flex-1">
@@ -1126,11 +1126,11 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { c
             </div>
             <label className="mt-4 block text-xs font-medium">
               Chart title
-              <input value={chartTitle} onChange={(event) => setChartTitle(event.target.value.slice(0, 120))} autoFocus maxLength={120} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary" placeholder="Tryout scores by event" />
+              <input value={chartTitle} onChange={(event) => setChartTitle(event.target.value.slice(0, 120))} autoFocus maxLength={120} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-base md:text-sm outline-none focus:border-primary" placeholder="Tryout scores by event" />
             </label>
             <label className="mt-3 block text-xs font-medium">
               Type
-              <select value={chartType} onChange={(event) => setChartType(event.target.value as "bar" | "line")} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-primary">
+              <select value={chartType} onChange={(event) => setChartType(event.target.value as "bar" | "line")} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-background px-3 text-base md:text-sm outline-none focus:border-primary">
                 <option value="bar">Column chart</option>
                 <option value="line">Line chart</option>
               </select>

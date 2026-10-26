@@ -1,13 +1,28 @@
 // Matches user uploads (/objects/<id>), AI-generated images
-// (/objects/generated/<id>) and external CAD models (/objects/ext/<id>),
-// capturing the full object path.
+// (/objects/generated/<id>), external CAD models (/objects/ext/<id>) and
+// chunked uploads (/objects/chunk/<id>, or /objects/chunk/secondary/<id>
+// when the file was failed over to the secondary bucket).
+//
+// The storage instance segment has to be matched explicitly. Without it the
+// generic id group swallowed the literal "secondary" and the delete request
+// went to /objects/chunk/secondary, which the server answers with 404 -- so
+// deleting a chat message silently left the object in storage forever.
 const CHAT_ATTACHMENT_URL_PATTERN =
-  /\/api\/storage\/objects\/(?:(generated|ext|chunk)\/)?([A-Za-z0-9-]{8,128})(?![A-Za-z0-9-])/g;
+  /\/api\/storage\/objects\/(?:(generated|ext)\/([A-Za-z0-9-]{8,128})|chunk\/(?:(primary|secondary)\/)?([A-Za-z0-9-]{8,128})|([A-Za-z0-9-]{8,128}))(?![A-Za-z0-9-])/g;
 
 export function chatAttachmentObjectIds(message: string): string[] {
   const ids = new Set<string>();
   for (const match of message.matchAll(CHAT_ATTACHMENT_URL_PATTERN)) {
-    ids.add(`${match[1] ? `${match[1]}/` : ""}${match[2]}`);
+    const [, generatedOrExt, generatedOrExtId, instance, chunkId, plainId] = match;
+    if (generatedOrExt) {
+      ids.add(`${generatedOrExt}/${generatedOrExtId}`);
+      continue;
+    }
+    if (chunkId) {
+      ids.add(`chunk/${instance ? `${instance}/` : ""}${chunkId}`);
+      continue;
+    }
+    if (plainId) ids.add(plainId);
   }
   return [...ids];
 }

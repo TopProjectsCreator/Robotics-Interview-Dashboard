@@ -57,4 +57,34 @@ describe("chunked upload storage failover", () => {
       purpose: "cad",
     }));
   });
+
+  it("retries a part after a dropped connection instead of restarting the upload", async () => {
+    createChunkUploadUrl.mockResolvedValue({
+      signedUrl: "https://primary/upload",
+      storageInstance: "primary",
+    });
+    completeChunkUpload.mockResolvedValue({ objectPath: "/objects/chunk/upload-id" });
+    const fetchMock = vi.fn()
+      // The connection dropped before the bucket answered.
+      .mockRejectedValueOnce(new TypeError("network error"))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const path = await uploadChunked(new Blob(["CAD bytes"]), "part.step", "application/step", undefined, "cad");
+
+    expect(path).toBe("/objects/chunk/upload-id");
+    // The part was sent twice, and the upload was NOT restarted on the
+    // secondary bucket.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(abortChunkUpload).not.toHaveBeenCalled();
+    // Both attempts stayed on the primary bucket: the upload was retried in
+    // place, not restarted on the secondary.
+    expect(createChunkUploadUrl).toHaveBeenCalledTimes(2);
+    expect(createChunkUploadUrl).toHaveBeenLastCalledWith(expect.objectContaining({
+      storageInstance: "primary",
+    }));
+    expect(completeChunkUpload).toHaveBeenCalledWith(expect.objectContaining({
+      storageInstance: "primary",
+    }));
+  });
 });

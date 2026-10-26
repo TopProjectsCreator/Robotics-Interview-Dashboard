@@ -12,4 +12,5 @@ export type InterviewWhiteboardScope = typeof InterviewWhiteboardScope[keyof typ
 export const InterviewWhiteboardScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

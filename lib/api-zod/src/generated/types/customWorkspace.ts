@@ -21,4 +21,14 @@ export interface CustomWorkspace {
   allowedInterviewerIds: string[];
   createdAt: Date;
   updatedAt: Date;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  critiqueRounds: number;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  verifiedCritiqueRounds: number;
 }

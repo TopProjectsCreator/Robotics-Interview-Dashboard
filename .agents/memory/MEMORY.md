@@ -1,7 +1,8 @@
 - [Generated API contract discipline](generated-api-contract-discipline.md) — validate server response shapes against regenerated Zod schemas before wiring frontend hooks.
 - [Embedded authentication](embedded-authentication.md) — iframe login needs included credentials and secure SameSite=None cookies when served over HTTPS.
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
-- [External database ownership](external-database-ownership.md) — verify DATABASE_URL's host before treating Replit's managed database as the app's active data store.
+- [External database ownership](external-database-ownership.md) — verify database hosts and preserve the configured secondary Supabase routing.
+- [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
 - [Supabase server-only table policies](supabase-server-only-table-policies.md) — private API tables need restrictive client-deny policies; verify the server role bypasses RLS.
 - [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
@@ -12,7 +13,7 @@
 - [Scoped package installs](scoped-package-installs.md) — package installation helpers may target the workspace root; app dependencies must be installed with the artifact filter.
 - [Dashboard component test isolation](dashboard-component-test-isolation.md) — jsdom tests for the dashboard need lightweight Excalidraw stubs because the editor’s JSON dependency is browser-build-only.
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.
-- [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and provider `isFree`/`supported_parameters` metadata; gate reasoning controls per model.
+- [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and explicit free/image metadata for fallback; gate reasoning controls per model.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.
@@ -38,9 +39,20 @@
 - [Settings app-adjustment requests](settings-app-adjustment-requests.md) — suggestions sent to Ishaan belong in Settings, not ordinary chat; authors need edit/delete controls.
 - [Natural-language scheduled chat times](natural-language-chat-scheduling.md) — interpret schedule phrases with the existing assistant model in the user's local timezone.
 - [Supabase storage failover](supabase-storage-failover.md) — preserve the storage destination in object paths so CAD uploads can be retried and later read from secondary.
+- [Cross-border data disclosures](cross-border-data-disclosures.md) — operator reports US/Canada storage, globally routed Kilo free models, and no minimum age for applicant records.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
-- [App-level MCP connections](app-level-mcp-connections.md) — a product's MCP client is separate from Replit Agent's own integration catalog; use the provider's hosted endpoint and OAuth.
+- [App-level MCP connections](app-level-mcp-connections.md) — keep provider credentials and MCP tools scoped to the signed-in account and active team; don't widen unrelated assistant permissions.
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
 - [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
+- [Sitemap page scope](sitemap-page-scope.md) — the sitemap lists frontend pages only; API endpoints live in the OpenAPI spec and must not be re-added.
+- [Codebase line counting](codebase-line-counting.md) — measure hand-written code from `git ls-files`, excluding node_modules, dist, generated clients, locks, and binary assets; the repo is ~167k code lines, not ~19.6M.
+- [Database instance pinning scope](db-instance-async-local-scope.md) — AsyncLocalStorage must hold a per-request scope object, not a bare instance string, or a nested pin leaks into the caller.
+- [Pool transaction client](pool-transaction-client.md) — BEGIN and COMMIT must run on one checked-out client; pool.query sends each statement to a different connection.
+- [Broadcast acknowledgement uniqueness](broadcast-ack-unique-index.md) — broadcast acks need a unique index on (broadcast, session) or every poll adds a row and duplicates the broadcast.
+- [Shared query keys and retry options](react-query-shared-key-retry.md) — observers that share a query key but disagree on retry make the query retry forever and never surface isError.
+- [Applicant drawer close rule](applicant-detail-drawer-roster.md) — the applicant drawer closes on a server 400/404 or a miss in the unfiltered roster, but never because a filter narrowed the list.
+- [Streaming large object downloads](streaming-large-object-download.md) — large CAD objects must be streamed to disk, never buffered in memory, because the instance has a 512 MB ceiling.
+- [Persisted CAD previews](persisted-cad-previews.md) — a finished CAD preview is stored under a path-derived id so it can be found again after the instance restarts.
+- [Mobile browser fixtures](mobile-browser-fixtures.md) — import the app’s shared stylesheet into component-level browser fixtures so mobile hit testing matches the real UI.

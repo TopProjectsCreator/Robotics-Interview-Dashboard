@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
-import { db, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 import { ADMIN_SESSION_TTL_MS, isAdminSessionExpired } from "../lib/adminSessionPolicy";
@@ -309,6 +309,44 @@ export function requireCoordinator(
       })
       .catch((error) => {
         req.log.error({ err: error }, "Coordinator role check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+  });
+}
+
+/**
+ * Restricts the CAD backup-storage status to Wolverines coordinators. Both
+ * role and team are read from the account identified by the signed session;
+ * request parameters and client-selected identity are never trusted here.
+ */
+export function requireWolverinesCoordinator(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    db.select({
+      role: interviewerAccountsTable.role,
+      teamId: interviewerAccountsTable.teamId,
+    })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1)
+      .then(([account]) => {
+        const teamId = account?.teamId?.trim() || DEFAULT_TEAM_ID;
+        if (account?.role !== "coordinator" || teamId !== DEFAULT_TEAM_ID) {
+          res.status(403).json({ error: "Wolverines coordinators only" });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        req.log.error({ err: error }, "CAD storage status access check failed");
         res.status(503).json({ error: "Authentication unavailable" });
       });
   });

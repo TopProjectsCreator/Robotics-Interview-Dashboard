@@ -23,10 +23,51 @@ function newUploadId(): string {
   });
 }
 
+/** How many times a single part is retried before the upload gives up. */
+const PART_ATTEMPTS = 4;
+const PART_RETRY_BASE_MS = 600;
+const PART_RETRY_MAX_MS = 8_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A part that failed because the *bucket* refused it (quota, plan, policy)
+ * cannot be fixed by trying the same part again, and the upload has to move
+ * to the other bucket. A part that failed because the *network* dropped (no
+ * response at all) is worth another attempt, and must not throw away the
+ * parts that already landed.
+ */
+class PartUploadError extends Error {
+  constructor(message: string, readonly storageInstance: "primary" | "secondary", readonly storageRejected: boolean) {
+    super(message);
+    this.name = "PartUploadError";
+  }
+}
+
+async function putPart(
+  signedUrl: string,
+  part: Blob,
+  contentType: string,
+): Promise<void> {
+  const put = await fetch(signedUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType || "application/octet-stream" },
+    body: part,
+  });
+  if (put.ok) return;
+  throw Object.assign(new Error(`HTTP ${put.status}`), { storageRejected: true });
+}
+
 /**
  * Uploads a large file in parts, each PUT straight to Supabase Storage using a
  * short-lived signed URL. The file itself never passes through the API
  * process, so uploads of any size avoid exhausting server memory.
+ *
+ * Each part is retried with backoff, so a single dropped packet on venue
+ * wifi no longer throws away the whole upload. Parts that already landed
+ * are not re-sent.
  *
  * Returns the object path to store on the message/record, in the same
  * `/objects/chunk/<uploadId>` form the download route understands.
@@ -44,34 +85,60 @@ export async function uploadChunked(
     requestedInstance?: "primary" | "secondary",
   ): Promise<"primary" | "secondary"> => {
     let storageInstance = requestedInstance;
+    // Parts already stored for this upload. A retried part is skipped, and
+    // progress never goes backwards.
+    const completed = new Set<number>();
     for (let partIndex = 0; partIndex < totalParts; partIndex += 1) {
       const start = partIndex * CHUNK_PART_BYTES;
       const end = Math.min(start + CHUNK_PART_BYTES, file.size);
       const part = file.slice(start, end);
-      try {
-        const { signedUrl, storageInstance: resolvedInstance } = await createChunkUploadUrl({
-          uploadId,
-          partIndex,
-          storageInstance,
-          purpose,
-        });
-        storageInstance = resolvedInstance;
-        const put = await fetch(signedUrl, {
-          method: "PUT",
-          headers: { "Content-Type": contentType || "application/octet-stream" },
-          body: part,
-        });
-        if (!put.ok) {
-          throw Object.assign(new Error(`Part ${partIndex + 1} of ${totalParts} failed (HTTP ${put.status})`), {
-            storageInstance,
-          });
-        }
+      if (completed.has(partIndex)) {
         onProgress?.(end, file.size);
-      } catch (error) {
-        if (error && typeof error === "object" && !("storageInstance" in error)) {
-          Object.assign(error, { storageInstance: storageInstance ?? "primary" });
+        continue;
+      }
+      let lastError: unknown;
+      for (let attempt = 0; attempt < PART_ATTEMPTS; attempt += 1) {
+        try {
+          const { signedUrl, storageInstance: resolvedInstance } = await createChunkUploadUrl({
+            uploadId,
+            partIndex,
+            storageInstance,
+            purpose,
+          });
+          storageInstance = resolvedInstance;
+          await putPart(signedUrl, part, contentType);
+          completed.add(partIndex);
+          onProgress?.(end, file.size);
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          const rejected = Boolean(error && typeof error === "object" && (error as { storageRejected?: boolean }).storageRejected);
+          if (rejected) {
+            // The bucket refused it. Retrying the same part will not help.
+            // Never echo the provider's message: it can name the hosting
+            // account's limits ("restricted ... exceed_egress_quota"), which
+            // is our infrastructure, not the team's problem to see.
+            throw new PartUploadError(
+              `Part ${partIndex + 1} of ${totalParts} could not be stored. Try again in a moment.`,
+              storageInstance ?? "primary",
+              true,
+            );
+          }
+          if (attempt < PART_ATTEMPTS - 1) {
+            // A dropped connection on venue wifi. Wait a moment and send
+            // this part again; the parts that already landed stay put.
+            const backoff = Math.min(PART_RETRY_BASE_MS * 2 ** attempt, PART_RETRY_MAX_MS);
+            await sleep(backoff);
+          }
         }
-        throw error;
+      }
+      if (lastError) {
+        throw new PartUploadError(
+          `Part ${partIndex + 1} of ${totalParts} failed after ${PART_ATTEMPTS} attempts`,
+          storageInstance ?? "primary",
+          false,
+        );
       }
     }
     return storageInstance ?? "primary";
@@ -87,9 +154,9 @@ export async function uploadChunked(
       : null;
     if (failedInstance !== "primary") throw error;
     await abortChunkUpload({ uploadId, totalParts, storageInstance: "primary" }).catch(() => undefined);
-    // A signed primary URL can be minted even when the subsequent PUT is
-    // rejected by a quota limit. Restart the complete file on the secondary so
-    // every part of the manifest lives in one bucket.
+    // The primary bucket refused the file (quota, plan). Restart the
+    // complete file on the secondary so every part of the manifest lives in
+    // one bucket.
     uploadId = newUploadId();
     onProgress?.(0, file.size);
     storageInstance = await uploadParts(uploadId, "secondary");

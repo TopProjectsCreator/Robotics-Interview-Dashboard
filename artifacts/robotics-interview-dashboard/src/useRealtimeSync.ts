@@ -9,6 +9,7 @@ import {
   getGetQueueQueryKey,
   getGetSeatingSettingsQueryKey,
   getListApplicantsQueryKey,
+  getListChatChannelsQueryKey,
   getListScheduledChatsQueryKey,
 } from "@workspace/api-client-react";
 import { useWorkspaceSettings } from "./workspaceSettings";
@@ -71,6 +72,27 @@ export function useRealtimeSync(authenticated: boolean) {
         });
         return;
       }
+      if (table === "cad_bots" || table === "cad_folders" || table === "cad_models") {
+        // The CAD library is shared: another teammate uploading or deleting a
+        // model has to show up here without a manual reload.
+        void qc.invalidateQueries({
+          predicate: ({ queryKey }) => JSON.stringify(queryKey).includes("/api/cad"),
+        });
+        return;
+      }
+      if (
+        table === "parts_catalog_items" ||
+        table === "parts_inventory" ||
+        table === "parts_robots" ||
+        table === "parts_robot_allocations"
+      ) {
+        // Same for the parts workspace: catalog edits, stock changes, and
+        // robot builds are shared with the rest of the team.
+        void qc.invalidateQueries({
+          predicate: ({ queryKey }) => JSON.stringify(queryKey).includes("/api/parts"),
+        });
+        return;
+      }
       if (table === "chat_settings") {
         void qc.invalidateQueries({ queryKey: getGetChatSettingsQueryKey() });
         return;
@@ -80,6 +102,16 @@ export function useRealtimeSync(authenticated: boolean) {
         return;
       }
       if (table === "chat_message_reads") {
+        void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
+        return;
+      }
+      if (table === "chat_channels") {
+        // Invites, renames, and deletes change the channel strip and can
+        // orphan the open conversation (deleted channel) or unlock messages
+        // (new member) — refresh all of the chat keys.
+        void qc.invalidateQueries({ queryKey: getListChatChannelsQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
         void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey() });
         return;
       }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "@/hooks/use-toast";
 import { X } from "lucide-react";
+import { ModalOverlay } from "@/components/ModalOverlay";
 
 /**
  * In-app replacements for window.alert / window.prompt / window.confirm.
@@ -116,10 +117,7 @@ export function DialogHost() {
   useEffect(() => {
     if (!request) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeRequest(request.kind === "confirm" ? false : null);
-      }
+      // Escape is handled by the shared overlay shell.
       if (event.key === "Enter" && request.kind === "input" && draft.trim()) {
         event.preventDefault();
         closeRequest(draft.trim());
@@ -140,18 +138,15 @@ export function DialogHost() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[#112433]/55 p-4 dark:bg-[#050d13]/80"
-      data-testid="app-dialog-overlay"
-      onClick={cancel}
+    <ModalOverlay
+      onClose={cancel}
+      label={request.title}
+      testId="app-dialog"
+      backdropClassName="bg-[#112433]/55 dark:bg-[#050d13]/80"
     >
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={request.title}
-        data-testid="app-dialog"
-        onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]"
+        className="mx-auto w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]"
+        data-testid="app-dialog-panel"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -165,7 +160,7 @@ export function DialogHost() {
             onClick={cancel}
             aria-label="Close"
             data-testid="app-dialog-close"
-            className="-mr-1 rounded-lg p-1.5 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"
+            className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"
           >
             <X size={16} />
           </button>
@@ -184,7 +179,7 @@ export function DialogHost() {
               onChange={(event) => setDraft(event.target.value)}
               placeholder={request.placeholder}
               data-testid="app-dialog-input"
-              className="h-11 w-full rounded-lg border border-[#dce5e5] bg-white px-3 text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
+              className="h-11 w-full rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm text-[#182232] outline-none placeholder:text-[#9aa8ae] focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a] dark:focus:border-[#3f8492]"
             />
           </label>
         )}
@@ -194,7 +189,7 @@ export function DialogHost() {
             type="button"
             onClick={cancel}
             data-testid="app-dialog-cancel"
-            className="rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-sm font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]"
+            className="min-h-11 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-sm font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]"
           >
             {request.kind === "confirm" ? request.cancelLabel ?? "Cancel" : "Cancel"}
           </button>
@@ -203,7 +198,7 @@ export function DialogHost() {
             onClick={accept}
             disabled={isInput && !draft.trim()}
             data-testid={isInput ? "app-dialog-submit" : "app-dialog-confirm"}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
               danger
                 ? "bg-[#b34a42] text-white hover:bg-[#c2544b]"
                 : "bg-[#16869a] text-white hover:bg-[#106d7a] dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]"
@@ -213,6 +208,6 @@ export function DialogHost() {
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

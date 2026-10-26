@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -49,6 +49,51 @@ app.use(cors({
   origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,
 }));
+// Security headers. The app is embeddable in a coordinator's iframe, so
+// framing is allowed ONLY for the same origin and the explicitly allowed
+// origins (never for arbitrary sites). Everything else is locked down:
+// no sniffing, no referrer leaking paths, HSTS so browsers never try plain
+// HTTP again, and a content policy that only loads our own scripts.
+const frameAncestors = ["'self'", ...allowedOrigins].join(" ");
+const cameraAllowlist = ["self", ...allowedOrigins.map((origin) => JSON.stringify(origin))].join(" ");
+export const securityHeaders: RequestHandler = (req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader(
+    "Permissions-Policy",
+    `camera=(${cameraAllowlist}), microphone=(), geolocation=()`,
+  );
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      // Scripts: our bundle plus WASM modules (Yjs, kokoro TTS, three).
+      "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' blob:",
+      // The app loads Inter from Google Fonts, so both the stylesheet and
+      // the font files have to stay allowed.
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      // Images/media come from Supabase storage and any https host.
+      "img-src 'self' data: blob: https:",
+      "media-src 'self' blob: https:",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      // API calls and realtime websockets.
+      "connect-src 'self' https: wss:",
+      "worker-src 'self' blob:",
+      // Chat messages can embed a live page (pasted <iframe> HTML). frame-src
+      // otherwise falls back to default-src 'self', which would block embed
+      // hosts; chat rendering itself only accepts cross-origin https srcs.
+      "frame-src 'self' https:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      `frame-ancestors ${frameAncestors}`,
+    ].join("; "),
+  );
+  next();
+};
+app.use(securityHeaders);
 app.use(cookieParser());
 app.use(attachAdminSession);
 // Shrink JSON over the wire (Render meters every byte out): ~75% off lists
@@ -66,6 +111,7 @@ app.use(compression({
 app.use("/api/queue/custom-emojis", express.json({ limit: "1mb" }));
 app.use("/api/spreadsheets", express.json({ limit: "10mb" }));
 app.use("/api/parts/catalog/identify-image", express.json({ limit: "4.1mb" }));
+app.use("/api/assistant/questions", express.json({ limit: "8mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

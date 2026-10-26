@@ -12,4 +12,5 @@ export type BoardCreateInputScope = typeof BoardCreateInputScope[keyof typeof Bo
 export const BoardCreateInputScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;

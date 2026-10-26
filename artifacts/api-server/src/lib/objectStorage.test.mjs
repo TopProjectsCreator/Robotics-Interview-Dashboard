@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync, rmSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test, { mock } from "node:test";
 
 registerHooks({
@@ -54,6 +57,13 @@ async function loadObjectStorage(t, { failPrimarySign = false, failPrimaryUpload
           from: (bucket) => ({
             createSignedUploadUrl: async (path) => {
               calls.push({ operation: "sign", url, key, bucket, path });
+              if (url === STORAGE_ENV.SUPABASE_URL && failPrimarySign) {
+                return { data: null, error: { message: "primary signing unavailable" } };
+              }
+              return { data: { signedUrl: `${url}/signed/${path}` }, error: null };
+            },
+            createSignedUrl: async (path) => {
+              calls.push({ operation: "signUrl", url, key, bucket, path });
               if (url === STORAGE_ENV.SUPABASE_URL && failPrimarySign) {
                 return { data: null, error: { message: "primary signing unavailable" } };
               }
@@ -163,4 +173,45 @@ test("secondary object paths download and delete from secondary storage", async 
     call.url === STORAGE_ENV.SECONDARY_SUPABASE_URL &&
     call.bucket === "secondary-bucket" &&
     call.paths[0] === "generated/12345678-1234-1234-1234-123456789abc"));
+});
+
+test("downloadObjectToFile streams the object to disk from a signed storage URL", async (t) => {
+  const { service, calls } = await loadObjectStorage(t);
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push({ operation: "fetch", url: String(url) });
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode("model-"));
+        controller.enqueue(encoder.encode("bytes"));
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "model/step" } });
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const targetPath = join(tmpdir(), `object-storage-stream-${process.pid}-${Date.now()}.bin`);
+  t.after(() => rmSync(targetPath, { force: true }));
+
+  const result = await service.downloadObjectToFile(
+    "/objects/12345678-1234-1234-1234-123456789abc",
+    targetPath,
+  );
+
+  assert.equal(result.sizeBytes, 11);
+  assert.equal(result.contentType, "model/step");
+  assert.equal(readFileSync(targetPath, "utf8"), "model-bytes");
+  // The signed URL must address the bucket-relative storage path, not the
+  // /objects/... path the API exposes, or the fetch 404s.
+  assert.ok(calls.some((call) => call.operation === "signUrl" &&
+    call.url === STORAGE_ENV.SUPABASE_URL &&
+    call.bucket === "primary-bucket" &&
+    call.path === "uploads/12345678-1234-1234-1234-123456789abc"));
+  // The object is transferred once: the storage SDK's download() would
+  // materialise the whole file in this process and defeat the streaming.
+  assert.equal(calls.filter((call) => call.operation === "download").length, 0);
 });

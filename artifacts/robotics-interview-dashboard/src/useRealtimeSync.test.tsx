@@ -1,7 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getGetDisplayStateQueryKey } from "@workspace/api-client-react";
+import {
+  getGetChatConversationsQueryKey,
+  getGetDisplayStateQueryKey,
+  getGetInterviewChatQueryKey,
+} from "@workspace/api-client-react";
 import { useRealtimeSync } from "./useRealtimeSync";
 import { SettingsProvider } from "./workspaceSettings";
 
@@ -68,6 +72,33 @@ describe("team realtime hints", () => {
     await waitFor(() => {
       expect(queryClient.getQueryState(defaultDisplayKey)?.isInvalidated).toBe(true);
       expect(queryClient.getQueryState(codeScopedDisplayKey)?.isInvalidated).toBe(true);
+    });
+  });
+
+  it("refreshes chat and conversation unread state after a server read receipt", async () => {
+    const chatKey = getGetInterviewChatQueryKey();
+    const conversationsKey = getGetChatConversationsQueryKey();
+    queryClient.setQueryData(chatKey, { items: [] });
+    queryClient.setQueryData(conversationsKey, { items: [], channels: [], shared: null });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SettingsProvider>
+          <RealtimeObserver />
+        </SettingsProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(eventSources).toHaveLength(1));
+    act(() => {
+      eventSources[0].onmessage?.(
+        new MessageEvent("message", { data: JSON.stringify({ table: "chat_message_reads", event: "INSERT" }) }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(chatKey)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(conversationsKey)?.isInvalidated).toBe(true);
     });
   });
 });

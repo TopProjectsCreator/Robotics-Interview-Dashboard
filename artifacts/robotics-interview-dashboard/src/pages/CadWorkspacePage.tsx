@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { CAD_ACCEPT, cadFormatLabel, cadRenderFormat } from "@/lib/cadFormats";
 import { useCadModelUpload, type CadDropTarget } from "@/lib/useCadModelUpload";
 import { askValue, confirmAction } from "@/lib/dialogs";
+import { useRealtimeHealthy } from "@/realtimeHealth";
 
 /** Marks an internal drag so a drop can tell a model from an OS file. */
 const MODEL_DRAG_TYPE = "application/x-cad-model-id";
@@ -84,7 +85,16 @@ function formatBytes(bytes: number): string {
 
 export function CadWorkspacePage() {
   const queryClient = useQueryClient();
-  const library = useListCadLibrary();
+  const streamHealthy = useRealtimeHealthy();
+  // The library is shared. Realtime hints refresh it when a teammate changes
+  // something; this interval is the backstop for when the stream is down, so
+  // the page never sits there showing a stale library.
+  const library = useListCadLibrary({
+    query: {
+      queryKey: getListCadLibraryQueryKey(),
+      refetchInterval: streamHealthy ? false : 15_000,
+    },
+  });
   const cadStorageStatus = useQuery({
     queryKey: ["/api/storage/cad-status"],
     queryFn: getCadStorageStatus,
@@ -360,7 +370,7 @@ export function CadWorkspacePage() {
                 );
               }
             }}
-            className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <FolderPlus size={13} aria-hidden="true" />
           </button>
@@ -377,7 +387,7 @@ export function CadWorkspacePage() {
                 );
               }
             }}
-            className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <MoreHorizontal size={13} aria-hidden="true" />
           </button>
@@ -396,7 +406,7 @@ export function CadWorkspacePage() {
               }
               void runAction(() => deleteCadFolder(folder.id), "Folder deleted.");
             }}
-            className="rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
+            className="cad-row-action rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
           >
             <Trash2 size={13} aria-hidden="true" />
           </button>
@@ -452,7 +462,7 @@ export function CadWorkspacePage() {
 
   return (
     <div className="space-y-5">
-      {cadStorageStatus.data?.usingBackupStorage && (
+      {!cadStorageStatus.isError && cadStorageStatus.data?.usingBackupStorage && (
         <div
           role="status"
           aria-live="polite"
@@ -666,7 +676,7 @@ export function CadWorkspacePage() {
                           );
                         }
                       }}
-                      className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <FolderPlus size={13} aria-hidden="true" />
                     </button>
@@ -683,7 +693,7 @@ export function CadWorkspacePage() {
                           );
                         }
                       }}
-                      className="rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <MoreHorizontal size={13} aria-hidden="true" />
                     </button>
@@ -704,7 +714,7 @@ export function CadWorkspacePage() {
                         }
                         void runAction(() => deleteCadBot({ botId: bot.id }), "Bot deleted.");
                       }}
-                      className="rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
+                      className="cad-row-action rounded p-1 opacity-0 transition text-destructive hover:bg-destructive/10 focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <Trash2 size={13} aria-hidden="true" />
                     </button>

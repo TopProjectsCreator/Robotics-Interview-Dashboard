@@ -15,26 +15,49 @@ type SkillDraft = {
   name: string;
   description: string;
   instructions: string;
+  githubRepositoryUrl: string;
   actions: string[];
   enabled: boolean;
 };
 
-const EMPTY_DRAFT: SkillDraft = { name: "", description: "", instructions: "", actions: [], enabled: true };
+const EMPTY_DRAFT: SkillDraft = { name: "", description: "", instructions: "", githubRepositoryUrl: "", actions: [], enabled: true };
 const ACTIONS = ASSISTANT_TOOL_GROUPS.flatMap((group) =>
-  group.tools.map((tool) => ({ ...tool, group: group.label })),
+  group.tools.filter((tool) => !tool.skillContextOnly).map((tool) => ({ ...tool, group: group.label })),
 );
+
+function isPublicGitHubRepositoryUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname.toLowerCase() === "github.com" &&
+      !url.port && !url.username && !url.password && !url.search && !url.hash &&
+      /^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+type AssistantSkillManagerProps = {
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+};
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-export function AssistantSkillManager() {
+export function AssistantSkillManager({ expanded: controlledExpanded, onExpandedChange }: AssistantSkillManagerProps = {}) {
   const queryClient = useQueryClient();
   const skillsQuery = useListAssistantSkills();
   const createSkill = useCreateAssistantSkill();
   const updateSkill = useUpdateAssistantSkill();
   const deleteSkill = useDeleteAssistantSkill();
-  const [expanded, setExpanded] = useState(true);
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const setExpanded = (value: boolean) => {
+    if (controlledExpanded === undefined) setInternalExpanded(value);
+    onExpandedChange?.(value);
+  };
   const [draft, setDraft] = useState<SkillDraft>(EMPTY_DRAFT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -57,6 +80,7 @@ export function AssistantSkillManager() {
       name: skill.name,
       description: skill.description,
       instructions: skill.instructions,
+      githubRepositoryUrl: skill.githubRepositoryUrl ?? "",
       actions: skill.actions,
       enabled: skill.enabled,
     });
@@ -70,6 +94,11 @@ export function AssistantSkillManager() {
       setFeedback({ kind: "error", text: "Add a name, summary, and instructions before saving." });
       return;
     }
+    const githubRepositoryUrl = draft.githubRepositoryUrl.trim();
+    if (githubRepositoryUrl && !isPublicGitHubRepositoryUrl(githubRepositoryUrl)) {
+      setFeedback({ kind: "error", text: "Enter a public GitHub repository URL such as https://github.com/owner/repository." });
+      return;
+    }
     setSaving(true);
     setFeedback(null);
     try {
@@ -77,6 +106,7 @@ export function AssistantSkillManager() {
         name: draft.name.trim(),
         description: draft.description.trim(),
         instructions: draft.instructions.trim(),
+        githubRepositoryUrl: githubRepositoryUrl || null,
         actions: draft.actions,
         enabled: draft.enabled,
       };
@@ -125,7 +155,7 @@ export function AssistantSkillManager() {
           type="button"
           className="assistant-skill-heading-toggle"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpanded(!expanded)}
           data-testid="toggle-assistant-skills"
         >
           {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -172,6 +202,10 @@ export function AssistantSkillManager() {
               <label className="assistant-skill-field">
                 <span>Instructions</span>
                 <textarea maxLength={8000} rows={4} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} placeholder="Describe the trusted steps and expected response…" data-testid="input-skill-instructions" />
+              </label>
+              <label className="assistant-skill-field">
+                <span>Public GitHub repository <small>Optional · read-only context</small></span>
+                <input type="url" maxLength={500} value={draft.githubRepositoryUrl} onChange={(event) => setDraft({ ...draft, githubRepositoryUrl: event.target.value })} placeholder="https://github.com/owner/repository" data-testid="input-skill-github-repository" />
               </label>
               <fieldset className="assistant-skill-action-picker">
                 <legend>Approved actions <span>{draft.actions.length} selected</span></legend>
@@ -265,6 +299,14 @@ export function AssistantSkillManager() {
                       <div className="assistant-skill-detail">
                         <p className="assistant-skill-detail-label">Instructions</p>
                         <p className="assistant-skill-instructions">{skill.instructions}</p>
+                        {skill.githubRepositoryUrl && (
+                          <>
+                            <p className="assistant-skill-detail-label">Linked public repository</p>
+                            <a className="assistant-skill-repository-link" href={skill.githubRepositoryUrl} target="_blank" rel="noopener noreferrer">
+                              {skill.githubRepositoryUrl}
+                            </a>
+                          </>
+                        )}
                         <p className="assistant-skill-detail-label">Approved actions</p>
                         <div className="assistant-skill-action-chips">
                           {skill.actions.length

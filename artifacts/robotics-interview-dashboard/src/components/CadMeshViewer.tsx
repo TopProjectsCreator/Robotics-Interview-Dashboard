@@ -90,7 +90,7 @@ export function CadMeshViewer({ name, src, height = 420 }: CadMeshViewerProps) {
 
         const viewerScene = new THREE.Scene();
         scene = viewerScene;
-        const initialWidth = Math.max(host.clientWidth, 320);
+        const initialWidth = Math.max(host.clientWidth, 240);
         const camera = new THREE.PerspectiveCamera(
           40,
           initialWidth / height,
@@ -105,7 +105,7 @@ export function CadMeshViewer({ name, src, height = 420 }: CadMeshViewerProps) {
         viewerRenderer.domElement.setAttribute("aria-label", `3D preview of ${name}`);
         viewerRenderer.domElement.setAttribute("role", "img");
         viewerRenderer.domElement.tabIndex = 0;
-        viewerRenderer.domElement.style.touchAction = "none";
+        viewerRenderer.domElement.style.touchAction = "pan-y";
         host.appendChild(viewerRenderer.domElement);
 
         viewerScene.add(new THREE.AmbientLight(0xffffff, 1.6));

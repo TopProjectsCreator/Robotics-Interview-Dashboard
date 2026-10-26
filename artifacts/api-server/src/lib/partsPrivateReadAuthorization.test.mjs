@@ -134,6 +134,7 @@ test("signed-out visitors cannot read private Parts records from any GET endpoin
       "/parts/catalog",
       "/parts/catalog/search?q=canary",
       "/parts/catalog/search/stream?q=canary",
+      `/parts/catalog/${encodeURIComponent(partId)}/details`,
       `/parts/robots/${encodeURIComponent(robotId)}/details`,
     ];
 

@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName } from "@workspace/db";
+import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import {
   generateAuthenticationOptions,
@@ -60,11 +60,16 @@ import {
   setAdminCookie,
 } from "../middlewares/adminAuth";
 import { deletePresenceHeartbeat } from "./presence";
+import { checkAccountCreationAllowed, validateDisplayName } from "../lib/spamGuard";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
 import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
+import {
+  canFallbackNewTeamToPrimary,
+  isTransientDatabaseAvailabilityError,
+} from "../lib/databaseAvailability";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { requestTeamId } from "../middlewares/adminAuth";
 import {
@@ -131,6 +136,42 @@ const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
 const eventPasscodeFailures = new Map<string, { count: number; resetAt: number }>();
+
+// IP-based limits alone are NOT enough here: Render passes a client's
+// X-Forwarded-For straight through, so req.ip is whatever the caller claims.
+// An attacker can rotate that header for a fresh attempt budget every time.
+// These counters are keyed on the SECRET being guessed instead, so they
+// hold even when the caller spoofs its address.
+const credentialFailures = new Map<string, { count: number; resetAt: number }>();
+const CREDENTIAL_WINDOW_MS = 15 * 60 * 1000;
+const CREDENTIAL_MAX_FAILURES = 10;
+
+function credentialKey(kind: string, value: string): string {
+  return `${kind}:${value.trim().toLowerCase()}`;
+}
+
+function credentialAllowed(kind: string, value: string): boolean {
+  const entry = credentialFailures.get(credentialKey(kind, value));
+  if (!entry || entry.resetAt <= Date.now()) {
+    credentialFailures.delete(credentialKey(kind, value));
+    return true;
+  }
+  return entry.count < CREDENTIAL_MAX_FAILURES;
+}
+
+function recordCredentialFailure(kind: string, value: string): void {
+  const key = credentialKey(kind, value);
+  const entry = credentialFailures.get(key);
+  if (!entry || entry.resetAt <= Date.now()) {
+    credentialFailures.set(key, { count: 1, resetAt: Date.now() + CREDENTIAL_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+}
+
+function clearCredentialFailures(kind: string, value: string): void {
+  credentialFailures.delete(credentialKey(kind, value));
+}
 
 router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
@@ -439,6 +480,18 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
   }
   enterInstance(team.instance);
   const displayName = parsed.data.displayName.trim().replace(/\s+/g, " ");
+  // A display name must look like a person, not an email address or a link.
+  const nameProblem = validateDisplayName(displayName);
+  if (nameProblem) {
+    res.status(400).json({ error: nameProblem });
+    return;
+  }
+  // Cap how many accounts one network can create per hour.
+  const creationVerdict = checkAccountCreationAllowed(req.ip ?? "unknown");
+  if (!creationVerdict.allowed) {
+    res.status(429).json({ error: creationVerdict.error, retryAfter: creationVerdict.retryAfter });
+    return;
+  }
   const normalizedName = normalizeInterviewerName(displayName);
   const existing = await db.select({ id: interviewerAccountsTable.id })
     .from(interviewerAccountsTable).where(and(eq(interviewerAccountsTable.normalizedName, normalizedName), teamFilter(interviewerAccountsTable.teamId, team.id))).limit(1);
@@ -709,6 +762,11 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
   const ownTeam = await requesterTeamId(req);
   if (accountTeamId(account) !== ownTeam) {
     res.status(404).json({ error: "Interviewer not found." });
+    return;
+  }
+  const renameProblem = validateDisplayName(displayName);
+  if (renameProblem) {
+    res.status(400).json({ error: renameProblem });
     return;
   }
   const normalizedName = normalizeInterviewerName(displayName);
@@ -1139,12 +1197,18 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     return;
   }
   const normalizedTeam = normalizeTeamName(teamName);
+  let secondaryTeamListWasRead = false;
   try {
     const primaryTeams = await primaryDb.select().from(teamsTable);
     let secondaryTeams: typeof primaryTeams = [];
     try {
       const secondary = secondaryDb();
-      if (secondary) secondaryTeams = await secondary.select().from(teamsTable);
+      if (secondary) {
+        secondaryTeams = await secondary.select().from(teamsTable);
+        secondaryTeamListWasRead = true;
+      } else {
+        secondaryTeamListWasRead = true;
+      }
     } catch {
       // Secondary unreachable: creation below will surface the real error.
     }
@@ -1170,11 +1234,38 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   }
   if (await rejectUnsafePassword(req, res, password, confirmLowExposure)) return;
   const teamId = randomBytes(16).toString("hex");
-  // New teams live on the secondary instance; the primary keeps the current
-  // teams untouched. Everything below (team row, account, singleton settings,
-  // queue labels) resolves there through the shared db/pool handles.
-  enterInstance("secondary");
+  let teamInstance: DbInstance = "primary";
   try {
+    // Only choose secondary after proving it is reachable, before any team
+    // writes begin. If it is temporarily unavailable, a new team can safely
+    // start on primary and its session will be pinned there. Existing teams
+    // remain on their owning database; their data is never silently redirected.
+    const secondary = secondaryPool();
+    if (secondary) {
+      try {
+        await secondary.query("select 1");
+        if (!secondaryTeamListWasRead) {
+          res.status(503).json({
+            error: "Could not verify existing teams on the secondary database. Try again shortly.",
+          });
+          return;
+        }
+        teamInstance = "secondary";
+      } catch (error) {
+        if (!isTransientDatabaseAvailabilityError(error)) throw error;
+        if (!canFallbackNewTeamToPrimary(error, secondaryTeamListWasRead)) {
+          res.status(503).json({
+            error: "The secondary database is unavailable, so this team cannot be safely placed yet. Try again shortly.",
+          });
+          return;
+        }
+        req.log.warn(
+          { placement: "primary" },
+          "Secondary unavailable; creating new team on primary",
+        );
+      }
+    }
+    enterInstance(teamInstance);
     await ensureDefaultTeam();
     const [team] = await db.insert(teamsTable).values({
       id: teamId,
@@ -1223,7 +1314,7 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
       // Team + account already exist; per-team settings can be repaired on next sign-in.
     }
     teamCreateFailures.delete(ip);
-    const session = createInterviewerSession(account.id, "secondary");
+    const session = createInterviewerSession(account.id, teamInstance);
     setAdminCookie(res, session);
     res.status(201).json({
       message: "Team created.",
@@ -1284,19 +1375,28 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
       "presence_heartbeats", "seating_settings", "workspace_settings",
     ];
     const removed: Record<string, number> = {};
-    await pool.query("BEGIN");
+    // A Pool hands out a different client per query, so BEGIN/COMMIT around
+    // pool.query() would land on different connections: the deletes would
+    // autocommit one by one and the COMMIT would have nothing to commit.
+    // Check out a single client and run the whole deletion on it.
+    const client = await pool.connect();
     try {
-      for (const table of tables) {
-        const result = await pool.query(`delete from "${table}" where team_id = $1`, [team.id]);
-        removed[table] = result.rowCount ?? 0;
+      await client.query("BEGIN");
+      try {
+        for (const table of tables) {
+          const result = await client.query(`delete from "${table}" where team_id = $1`, [team.id]);
+          removed[table] = result.rowCount ?? 0;
+        }
+        const accounts = await client.query(`delete from "interviewer_accounts" where team_id = $1 returning id`, [team.id]);
+        removed["interviewer_accounts"] = accounts.rowCount ?? 0;
+        await client.query(`delete from "teams" where id = $1`, [team.id]);
+        await client.query("COMMIT");
+      } catch (txError) {
+        await client.query("ROLLBACK");
+        throw txError;
       }
-      const accounts = await pool.query(`delete from "interviewer_accounts" where team_id = $1 returning id`, [team.id]);
-      removed["interviewer_accounts"] = accounts.rowCount ?? 0;
-      await pool.query(`delete from "teams" where id = $1`, [team.id]);
-      await pool.query("COMMIT");
-    } catch (txError) {
-      await pool.query("ROLLBACK");
-      throw txError;
+    } finally {
+      client.release();
     }
     req.log.info({ team: team.name, removed }, "Team deleted by site owner");
     res.json({ deletedTeamId: team.id, deletedTeamName: team.name, removed });

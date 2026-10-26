@@ -22,36 +22,83 @@ export type DbInstance = "primary" | "secondary";
  * Proxy. All 300+ existing call sites keep working untouched; outside a
  * request (boot, tests, cron) everything resolves to primary.
  */
-const instanceStore = new AsyncLocalStorage<DbInstance>();
+/**
+ * The instance a request is pinned to, plus a scope object that owns it.
+ *
+ * The scope object is what makes isolation safe. `AsyncLocalStorage.run`
+ * short-circuits (and creates no new async resource) when the store it is
+ * given is identical to the one already active, so a plain string store
+ * would let a nested pin leak into the caller's context. A fresh object per
+ * scope guarantees a fresh async resource every time, and `enterInstance`
+ * mutates only its own request's scope.
+ */
+type InstanceScope = { instance: DbInstance };
+
+const instanceStore = new AsyncLocalStorage<InstanceScope>();
 
 export function currentInstance(): DbInstance {
-  return instanceStore.getStore() ?? "primary";
+  return instanceStore.getStore()?.instance ?? "primary";
 }
 
 export function runWithInstance<T>(instance: DbInstance | undefined | null, fn: () => T): T {
-  return instanceStore.run(instance === "secondary" ? "secondary" : "primary", fn);
+  return instanceStore.run({ instance: instance === "secondary" ? "secondary" : "primary" }, fn);
 }
 
 /**
- * Pin the remainder of the current execution to an instance (e.g. right
- * after an unauthenticated handler resolves which team's database it needs).
- * Unlike runWithInstance, no restructuring is needed: every later await in
- * this handler resolves through the proxy to the pinned instance.
+ * Pin the remainder of the current request to an instance (e.g. right after an
+ * unauthenticated handler resolves which team's database it needs). Unlike
+ * runWithInstance, no restructuring is needed: every later await in this
+ * handler resolves through the proxy to the pinned instance.
+ *
+ * The pin is written to the request's own scope object rather than to the
+ * ambient async context, so it can never escape into another request that
+ * happens to reuse the same keep-alive connection.
  */
 export function enterInstance(instance: DbInstance | undefined | null): void {
-  instanceStore.enterWith(instance === "secondary" ? "secondary" : "primary");
+  const scope = instanceStore.getStore();
+  if (!scope) {
+    // No request scope (boot, tests, cron): own the pin outright.
+    instanceStore.enterWith({ instance: instance === "secondary" ? "secondary" : "primary" });
+    return;
+  }
+  scope.instance = instance === "secondary" ? "secondary" : "primary";
 }
 
 function secondaryUrl(): string | null {
-  const url = process.env.SECONDARY_DATABASE_URL?.trim();
-  return url ? url : null;
+  const configuredUrl = process.env.SECONDARY_DATABASE_URL?.trim();
+  if (!configuredUrl) return null;
+
+  const url = new URL(configuredUrl);
+  const directSupabaseHost = url.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+  const poolerHost = process.env.SECONDARY_DATABASE_POOLER_HOST?.trim();
+  if (!poolerHost || !directSupabaseHost || url.username !== "postgres") {
+    return configuredUrl;
+  }
+
+  // Preserve the existing password when a runtime opts into Supavisor.
+  url.hostname = poolerHost;
+  url.username = `postgres.${directSupabaseHost[1]}`;
+  url.port = "5432";
+  return url.toString();
 }
 
 export function hasSecondary(): boolean {
   return secondaryUrl() !== null;
 }
 
-export const primaryPool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Keep database sessions bounded: API instances should not reserve the
+// node-postgres default of 10 connections for each Supabase project.
+const DATABASE_POOL_MAX = 4;
+const DATABASE_POOL_OPTIONS = {
+  max: DATABASE_POOL_MAX,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+};
+
+export const primaryPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ...DATABASE_POOL_OPTIONS,
+});
 export const primaryDb = drizzle(primaryPool, { schema });
 
 let secondaryPoolValue: InstanceType<typeof Pool> | null = null;
@@ -61,7 +108,10 @@ export function secondaryPool(): InstanceType<typeof Pool> | null {
   const url = secondaryUrl();
   if (!url) return null;
   if (!secondaryPoolValue) {
-    secondaryPoolValue = new Pool({ connectionString: url });
+    secondaryPoolValue = new Pool({
+      connectionString: url,
+      ...DATABASE_POOL_OPTIONS,
+    });
   }
   return secondaryPoolValue;
 }

@@ -64,24 +64,48 @@ afterEach(() => {
 });
 
 describe("AssistantSkillManager", () => {
+  it("starts collapsed and can be expanded and collapsed manually", async () => {
+    renderManager();
+    const toggle = screen.getByTestId("toggle-assistant-skills");
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("No team skills yet")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByText("No team skills yet")).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("No team skills yet")).not.toBeInTheDocument();
+  });
+
   it("creates, edits, and enables or disables a team skill", async () => {
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     await screen.findByText("No team skills yet");
     fireEvent.click(screen.getByRole("button", { name: "Create skill" }));
     fireEvent.change(screen.getByTestId("input-skill-name"), { target: { value: "Interview intake" } });
     fireEvent.change(screen.getByTestId("input-skill-description"), { target: { value: "Gather context before an interview" } });
     fireEvent.change(screen.getByTestId("input-skill-instructions"), { target: { value: "Review relevant experience, then summarize." } });
+    fireEvent.change(screen.getByTestId("input-skill-github-repository"), { target: { value: "https://github.com/robotics-team/interview-guide" } });
     fireEvent.click(screen.getByTestId("skill-action-search_applicants"));
     fireEvent.click(screen.getByRole("button", { name: "Save skill" }));
 
     expect(await screen.findByTestId("assistant-skill-feedback")).toHaveTextContent("Skill added to the team library.");
     expect(await screen.findByTestId("assistant-skill-skill-1")).toBeInTheDocument();
     expect(records[0]?.actions).toEqual(["search_applicants"]);
+    expect(records[0]?.githubRepositoryUrl).toBe("https://github.com/robotics-team/interview-guide");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Interview intake" }));
     fireEvent.change(screen.getByTestId("input-skill-name"), { target: { value: "Interview preparation" } });
+    fireEvent.change(screen.getByTestId("input-skill-github-repository"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save skill" }));
     expect(await screen.findByTestId("assistant-skill-skill-1")).toHaveTextContent("Interview preparation");
+    expect(records[0]?.githubRepositoryUrl).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Interview preparation" }));
+    expect(screen.queryByText("Linked public repository")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Disable Interview preparation" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Enable Interview preparation" })).toHaveAttribute("aria-pressed", "false"));
@@ -96,12 +120,15 @@ describe("AssistantSkillManager", () => {
       instructions: "Use only confirmed interview notes.",
       actions: ["get_applicant"],
       enabled: true,
+      githubRepositoryUrl: "https://github.com/robotics-team/debrief",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     }];
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     fireEvent.click(await screen.findByRole("button", { name: "Debrief" }));
     expect(screen.getByText("Use only confirmed interview notes.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://github.com/robotics-team/debrief" })).toHaveAttribute("href", "https://github.com/robotics-team/debrief");
     fireEvent.click(screen.getByRole("button", { name: "Delete Debrief" }));
     expect(screen.getByRole("group", { name: "Confirm deletion of Debrief" })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("confirm-delete-skill-existing-skill"));
@@ -111,6 +138,7 @@ describe("AssistantSkillManager", () => {
 
   it("shows validation and server errors without losing the draft", async () => {
     renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
     await screen.findByText("No team skills yet");
     fireEvent.click(screen.getByRole("button", { name: "Create skill" }));
     fireEvent.click(screen.getByRole("button", { name: "Save skill" }));
@@ -124,5 +152,19 @@ describe("AssistantSkillManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save skill" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByTestId("input-skill-name")).toHaveValue("Repeat workflow");
+  });
+
+  it("rejects unsupported repository URLs before saving", async () => {
+    renderManager();
+    fireEvent.click(screen.getByTestId("toggle-assistant-skills"));
+    await screen.findByText("No team skills yet");
+    fireEvent.click(screen.getByRole("button", { name: "Create skill" }));
+    fireEvent.change(screen.getByTestId("input-skill-name"), { target: { value: "Repository workflow" } });
+    fireEvent.change(screen.getByTestId("input-skill-description"), { target: { value: "Use the public team guide" } });
+    fireEvent.change(screen.getByTestId("input-skill-instructions"), { target: { value: "Use only relevant reference material." } });
+    fireEvent.change(screen.getByTestId("input-skill-github-repository"), { target: { value: "https://github.com.evil.example/org/repo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save skill" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a public GitHub repository URL");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -42,10 +41,12 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
-html { -webkit-text-size-adjust: 100%; }
-body { overflow-x: hidden; }
+/* `clip` (not `hidden`) so the root never becomes a scroll container: wide
+   content is trimmed at the page edge instead of adding a sideways scroll,
+   while vertical scrolling and `position: sticky` keep working. */
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
+body { overflow-x: clip; }
 body { font-family: var(--app-font-sans); background: hsl(var(--background)); color: hsl(var(--foreground)); }
-button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 @media (pointer: coarse) {
   button, [role="button"], input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
@@ -157,7 +158,7 @@ button { cursor: pointer; }
 .assistant-tools-gear:focus-visible { outline: none; border-color: hsl(var(--ring)); box-shadow: 0 0 0 3px hsl(var(--ring) / .16); }
 .assistant-tools-gear-dot { position: absolute; top: 7px; right: 7px; height: 7px; width: 7px; border-radius: 9999px; background: hsl(var(--primary)); }
 .assistant-thinking-menu { z-index: 110; border: 1px solid hsl(var(--border)); border-radius: 12px; background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); padding: 6px; box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); }
-.assistant-tools-popover { z-index: 110; width: 340px; max-width: calc(100vw - 24px); max-height: min(480px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; padding: 0; border: 1px solid hsl(var(--border)); background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); opacity: 1; }
+.assistant-tools-popover { z-index: 110; width: 340px; max-width: calc(100vw - 24px); max-height: min(480px, calc(100dvh - 48px)); overflow: hidden; display: flex; flex-direction: column; padding: 0; border: 1px solid hsl(var(--border)); background-color: hsl(var(--popover)); color: hsl(var(--popover-foreground)); box-shadow: 0 18px 45px rgba(15,35,45,.24), 0 3px 10px rgba(15,35,45,.12); opacity: 1; }
 .assistant-tools-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 14px 10px; border-bottom: 1px solid hsl(var(--border)); }
 .assistant-tools-title { font-size: 13px; font-weight: 700; }
 .assistant-tools-subtitle { margin-top: 2px; font-size: 11px; color: hsl(var(--muted-foreground)); }
@@ -231,46 +232,47 @@ button { cursor: pointer; }
 .assistant-skill-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: hsl(var(--muted-foreground) / .45); }
 .assistant-skill-status-dot.is-on { background: hsl(151 48% 42%); box-shadow: 0 0 0 3px hsl(151 48% 42% / .12); }
 .assistant-skill-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
-.assistant-skill-enable { display: inline-flex; width: 26px; height: 16px; align-items: center; border: 1px solid hsl(var(--border)); border-radius: 99px; background: hsl(var(--muted)); padding: 2px; }
-.assistant-skill-enable span { width: 10px; height: 10px; border-radius: 50%; background: hsl(var(--muted-foreground)); transition: transform .16s ease, background-color .16s ease; }
+.assistant-skill-enable { display: inline-flex; width: 44px; height: 26px; align-items: center; border: 1px solid hsl(var(--border)); border-radius: 99px; background: hsl(var(--muted)); padding: 3px; }
+.assistant-skill-enable span { width: 18px; height: 18px; border-radius: 50%; background: hsl(var(--muted-foreground)); transition: transform .16s ease, background-color .16s ease; }
 .assistant-skill-enable.is-on { justify-content: flex-end; border-color: hsl(151 42% 48% / .5); background: hsl(151 42% 48% / .15); }
 .assistant-skill-enable.is-on span { background: hsl(151 48% 42%); }
-.assistant-skill-icon-button { display: inline-grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-icon-button { display: inline-grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
 .assistant-skill-icon-button:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .assistant-skill-delete-button:hover { background: hsl(var(--destructive) / .1); color: hsl(var(--destructive)); }
-.assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; }
+.assistant-skill-description { overflow: hidden; margin: 3px 9px 7px 23px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; }
 .assistant-skill-card.is-disabled .assistant-skill-description { opacity: .68; }
 .assistant-skill-detail { margin: 0 8px 8px; border-top: 1px solid hsl(var(--border)); padding-top: 7px; }
-.assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 9px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
-.assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 10px; line-height: 1.45; white-space: pre-wrap; }
+.assistant-skill-repository-link { display: block; margin: 0 0 8px; overflow-wrap: anywhere; color: hsl(var(--primary)); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; }
+.assistant-skill-detail-label { margin: 0 0 3px; color: hsl(var(--muted-foreground)); font: 500 11px/1.25 var(--app-font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.assistant-skill-instructions { max-height: 70px; overflow: auto; margin: 0 0 8px; color: hsl(var(--foreground)); font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
 .assistant-skill-action-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.assistant-skill-action-chips span { border: 1px solid hsl(var(--primary) / .18); border-radius: 5px; background: hsl(var(--primary) / .07); padding: 2px 5px; color: hsl(var(--primary)); font-size: 9px; line-height: 1.3; }
+.assistant-skill-action-chips span { border: 1px solid hsl(var(--primary) / .18); border-radius: 5px; background: hsl(var(--primary) / .07); padding: 2px 5px; color: hsl(var(--primary)); font-size: 11px; line-height: 1.3; }
 .assistant-skill-action-chips .assistant-skill-no-actions { border-color: hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); }
-.assistant-skill-updated { margin: 7px 0 0; color: hsl(var(--muted-foreground)); font-size: 9px; }
-.assistant-skill-delete-confirm { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px; border-radius: 6px; background: hsl(var(--destructive) / .08); padding: 5px 6px; color: hsl(var(--destructive)); font-size: 9px; }
+.assistant-skill-updated { margin: 7px 0 0; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.assistant-skill-delete-confirm { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px; border-radius: 6px; background: hsl(var(--destructive) / .08); padding: 5px 6px; color: hsl(var(--destructive)); font-size: 12px; }
 .assistant-skill-delete-confirm span { flex: 1; }
-.assistant-skill-delete-confirm button { border: 0; border-radius: 4px; background: transparent; padding: 3px 5px; color: inherit; font-size: 9px; font-weight: 700; }
+.assistant-skill-delete-confirm button { border: 0; border-radius: 4px; background: transparent; padding: 8px 9px; color: inherit; font-size: 12px; font-weight: 700; }
 .assistant-skill-delete-confirm button:last-child { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
 .assistant-skill-editor { margin-bottom: 7px; border: 1px solid hsl(var(--primary) / .28); border-radius: 9px; background: hsl(var(--card)); padding: 9px; box-shadow: 0 5px 16px rgba(24,58,75,.06); }
-.assistant-skill-editor-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: hsl(var(--foreground)); font-size: 11px; }
-.assistant-skill-editor-title button { display: inline-grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
-.assistant-skill-field { display: grid; gap: 3px; margin-bottom: 7px; color: hsl(var(--muted-foreground)); font-size: 9px; font-weight: 600; }
-.assistant-skill-field input, .assistant-skill-field textarea { width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: hsl(var(--background)); padding: 6px 7px; color: hsl(var(--foreground)); font-size: 10px; font-weight: 400; }
+.assistant-skill-editor-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: hsl(var(--foreground)); font-size: 13px; }
+.assistant-skill-editor-title button { display: inline-grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: hsl(var(--muted-foreground)); }
+.assistant-skill-field { display: grid; gap: 3px; margin-bottom: 7px; color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 600; }
+.assistant-skill-field input, .assistant-skill-field textarea { width: 100%; min-width: 0; border: 1px solid hsl(var(--input)); border-radius: 6px; background: hsl(var(--background)); padding: 8px 9px; color: hsl(var(--foreground)); font-size: 16px; font-weight: 400; }
 .assistant-skill-field textarea { min-height: 72px; resize: vertical; line-height: 1.4; }
 .assistant-skill-field input:focus-visible, .assistant-skill-field textarea:focus-visible { outline: 2px solid hsl(var(--ring) / .55); outline-offset: 1px; }
 .assistant-skill-action-picker { margin: 0 0 7px; border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 6px; }
-.assistant-skill-action-picker legend { padding: 0 3px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 700; }
-.assistant-skill-action-picker legend span { margin-left: 5px; color: hsl(var(--muted-foreground)); font: 400 8px/1 var(--app-font-mono); }
+.assistant-skill-action-picker legend { padding: 0 3px; color: hsl(var(--foreground)); font-size: 12px; font-weight: 700; }
+.assistant-skill-action-picker legend span { margin-left: 5px; color: hsl(var(--muted-foreground)); font: 400 10px/1 var(--app-font-mono); }
 .assistant-skill-action-list { display: grid; max-height: 118px; overflow: auto; gap: 1px; }
 .assistant-skill-action-option { display: flex; align-items: flex-start; gap: 6px; border-radius: 5px; padding: 4px 3px; cursor: pointer; }
 .assistant-skill-action-option:hover { background: hsl(var(--accent)); }
-.assistant-skill-action-option input, .assistant-skill-enabled-check input { width: 13px; height: 13px; flex: 0 0 auto; margin: 1px 0 0; accent-color: hsl(var(--primary)); }
+.assistant-skill-action-option input, .assistant-skill-enabled-check input { width: 18px; height: 18px; flex: 0 0 auto; margin: 1px 0 0; accent-color: hsl(var(--primary)); }
 .assistant-skill-action-option span { display: grid; min-width: 0; gap: 1px; }
-.assistant-skill-action-option strong { color: hsl(var(--foreground)); font-size: 9px; line-height: 1.25; }
-.assistant-skill-action-option small { color: hsl(var(--muted-foreground)); font-size: 8px; line-height: 1.25; }
-.assistant-skill-enabled-check { display: flex; align-items: center; gap: 6px; margin: 1px 0 8px; color: hsl(var(--foreground)); font-size: 9px; font-weight: 600; cursor: pointer; }
+.assistant-skill-action-option strong { color: hsl(var(--foreground)); font-size: 12px; line-height: 1.25; }
+.assistant-skill-action-option small { color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.25; }
+.assistant-skill-enabled-check { display: flex; align-items: center; gap: 6px; margin: 1px 0 8px; color: hsl(var(--foreground)); font-size: 12px; font-weight: 600; cursor: pointer; }
 .assistant-skill-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
-.assistant-skill-editor-actions button { display: inline-flex; min-height: 27px; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; padding: 5px 8px; font-size: 9px; font-weight: 700; }
+.assistant-skill-editor-actions button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
 .assistant-skill-cancel { border: 1px solid hsl(var(--border)); background: hsl(var(--card)); color: hsl(var(--muted-foreground)); }
 .assistant-skill-save { border: 1px solid hsl(var(--primary)); background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 .assistant-skill-editor-actions button:disabled { cursor: wait; opacity: .6; }
@@ -454,10 +456,15 @@ button { cursor: pointer; }
 .chat-composer-layout {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: "input actions send";
+  /* The "+" sits on the far LEFT of the composer (like Discord/Slack), the
+     text field next to it, then the tool buttons and finally Send. */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "more input actions send";
   align-items: end;
   gap: 0.5rem;
+}
+.chat-composer-more {
+  grid-area: more;
 }
 .chat-composer-input {
   grid-area: input;
@@ -504,28 +511,28 @@ button { cursor: pointer; }
     min-height: 180px;
   }
   .chat-composer-layout {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "input send"
-      "actions actions";
+      "more input send"
+      "actions actions actions";
     gap: 0.35rem 0.5rem;
   }
   .chat-composer-actions {
     display: grid;
-    grid-template-columns: repeat(7, minmax(40px, 1fr));
+    grid-template-columns: repeat(6, minmax(44px, 1fr));
     gap: 0.2rem;
     width: 100%;
     padding: 0;
   }
   .chat-composer-actions .chat-composer-control {
     width: 100%;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
   .chat-composer-send {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 }
 @media (max-width: 400px) {
@@ -533,7 +540,102 @@ button { cursor: pointer; }
     padding: 0.75rem;
   }
   .chat-composer-actions {
-    grid-template-columns: repeat(4, minmax(40px, 1fr));
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+  }
+}
+
+/* --- Touch parity ------------------------------------------------------- */
+/* Every hover-revealed control stays reachable on touch devices: the action
+   is revealed permanently and the hit area grows to the 44px minimum. */
+@media (pointer: coarse) {
+  .touch-reveal {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Chat controls stay thumb-sized on touch devices at every width. */
+  .chat-message-actions button,
+  .chat-composer-control,
+  [data-testid="chat-pinned-bar"] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* The document toolbar is a strip of icons with no visible labels, so the
+     icons themselves have to carry the hit area. */
+  .document-editor .document-toolbar-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* The code workspace file rows hide their delete button until hover. */
+  .code-file-delete {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* CAD tree rows hide their actions until hover; on touch — and on narrow
+   windows, where there is no hover to discover them — they are always shown
+   and get a full-size hit area. */
+@media (pointer: coarse), (max-width: 639px) {
+  .cad-row-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* Chat message actions cannot be discovered by hovering on a phone, so they
+   move out of the overlay and into the message flow with a 44px hit area. */
+@media (max-width: 767px) {
+  .chat-message-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-message-actions {
+    position: static;
+    order: 99;
+    transform: none;
+    margin-top: 0.5rem;
+    opacity: 1;
+    pointer-events: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .chat-message-actions button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* The document toolbar is a single non-wrapping row of ~570px controls. Let
+   it scroll sideways instead of clipping the right-hand buttons away. */
+@media (max-width: 700px) {
+  .document-editor .document-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .document-editor .document-toolbar > div {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-toolbar-button {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-toolbar label,
+  .document-editor .document-toolbar-separator {
+    flex: 0 0 auto;
+  }
+  .document-editor .document-style-select {
+    flex: 0 0 auto;
   }
 }
 .dark .ai-search-panel {
@@ -641,7 +743,7 @@ button { cursor: pointer; }
 .landing-final-cta { display: flex; align-items: end; justify-content: space-between; gap: 55px; max-width: none; margin-top: 80px; padding: clamp(70px, 9vw, 120px) max(20px, calc((100vw - 1136px) / 2)); background: var(--landing-yellow); }.landing-final-cta h2 { margin: 17px 0 0; color: var(--landing-navy); font-size: clamp(3rem, 5.4vw, 5.7rem); line-height: .88; letter-spacing: -.085em; }.landing-final-cta h2 em { color: #237c81; }.landing-final-actions { max-width: 350px; }.landing-final-actions p { margin: 0 0 23px; color: #5e6d61; font-size: 13px; line-height: 1.55; }.landing-final-display-link { display: inline-flex; align-items: center; gap: 7px; margin: 18px 0 0 2px; color: #53675c; font-size: 11px; font-weight: 700; text-decoration: none; }.landing-final-display-link:hover { color: var(--landing-navy); }
 .landing-footer { display: flex; align-items: center; justify-content: space-between; gap: 25px; max-width: 1280px; margin: 0 auto; padding: 30px clamp(20px, 5vw, 72px) 38px; }.landing-footer-brand b { font-size: 11px; }.landing-footer-brand small { font-size: 7px; }.landing-footer-meta, .landing-footer-status { color: #7d918e; font-size: 8px; letter-spacing: .12em; }.landing-footer-status { display: inline-flex; align-items: center; gap: 8px; color: #4d9275; }
 @media (max-width: 900px) { .landing-hero { grid-template-columns: 1fr; padding-top: 70px; }.landing-hero-copy { max-width: 620px; }.landing-hero-visual { max-width: 600px; width: 100%; margin: 0 auto; }.landing-room-heading { align-items: start; flex-direction: column; }.landing-image-story { gap: 65px; }.landing-trust-section, .landing-faq-section { gap: 40px; } }
-@media (max-width: 700px) { .landing-nav { gap: 15px; }.landing-nav-links { display: none; position: absolute; top: 75px; left: 20px; right: 20px; flex-direction: column; align-items: stretch; gap: 0; padding: 10px; border: 1px solid #d5e2dc; border-radius: 14px; background: rgba(249,252,248,.98); box-shadow: 0 18px 32px rgba(23,66,68,.12); }.landing-nav-links.is-open { display: flex; }.landing-nav-links a { padding: 12px 10px; }.landing-nav-links .landing-nav-display { padding: 12px 10px; }.landing-nav-cta { margin-left: auto; padding: 10px 12px; font-size: 10px; }.landing-menu-button { display: block; padding: 7px; }.landing-hero { min-height: auto; padding-top: 48px; padding-bottom: 70px; }.landing-hero h1 { font-size: clamp(3.8rem, 18vw, 6rem); }.landing-lede { font-size: 14px; }.landing-hero-visual { min-height: 455px; padding: 25px 0 35px; }.landing-control-card { padding: 22px 16px 15px; }.landing-control-top h2 { font-size: 19px; }.landing-display-float { right: -2px; bottom: 5px; width: 190px; }.landing-signal-strip { justify-content: flex-start; overflow: auto; gap: 25px; }.landing-signal-strip i { flex-shrink: 0; }.landing-signal-strip div { min-width: max-content; }.landing-section { padding-top: 85px; padding-bottom: 100px; }.landing-section-intro h2, .landing-room-heading h2, .landing-faq-section h2 { font-size: 3.2rem; }.landing-workflow-list { margin-top: 48px; }.landing-workflow-item { grid-template-columns: 37px 1fr 18px; gap: 12px; }.landing-step-line { display: none; }.landing-workflow-item h3 { font-size: 20px; }.landing-workflow-item p { font-size: 12px; }.landing-room-section { padding-top: 20px; }.landing-room-grid { grid-template-columns: 1fr; margin-top: 48px; }.landing-room-panel-large { grid-row: auto; padding: 21px 17px; }.landing-attendance { gap: 17px; margin-top: 35px; }.landing-attendance-number { font-size: 43px; }.landing-room-panel-display, .landing-room-panel-quote { padding: 19px; }.landing-image-story { grid-template-columns: 1fr; padding-top: 85px; }.landing-image-collage { min-height: 400px; }.landing-image-main { height: 350px; }.landing-image-small { height: 190px; }.landing-trust-section, .landing-faq-section { grid-template-columns: 1fr; padding-top: 75px; padding-bottom: 90px; }.landing-trust-items { grid-template-columns: 1fr; gap: 30px; }.landing-trust-items p { margin-top: 15px; }.landing-final-cta { align-items: start; flex-direction: column; gap: 38px; margin-top: 20px; }.landing-final-cta h2 { font-size: 3.7rem; }.landing-footer { align-items: start; flex-direction: column; }.landing-footer-status { order: -1; } }
+@media (max-width: 700px) { .landing-nav { gap: 15px; }.landing-nav-links { display: none; position: absolute; top: 75px; left: clamp(20px, 5vw, 72px); right: clamp(20px, 5vw, 72px); flex-direction: column; align-items: stretch; gap: 0; padding: 10px; border: 1px solid #d5e2dc; border-radius: 14px; background: rgba(249,252,248,.98); box-shadow: 0 18px 32px rgba(23,66,68,.12); }.landing-nav-links.is-open { display: flex; }.landing-nav-links a { padding: 12px 10px; }.landing-nav-links .landing-nav-display { padding: 12px 10px; }.landing-nav-cta { margin-left: auto; padding: 10px 12px; font-size: 10px; }.landing-menu-button { display: block; padding: 7px; }.landing-hero { min-height: auto; padding-top: 48px; padding-bottom: 70px; }.landing-hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }.landing-lede { font-size: 14px; }.landing-hero-visual { min-height: 455px; padding: 25px 0 35px; }.landing-control-card { padding: 22px 16px 15px; }.landing-control-top h2 { font-size: 19px; }.landing-display-float { right: -2px; bottom: 5px; width: 190px; z-index: 1; }.landing-signal-strip { justify-content: flex-start; overflow: auto; gap: 25px; }.landing-signal-strip i { flex-shrink: 0; }.landing-signal-strip div { min-width: max-content; }.landing-section { padding-top: 85px; padding-bottom: 100px; }.landing-section-intro h2, .landing-room-heading h2, .landing-faq-section h2 { font-size: 3.2rem; }.landing-workflow-list { margin-top: 48px; }.landing-workflow-item { grid-template-columns: 37px 1fr 18px; gap: 12px; }.landing-step-line { display: none; }.landing-workflow-item h3 { font-size: 20px; }.landing-workflow-item p { font-size: 12px; }.landing-room-section { padding-top: 20px; }.landing-room-grid { grid-template-columns: 1fr; margin-top: 48px; }.landing-room-panel-large { grid-row: auto; padding: 21px 17px; }.landing-attendance { gap: 17px; margin-top: 35px; }.landing-attendance-number { font-size: 43px; }.landing-room-panel-display, .landing-room-panel-quote { padding: 19px; }.landing-image-story { grid-template-columns: 1fr; padding-top: 85px; }.landing-image-collage { min-height: 400px; }.landing-image-main { height: 350px; }.landing-image-small { height: 190px; }.landing-trust-section, .landing-faq-section { grid-template-columns: 1fr; padding-top: 75px; padding-bottom: 90px; }.landing-trust-items { grid-template-columns: 1fr; gap: 30px; }.landing-trust-items p { margin-top: 15px; }.landing-final-cta { align-items: start; flex-direction: column; gap: 38px; margin-top: 20px; }.landing-final-cta h2 { font-size: 3.7rem; }.landing-footer { align-items: start; flex-direction: column; }.landing-footer-status { order: -1; } }
 @media (prefers-reduced-motion: reduce) { .landing-page *, .landing-page *::before, .landing-page *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 .chat-mention { display: inline; padding: 0 .18em; border-radius: .3em; color: var(--chat-mention-text); background: var(--chat-mention-bg); box-shadow: inset 0 -1px 0 var(--chat-mention-border); font-weight: 700; cursor: help; text-decoration: underline; text-decoration-color: var(--chat-mention-border); text-underline-offset: 2px; }
 .chat-mention:hover { background: var(--chat-mention-border); }
@@ -669,3 +771,145 @@ button { cursor: pointer; }
 .reduce-motion .chat-message-mentioned { animation: none; }
 .reduce-motion .chat-pinned-flash { animation: none; }
 @media (prefers-reduced-motion: reduce) { .chat-message-mentioned { animation: none; } .chat-pinned-flash { animation: none; } }
+
+/* The code IDE keeps its desktop split-pane layout; phones use the same
+   activity controls as a labeled, touch-sized strip above the editor. */
+.code-side-label { display: none; }
+@media (max-width: 639px) {
+  .code-onbot-export-button { max-width: 100%; overflow-wrap: anywhere; white-space: normal; text-align: left; }
+  .code-project-actions { width: 100%; min-width: 0; }
+  .code-project-select { flex: 1 1 150px; }
+  .code-project-actions > [data-testid="code-new-project"],
+  .code-project-actions > [data-testid="code-delete-project"] { min-height: 40px; }
+  .code-project-actions > [data-testid="code-delete-project"] { min-width: 40px; }
+  .code-ide { width: 100%; min-width: 0; }
+  .code-ide-toolbar { padding-inline: 8px; }
+  .code-toolbar-status { gap: 6px; font-size: 10px; }
+  .code-activity-bar {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 2px;
+    border-right: 0;
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+    padding: 4px;
+  }
+  .code-side-button {
+    min-width: 0;
+    min-height: 48px;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px 1px;
+  }
+  .code-side-label { display: block; font-size: 9px; line-height: 1; }
+  .code-dir-toggle { min-height: 44px; }
+  .code-file-row { min-height: 44px; }
+  .code-file-open { min-height: 44px; }
+  .code-file-delete {
+    display: grid;
+    min-width: 40px;
+    min-height: 40px;
+    place-items: center;
+    opacity: 1;
+  }
+  .code-ide-body { min-width: 0; flex-direction: column; }
+  .code-side-panel {
+    width: 100%;
+    height: min(260px, 36vh);
+    max-height: min(260px, 36vh);
+    flex: 0 0 auto;
+    border-right: 0;
+    border-bottom: 1px solid rgb(255 255 255 / 10%);
+  }
+  .code-mobile-panel-open { display: flex !important; }
+  .code-mobile-panel-heading { display: flex; flex: 0 0 auto; }
+  .code-editor-column { min-width: 0; }
+  .code-editor-stage { min-height: 280px; }
+  .code-tabs-row { padding-inline: 4px; }
+  .code-editor-actions { gap: 2px; }
+  .code-editor-actions [data-testid="code-save"] { min-width: 56px; min-height: 40px; padding-inline: 8px; }
+  .code-statusbar { gap: 8px; padding-inline: 8px; }
+  .code-status-branch, .code-status-roster { display: none; }
+}
+
+@media (max-width: 360px) {
+  .code-toolbar-status { gap: 4px; }
+  .code-collab-status { max-width: 64px; overflow: hidden; }
+  .code-editor-stage { min-height: 250px; }
+  .code-statusbar { gap: 6px; font-size: 10px; }
+  .code-bottom-panel { max-height: 9rem; }
+}
+
+/* --- Mobile foundations -------------------------------------------------- */
+/* iOS Safari zooms the viewport when a focused form control computes a
+   font-size below 16px, and never zooms back out. Every control in the app
+   already opts into `text-base md:text-sm`; this is the safety net for any
+   control added later. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* The keyboard inset is published by `use-visual-viewport` as `--kb-inset`.
+   Modal overlays cap their height against the *visual* viewport so their
+   footer buttons stay reachable above the on-screen keyboard, and they keep
+   clear of the notch and the home indicator. */
+[data-modal-overlay] [data-modal-panel] {
+  max-height: calc(100dvh - var(--kb-inset, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* On a phone a modal becomes a bottom sheet, the way mobile apps behave. */
+@media (max-width: 639px) {
+  [data-modal-overlay] [data-modal-panel] {
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+}
+
+/* A narrow window has no hover to discover hidden actions either. */
+@media (max-width: 900px) {
+  .code-file-delete {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* --- Mobile label floor --- */
+/* 7–9px labels are unreadable on a phone, so they get an 11px floor on
+small screens. The desktop sizes above are unchanged. */
+@media (max-width: 760px) {
+  .landing-brand small { font-size: 11px; }
+  .landing-visual-label { font-size: 11px; }
+  .landing-micro-label { font-size: 11px; }
+  .landing-queue-head { font-size: 11px; }
+  .landing-panel-time { font-size: 11px; }
+  .landing-queue-summary span { font-size: 11px; }
+  .landing-queue-row small { font-size: 11px; }
+  .landing-avatar { font-size: 11px; }
+  .landing-control-footer { font-size: 11px; }
+  .landing-display-bar { font-size: 11px; }
+  .landing-display-float small { font-size: 11px; }
+  .landing-step-label { font-size: 11px; }
+  .landing-progress small { font-size: 11px; }
+  .landing-mini-table > div:first-child { font-size: 11px; }
+  .landing-mini-avatar { font-size: 11px; }
+  .landing-display-preview p { font-size: 11px; }
+  .landing-display-preview small { font-size: 11px; }
+  .landing-quote-avatar { font-size: 11px; }
+  .landing-room-panel-quote small { font-size: 11px; }
+  .landing-image-caption { font-size: 11px; }
+  .landing-footer-meta { font-size: 11px; }
+  .landing-footer-status { font-size: 11px; }
+  .code-side-label { font-size: 11px; }
+}
+
+/* --- Mobile hero headline --- */
+/* The hero headline keeps a 45–60px floor at every width, so the call
+to action falls below the fold on a phone. */
+@media (max-width: 760px) {
+  .landing-hero h1 { font-size: clamp(2rem, 8.5vw, 3rem); }
+}

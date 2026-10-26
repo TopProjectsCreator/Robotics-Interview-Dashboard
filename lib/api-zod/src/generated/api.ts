@@ -1404,9 +1404,10 @@ export const getInterviewChatQueryScopeDefault = `shared`;
 export const GetInterviewChatQueryParams = zod.object({
   "before": zod.coerce.string().optional().describe('Return messages created before this ISO timestamp (older history page).'),
   "limit": zod.coerce.number().int().optional().describe('Max messages per page (1-100, default 30).'),
-  "scope": zod.enum(['shared', 'direct']).default(getInterviewChatQueryScopeDefault).describe('Conversation scope. Shared is the team channel; direct requires author and peer.'),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(getInterviewChatQueryScopeDefault).describe('Conversation scope. Shared is the team channel; direct requires author and peer; channel requires channelId and membership.'),
   "author": zod.coerce.string().optional().describe('Configured interviewer label used to derive a direct conversation pair.'),
-  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.')
+  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.'),
+  "channelId": zod.coerce.string().optional().describe('Invite-only channel id for the channel conversation; the caller must be a member (or an admin).')
 })
 
 export const GetInterviewChatResponse = zod.object({
@@ -1414,15 +1415,18 @@ export const GetInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -1448,8 +1452,12 @@ export const GetInterviewChatResponse = zod.object({
 })),
   "createdAt": zod.coerce.date()
 })),
-  "scope": zod.enum(['shared', 'direct']),
-  "peer": zod.string().nullable()
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullable(),
+  "channel": zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}).nullish().describe('Channel details when scope is channel.')
 })
 
 
@@ -1463,13 +1471,16 @@ export const SendInterviewChatBody = zod.object({
   "author": zod.string().describe('Configured interviewer label for direct messages; shared messages retain the existing label behavior.'),
   "conversationAuthor": zod.string().nullish().describe('Optional configured interviewer label used to derive a direct pair when author is a system participant such as AI assistant.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']).default(sendInterviewChatBodyScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(sendInterviewChatBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label receiving a direct message.'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id receiving the message; only channel members (and admins) may post.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional()
 })
 
@@ -1477,15 +1488,18 @@ export const SendInterviewChatResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -1523,8 +1537,9 @@ export const markInterviewChatReadBodyMessageIdsMax = 100;
 
 export const MarkInterviewChatReadBody = zod.object({
   "messageIds": zod.array(zod.string().min(1)).min(1).max(markInterviewChatReadBodyMessageIdsMax),
-  "scope": zod.enum(['shared', 'direct']),
-  "peer": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope read receipts.')
 })
 
 export const MarkInterviewChatReadResponse = zod.object({
@@ -1568,8 +1583,9 @@ export const ListScheduledChatsResponse = zod.object({
   "author": zod.string(),
   "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope scheduled messages.'),
   "recipient": zod.string().nullish(),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
@@ -1597,8 +1613,9 @@ export const createScheduledChatBodyPollOneOptionsMax = 8;
 
 export const CreateScheduledChatBody = zod.object({
   "message": zod.string().describe('Fully composed message body. Attachments are uploaded at schedule time and embedded as storage links.'),
-  "scope": zod.enum(['shared', 'direct']).default(createScheduledChatBodyScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createScheduledChatBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label receiving a scheduled direct message.'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id receiving the scheduled message; must be a channel the scheduler belongs to.'),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
   "question": zod.string(),
@@ -1617,8 +1634,9 @@ export const CreateScheduledChatResponse = zod.object({
   "author": zod.string(),
   "createdBy": zod.string().describe('Interviewer account id that scheduled the message.'),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for channel-scope scheduled messages.'),
   "recipient": zod.string().nullish(),
   "parentMessageId": zod.string().nullish(),
   "poll": zod.object({
@@ -1700,22 +1718,140 @@ export const UploadChatCustomEmojiResponse = zod.object({
 
 
 /**
- * @summary List direct conversations involving the current interviewer
+ * @summary List direct conversations and channels involving the current interviewer
  */
 export const GetChatConversationsResponse = zod.object({
   "items": zod.array(zod.object({
   "peer": zod.string(),
   "lastMessageAt": zod.string(),
   "lastMessageAuthor": zod.string(),
-  "lastMessage": zod.string()
+  "lastMessage": zod.string(),
+  "isUnread": zod.boolean()
 })),
   "shared": zod.object({
   "peer": zod.string(),
   "lastMessageAt": zod.string(),
   "lastMessageAuthor": zod.string(),
-  "lastMessage": zod.string()
-}).nullable().describe('Latest team-channel activity, null when the channel is empty')
+  "lastMessage": zod.string(),
+  "isUnread": zod.boolean()
+}).nullable().describe('Latest team-channel activity, null when the channel is empty'),
+  "channels": zod.array(zod.object({
+  "channelId": zod.string(),
+  "channelName": zod.string(),
+  "lastMessageAt": zod.string(),
+  "lastMessageAuthor": zod.string(),
+  "lastMessage": zod.string(),
+  "isUnread": zod.boolean()
+})).describe('Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first.')
 })
+
+
+/**
+ * Members see only their channels; admins (coordinators) see every team channel.
+ * @summary List invite-only channels visible to the signed-in interviewer
+ */
+export const ListChatChannelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Create an invite-only channel (admins only)
+ */
+export const createChatChannelBodyNameMax = 80;
+
+export const createChatChannelBodyMemberIdsMax = 100;
+
+
+
+export const CreateChatChannelBody = zod.object({
+  "name": zod.string().min(1).max(createChatChannelBodyNameMax).describe('Channel display name; must be unique within the team (case-insensitive).'),
+  "memberIds": zod.array(zod.string()).max(createChatChannelBodyMemberIdsMax).optional().describe('Interviewer account ids to invite; the creating admin is always included.')
+})
+
+export const CreateChatChannelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+})
+
+
+/**
+ * @summary Rename a channel and/or replace its invited members (admins only)
+ */
+export const UpdateChatChannelParams = zod.object({
+  "channelId": zod.coerce.string()
+})
+
+export const updateChatChannelBodyNameMax = 80;
+
+export const updateChatChannelBodyMemberIdsMax = 100;
+
+
+
+export const UpdateChatChannelBody = zod.object({
+  "name": zod.string().min(1).max(updateChatChannelBodyNameMax).optional(),
+  "memberIds": zod.array(zod.string()).max(updateChatChannelBodyMemberIdsMax).optional().describe('Full replacement of the invited members.')
+})
+
+export const UpdateChatChannelResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "createdBy": zod.string().describe('Display name of the admin that created the channel.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "members": zod.array(zod.object({
+  "id": zod.string().describe('Interviewer account id.'),
+  "displayName": zod.string(),
+  "role": zod.string().describe('coordinator, treasurer, or interviewer'),
+  "addedBy": zod.string().optional().describe('Display name of the admin that invited this person.')
+})),
+  "youAreMember": zod.boolean().describe('True when the signed-in account is invited to this channel.'),
+  "canManage": zod.boolean().describe('True for admins, who can rename, invite, and delete.'),
+  "lastMessageAt": zod.coerce.date().nullish().describe('Newest message time in the channel, null when empty.'),
+  "lastMessageAuthor": zod.string().nullish(),
+  "lastMessage": zod.string().nullish()
+})
+
+
+/**
+ * @summary Delete a channel and its messages (admins only)
+ */
+export const DeleteChatChannelParams = zod.object({
+  "channelId": zod.coerce.string()
+})
+
+export const DeleteChatChannelResponse = zod.void()
 
 
 /**
@@ -1837,15 +1973,18 @@ export const UpdateChatMessageResponse = zod.object({
   "id": zod.string(),
   "author": zod.string(),
   "message": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id when scope is channel; peer carries the channel id.'),
   "parentMessageId": zod.string().nullish(),
   "pinnedAt": zod.coerce.date().nullish(),
   "editedAt": zod.coerce.date().nullable(),
   "deletedAt": zod.coerce.date().nullable(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "reactions": zod.array(zod.object({
   "emoji": zod.string(),
@@ -1889,9 +2028,10 @@ export const DeleteChatMessageResponse = zod.void()
 export const listInterviewWhiteboardsQueryScopeDefault = `shared`;
 
 export const ListInterviewWhiteboardsQueryParams = zod.object({
-  "scope": zod.enum(['shared', 'direct']).default(listInterviewWhiteboardsQueryScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(listInterviewWhiteboardsQueryScopeDefault),
   "author": zod.coerce.string().optional(),
-  "peer": zod.coerce.string().optional()
+  "peer": zod.coerce.string().optional(),
+  "channelId": zod.coerce.string().optional()
 })
 
 export const ListInterviewWhiteboardsResponse = zod.object({
@@ -1900,12 +2040,12 @@ export const ListInterviewWhiteboardsResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable()
 })
 
@@ -1922,8 +2062,9 @@ export const createInterviewWhiteboardBodyScopeDefault = `shared`;
 export const CreateInterviewWhiteboardBody = zod.object({
   "title": zod.string().min(1).max(createInterviewWhiteboardBodyTitleMax),
   "data": zod.string().min(createInterviewWhiteboardBodyDataMin).describe('Serialized whiteboard scene or collaborative document state'),
-  "scope": zod.enum(['shared', 'direct']).default(createInterviewWhiteboardBodyScopeDefault),
-  "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard')
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createInterviewWhiteboardBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label for a direct whiteboard'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel whiteboard')
 })
 
 export const CreateInterviewWhiteboardResponse = zod.object({
@@ -1931,7 +2072,7 @@ export const CreateInterviewWhiteboardResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1948,9 +2089,10 @@ export const GetInterviewWhiteboardByIdParams = zod.object({
 export const getInterviewWhiteboardByIdQueryScopeDefault = `shared`;
 
 export const GetInterviewWhiteboardByIdQueryParams = zod.object({
-  "scope": zod.enum(['shared', 'direct']).default(getInterviewWhiteboardByIdQueryScopeDefault),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(getInterviewWhiteboardByIdQueryScopeDefault),
   "author": zod.coerce.string().optional(),
-  "peer": zod.coerce.string().optional()
+  "peer": zod.coerce.string().optional(),
+  "channelId": zod.coerce.string().optional()
 })
 
 export const GetInterviewWhiteboardByIdResponse = zod.object({
@@ -1958,7 +2100,7 @@ export const GetInterviewWhiteboardByIdResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -1988,7 +2130,7 @@ export const UpdateInterviewWhiteboardResponse = zod.object({
   "title": zod.string(),
   "data": zod.string(),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -2004,8 +2146,9 @@ export const createBoardBodyScopeDefault = `shared`;
 
 export const CreateBoardBody = zod.object({
   "title": zod.string().min(1).max(createBoardBodyTitleMax),
-  "scope": zod.enum(['shared', 'direct']).default(createBoardBodyScopeDefault),
-  "recipient": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createBoardBodyScopeDefault),
+  "recipient": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel-scope board.')
 })
 
 export const createBoardResponseDataDescriptionMax = 500;
@@ -2062,7 +2205,7 @@ export const CreateBoardResponse = zod.object({
 })).max(createBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2130,7 +2273,7 @@ export const GetBoardResponse = zod.object({
 })).max(getBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2261,7 +2404,7 @@ export const UpdateBoardResponse = zod.object({
 })).max(updateBoardResponseDataCardsMax)
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -2277,8 +2420,9 @@ export const createSpreadsheetBodyScopeDefault = `shared`;
 
 export const CreateSpreadsheetBody = zod.object({
   "title": zod.string().min(1).max(createSpreadsheetBodyTitleMax),
-  "scope": zod.enum(['shared', 'direct']).default(createSpreadsheetBodyScopeDefault),
-  "recipient": zod.string().nullish()
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createSpreadsheetBodyScopeDefault),
+  "recipient": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel-scope spreadsheet.')
 })
 
 export const createSpreadsheetResponseDataColumnCountMax = 16384;
@@ -2327,7 +2471,7 @@ export const CreateSpreadsheetResponse = zod.object({
 })).max(createSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2388,7 +2532,7 @@ export const GetSpreadsheetResponse = zod.object({
 })).max(getSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2498,7 +2642,7 @@ export const UpdateSpreadsheetResponse = zod.object({
 })).max(updateSpreadsheetResponseDataMacrosMax).optional()
 }),
   "createdBy": zod.string(),
-  "scope": zod.enum(['shared', 'direct']),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
   "peer": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -2748,6 +2892,9 @@ export const AskAssistantBody = zod.object({
   "fileName": zod.string(),
   "objectPath": zod.string()
 })).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "mcpContinuation": zod.object({
+  "endpointUrl": zod.string()
+}).optional().describe('Continue a pending coordinator request after its custom MCP endpoint has connected.'),
   "chatContext": zod.array(zod.object({
   "author": zod.string(),
   "message": zod.string()
@@ -2759,14 +2906,76 @@ export const AskAssistantResponse = zod.object({
   "model": zod.string().optional().describe('Model id used to produce the answer.'),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional()
+})
+
+
+/**
+ * @summary Submit answers to a pending assistant question
+ */
+export const AnswerAssistantQuestionParams = zod.object({
+  "questionId": zod.coerce.string()
+})
+
+export const AnswerAssistantQuestionBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown())
+})
+
+export const AnswerAssistantQuestionResponse = zod.object({
+  "submitted": zod.boolean()
+})
+
+
+/**
+ * @summary List pending assistant questions for the signed-in coordinator
+ */
+export const GetPendingAssistantQuestionsResponse = zod.object({
+  "questions": zod.array(zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}))
+})
+
+
+/**
+ * @summary Get the signed-in coordinator's latest custom workspace builder run
+ */
+export const GetLatestAssistantBuilderRunResponse = zod.object({
+  "run": zod.union([zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "prompt": zod.string(),
+  "question": zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}).nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
 })
 
 
 /**
  * @summary List team-shared assistant skills
  */
+export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax = 500;
+
+
+export const listAssistantSkillsResponseItemsItemGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
+
 export const ListAssistantSkillsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
@@ -2775,6 +2984,7 @@ export const ListAssistantSkillsResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(listAssistantSkillsResponseItemsItemGithubRepositoryUrlMax).regex(listAssistantSkillsResponseItemsItemGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }))
@@ -2792,6 +3002,10 @@ export const createAssistantSkillBodyInstructionsMax = 8000;
 
 export const createAssistantSkillBodyActionsMax = 100;
 
+export const createAssistantSkillBodyGithubRepositoryUrlMax = 500;
+
+
+export const createAssistantSkillBodyGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
 
 
 export const CreateAssistantSkillBody = zod.object({
@@ -2799,8 +3013,15 @@ export const CreateAssistantSkillBody = zod.object({
   "description": zod.string().min(1).max(createAssistantSkillBodyDescriptionMax),
   "instructions": zod.string().min(1).max(createAssistantSkillBodyInstructionsMax),
   "actions": zod.array(zod.string()).max(createAssistantSkillBodyActionsMax),
-  "enabled": zod.boolean().optional()
+  "enabled": zod.boolean().optional(),
+  "githubRepositoryUrl": zod.string().max(createAssistantSkillBodyGithubRepositoryUrlMax).regex(createAssistantSkillBodyGithubRepositoryUrlRegExp).nullish()
 })
+
+export const createAssistantSkillResponseGithubRepositoryUrlMax = 500;
+
+
+export const createAssistantSkillResponseGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
 
 export const CreateAssistantSkillResponse = zod.object({
   "id": zod.string(),
@@ -2809,6 +3030,7 @@ export const CreateAssistantSkillResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(createAssistantSkillResponseGithubRepositoryUrlMax).regex(createAssistantSkillResponseGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -2829,6 +3051,10 @@ export const updateAssistantSkillBodyInstructionsMax = 8000;
 
 export const updateAssistantSkillBodyActionsMax = 100;
 
+export const updateAssistantSkillBodyGithubRepositoryUrlMax = 500;
+
+
+export const updateAssistantSkillBodyGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
 
 
 export const UpdateAssistantSkillBody = zod.object({
@@ -2836,8 +3062,15 @@ export const UpdateAssistantSkillBody = zod.object({
   "description": zod.string().min(1).max(updateAssistantSkillBodyDescriptionMax).optional(),
   "instructions": zod.string().min(1).max(updateAssistantSkillBodyInstructionsMax).optional(),
   "actions": zod.array(zod.string()).max(updateAssistantSkillBodyActionsMax).optional(),
-  "enabled": zod.boolean().optional()
+  "enabled": zod.boolean().optional(),
+  "githubRepositoryUrl": zod.string().max(updateAssistantSkillBodyGithubRepositoryUrlMax).regex(updateAssistantSkillBodyGithubRepositoryUrlRegExp).nullish()
 })
+
+export const updateAssistantSkillResponseGithubRepositoryUrlMax = 500;
+
+
+export const updateAssistantSkillResponseGithubRepositoryUrlRegExp = new RegExp('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?/?$');
+
 
 export const UpdateAssistantSkillResponse = zod.object({
   "id": zod.string(),
@@ -2846,6 +3079,7 @@ export const UpdateAssistantSkillResponse = zod.object({
   "instructions": zod.string(),
   "actions": zod.array(zod.string()),
   "enabled": zod.boolean(),
+  "githubRepositoryUrl": zod.string().max(updateAssistantSkillResponseGithubRepositoryUrlMax).regex(updateAssistantSkillResponseGithubRepositoryUrlRegExp).nullable().describe('Optional public GitHub repository URL'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -3062,7 +3296,9 @@ export const GetAssistantHistoryResponse = zod.object({
   "answer": zod.string(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "createdAt": zod.string()
 }))
@@ -3163,10 +3399,117 @@ export const GetAssistantConversationMessagesResponse = zod.object({
   "answer": zod.string(),
   "activities": zod.array(zod.object({
   "tool": zod.string(),
-  "detail": zod.string()
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })).optional(),
   "createdAt": zod.string()
 }))
+})
+
+
+/**
+ * @summary Get persisted prompt run and queue statuses
+ */
+export const GetAssistantPromptQueueParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const GetAssistantPromptQueueResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "isRunning": zod.boolean()
+})
+
+
+/**
+ * @summary Queue an assistant prompt behind the active run
+ */
+export const QueueAssistantPromptParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const queueAssistantPromptBodyOneModelMax = 200;
+
+
+
+export const QueueAssistantPromptBody = zod.object({
+  "question": zod.string(),
+  "model": zod.string().max(queueAssistantPromptBodyOneModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
+  "thinkingLevel": zod.enum(['low', 'medium', 'high']).optional().describe('Optional model-supported reasoning effort. Omit for automatic\/default reasoning.'),
+  "conversationId": zod.string().optional(),
+  "applicantIds": zod.array(zod.string()).optional(),
+  "disabledTools": zod.array(zod.string()).optional().describe('Tool names the admin disabled in the model picker gear menu. Disabled tools are hidden from the model and blocked if called.'),
+  "attachments": zod.array(zod.object({
+  "fileName": zod.string(),
+  "objectPath": zod.string()
+})).optional().describe('Files attached in chat (already uploaded to storage).'),
+  "mcpContinuation": zod.object({
+  "endpointUrl": zod.string()
+}).optional().describe('Continue a pending coordinator request after its custom MCP endpoint has connected.'),
+  "chatContext": zod.array(zod.object({
+  "author": zod.string(),
+  "message": zod.string()
+})).optional().describe('Recent interviewer chat messages for conversational context.')
+})
+
+export const QueueAssistantPromptResponse = zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Stop the active assistant prompt
+ */
+export const StopAssistantPromptParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const StopAssistantPromptResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "conversationId": zod.string(),
+  "prompt": zod.string(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  "answer": zod.string().nullish(),
+  "error": zod.string().nullish(),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})).optional(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})),
+  "isRunning": zod.boolean()
 })
 
 
@@ -3236,9 +3579,14 @@ export const ListPartsCatalogQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "vendorKey": zod.coerce.string().optional(),
   "manualOnly": zod.coerce.boolean().optional().describe('When true, only return manually saved catalog items, excluding synced supplier feed records.'),
+  "inventoryOnly": zod.coerce.boolean().optional().describe('When true, return manually saved items and supplier catalog items with owned stock or team allocations.'),
   "limit": zod.coerce.number().int().min(1).max(listPartsCatalogQueryLimitMax).default(listPartsCatalogQueryLimitDefault),
   "offset": zod.coerce.number().int().min(listPartsCatalogQueryOffsetMin).default(listPartsCatalogQueryOffsetDefault)
 })
+
+export const listPartsCatalogResponseItemsItemStorageLocationMax = 120;
+
+export const listPartsCatalogResponseItemsItemInventoryNotesMax = 2000;
 
 export const listPartsCatalogResponseItemsItemUnitCostMin = 0;
 export const listPartsCatalogResponseItemsItemUnitCostMax = 99999999.99;
@@ -3265,6 +3613,8 @@ export const ListPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(listPartsCatalogResponseItemsItemStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(listPartsCatalogResponseItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(listPartsCatalogResponseItemsItemUnitCostMin).max(listPartsCatalogResponseItemsItemUnitCostMax).nullish(),
   "costCurrency": zod.string().regex(listPartsCatalogResponseItemsItemCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(listPartsCatalogResponseItemsItemQuantityOwnedMin),
@@ -3302,6 +3652,10 @@ export const CreatePartsCatalogItemBody = zod.object({
   "quantityOwned": zod.number().int().min(createPartsCatalogItemBodyQuantityOwnedMin).default(createPartsCatalogItemBodyQuantityOwnedDefault)
 })
 
+export const createPartsCatalogItemResponseStorageLocationMax = 120;
+
+export const createPartsCatalogItemResponseInventoryNotesMax = 2000;
+
 export const createPartsCatalogItemResponseUnitCostMin = 0;
 export const createPartsCatalogItemResponseUnitCostMax = 99999999.99;
 
@@ -3326,6 +3680,8 @@ export const CreatePartsCatalogItemResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(createPartsCatalogItemResponseStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(createPartsCatalogItemResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(createPartsCatalogItemResponseUnitCostMin).max(createPartsCatalogItemResponseUnitCostMax).nullish(),
   "costCurrency": zod.string().regex(createPartsCatalogItemResponseCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(createPartsCatalogItemResponseQuantityOwnedMin),
@@ -3401,6 +3757,10 @@ export const SearchPartsCatalogQueryParams = zod.object({
 
 export const searchPartsCatalogResponseResultsItemPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,4})?$');
 export const searchPartsCatalogResponseResultsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const searchPartsCatalogResponseCatalogItemsItemStorageLocationMax = 120;
+
+export const searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax = 2000;
+
 export const searchPartsCatalogResponseCatalogItemsItemUnitCostMin = 0;
 export const searchPartsCatalogResponseCatalogItemsItemUnitCostMax = 99999999.99;
 
@@ -3440,6 +3800,8 @@ export const SearchPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(searchPartsCatalogResponseCatalogItemsItemStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(searchPartsCatalogResponseCatalogItemsItemUnitCostMin).max(searchPartsCatalogResponseCatalogItemsItemUnitCostMax).nullish(),
   "costCurrency": zod.string().regex(searchPartsCatalogResponseCatalogItemsItemCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(searchPartsCatalogResponseCatalogItemsItemQuantityOwnedMin),
@@ -3555,6 +3917,10 @@ export const UpdatePartsCatalogStockBody = zod.object({
   "quantityOwned": zod.number().int().min(updatePartsCatalogStockBodyQuantityOwnedMin)
 })
 
+export const updatePartsCatalogStockResponseStorageLocationMax = 120;
+
+export const updatePartsCatalogStockResponseInventoryNotesMax = 2000;
+
 export const updatePartsCatalogStockResponseUnitCostMin = 0;
 export const updatePartsCatalogStockResponseUnitCostMax = 99999999.99;
 
@@ -3579,6 +3945,8 @@ export const UpdatePartsCatalogStockResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(updatePartsCatalogStockResponseStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(updatePartsCatalogStockResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogStockResponseUnitCostMin).max(updatePartsCatalogStockResponseUnitCostMax).nullish(),
   "costCurrency": zod.string().regex(updatePartsCatalogStockResponseCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(updatePartsCatalogStockResponseQuantityOwnedMin),
@@ -3592,6 +3960,182 @@ export const UpdatePartsCatalogStockResponse = zod.object({
 })),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a team-scoped inventory part and supplier quote history
+ */
+export const getPartsCatalogDetailsPathPartIdMax = 128;
+
+
+
+export const GetPartsCatalogDetailsParams = zod.object({
+  "partId": zod.coerce.string().min(1).max(getPartsCatalogDetailsPathPartIdMax)
+})
+
+export const getPartsCatalogDetailsResponseItemStorageLocationMax = 120;
+
+export const getPartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
+
+export const getPartsCatalogDetailsResponseItemUnitCostMin = 0;
+export const getPartsCatalogDetailsResponseItemUnitCostMax = 99999999.99;
+
+export const getPartsCatalogDetailsResponseItemCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsCatalogDetailsResponseItemQuantityOwnedMin = 0;
+
+export const getPartsCatalogDetailsResponseItemQuantityAssignedMin = 0;
+
+export const getPartsCatalogDetailsResponseItemQuantityAvailableMin = 0;
+
+export const getPartsCatalogDetailsResponseItemAllocationsItemQuantityMin = 0;
+
+export const getPartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMin = 0;
+export const getPartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMax = 99999999.99;
+
+export const getPartsCatalogDetailsResponsePriceSnapshotsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsCatalogDetailsResponseLocationsItemMax = 120;
+
+
+
+export const GetPartsCatalogDetailsResponse = zod.object({
+  "item": zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(getPartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(getPartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
+  "unitCost": zod.number().min(getPartsCatalogDetailsResponseItemUnitCostMin).max(getPartsCatalogDetailsResponseItemUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(getPartsCatalogDetailsResponseItemCostCurrencyRegExp).nullish(),
+  "quantityOwned": zod.number().int().min(getPartsCatalogDetailsResponseItemQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(getPartsCatalogDetailsResponseItemQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(getPartsCatalogDetailsResponseItemQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(getPartsCatalogDetailsResponseItemAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "priceSnapshots": zod.array(zod.object({
+  "id": zod.string(),
+  "partId": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "sourceUrl": zod.string().url(),
+  "unitPrice": zod.number().min(getPartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMin).max(getPartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMax),
+  "currency": zod.string().regex(getPartsCatalogDetailsResponsePriceSnapshotsItemCurrencyRegExp),
+  "capturedAt": zod.coerce.date(),
+  "isStartingAt": zod.boolean(),
+  "isStale": zod.boolean()
+})),
+  "locations": zod.array(zod.string().min(1).max(getPartsCatalogDetailsResponseLocationsItemMax))
+})
+
+
+/**
+ * @summary Update saved product image, cost, location, or inventory notes
+ */
+export const updatePartsCatalogDetailsPathPartIdMax = 128;
+
+
+
+export const UpdatePartsCatalogDetailsParams = zod.object({
+  "partId": zod.coerce.string().min(1).max(updatePartsCatalogDetailsPathPartIdMax)
+})
+
+export const updatePartsCatalogDetailsBodyImageUrlMax = 2000;
+
+export const updatePartsCatalogDetailsBodyUnitCostMin = 0;
+export const updatePartsCatalogDetailsBodyUnitCostMax = 99999999.99;
+
+export const updatePartsCatalogDetailsBodyCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogDetailsBodyStorageLocationMax = 120;
+
+export const updatePartsCatalogDetailsBodyInventoryNotesMax = 2000;
+
+
+
+export const UpdatePartsCatalogDetailsBody = zod.object({
+  "imageUrl": zod.string().url().max(updatePartsCatalogDetailsBodyImageUrlMax).nullish(),
+  "unitCost": zod.number().min(updatePartsCatalogDetailsBodyUnitCostMin).max(updatePartsCatalogDetailsBodyUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(updatePartsCatalogDetailsBodyCostCurrencyRegExp).nullish(),
+  "storageLocation": zod.string().max(updatePartsCatalogDetailsBodyStorageLocationMax).nullish(),
+  "inventoryNotes": zod.string().max(updatePartsCatalogDetailsBodyInventoryNotesMax).nullish()
+})
+
+export const updatePartsCatalogDetailsResponseItemStorageLocationMax = 120;
+
+export const updatePartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
+
+export const updatePartsCatalogDetailsResponseItemUnitCostMin = 0;
+export const updatePartsCatalogDetailsResponseItemUnitCostMax = 99999999.99;
+
+export const updatePartsCatalogDetailsResponseItemCostCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogDetailsResponseItemQuantityOwnedMin = 0;
+
+export const updatePartsCatalogDetailsResponseItemQuantityAssignedMin = 0;
+
+export const updatePartsCatalogDetailsResponseItemQuantityAvailableMin = 0;
+
+export const updatePartsCatalogDetailsResponseItemAllocationsItemQuantityMin = 0;
+
+export const updatePartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMin = 0;
+export const updatePartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMax = 99999999.99;
+
+export const updatePartsCatalogDetailsResponsePriceSnapshotsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogDetailsResponseLocationsItemMax = 120;
+
+
+
+export const UpdatePartsCatalogDetailsResponse = zod.object({
+  "item": zod.object({
+  "id": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "name": zod.string(),
+  "sku": zod.string().nullable(),
+  "category": zod.string().nullable(),
+  "description": zod.string().nullable(),
+  "productUrl": zod.string().url().nullable(),
+  "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(updatePartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(updatePartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
+  "unitCost": zod.number().min(updatePartsCatalogDetailsResponseItemUnitCostMin).max(updatePartsCatalogDetailsResponseItemUnitCostMax).nullish(),
+  "costCurrency": zod.string().regex(updatePartsCatalogDetailsResponseItemCostCurrencyRegExp).nullish(),
+  "quantityOwned": zod.number().int().min(updatePartsCatalogDetailsResponseItemQuantityOwnedMin),
+  "quantityAssigned": zod.number().int().min(updatePartsCatalogDetailsResponseItemQuantityAssignedMin),
+  "quantityAvailable": zod.number().int().min(updatePartsCatalogDetailsResponseItemQuantityAvailableMin),
+  "allocations": zod.array(zod.object({
+  "robotId": zod.string(),
+  "robotName": zod.string(),
+  "partId": zod.string(),
+  "quantity": zod.number().int().min(updatePartsCatalogDetailsResponseItemAllocationsItemQuantityMin)
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "priceSnapshots": zod.array(zod.object({
+  "id": zod.string(),
+  "partId": zod.string(),
+  "vendorKey": zod.string(),
+  "vendorName": zod.string(),
+  "sourceUrl": zod.string().url(),
+  "unitPrice": zod.number().min(updatePartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMin).max(updatePartsCatalogDetailsResponsePriceSnapshotsItemUnitPriceMax),
+  "currency": zod.string().regex(updatePartsCatalogDetailsResponsePriceSnapshotsItemCurrencyRegExp),
+  "capturedAt": zod.coerce.date(),
+  "isStartingAt": zod.boolean(),
+  "isStale": zod.boolean()
+})),
+  "locations": zod.array(zod.string().min(1).max(updatePartsCatalogDetailsResponseLocationsItemMax))
 })
 
 
@@ -3820,6 +4364,10 @@ export const UpdatePartsCatalogCostBody = zod.object({
   "costCurrency": zod.string().regex(updatePartsCatalogCostBodyCostCurrencyRegExp).nullable()
 })
 
+export const updatePartsCatalogCostResponseStorageLocationMax = 120;
+
+export const updatePartsCatalogCostResponseInventoryNotesMax = 2000;
+
 export const updatePartsCatalogCostResponseUnitCostMin = 0;
 export const updatePartsCatalogCostResponseUnitCostMax = 99999999.99;
 
@@ -3844,6 +4392,8 @@ export const UpdatePartsCatalogCostResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "storageLocation": zod.string().max(updatePartsCatalogCostResponseStorageLocationMax).nullable(),
+  "inventoryNotes": zod.string().max(updatePartsCatalogCostResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogCostResponseUnitCostMin).max(updatePartsCatalogCostResponseUnitCostMax).nullish(),
   "costCurrency": zod.string().regex(updatePartsCatalogCostResponseCostCurrencyRegExp).nullish(),
   "quantityOwned": zod.number().int().min(updatePartsCatalogCostResponseQuantityOwnedMin),
@@ -4572,6 +5122,14 @@ export const SetPartsRobotAllocationResponse = zod.object({
 /**
  * @summary List custom workspaces available to the current team
  */
+export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax = 5;
+
+export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const ListCustomWorkspacesResponse = zod.object({
   "workspaces": zod.array(zod.object({
   "id": zod.string(),
@@ -4583,7 +5141,9 @@ export const ListCustomWorkspacesResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax)
 }))
 })
 
@@ -4611,6 +5171,14 @@ export const GenerateCustomWorkspaceBody = zod.object({
   "capabilities": zod.array(zod.enum(['data', 'llm']))
 })
 
+export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const GenerateCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -4622,7 +5190,9 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 
@@ -4633,6 +5203,14 @@ export const GenerateCustomWorkspaceResponse = zod.object({
 export const GetCustomWorkspaceParams = zod.object({
   "workspaceId": zod.coerce.string()
 })
+
+export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
 
 export const GetCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
@@ -4645,7 +5223,9 @@ export const GetCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 
@@ -4667,6 +5247,14 @@ export const PublishCustomWorkspaceBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(publishCustomWorkspaceBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const PublishCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -4678,7 +5266,9 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 
@@ -4700,6 +5290,14 @@ export const UpdateCustomWorkspaceAccessBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin = 0;
+export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -4711,7 +5309,9 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 
@@ -4731,6 +5331,14 @@ export const ReviseCustomWorkspaceBody = zod.object({
   "prompt": zod.string().min(1).max(reviseCustomWorkspaceBodyPromptMax)
 })
 
+export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
+export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const ReviseCustomWorkspaceResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -4742,7 +5350,9 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 
@@ -4797,6 +5407,14 @@ export const RestoreCustomWorkspaceVersionParams = zod.object({
   "versionId": zod.coerce.string()
 })
 
+export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin = 0;
+export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
 export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "workspace": zod.object({
   "id": zod.string(),
@@ -4808,7 +5426,9 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax)
 })
 })
 

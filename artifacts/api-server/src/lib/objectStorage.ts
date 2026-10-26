@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { currentInstance, type DbInstance } from '@workspace/db';
+import { open } from 'node:fs/promises';
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -144,6 +145,15 @@ const restrictedUntil = new Map<StorageInstance, number>();
 
 function markRestricted(instance: StorageInstance): void {
   restrictedUntil.set(instance, Date.now() + RESTRICTED_MEMORY_MS);
+}
+
+/**
+ * True when that instance is known to be refusing storage work (e.g. the
+ * project is over its egress quota). Callers use it to route writes and
+ * reads to the other instance instead of failing.
+ */
+export function storageInstanceRestricted(instance: StorageInstance): boolean {
+  return isRestricted(instance);
 }
 
 function isRestricted(instance: StorageInstance): boolean {
@@ -512,6 +522,37 @@ export class ObjectStorageService {
       .slice(0, limit);
   }
 
+  /**
+   * Uploads bytes to an explicit storage path. Used to persist a finished
+   * CAD preview so it survives an instance restart (the preview used to live
+   * only in the process's temp directory).
+   */
+  async uploadToPath(
+    storagePath: string,
+    data: Buffer,
+    contentType: string,
+    instance: StorageInstance = currentInstance(),
+  ): Promise<void> {
+    const { error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
+      .upload(storagePath, data, { contentType, upsert: true });
+    if (error) {
+      throw new Error(`Failed to store ${storagePath}: ${error.message}`);
+    }
+  }
+
+  /** Reads a stored path back as bytes (or null when it is not there). */
+  async readFromPath(
+    storagePath: string,
+    instance: StorageInstance = currentInstance(),
+  ): Promise<{ data: Buffer; contentType: string } | null> {
+    const { data, error } = await supabaseFor(instance)
+      .storage.from(storageBucket(instance))
+      .download(storagePath);
+    if (error || !data) return null;
+    return { data: Buffer.from(await data.arrayBuffer()), contentType: data.type || 'application/octet-stream' };
+  }
+
   async uploadGeneratedImage(data: Buffer, contentType: string): Promise<string> {
     const id = randomUUID();
     const { instance } = await writeWithFailover("Failed to store generated image", async (target) => {
@@ -576,6 +617,57 @@ export class ObjectStorageService {
     await ensureBucket(instance);
     const { error } = await supabaseFor(instance).storage.from(storageBucket(instance)).remove(paths);
     if (error) throw new Error(`Failed to delete storage objects: ${error.message}`);
+  }
+
+  /**
+   * Streams a stored object to a local file. Used by the CAD preview path so
+   * a multi-gigabyte model is fetched server-side (storage -> disk) instead of
+   * being downloaded by the browser and uploaded back.
+   */
+  async downloadObjectToFile(objectPath: string, targetPath: string): Promise<{ contentType: string; sizeBytes: number }> {
+    const storagePath = toStoragePath(objectPath);
+    const instance = objectStorageInstance(objectPath) ?? currentInstance();
+    // STREAM to disk. Buffering a 166 MB (or larger) model in memory and
+    // then running the converter would need ~500 MB in one process, which
+    // OOMs a 512 MB instance. Piping the body keeps memory flat.
+    //
+    // The bytes come from a signed URL on the storage path, not from the
+    // storage SDK's download(): that call materialises the whole object as
+    // a Blob in this process, so it would defeat the streaming AND transfer
+    // the object twice. `signDownloadUrl` signs a bucket-relative storage
+    // path, so it has to be given `storagePath`, not the `/objects/...`
+    // path the API exposes.
+    let signedUrl: string;
+    try {
+      signedUrl = await this.signDownloadUrl(storagePath, 900, instance);
+    } catch {
+      // Signing fails when the object is not in the bucket. The previous
+      // SDK download reported that as a missing object, so keep that shape.
+      throw new ObjectNotFoundError();
+    }
+    const upstream = await fetch(signedUrl);
+    if (!upstream.ok || !upstream.body) {
+      throw new ObjectNotFoundError();
+    }
+    const handle = await open(targetPath, 'w');
+    let sizeBytes = 0;
+    try {
+      const reader = upstream.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          sizeBytes += value.byteLength;
+          await handle.write(value);
+        }
+      }
+    } finally {
+      await handle.close();
+    }
+    return {
+      contentType: upstream.headers.get('content-type') || 'application/octet-stream',
+      sizeBytes,
+    };
   }
 
   async downloadObject(objectPath: string): Promise<{ data: Buffer; contentType: string }> {

@@ -12,4 +12,5 @@ export type ScheduledChatMessageScope = typeof ScheduledChatMessageScope[keyof t
 export const ScheduledChatMessageScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
 } as const;
