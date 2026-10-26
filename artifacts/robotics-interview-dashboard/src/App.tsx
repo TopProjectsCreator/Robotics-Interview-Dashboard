@@ -2686,11 +2686,12 @@ function Login() {
     query: {
       queryKey: getListInterviewersQueryKey(interviewerParams),
       enabled: step !== "event",
-      retry: false,
+      retry: retryTemporaryAuthFailure,
+      retryDelay: temporaryAuthRetryDelay,
       networkMode: "always",
       queryFn: async ({ signal }: { signal?: AbortSignal }) => {
         const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 5000);
+        const timeout = window.setTimeout(() => controller.abort(), 15000);
         const abortFromQuery = () => controller.abort((signal as AbortSignal)?.reason);
         if (signal?.aborted) abortFromQuery();
         else signal?.addEventListener("abort", abortFromQuery, { once: true });
