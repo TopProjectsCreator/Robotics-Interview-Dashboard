@@ -7414,6 +7414,7 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "set_assistant_model") return { label: "Changed assistant model", Icon: Sparkles };
   if (tool === "python_exec" || tool === "python") return { label: "Ran Python", Icon: SquareTerminal };
   if (tool === "generate_image") return { label: "Generated image", Icon: ImageIcon };
+  if (tool === "show_svg") return { label: "Showed SVG diagram", Icon: ImageIcon };
   if (tool === "create_chat_mini_tool") return { label: "Created interactive tool", Icon: Sparkles };
   if (tool === "web_fetch" || tool === "fetch_url") return { label: "Fetched page", Icon: Globe };
   if (tool === "rename_conversation" || tool === "rename") return { label: "Renamed chat", Icon: Pencil };

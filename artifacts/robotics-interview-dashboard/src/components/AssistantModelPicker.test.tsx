@@ -134,6 +134,7 @@ describe("AssistantModelPicker", () => {
     expect(screen.getByTestId("toggle-assistant-skills")).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Generate image tool" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Show SVG tool" })).toBeChecked();
   });
 
   it("shows only private MCP connection controls to non-coordinators", async () => {
@@ -181,7 +182,7 @@ describe("AssistantModelPicker", () => {
 
     expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
     expect(webSearchTool).not.toBeChecked();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("70 of 71 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent(`${ALL_ASSISTANT_TOOL_NAMES.length - 1} of ${ALL_ASSISTANT_TOOL_NAMES.length} enabled`);
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -204,11 +205,12 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(71);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(72);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
       "generate_image",
+      "show_svg",
       "create_chat_mini_tool",
       "get_parts_inventory_details",
       "update_parts_inventory_details",
@@ -262,7 +264,7 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     expect(await screen.findByTestId("assistant-dynamic-tools")).toBeInTheDocument();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("73 of 73 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent(`${ALL_ASSISTANT_TOOL_NAMES.length + 2} of ${ALL_ASSISTANT_TOOL_NAMES.length + 2} enabled`);
     fireEvent.click(screen.getByRole("checkbox", { name: "Onshape: Get Document tool" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["onshape_getDocument"]);
     fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
@@ -395,10 +397,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const gear = screen.getByTestId("assistant-tools-gear");
-    expect(gear).toHaveAttribute("title", expect.stringContaining("70 of 71 tools enabled"));
+    expect(gear).toHaveAttribute("title", expect.stringContaining(`${ALL_ASSISTANT_TOOL_NAMES.length - 1} of ${ALL_ASSISTANT_TOOL_NAMES.length} tools enabled`));
 
     fireEvent.click(gear);
-    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("70 of 71 enabled");
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent(`${ALL_ASSISTANT_TOOL_NAMES.length - 1} of ${ALL_ASSISTANT_TOOL_NAMES.length} enabled`);
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
     const skillsToggle = screen.getByTestId("toggle-assistant-skills");

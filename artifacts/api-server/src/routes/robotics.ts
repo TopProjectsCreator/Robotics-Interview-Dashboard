@@ -228,6 +228,10 @@ import {
 import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
+  resolveShowSvg,
+  type ShowSvgState,
+} from "../lib/assistantSvg";
+import {
   configuredAssistantModel,
   getAssistantModel,
   listAssistantProviderModels,
@@ -676,6 +680,23 @@ const ASSISTANT_IMAGE_TOOL = {
         size: { type: "string", description: "1024x1024 for large, 512x512 for fast", enum: ["1024x1024", "512x512"] },
       },
       required: ["prompt"],
+    },
+  },
+};
+
+const ASSISTANT_SHOW_SVG_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "show_svg",
+    description: "Send a self-contained SVG diagram, chart, or illustration to the admin. Prefer this over writing inline <svg> markdown (inline markdown still works but skips the review step). The first call previews the SVG back to you with a review question and nothing reaches the admin; you then either approve it by calling show_svg again with the exact same svg and confirm=true (it is sent), or fix the markup and preview again.",
+    parameters: {
+      type: "object",
+      properties: {
+        svg: { type: "string", description: "Complete <svg>...</svg> markup, self-contained, about 60 lines max, no scripts, event handlers, <style>/<a> tags, or href/src references" },
+        confirm: { type: "boolean", description: "Omit on the preview call. Set true only to approve and send the exact SVG that was previewed back to you." },
+        title: { type: "string", maxLength: 80, description: "Optional short label for the diagram, shown in the activity feed" },
+      },
+      required: ["svg"],
     },
   },
 };
@@ -1157,6 +1178,7 @@ const ASSISTANT_TOOLS = [
   ASSISTANT_SET_MODEL_TOOL,
   ASSISTANT_MCP_CONNECTION_REQUEST_TOOL,
   ASSISTANT_IMAGE_TOOL,
+  ASSISTANT_SHOW_SVG_TOOL,
   ASSISTANT_CHAT_MINI_TOOL,
   ASSISTANT_SEARCH_TOOL,
   ASSISTANT_PYTHON_TOOL,
@@ -1329,6 +1351,13 @@ type AssistantToolCall = {
 };
 
 /**
+ * Cross-round state for the show_svg tool. `previews` holds SVGs the model has
+ * already seen and been asked to confirm; `approved` holds the ones it then
+ * explicitly confirmed (and that should appear in the answer).
+ */
+type AssistantSvgState = ShowSvgState;
+
+/**
  * Free-tier routers sometimes send thinking models that put their output in
  * reasoning_content/reasoning with content left null. Prefer real content,
  * fall back to reasoning text rather than failing empty.
@@ -1398,6 +1427,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
     if (
       name !== "generate_image" &&
       name !== "create_chat_mini_tool" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -1445,6 +1475,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
     const name = (callMatch?.[1] ?? "").toLowerCase();
     if (
       name !== "generate_image" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -1517,6 +1548,7 @@ async function runAssistantTools(
   customMcpAccountId = "",
   customMcpBindings: Map<string, CustomMcpToolBinding> = new Map(),
   skillActionAllowlist?: Set<string>,
+  svgState: AssistantSvgState = { previews: new Set(), approved: [] },
   githubRepositoryBindings: Map<string, string> = new Map(),
   githubRepositoryAccessState: GitHubRepositoryAccessState = createGitHubRepositoryAccessState(),
   mcpOnly = false,
@@ -1562,6 +1594,7 @@ async function runAssistantTools(
     }
     if (
       name !== "generate_image" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -1747,6 +1780,16 @@ async function runAssistantTools(
       imageMarkdowns.push(`![${imagePrompt}](${serveUrl})`);
       images.push({ prompt: imagePrompt, url: serveUrl, dataUrl });
       activities.push({ tool: "generate_image", detail: imagePrompt.slice(0, 120) });
+    } else if (name === "show_svg") {
+      const title = String(args.title ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      // Review gate: the first call previews the SVG back to the model and asks
+      // it to confirm; only a confirmed second call reaches the admin's answer.
+      const resolution = resolveShowSvg(svgState, args.svg, args.confirm === true, title);
+      toolMessages.push({ role: "tool", content: resolution.message, tool_call_id: call.id });
+      if (resolution.kind === "approved") {
+        activities.push({ tool: "show_svg", detail: title || "SVG diagram" });
+      }
     } else if (name === "python_exec" || name === "python") {
       const code = String(args.code ?? "").trim().slice(0, 4000);
       if (!code) continue;
@@ -6260,6 +6303,8 @@ async function generateAssistantAnswer(options: {
   // Files previewed during this answer. commit_import refuses paths that
   // were not previewed first, so blind commits are impossible.
   const previewedPaths = new Set<string>();
+  // SVGs the model has previewed and then explicitly confirmed via show_svg.
+  const svgState: AssistantSvgState = { previews: new Set(), approved: [] };
   const thread: AssistantThreadMessage[] = [...baseMessages];
   for (let round = 0; pendingCalls.length > 0; round += 1) {
     const executed = await runAssistantTools(pendingCalls, JSON.stringify(context), {
@@ -6281,6 +6326,7 @@ async function generateAssistantAnswer(options: {
       options.accountId ?? "",
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
@@ -6375,6 +6421,7 @@ async function generateAssistantAnswer(options: {
       "",
       new Map<string, CustomMcpToolBinding>(),
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
@@ -6440,11 +6487,13 @@ async function generateAssistantAnswer(options: {
     }
   }
   if (!answer.trim()) answer = "I could not produce an answer for that question.";
+  const svgBlocks = svgState.approved.filter((svg) => !answer.includes(svg)).join("\n\n");
   const miniToolBlocks = miniTools.map(chatMiniToolMarkdown).join("\n\n");
-  const answerLimit = Math.max(0, MAX_CHAT_AI_REPLY_CHARS - miniToolBlocks.length - 100);
+  const answerLimit = Math.max(0, MAX_CHAT_AI_REPLY_CHARS - miniToolBlocks.length - svgBlocks.length - 100);
   if (answer.length > answerLimit) {
     answer = `${answer.slice(0, Math.max(0, answerLimit - 50)).trimEnd()}\n\n…(answer shortened to fit chat history limits.)`;
   }
+  if (svgBlocks) answer = `${answer.trim()}\n\n${svgBlocks}`;
   if (miniToolBlocks) answer = `${answer.trim()}\n\n${miniToolBlocks}`;
   await saveAssistantAnswer(
     conversation.id,
@@ -7220,6 +7269,8 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     let answer = first.calls.length > 0 ? "" : first.text;
     const activities: AssistantActivity[] = [];
     const previewedPaths = new Set<string>();
+    // SVGs the model has previewed and then explicitly confirmed via show_svg.
+    const svgState: AssistantSvgState = { previews: new Set(), approved: [] };
     // Follow-up text accumulates across rounds so the saved answer matches
     // what streamed live (the client replaces streamed deltas with it).
     const appendAnswer = (current: string, addition: string): string => {
@@ -7254,6 +7305,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       account.id,
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
@@ -7363,6 +7415,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       account.id,
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
@@ -7437,6 +7490,11 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       }
     }
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
+    const svgBlocks = svgState.approved.filter((svg) => !answer.includes(svg)).join("\n\n");
+    if (svgBlocks) {
+      answer = `${answer.trim()}\n\n${svgBlocks}`;
+      send({ delta: `\n\n${svgBlocks}` });
+    }
     if (builderRunId) {
       await db.update(assistantBuilderRunsTable).set({
         status: "completed",

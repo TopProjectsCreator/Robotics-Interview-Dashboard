@@ -17,13 +17,14 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
   {
     id: "search",
     label: "Search & analysis",
-    description: "Web, code, and image generation.",
+    description: "Web, code, images, and reviewed SVG diagrams.",
     tools: [
       { name: "web_search", label: "Web search", hint: "Live web facts", write: false },
       { name: "search_skill_repository", label: "Linked skill repository", hint: "Read-only public files", write: false, skillContextOnly: true },
       { name: "python_exec", label: "Python", hint: "Calculations", write: false },
       { name: "generate_image", label: "Generate image", hint: "Posters & graphics", write: false },
       { name: "create_chat_mini_tool", label: "Interactive mini-tools", hint: "Quizzes, checklists & counters", write: true },
+      { name: "show_svg", label: "Show SVG", hint: "Diagrams with review", write: false },
     ],
   },
   {
