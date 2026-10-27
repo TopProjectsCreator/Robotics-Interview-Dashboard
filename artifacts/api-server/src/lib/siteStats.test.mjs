@@ -1,21 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deduplicateSiteStatsAccounts } from "./siteStats.ts";
+import { activeRosterCountsByTeam } from "./siteStats.ts";
 
-test("site stats deduplicate team accounts shared across database instances", () => {
-  const primaryAccounts = [
-    { id: "primary-1", teamId: "default", normalizedName: "alex chen" },
-    { id: "primary-2", teamId: null, normalizedName: "jordan lee" },
-  ];
-  const secondaryAccounts = [
-    { id: "secondary-1", teamId: "default", normalizedName: " Alex   Chen " },
-    { id: "secondary-2", teamId: null, normalizedName: "JORDAN LEE" },
-    { id: "secondary-legacy", teamId: null, normalizedName: "legacy account" },
-    { id: "secondary-3", teamId: "team-b", normalizedName: "alex chen" },
-  ];
+test("site stats count configured roster members, not historical account rows", () => {
+  const counts = activeRosterCountsByTeam([
+    { teamId: null, interviewerLabels: JSON.stringify(Array.from({ length: 12 }, (_, i) => `member ${i}`)) },
+  ]);
 
-  assert.deepEqual(
-    deduplicateSiteStatsAccounts(primaryAccounts, secondaryAccounts).map((account) => account.id),
-    ["primary-1", "primary-2", "secondary-3"],
+  assert.equal(counts.get("default"), 12);
+});
+
+test("site stats normalize legacy default team IDs and prefer primary roster rows", () => {
+  const counts = activeRosterCountsByTeam(
+    [{ teamId: null, interviewerLabels: '["A","B","C"]' }],
+    [{ teamId: "default", interviewerLabels: '["X","Y"]' }],
   );
+
+  assert.equal(counts.get("default"), 3);
+});
+
+test("site stats use the same fallback roster size as interview settings", () => {
+  const counts = activeRosterCountsByTeam([
+    { teamId: "team-empty", interviewerLabels: "[]" },
+    { teamId: "team-invalid", interviewerLabels: "not json" },
+  ]);
+
+  assert.equal(counts.get("team-empty"), 2);
+  assert.equal(counts.get("team-invalid"), 2);
 });

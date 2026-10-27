@@ -1,33 +1,38 @@
-export type SiteStatsAccount = {
-  id: string;
+export type SiteStatsRoster = {
   teamId: string | null;
-  normalizedName: string;
+  interviewerLabels: string;
 };
 
-function accountKey(account: SiteStatsAccount): string {
-  const teamId = account.teamId?.trim() || "default";
-  const normalizedName = account.normalizedName.trim().replace(/\s+/g, " ").toLocaleLowerCase();
-  return `${teamId}\u0000${normalizedName}`;
+function rosterSize(interviewerLabels: string): number {
+  try {
+    const labels: unknown = JSON.parse(interviewerLabels);
+    if (
+      Array.isArray(labels) &&
+      labels.length > 0 &&
+      labels.every((label) => typeof label === "string")
+    ) {
+      return labels.map((label: string) => label.trim()).filter(Boolean).length;
+    }
+  } catch {
+    // Match getInterviewSettings: malformed or empty settings use two defaults.
+  }
+  return 2;
 }
 
 /**
- * Site-wide stats read accounts from both database instances. A team member
- * present in both should only contribute once to the people count.
+ * The displayed people count must represent the configured team roster, not
+ * every account row ever created. Primary wins if a team has rows on both DBs.
  */
-export function deduplicateSiteStatsAccounts<T extends SiteStatsAccount>(
-  primaryAccounts: T[],
-  secondaryAccounts: T[] = [],
-): T[] {
-  const unique = new Map<string, T>();
-  // The default team is stored on primary. A legacy NULL team_id on the
-  // secondary database must not be misattributed to Wolverines.
-  const accounts = [
-    ...primaryAccounts,
-    ...secondaryAccounts.filter((account) => Boolean(account.teamId?.trim())),
-  ];
-  for (const account of accounts) {
-    const key = accountKey(account);
-    if (!unique.has(key)) unique.set(key, account);
+export function activeRosterCountsByTeam(
+  primaryRosters: SiteStatsRoster[],
+  secondaryRosters: SiteStatsRoster[] = [],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const roster of [...primaryRosters, ...secondaryRosters]) {
+    const teamId = roster.teamId?.trim() || "default";
+    if (!counts.has(teamId)) {
+      counts.set(teamId, rosterSize(roster.interviewerLabels));
+    }
   }
-  return [...unique.values()];
+  return counts;
 }

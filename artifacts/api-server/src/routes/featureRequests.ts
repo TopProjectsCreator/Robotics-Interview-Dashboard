@@ -6,7 +6,7 @@ import {
   primaryDb,
   secondaryDb,
   featureRequestsTable,
-  interviewerAccountsTable,
+  interviewQueueTable,
   teamsTable,
   DEFAULT_TEAM_ID,
 } from "@workspace/db";
@@ -24,7 +24,7 @@ import {
 } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { getTeamById, teamFilter } from "../lib/teams";
-import { deduplicateSiteStatsAccounts } from "../lib/siteStats";
+import { activeRosterCountsByTeam } from "../lib/siteStats";
 
 const router: IRouter = Router();
 
@@ -253,10 +253,9 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
     const readStats = async (handle: typeof primaryDb) => Promise.all([
       handle.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable),
       handle.select({
-        id: interviewerAccountsTable.id,
-        teamId: interviewerAccountsTable.teamId,
-        normalizedName: interviewerAccountsTable.normalizedName,
-      }).from(interviewerAccountsTable),
+        teamId: interviewQueueTable.teamId,
+        interviewerLabels: interviewQueueTable.interviewerLabels,
+      }).from(interviewQueueTable),
       handle.select({
         teamId: featureRequestsTable.teamId,
         status: featureRequestsTable.status,
@@ -275,16 +274,16 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
       })(),
     ]);
     const teams = [...primaryStats[0], ...secondaryStats[0]];
-    const accounts = deduplicateSiteStatsAccounts(primaryStats[1], secondaryStats[1]);
+    const rosterCounts = activeRosterCountsByTeam(primaryStats[1], secondaryStats[1]);
     const requests = [...primaryStats[2], ...secondaryStats[2]];
     const teamNameOf = (id: string) =>
       teams.find((team) => team.id === id)?.name ?? (id === DEFAULT_TEAM_ID ? "Wolverines" : id);
     const teamIds = new Set<string>([DEFAULT_TEAM_ID]);
     for (const team of teams) teamIds.add(team.id);
-    for (const account of accounts) teamIds.add(account.teamId?.trim() || DEFAULT_TEAM_ID);
+    for (const teamId of rosterCounts.keys()) teamIds.add(teamId);
     for (const request of requests) teamIds.add(request.teamId?.trim() || DEFAULT_TEAM_ID);
     const teamsById = [...teamIds].sort().map((id) => {
-      const people = accounts.filter((a) => (a.teamId?.trim() || DEFAULT_TEAM_ID) === id).length;
+      const people = rosterCounts.get(id) ?? 0;
       const mine = requests.filter((r) => (r.teamId?.trim() || DEFAULT_TEAM_ID) === id);
       return {
         teamId: id,
@@ -296,7 +295,7 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
     });
     res.json({
       teams: teamIds.size,
-      people: accounts.length,
+      people: teamsById.reduce((total, team) => total + team.people, 0),
       requests: requests.length,
       openRequests: requests.filter((r) => r.status !== "done").length,
       teamsById,
