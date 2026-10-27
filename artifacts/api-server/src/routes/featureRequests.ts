@@ -24,6 +24,7 @@ import {
 } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { getTeamById, teamFilter } from "../lib/teams";
+import { deduplicateSiteStatsAccounts } from "../lib/siteStats";
 
 const router: IRouter = Router();
 
@@ -254,6 +255,7 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
       handle.select({
         id: interviewerAccountsTable.id,
         teamId: interviewerAccountsTable.teamId,
+        normalizedName: interviewerAccountsTable.normalizedName,
       }).from(interviewerAccountsTable),
       handle.select({
         teamId: featureRequestsTable.teamId,
@@ -273,7 +275,7 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
       })(),
     ]);
     const teams = [...primaryStats[0], ...secondaryStats[0]];
-    const accounts = [...primaryStats[1], ...secondaryStats[1]];
+    const accounts = deduplicateSiteStatsAccounts(primaryStats[1], secondaryStats[1]);
     const requests = [...primaryStats[2], ...secondaryStats[2]];
     const teamNameOf = (id: string) =>
       teams.find((team) => team.id === id)?.name ?? (id === DEFAULT_TEAM_ID ? "Wolverines" : id);
