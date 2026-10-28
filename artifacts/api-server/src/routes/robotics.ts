@@ -1523,7 +1523,10 @@ function stripPseudoToolCalls(text: string): string {
 async function runAssistantTools(
   calls: AssistantToolCall[],
   applicantsJson = "[]",
-  actions: { renameConversation?: (title: string) => Promise<void> } = {},
+  actions: {
+    renameConversation?: (title: string) => Promise<void>;
+    onToolCallStart?: (activity: { tool: string; input: string }) => void;
+  } = {},
   previewedPaths: Set<string> = new Set(),
   currentConversationId = "",
   currentSessionHash = "",
@@ -1569,6 +1572,25 @@ async function runAssistantTools(
   // does not flip mid-answer.
   let renamed = false;
   let changedModel: string | undefined;
+  const compactPayload = (value: string): string => {
+    const redact = (item: unknown): unknown => {
+      if (Array.isArray(item)) return item.map(redact);
+      if (!item || typeof item !== "object") return item;
+      return Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([key, child]) => [
+        key,
+        /token|secret|password|authorization|api.?key|credential/i.test(key) ? "[redacted]" : redact(child),
+      ]));
+    };
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return JSON.stringify(redact(parsed)).slice(0, 2400);
+    } catch {
+      return value
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+        .replace(/((?:api[_-]?key|access[_-]?token|secret|password|authorization)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
+        .slice(0, 2400);
+    }
+  };
   for (const call of calls) {
     const name = call.function?.name;
     if (mcpOnly && !onshapeBindings.has(name ?? "") && !customMcpBindings.has(name ?? "") &&
@@ -1652,6 +1674,10 @@ async function runAssistantTools(
       }
       continue;
     }
+    actions.onToolCallStart?.({
+      tool: name ?? "assistant_tool",
+      input: compactPayload(call.function.arguments || "{}"),
+    });
     if (name === ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name) {
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       if (!allowMcpConnectionRequest || mcpOnly || connectionRequests.length > 0) {
@@ -2490,25 +2516,6 @@ async function runAssistantTools(
       });
     }
   }
-  const compactPayload = (value: string): string => {
-    const redact = (item: unknown): unknown => {
-      if (Array.isArray(item)) return item.map(redact);
-      if (!item || typeof item !== "object") return item;
-      return Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([key, child]) => [
-        key,
-        /token|secret|password|authorization|api.?key|credential/i.test(key) ? "[redacted]" : redact(child),
-      ]));
-    };
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return JSON.stringify(redact(parsed)).slice(0, 2400);
-    } catch {
-      return value
-        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-        .replace(/((?:api[_-]?key|access[_-]?token|secret|password|authorization)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
-        .slice(0, 2400);
-    }
-  };
   const matchedCalls = new Set<string>();
   const detailedActivities = activities.map((activity) => {
     const call = outgoingCalls.find((candidate) =>
@@ -6462,26 +6469,26 @@ async function generateAssistantAnswer(options: {
     );
     if (executed.model) model = executed.model;
     activities.push(...executed.activities);
-      if (executed.outgoingCalls.length > 0) {
-        const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
-        const repair = await openai.chat.completions.create({
-          model,
-          temperature: 0.2,
-          ...(thinkingRequest() as {}),
-          messages: [
-            ...baseMessages,
-            { role: "assistant" as const, content: stripPseudoToolCalls(answer) || null },
-            { role: "user" as const, content: `Tool results for the admin's question:\n${toolContext}\n\nNow answer the admin's question directly, with brief citations where relevant.` },
-          ],
-        });
-        answer = repair.choices[0]?.message.content ?? stripPseudoToolCalls(answer);
-        const repairText = assistantText(repair.choices[0]?.message ?? {});
-        if (repairText.text) answer = repairText.text;
-        if (executed.imageMarkdown) answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
-      } else {
-        answer = stripPseudoToolCalls(answer);
-      }
+    if (executed.outgoingCalls.length > 0) {
+      const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
+      const repair = await openai.chat.completions.create({
+        model,
+        temperature: 0.2,
+        ...(thinkingRequest() as {}),
+        messages: [
+          ...baseMessages,
+          { role: "assistant" as const, content: stripPseudoToolCalls(answer) || null },
+          { role: "user" as const, content: `Tool results for the admin's question:\n${toolContext}\n\nNow answer the admin's question directly, with brief citations where relevant.` },
+        ],
+      });
+      answer = repair.choices[0]?.message.content ?? stripPseudoToolCalls(answer);
+      const repairText = assistantText(repair.choices[0]?.message ?? {});
+      if (repairText.text) answer = repairText.text;
+      if (executed.imageMarkdown) answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
+    } else {
+      answer = stripPseudoToolCalls(answer);
     }
+  }
   }
   answer = stripPseudoToolCalls(answer);
   if (!answer.trim() && activities.length > 0) {
@@ -7656,6 +7663,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         renameConversation: async (title: string) => {
           await db.update(assistantConversationsTable).set({ title, updatedAt: new Date() }).where(and(eq(assistantConversationsTable.id, conversation.id), teamFilter(assistantConversationsTable.teamId, teamId)));
         },
+        onToolCallStart: (activity) => send({ toolCallStart: activity }),
       },
       previewedPaths,
       conversation.id,
@@ -7683,7 +7691,14 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         model = executed.model;
         send({ model });
       }
+      const activityStartIndex = activities.length;
       activities.push(...executed.activities);
+      if (builderRunId && executed.outgoingCalls.length > 0) {
+        activities.push({
+          tool: "assistant_progress",
+          detail: "Reviewed the tool results and prepared the next action.",
+        });
+      }
       await db.update(assistantPromptRunsTable).set({
         activities: JSON.stringify(activities),
         updatedAt: new Date(),
@@ -7702,7 +7717,9 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
           eq(assistantBuilderRunsTable.coordinatorId, account.id),
         ));
       }
-      for (const activity of executed.activities) send({ activity });
+      for (let index = activityStartIndex; index < activities.length; index += 1) {
+        send({ activity: activities[index], activityIndex: index });
+      }
       for (const connectionRequest of executed.connectionRequests) {
         send({ connectionRequest });
       }

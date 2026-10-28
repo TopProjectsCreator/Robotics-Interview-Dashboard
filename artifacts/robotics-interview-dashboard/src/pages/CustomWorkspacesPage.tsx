@@ -265,15 +265,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-function builderRunSteps(activities: BuilderRun["activities"]): PublishAgentStep[] {
+function builderActivityLabel(activity: BuilderRun["activities"][number]): string {
+  if (activity.tool === "assistant_progress") return "Progress update";
+  const tool = activity.tool.replaceAll("_", " ");
+  if (activity.tool === "critique_custom_workspace" || activity.tool === "verify_custom_workspace_fixes") {
+    try {
+      const round = JSON.parse(activity.input ?? "{}").round;
+      if (Number.isInteger(round) && round >= 1 && round <= 5) return `Review round ${round} · ${tool}`;
+    } catch {
+      // Older saved activity may not include structured input.
+    }
+  }
+  return tool;
+}
+
+function builderRunSteps(run: BuilderRun): PublishAgentStep[] {
+  const activities = run.activities;
   return activities.map((activity, index) => ({
-    id: `saved-${index}-${activity.tool}`,
-    label: activity.tool.replaceAll("_", " "),
+    id: `run-${run.id}-${index}`,
+    label: builderActivityLabel(activity),
     detail: activity.detail,
     input: activity.input,
     output: activity.output,
     status: "done",
   }));
+}
+
+function mergeBuilderRunSteps(current: PublishAgentStep[], incoming: PublishAgentStep[]): PublishAgentStep[] {
+  const byId = new Map(current.map((step) => [step.id, step]));
+  incoming.forEach((step) => byId.set(step.id, { ...byId.get(step.id), ...step }));
+  return [...byId.values()];
 }
 
 function normalizeBuilderRun(run: AssistantBuilderRunResponse["run"]): BuilderRun | null {
@@ -334,7 +355,7 @@ export function CustomWorkspacesPage() {
         if (!active) return;
         const normalizedRun = normalizeBuilderRun(run);
         setBuilderRun(normalizedRun);
-        if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
+        if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         if (normalizedRun?.question) setAgentQuestion(normalizedRun.question);
         else if (normalizedRun?.status === "completed" || normalizedRun?.status === "interrupted" || normalizedRun?.status === "failed") {
           setAgentQuestion(null);
@@ -353,7 +374,7 @@ export function CustomWorkspacesPage() {
         if (!active || !run) return;
         const normalizedRun = normalizeBuilderRun(run);
         setBuilderRun(normalizedRun);
-        if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
+        if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         setAgentQuestion(normalizedRun?.question ?? null);
       } catch {}
     };
@@ -365,23 +386,31 @@ export function CustomWorkspacesPage() {
   }, [canManage, builderRun?.id, builderRun?.status]);
   useEffect(() => {
     if (!canManage) return;
-    void request<{ items: { question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
+    void request<{ items: { id: string; question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
       .then(({ items: history }) => {
-        const latest = [...history].reverse().find((item) =>
-          item.question.startsWith("Build a custom workspace app for the team.") ||
-          item.question.startsWith("Revise custom workspace draft "));
-        if (!latest?.activities.length || builderRunRef.current) return;
-        setPublishAgentSteps(latest.activities.map((activity, index) => ({
-          id: `saved-${index}-${activity.tool}`,
-          label: activity.tool.replaceAll("_", " "),
+        const workspaceReviewRuns = history.filter((item) =>
+          item.question.includes("Revise custom workspace draft ") &&
+          (active?.id ? item.question.includes(active.id) : false),
+        );
+        const latestPrompt = builderRunRef.current?.prompt;
+        const latestSavedRunIndex = latestPrompt
+          ? workspaceReviewRuns.findLastIndex((item) => item.question === latestPrompt)
+          : -1;
+        if (latestSavedRunIndex >= 0) workspaceReviewRuns.splice(latestSavedRunIndex, 1);
+        const savedSteps = workspaceReviewRuns.flatMap((item) => item.activities.map((activity, index) => ({
+          id: `history-${item.id}-${index}`,
+          label: activity.tool === "assistant_progress"
+            ? "Progress update"
+            : builderActivityLabel(activity as BuilderRun["activities"][number]),
           detail: activity.detail,
           input: activity.input,
           output: activity.output,
-          status: "done",
+          status: "done" as const,
         })));
+        if (savedSteps.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, savedSteps));
       })
       .catch(() => {});
-  }, [canManage]);
+  }, [canManage, active?.id]);
   useEffect(() => {
     if (!canManage) return;
     let active = true;
@@ -520,12 +549,15 @@ export function CustomWorkspacesPage() {
     const decoder = new TextDecoder();
     let buffer = "";
     let done = false;
+    let streamRunId = "";
+    let activityFallbackIndex = 0;
     const acceptEvent = (raw: string) => {
       for (const line of raw.split("\n")) {
         if (!line.startsWith("data:")) continue;
         let event: Record<string, unknown>;
         try { event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>; } catch { continue; }
         if (typeof event.builderRunId === "string") {
+          streamRunId = event.builderRunId;
           setBuilderRun((current) => current?.id === event.builderRunId ? current : {
             id: event.builderRunId as string,
             status: "running",
@@ -539,18 +571,47 @@ export function CustomWorkspacesPage() {
             updatedAt: new Date().toISOString(),
           });
         }
+        if (event.toolCallStart && typeof event.toolCallStart === "object") {
+          const toolCall = event.toolCallStart as { tool?: unknown; input?: unknown };
+          const tool = typeof toolCall.tool === "string" ? toolCall.tool : "assistant tool";
+          setPublishAgentSteps((steps) => [...steps, {
+            id: `tool-start-${steps.length}-${tool}`,
+            label: tool.replaceAll("_", " "),
+            detail: "Running",
+            input: typeof toolCall.input === "string" ? toolCall.input : undefined,
+            status: "running",
+          }]);
+        }
         if (event.activity && typeof event.activity === "object") {
           const activity = event.activity as { tool?: unknown; detail?: unknown; input?: unknown; output?: unknown };
           const tool = typeof activity.tool === "string" ? activity.tool : "Assistant tool";
           const detail = typeof activity.detail === "string" ? activity.detail : "";
-          setPublishAgentSteps((steps) => [...steps, {
-            id: `agent-${steps.length}-${tool}`,
-            label: tool.replaceAll("_", " "),
+          const incoming = {
+            id: streamRunId && Number.isInteger(event.activityIndex)
+              ? `run-${streamRunId}-${Number(event.activityIndex)}`
+              : `agent-${tool}-${activityFallbackIndex++}`,
+            label: builderActivityLabel({
+              tool,
+              detail,
+              input: typeof activity.input === "string" ? activity.input : undefined,
+              output: typeof activity.output === "string" ? activity.output : undefined,
+            } as BuilderRun["activities"][number]),
             detail,
             input: typeof activity.input === "string" ? activity.input : undefined,
             output: typeof activity.output === "string" ? activity.output : undefined,
-            status: "done",
-          }]);
+            status: "done" as const,
+          };
+          setPublishAgentSteps((steps) => {
+            const pendingIndex = steps.findIndex((step) =>
+              step.status === "running" &&
+              step.id.startsWith("tool-start-") &&
+              step.label === tool.replaceAll("_", " "),
+            );
+            if (pendingIndex < 0) return mergeBuilderRunSteps(steps, [incoming]);
+            const next = [...steps];
+            next[pendingIndex] = { ...next[pendingIndex], ...incoming };
+            return next;
+          });
         }
         if (event.question && typeof event.question === "object") {
           const question = event.question as AgentQuestion;
@@ -573,7 +634,7 @@ export function CustomWorkspacesPage() {
     const { run } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
     const normalizedRun = normalizeBuilderRun(run);
     setBuilderRun(normalizedRun);
-    if (normalizedRun?.activities.length) setPublishAgentSteps(builderRunSteps(normalizedRun.activities));
+    if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
     const result = await request<{ workspaces: Workspace[] }>(API);
     setItems(result.workspaces);
     const created = result.workspaces.find((workspace) => !beforeIds.has(workspace.id));
@@ -917,7 +978,7 @@ export function CustomWorkspacesPage() {
         </div>
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
-          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">The builder runs on the server. Publishing is available after all five review rounds are independently verified.</p>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Review progress and tool calls are shown here. Private internal reasoning is not displayed. Publishing is available after all five review rounds are independently verified.</p>
           {builderRun && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--foreground))]" data-testid="builder-run-status">
             <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : builderRun.status === "interrupted" || builderRun.status === "failed" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
               {builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
@@ -932,7 +993,7 @@ export function CustomWorkspacesPage() {
             {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
               <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
               <span className="min-w-0 flex-1"><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}
-                {(step.input || step.output) && <details className="mt-1">
+                {(step.input || step.output) && <details className="mt-1" open>
                   <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
                   {step.input && <><span className="mt-1 block font-semibold">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.input}</pre></>}
                   {step.output && <><span className="mt-1 block font-semibold">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.output}</pre></>}

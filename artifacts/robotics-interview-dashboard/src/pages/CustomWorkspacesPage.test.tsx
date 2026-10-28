@@ -422,8 +422,12 @@ describe("custom workspace visual publish review", () => {
         expect(body.question).toContain("Build a custom workspace app");
         expect(body.model).toBe("model-selected");
         return new Response([
-          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" } })}\n\n`,
-          `data: ${JSON.stringify({ activity: { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." } })}\n\n`,
+          `data: ${JSON.stringify({ builderRunId: "generated-run" })}\n\n`,
+          `data: ${JSON.stringify({ toolCallStart: { tool: "create_custom_workspace", input: "{\"title\":\"Parts tracker\"}" } })}\n\n`,
+          `data: ${JSON.stringify({ activityIndex: 0, activity: { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" } })}\n\n`,
+          `data: ${JSON.stringify({ toolCallStart: { tool: "create_custom_workspace_file", input: "{\"path\":\"index.html\"}" } })}\n\n`,
+          `data: ${JSON.stringify({ activityIndex: 1, activity: { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." } })}\n\n`,
+          `data: ${JSON.stringify({ activityIndex: 2, activity: { tool: "assistant_progress", detail: "Reviewed the tool results and prepared the next action." } })}\n\n`,
           `data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`,
         ].join(""), { headers: { "Content-Type": "text/event-stream" } });
       }
@@ -451,9 +455,11 @@ describe("custom workspace visual publish review", () => {
     expect(preview.getAttribute("srcdoc")).toContain(".generated-preview { color: rgb(1, 2, 3); }");
     expect(preview.getAttribute("srcdoc")).toContain("window.generatedPreview = true;");
     expect(draft).not.toHaveProperty("html");
-    fireEvent.click(screen.getAllByText("Tool call details")[1]);
     expect(await screen.findByText('{"path":"index.html"}')).toBeInTheDocument();
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();
+    expect(screen.getByText("Progress update")).toBeInTheDocument();
+    expect(screen.getByText("Reviewed the tool results and prepared the next action.")).toBeInTheDocument();
+    expect(screen.getByText("Review progress and tool calls are shown here. Private internal reasoning is not displayed. Publishing is available after all five review rounds are independently verified.")).toBeInTheDocument();
   });
 
   it("clears the previous workspace preview and source files when the selected draft has no entry file", async () => {
