@@ -143,6 +143,7 @@ async function ensureSchema(): Promise<void> {
     "parts_catalog_sync_state",
     "parts_catalog_crawl_skips",
     "parts_catalog_crawl_state",
+    "parts_vendor_blocks",
     "parts_inventory",
     "parts_robots",
     "parts_robot_allocations",
@@ -361,6 +362,12 @@ async function ensureSchema(): Promise<void> {
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
     `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
     `insert into "parts_catalog_sync_state" ("id") values ('global') on conflict ("id") do nothing`,
+    `create table if not exists "parts_vendor_blocks" (
+        "team_id" text not null default 'default',
+        "vendor_key" text not null,
+        "blocked_at" timestamptz not null default now(),
+        primary key ("team_id", "vendor_key")
+      )`,
     // Lease row for the background sitemap crawler. Autoscaled deployments run
     // several server instances, so an in-process flag is not enough to stop two
     // of them crawling the same supplier and doubling the request rate against a

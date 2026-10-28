@@ -6,6 +6,7 @@ import {
   CreatePartsPriceSnapshotResponse,
   CreatePartsCatalogItemBody,
   CreatePartsCatalogItemResponse,
+  GetPartsVendorBlocksResponse,
   CreatePartsRobotBody,
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
@@ -30,6 +31,9 @@ import {
   UpdatePartsCatalogDetailsParams,
   UpdatePartsCatalogDetailsBody,
   UpdatePartsCatalogDetailsResponse,
+  UpdatePartsVendorBlockBody,
+  UpdatePartsVendorBlockParams,
+  UpdatePartsVendorBlockResponse,
   UpdatePartsRobotBody,
   UpdatePartsRobotParams,
   UpdatePartsRobotResponse,
@@ -42,7 +46,7 @@ import {
   type PartsVendorSyncState,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { requestTeamId, requireAdmin } from "../middlewares/adminAuth";
+import { requestTeamId, requireAdmin, requireInboxAdmin } from "../middlewares/adminAuth";
 import {
   DEFAULT_TEAM_ID,
   sharedCatalogTeamSqlCondition,
@@ -189,6 +193,33 @@ async function withTransaction<T>(
   } finally {
     client.release();
   }
+}
+
+async function readBlockedVendorKeys(teamId: string): Promise<Set<string>> {
+  const result = await pool.query(
+    `select "vendor_key" as "vendorKey"
+       from "parts_vendor_blocks"
+      where "team_id" = $1`,
+    [teamId],
+  );
+  return new Set(
+    result.rows
+      .map((row) => String(row.vendorKey))
+      .filter((key) => vendorByKey.has(key)),
+  );
+}
+
+async function ensureVendorNotBlocked(
+  client: PoolClient,
+  teamId: string,
+  vendorKey: string,
+): Promise<void> {
+  const result = await client.query(
+    `select 1 from "parts_vendor_blocks"
+      where "team_id" = $1 and "vendor_key" = $2`,
+    [teamId, vendorKey],
+  );
+  if (result.rowCount) throw new BadInputError("This supplier is blocked for your team.");
 }
 
 /**
@@ -538,7 +569,11 @@ async function searchSyncedCatalog(
   limit: number,
   offset: number,
   teamId?: string,
+  blockedVendorKeys: ReadonlySet<string> = new Set(),
 ) {
+  if (vendor && blockedVendorKeys.has(vendor.key)) {
+    return { items: [], total: 0, offset, limit };
+  }
   const clauses: string[] = [];
   const values: unknown[] = [];
   if (vendor) {
@@ -554,6 +589,10 @@ async function searchSyncedCatalog(
       or coalesce(c."category", '') ilike any(${patternArray})
       or coalesce(c."description", '') ilike any(${patternArray}))`,
   );
+  if (blockedVendorKeys.size > 0) {
+    values.push([...blockedVendorKeys]);
+    clauses.push(`not (c."vendor_key" = any($${values.length}::text[]))`);
+  }
   const baseWhere = `where ${clauses.join(" and ")}`;
   const scoped = withCatalogTeamScope(baseWhere, values, teamId, "c");
   const whereSql = scoped.whereSql;
@@ -1177,6 +1216,7 @@ export async function searchPublicCatalog(
   options: {
     maxCandidatesPerVendor?: number;
     includePartialDetails?: boolean;
+    blockedVendorKeys?: ReadonlySet<string>;
     onResult?: (result: PublicCatalogSearchResult) => void | Promise<void>;
     onComplete?: (summary: {
       providerCount: number;
@@ -1186,7 +1226,9 @@ export async function searchPublicCatalog(
   } = {},
 ) {
   const allowedVendors = (vendor ? [vendor] : VENDORS).filter(
-    (item) => item.coverageState !== "access_restricted",
+    (item) =>
+      item.coverageState !== "access_restricted" &&
+      !options.blockedVendorKeys?.has(item.key),
   );
   if (allowedVendors.length === 0) {
     await options.onComplete?.({
@@ -1357,11 +1399,19 @@ export async function runAssistantPartsTool(
       const offsetValue = Number(args.offset);
       const limit = Number.isInteger(limitValue) ? Math.min(100, Math.max(1, limitValue)) : 50;
       const offset = Number.isInteger(offsetValue) ? Math.max(0, offsetValue) : 0;
-      const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
+      const blockedVendorKeys = await readBlockedVendorKeys(teamId);
+      const syncedCatalog = await searchSyncedCatalog(
+        query,
+        vendor,
+        limit,
+        offset,
+        teamId,
+        blockedVendorKeys,
+      );
       let products: PublicCatalogSearchResult[] = [];
       let liveSearchStatus: "available" | "unavailable" = "available";
       try {
-        products = await searchPublicCatalog(query, vendor);
+        products = await searchPublicCatalog(query, vendor, { blockedVendorKeys });
       } catch {
         liveSearchStatus = "unavailable";
       }
@@ -1385,6 +1435,7 @@ export async function runAssistantPartsTool(
         catalogSourceUrl: item.catalogSourceUrl,
         coverageState: item.coverageState,
         feedMustReachEndBeforeComplete: item.coverageState === "feed_sync_required",
+        blocked: blockedVendorKeys.has(item.key),
         lastSync: syncStates.get(item.key) ?? null,
       }));
       return result(
@@ -1496,6 +1547,7 @@ export async function runAssistantPartsTool(
       const productUrl = validateVendorUrl(input.productUrl, vendor);
       const imageUrl = validateImageUrl(input.imageUrl);
       const saved = await withTransaction(async (client) => {
+        await ensureVendorNotBlocked(client, teamId, vendor.key);
         const item = await upsertCatalogRecord(client, {
           vendorKey: vendor.key,
           externalKey: externalKeyFor({ sku, productUrl, name: partName }),
@@ -2246,10 +2298,57 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
   });
 }
 
+router.get("/parts/vendors/blocks", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const teamId = await requestTeamId(req);
+    const blockedVendorKeys = [...await readBlockedVendorKeys(teamId)].sort();
+    res.json(GetPartsVendorBlocksResponse.parse({ blockedVendorKeys }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts supplier block list load failed");
+    res.status(500).json({ error: "Unable to load supplier block settings." });
+  }
+});
+
+router.put(
+  "/parts/vendors/:vendorKey/block",
+  requireInboxAdmin,
+  async (req, res): Promise<void> => {
+    const params = UpdatePartsVendorBlockParams.safeParse(req.params);
+    const body = UpdatePartsVendorBlockBody.safeParse(req.body);
+    if (!params.success || !body.success || !vendorByKey.has(params.data.vendorKey)) {
+      res.status(400).json({ error: "Choose a listed supplier and a valid block state." });
+      return;
+    }
+    try {
+      const teamId = await requestTeamId(req);
+      if (body.data.blocked) {
+        await pool.query(
+          `insert into "parts_vendor_blocks" ("team_id", "vendor_key")
+           values ($1, $2) on conflict ("team_id", "vendor_key") do nothing`,
+          [teamId, params.data.vendorKey],
+        );
+      } else {
+        await pool.query(
+          `delete from "parts_vendor_blocks"
+            where "team_id" = $1 and "vendor_key" = $2`,
+          [teamId, params.data.vendorKey],
+        );
+      }
+      res.json(UpdatePartsVendorBlockResponse.parse({
+        vendorKey: params.data.vendorKey,
+        blocked: body.data.blocked,
+      }));
+    } catch (error) {
+      req.log.error({ err: error, vendorKey: params.data.vendorKey }, "Parts supplier block update failed");
+      res.status(500).json({ error: "Unable to update supplier block settings." });
+    }
+  },
+);
+
 router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => {
   try {
     const teamId = await requestTeamId(req);
-    const [robotsResult, totalsResult, syncStates] = await Promise.all([
+    const [robotsResult, totalsResult, syncStates, blockedVendorKeys] = await Promise.all([
       pool.query(
         `select "id", "name", "preview_object_path" as "previewObjectPath",
                 "preview_file_name" as "previewFileName",
@@ -2273,6 +2372,7 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
         [teamId],
       ),
       readPartsSupplierSyncStates(),
+      readBlockedVendorKeys(teamId),
     ]);
     const totals = totalsResult.rows[0];
     const ownedUnits = Number(totals.ownedUnits);
@@ -2282,6 +2382,7 @@ router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => 
         vendors: publicVendors.map((vendor) => ({
           ...vendor,
           lastSync: syncStates.get(vendor.key) ?? null,
+          blocked: blockedVendorKeys.has(vendor.key),
         })),
         robots: robotsResult.rows.map(mapRobot),
         summary: {
@@ -2334,6 +2435,13 @@ router.get("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
       );
     }
     const teamId = await requestTeamId(req);
+    const blockedVendorKeys = inventoryOnly
+      ? new Set<string>()
+      : await readBlockedVendorKeys(teamId);
+    if (blockedVendorKeys.size > 0) {
+      values.push([...blockedVendorKeys]);
+      clauses.push(`not (c."vendor_key" = any($${values.length}::text[]))`);
+    }
     if (inventoryOnly) {
       values.push(teamId);
       const teamPlaceholder = `$${values.length}`;
@@ -2395,13 +2503,15 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
   }
   try {
     const teamId = await requestTeamId(req);
-    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
+    const blockedVendorKeys = await readBlockedVendorKeys(teamId);
+    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId, blockedVendorKeys);
     let results: PublicCatalogSearchResult[] = [];
     let liveSearchStatus: "available" | "unavailable" = "available";
     try {
       results = await searchPublicCatalog(query, vendor, {
         maxCandidatesPerVendor: 40,
         includePartialDetails: true,
+        blockedVendorKeys,
       });
     } catch (error) {
       if (syncedCatalog.total === 0) throw error;
@@ -2445,7 +2555,8 @@ router.get("/parts/catalog/search/stream", requireAdmin, async (req, res): Promi
 
   try {
     const teamId = await requestTeamId(req);
-    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId);
+    const blockedVendorKeys = await readBlockedVendorKeys(teamId);
+    const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId, blockedVendorKeys);
     const catalogItems = ListPartsCatalogResponse.parse({
       items: syncedCatalog.items,
       total: syncedCatalog.total,
@@ -2480,6 +2591,7 @@ router.get("/parts/catalog/search/stream", requireAdmin, async (req, res): Promi
     await searchPublicCatalog(query, vendor, {
       maxCandidatesPerVendor: 40,
       includePartialDetails: true,
+      blockedVendorKeys,
       onResult: (result) => {
         const validated = SearchPartsCatalogResponse.parse({
           query,
@@ -2548,6 +2660,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
     };
     const teamId = await requestTeamId(req);
     const itemId = await withTransaction(async (client) => {
+      await ensureVendorNotBlocked(client, teamId, vendor.key);
       const saved = await upsertCatalogRecord(client, item, teamId);
       if (Object.prototype.hasOwnProperty.call(req.body, "quantityOwned")) {
         await setOwnedQuantity(client, saved.id, input.quantityOwned ?? 0, teamId);
@@ -2857,6 +2970,7 @@ router.post("/parts/catalog/import", requireAdmin, async (req, res): Promise<voi
       let updated = 0;
       for (const row of parsed.data.items) {
         const vendor = vendorForKey(row.vendorKey);
+        await ensureVendorNotBlocked(client, teamId, vendor.key);
         const name = cleanText(row.name, 250);
         if (!name) throw new BadInputError("Every imported row needs a part name.");
         const sku = cleanText(row.sku, 200);
@@ -3049,6 +3163,15 @@ router.post(
       }
       const vendorKey = String(partResult.rows[0].vendorKey);
       const vendor = vendorForKey(vendorKey);
+      const blockState = await pool.query(
+        `select 1 from "parts_vendor_blocks"
+          where "team_id" = $1 and "vendor_key" = $2`,
+        [teamId, vendorKey],
+      );
+      if (blockState.rowCount) {
+        res.status(400).json({ error: "This supplier is blocked for your team." });
+        return;
+      }
       const sourceUrl = validateVendorUrl(body.data.sourceUrl, vendor);
       if (!sourceUrl || !isValidCurrencyCode(body.data.currency) || !isValidMoneyAmount(body.data.unitPrice)) {
         res.status(400).json({ error: "Choose a valid price, currency, and source on the item's supplier domain." });

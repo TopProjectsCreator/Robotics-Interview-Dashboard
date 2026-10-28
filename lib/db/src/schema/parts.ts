@@ -67,6 +67,18 @@ export const partsSupplierSyncStatesTable = pgTable(
   }),
 );
 
+export const partsVendorBlocksTable = pgTable(
+  "parts_vendor_blocks",
+  {
+    teamId: text("team_id").notNull().default("default"),
+    vendorKey: text("vendor_key").notNull(),
+    blockedAt: timestamp("blocked_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    teamVendor: primaryKey({ columns: [table.teamId, table.vendorKey] }),
+  }),
+);
+
 export const partsInventoryTable = pgTable(
   "parts_inventory",
   {

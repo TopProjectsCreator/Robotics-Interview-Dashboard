@@ -2774,6 +2774,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PartsDashboard"
+  /parts/vendors/blocks:
+    get:
+      operationId: getPartsVendorBlocks
+      tags: [parts]
+      summary: Read blocked suppliers for the signed-in team
+      responses:
+        "200":
+          description: Team-specific supplier block list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsVendorBlocks"
+  /parts/vendors/{vendorKey}/block:
+    parameters:
+      - name: vendorKey
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: updatePartsVendorBlock
+      tags: [parts]
+      summary: Block or unblock a supplier for the signed-in team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsVendorBlockUpdate"
+      responses:
+        "200":
+          description: Updated team-specific supplier block
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsVendorBlockState"
+        "400":
+          description: Unknown supplier or invalid block state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog:
     get:
       operationId: listPartsCatalog
@@ -4529,7 +4577,7 @@ components:
           type: ["integer", "null"]
     PartsVendor:
       type: object
-      required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState, lastSync]
+      required: [key, name, group, website, catalogMode, catalogSourceUrl, coverageState, lastSync, blocked]
       properties:
         key:
           type: string
@@ -4561,6 +4609,31 @@ components:
             - $ref: "#/components/schemas/PartsVendorSyncState"
             - type: "null"
           description: Latest persisted sync outcome, if this supplier has been checked.
+        blocked:
+          type: boolean
+          description: Whether this supplier is blocked for the signed-in team.
+    PartsVendorBlocks:
+      type: object
+      required: [blockedVendorKeys]
+      properties:
+        blockedVendorKeys:
+          type: array
+          items:
+            type: string
+    PartsVendorBlockState:
+      type: object
+      required: [vendorKey, blocked]
+      properties:
+        vendorKey:
+          type: string
+        blocked:
+          type: boolean
+    PartsVendorBlockUpdate:
+      type: object
+      required: [blocked]
+      properties:
+        blocked:
+          type: boolean
     PartsVendorSyncState:
       type: object
       required: [status, checkedAt, itemCount, source, message]

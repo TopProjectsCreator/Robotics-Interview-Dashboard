@@ -198,6 +198,9 @@ import type {
   PartsRobotPreviewInput,
   PartsRobotPreviewUpload,
   PartsStockUpdateInput,
+  PartsVendorBlockState,
+  PartsVendorBlockUpdate,
+  PartsVendorBlocks,
   PasskeyCredential,
   PasskeyCredentialList,
   PasskeyLoginChallengeInput,
@@ -10707,6 +10710,155 @@ export function useGetPartsDashboard<TData = Awaited<ReturnType<typeof getPartsD
 
 
 
+
+export const getGetPartsVendorBlocksUrl = () => {
+
+
+
+
+  return `/api/parts/vendors/blocks`
+}
+
+/**
+ * @summary Read blocked suppliers for the signed-in team
+ */
+export const getPartsVendorBlocks = async ( options?: Parameters<typeof customFetch>[1]): Promise<PartsVendorBlocks> => {
+
+  return customFetch<PartsVendorBlocks>(getGetPartsVendorBlocksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPartsVendorBlocksQueryKey = () => {
+    return [
+    `/api/parts/vendors/blocks`
+    ] as const;
+    }
+
+
+export const getGetPartsVendorBlocksQueryOptions = <TData = Awaited<ReturnType<typeof getPartsVendorBlocks>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsVendorBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPartsVendorBlocksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPartsVendorBlocks>>> = ({ signal }) => getPartsVendorBlocks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPartsVendorBlocks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPartsVendorBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof getPartsVendorBlocks>>>
+export type GetPartsVendorBlocksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read blocked suppliers for the signed-in team
+ */
+
+export function useGetPartsVendorBlocks<TData = Awaited<ReturnType<typeof getPartsVendorBlocks>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsVendorBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPartsVendorBlocksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePartsVendorBlockUrl = (vendorKey: string,) => {
+
+
+
+
+  return `/api/parts/vendors/${vendorKey}/block`
+}
+
+/**
+ * @summary Block or unblock a supplier for the signed-in team
+ */
+export const updatePartsVendorBlock = async (vendorKey: string,
+    partsVendorBlockUpdate: PartsVendorBlockUpdate, options?: Parameters<typeof customFetch>[1]): Promise<PartsVendorBlockState> => {
+
+  return customFetch<PartsVendorBlockState>(getUpdatePartsVendorBlockUrl(vendorKey),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsVendorBlockUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartsVendorBlockMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsVendorBlock>>, TError,{vendorKey: string;data: BodyType<PartsVendorBlockUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartsVendorBlock>>, TError,{vendorKey: string;data: BodyType<PartsVendorBlockUpdate>}, TContext> => {
+
+const mutationKey = ['updatePartsVendorBlock'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsVendorBlock>>, {vendorKey: string;data: BodyType<PartsVendorBlockUpdate>}> = (props) => {
+          const {vendorKey,data} = props ?? {};
+
+          return  updatePartsVendorBlock(vendorKey,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartsVendorBlockMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsVendorBlock>>>
+    export type UpdatePartsVendorBlockMutationBody = BodyType<PartsVendorBlockUpdate>
+    export type UpdatePartsVendorBlockMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Block or unblock a supplier for the signed-in team
+ */
+export const useUpdatePartsVendorBlock = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsVendorBlock>>, TError,{vendorKey: string;data: BodyType<PartsVendorBlockUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartsVendorBlock>>,
+        TError,
+        {vendorKey: string;data: BodyType<PartsVendorBlockUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdatePartsVendorBlockMutationOptions(options));
+    }
 
 export const getListPartsCatalogUrl = (params?: ListPartsCatalogParams,) => {
   const normalizedParams = new URLSearchParams();

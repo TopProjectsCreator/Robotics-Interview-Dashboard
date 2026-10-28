@@ -130,6 +130,7 @@ test("part details return generated-contract data scoped to the signed-in team",
   mock.module("../middlewares/adminAuth", {
     namedExports: {
       requireAdmin: (_req, _res, next) => next(),
+      requireInboxAdmin: (_req, _res, next) => next(),
       requestTeamId: async (req) => req.get("x-team-id") ?? "team-a",
     },
   });

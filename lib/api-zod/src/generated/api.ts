@@ -3777,7 +3777,8 @@ export const GetPartsDashboardResponse = zod.object({
   "message": zod.string(),
   "remainingPages": zod.number().int().min(1).optional().describe('Current sitemap product pages still eligible to crawl; present only while incomplete.'),
   "estimatedSecondsRemaining": zod.number().int().min(1).optional().describe('Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.')
-}),zod.null()]).describe('Latest persisted sync outcome, if this supplier has been checked.')
+}),zod.null()]).describe('Latest persisted sync outcome, if this supplier has been checked.'),
+  "blocked": zod.boolean().describe('Whether this supplier is blocked for the signed-in team.')
 })),
   "robots": zod.array(zod.object({
   "id": zod.string(),
@@ -3797,6 +3798,31 @@ export const GetPartsDashboardResponse = zod.object({
   "assignedUnits": zod.number().int(),
   "availableUnits": zod.number().int()
 })
+})
+
+
+/**
+ * @summary Read blocked suppliers for the signed-in team
+ */
+export const GetPartsVendorBlocksResponse = zod.object({
+  "blockedVendorKeys": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Block or unblock a supplier for the signed-in team
+ */
+export const UpdatePartsVendorBlockParams = zod.object({
+  "vendorKey": zod.coerce.string()
+})
+
+export const UpdatePartsVendorBlockBody = zod.object({
+  "blocked": zod.boolean()
+})
+
+export const UpdatePartsVendorBlockResponse = zod.object({
+  "vendorKey": zod.string(),
+  "blocked": zod.boolean()
 })
 
 

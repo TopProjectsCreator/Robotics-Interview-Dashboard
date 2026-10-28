@@ -55,6 +55,9 @@ test("assistant catalog search pages beyond 100 matches without gaps or duplicat
   const catalogQueries = [];
   const pool = {
     async query(statement, values = []) {
+      if (statement.includes('from "parts_vendor_blocks"')) {
+        return { rows: [], rowCount: 0 };
+      }
       if (statement.includes('from "parts_supplier_sync_states"')) {
         return { rows: [] };
       }

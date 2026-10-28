@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   dashboardVendors: null as Array<Record<string, unknown>> | null,
   sessionTeams: new WeakMap<object, string>(),
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
+  blockedVendors: new Map<string, Set<string>>(),
+  blockVendor: vi.fn(),
+  role: "coordinator" as string,
 }));
 
 let mediaDevicesDescriptor: PropertyDescriptor | undefined;
@@ -23,6 +26,7 @@ const testVendor = {
   catalogMode: "products",
   catalogSourceUrl: "https://www.andymark.com",
   coverageState: "discovery_only",
+  blocked: false,
   lastSync: null,
 };
 
@@ -46,9 +50,29 @@ vi.mock("@workspace/api-client-react", async () => {
   return {
     consumePartsCatalogSearchStream: mocks.consumeSearch,
     getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
+    getGetPartsVendorBlocksQueryKey: () => ["/parts/vendors/blocks"],
+    getGetSessionQueryKey: () => ["/auth/session"],
     getGetPartsCatalogDetailsQueryKey: (partId: string) => ["/parts/catalog/details", partId],
     getListPartsCatalogQueryKey: () => ["/parts/catalog"],
     useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
+    useGetSession: () => ({ data: { role: mocks.role } }),
+    useUpdatePartsVendorBlock: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ vendorKey, data }: {
+          vendorKey: string;
+          data: { blocked: boolean };
+        }) => {
+          const result = await mocks.blockVendor({ vendorKey, data });
+          const blocked = new Set(mocks.blockedVendors.get(teamId) ?? []);
+          if (data.blocked) blocked.add(vendorKey);
+          else blocked.delete(vendorKey);
+          mocks.blockedVendors.set(teamId, blocked);
+          return result;
+        },
+        isPending: false,
+      };
+    },
     useCreatePartsCatalogItem: () => {
       const teamId = getTeamId();
       return {
@@ -111,7 +135,10 @@ vi.mock("@workspace/api-client-react", async () => {
             0,
           );
           return {
-            vendors: mocks.dashboardVendors ?? [testVendor],
+            vendors: (mocks.dashboardVendors ?? [testVendor]).map((vendor) => ({
+              ...vendor,
+              blocked: mocks.blockedVendors.get(teamId)?.has(String(vendor.key)) ?? false,
+            })),
             robots: [],
             summary: {
               vendorCount: 1,
@@ -246,6 +273,8 @@ function startSearch(query = "early result") {
 afterEach(() => {
   vi.clearAllMocks();
   mocks.dashboardVendors = null;
+  mocks.blockedVendors.clear();
+  mocks.role = "coordinator";
   if (mediaDevicesDescriptor) {
     Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
   } else {
@@ -282,8 +311,11 @@ describe("progressive Parts search", () => {
     mocks.teamInventory.clear();
     mocks.teamInventory.set("team-a", []);
     mocks.teamInventory.set("team-b", []);
+    mocks.blockedVendors.clear();
+    mocks.role = "coordinator";
     mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
+    mocks.blockVendor.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
       name: "Camera suggested bracket",
@@ -366,6 +398,71 @@ describe("progressive Parts search", () => {
       expect(within(page.container).getByTestId("card-parts-source-gobilda"))
         .toHaveTextContent("58 pages still to crawl");
     });
+  });
+
+  it("lets admins block and restore suppliers from coverage management", async () => {
+    mocks.dashboardVendors = [
+      testVendor,
+      {
+        ...testVendor,
+        key: "ferra",
+        name: "Ferra",
+        website: "https://ferracomponents.com",
+        catalogSourceUrl: "https://ferracomponents.com/products.json",
+      },
+    ];
+    const page = await renderPartsPage();
+    fireEvent.click(within(page.container).getByTestId("button-show-parts-source-coverage"));
+
+    fireEvent.click(within(page.container).getByTestId("button-parts-vendor-block-andymark"));
+    await waitFor(() => {
+      expect(mocks.blockVendor).toHaveBeenCalledWith({
+        vendorKey: "andymark",
+        data: { blocked: true },
+      });
+    });
+    expect(await within(page.container).findByTestId("button-parts-vendor-unblock-andymark"))
+      .toHaveTextContent("Unblock supplier");
+    expect(within(page.container).getByTestId("card-parts-source-andymark"))
+      .toHaveTextContent("Blocked for this team");
+
+    fireEvent.click(within(page.container).getByTestId("button-parts-vendor-unblock-andymark"));
+    await waitFor(() => {
+      expect(mocks.blockVendor).toHaveBeenLastCalledWith({
+        vendorKey: "andymark",
+        data: { blocked: false },
+      });
+    });
+    expect(await within(page.container).findByTestId("button-parts-vendor-block-andymark"))
+      .toHaveTextContent("Block supplier");
+  });
+
+  it("shows blocked supplier state without management controls to team members", async () => {
+    mocks.role = "interviewer";
+    mocks.blockedVendors.set("team-a", new Set(["andymark"]));
+    const page = await renderPartsPage();
+    fireEvent.click(within(page.container).getByTestId("button-show-parts-source-coverage"));
+
+    expect(within(page.container).getByTestId("card-parts-source-andymark"))
+      .toHaveTextContent("Blocked for this team");
+    expect(within(page.container).queryByTestId("button-parts-vendor-unblock-andymark"))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps blocked suppliers available for inventory filtering but not new catalog entries", async () => {
+    mocks.blockedVendors.set("team-a", new Set(["andymark"]));
+    const page = await renderPartsPage();
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+
+    const inventoryFilter = within(page.container).getByLabelText("Filter supplier");
+    expect(within(inventoryFilter).getByRole("option", {
+      name: "AndyMark (blocked for this team)",
+    })).toBeInTheDocument();
+
+    fireEvent.click(within(page.container).getByRole("button", { name: "Add custom part" }));
+    const customSupplier = screen.getByLabelText("Supplier *");
+    expect(within(customSupplier).queryByRole("option", { name: "AndyMark" }))
+      .not.toBeInTheDocument();
   });
 
   it("lets a user save a verified result before the stream completes", async () => {

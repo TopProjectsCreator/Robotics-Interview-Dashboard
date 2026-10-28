@@ -22,6 +22,7 @@ const vendors = [{
   catalogMode: "products",
   catalogSourceUrl: "https://www.andymark.com",
   coverageState: "discovery_only",
+  blocked: false,
   lastSync: null,
 }] as const;
 

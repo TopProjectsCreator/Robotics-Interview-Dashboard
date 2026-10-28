@@ -27,4 +27,6 @@ export interface PartsVendor {
   publicProductFeedUrl?: string | null;
   /** Latest persisted sync outcome, if this supplier has been checked. */
   lastSync: PartsVendorSyncState | null;
+  /** Whether this supplier is blocked for the signed-in team. */
+  blocked: boolean;
 }

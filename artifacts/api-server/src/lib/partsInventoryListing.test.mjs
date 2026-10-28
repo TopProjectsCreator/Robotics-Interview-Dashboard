@@ -232,6 +232,9 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   const catalogQueries = [];
   const pool = {
     async query(statement, values = []) {
+      if (statement.includes('from "parts_vendor_blocks"')) {
+        return { rows: [], rowCount: 0 };
+      }
       if (statement.includes('from "parts_supplier_sync_states"')) {
         return { rows: supplierSyncRows, rowCount: supplierSyncRows.length };
       }
@@ -311,6 +314,7 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   mock.module("../middlewares/adminAuth", {
     namedExports: {
       requireAdmin: (_req, _res, next) => next(),
+      requireInboxAdmin: (_req, _res, next) => next(),
       requestTeamId: async (req) => req.get("x-team-id") ?? "team-a",
     },
   });

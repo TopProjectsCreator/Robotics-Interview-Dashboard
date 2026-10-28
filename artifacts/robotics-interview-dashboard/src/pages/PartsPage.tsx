@@ -24,15 +24,19 @@ import {
 } from "lucide-react";
 import {
   getGetPartsDashboardQueryKey,
+  getGetPartsVendorBlocksQueryKey,
+  getGetSessionQueryKey,
   getListPartsCatalogQueryKey,
   consumePartsCatalogSearchStream,
   useSyncPartsCatalog,
   useCreatePartsCatalogItem,
   useCreatePartsRobot,
   useGetPartsDashboard,
+  useGetSession,
   useListPartsCatalog,
   useSetPartsRobotAllocation,
   useUpdatePartsCatalogStock,
+  useUpdatePartsVendorBlock,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
   type PartsCatalogSearchStreamEvent,
@@ -527,6 +531,9 @@ function PartCard({
 
 export default function PartsPage() {
   const queryClient = useQueryClient();
+  const sessionQuery = useGetSession({
+    query: { queryKey: getGetSessionQueryKey() },
+  });
   const dashboardQuery = useGetPartsDashboard({
     query: {
       queryKey: getGetPartsDashboardQueryKey(),
@@ -566,6 +573,7 @@ export default function PartsPage() {
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
   const [selectedPart, setSelectedPart] = useState<PartsCatalogItem | null>(null);
+  const [vendorBlockBusyKey, setVendorBlockBusyKey] = useState<string | null>(null);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -603,7 +611,11 @@ export default function PartsPage() {
   const createRobotMutation = useCreatePartsRobot();
   const stockMutation = useUpdatePartsCatalogStock();
   const allocationMutation = useSetPartsRobotAllocation();
+  const vendorBlockMutation = useUpdatePartsVendorBlock();
   const vendors = dashboardQuery.data?.vendors ?? [];
+  const canManageVendors =
+    sessionQuery.data?.role === "admin" || sessionQuery.data?.role === "coordinator";
+  const availableVendors = vendors.filter((vendor) => !vendor.blocked);
   const robots = dashboardQuery.data?.robots ?? [];
   const catalogItems = catalogQuery.data?.items ?? [];
   const currentlyAdded = new Set(
@@ -635,8 +647,39 @@ export default function PartsPage() {
   const refreshParts = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetPartsVendorBlocksQueryKey() }),
       queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() }),
     ]);
+  };
+
+  const toggleVendorBlock = async (vendor: PartsVendor) => {
+    const blocked = !vendor.blocked;
+    setNotice(null);
+    setVendorBlockBusyKey(vendor.key);
+    // Ignore in-flight stream events and clear results tied to the old policy.
+    searchRunId.current += 1;
+    setSearchBusy(false);
+    setSearchResults([]);
+    setSearchStatus(null);
+    setSearchError("");
+    try {
+      await vendorBlockMutation.mutateAsync({
+        vendorKey: vendor.key,
+        data: { blocked },
+      });
+      await refreshParts();
+      setNotice({
+        kind: "success",
+        text: `${vendor.name} ${blocked ? "blocked from" : "restored to"} supplier search for this team.`,
+      });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(error, `Unable to ${blocked ? "block" : "unblock"} ${vendor.name}.`),
+      });
+    } finally {
+      setVendorBlockBusyKey(null);
+    }
   };
 
   const syncPublicCatalogs = async () => {
@@ -1156,7 +1199,17 @@ export default function PartsPage() {
                                   {stateLabel}
                                 </Badge>
                               </div>
+                              {vendor.blocked && (
+                                <Badge variant="destructive" className="mt-2">
+                                  Blocked for this team
+                                </Badge>
+                              )}
                               <p className="mt-1 text-sm text-muted-foreground">{stateDetail}</p>
+                              {vendor.blocked && (
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  This supplier is excluded from search and new sourcing. Saved inventory remains available.
+                                </p>
+                              )}
                               {syncResult?.status === "incomplete" &&
                                 typeof syncResult.remainingPages === "number" &&
                                 syncResult.remainingPages > 0 &&
@@ -1194,6 +1247,24 @@ export default function PartsPage() {
                                   </a>
                                 )}
                               </div>
+                              {canManageVendors && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-3"
+                                  disabled={vendorBlockMutation.isPending}
+                                  onClick={() => void toggleVendorBlock(vendor)}
+                                  data-testid={`button-parts-vendor-${vendor.blocked ? "unblock" : "block"}-${vendor.key}`}
+                                >
+                                  {vendorBlockBusyKey === vendor.key
+                                    ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                                    : <ShieldCheck size={14} aria-hidden="true" />}
+                                  {vendorBlockBusyKey === vendor.key
+                                    ? vendor.blocked ? "Unblocking…" : "Blocking…"
+                                    : vendor.blocked ? "Unblock supplier" : "Block supplier"}
+                                </Button>
+                              )}
                             </article>
                           );
                         })}
@@ -1582,7 +1653,7 @@ export default function PartsPage() {
                           <option value="">Choose supplier</option>
                           {VENDOR_GROUPS.map((group) => (
                             <optgroup key={group} label={group}>
-                              {vendors.filter((vendor) => vendor.group === group).map((vendor) => (
+                              {availableVendors.filter((vendor) => vendor.group === group).map((vendor) => (
                                 <option key={vendor.key} value={vendor.key}>{vendor.name}</option>
                               ))}
                             </optgroup>
@@ -1668,7 +1739,7 @@ export default function PartsPage() {
                 <PartsImageIdentifyDialog
                   open={photoDialogOpen}
                   onOpenChange={setPhotoDialogOpen}
-                  vendors={vendors}
+                  vendors={availableVendors}
                   saving={createItemMutation.isPending}
                   onSave={savePhotoIdentifiedPart}
                 />
@@ -1704,7 +1775,9 @@ export default function PartsPage() {
                           {VENDOR_GROUPS.map((group) => (
                             <optgroup key={group} label={group}>
                               {vendors.filter((vendor) => vendor.group === group).map((vendor) => (
-                                <option key={vendor.key} value={vendor.key}>{vendor.name}</option>
+                                <option key={vendor.key} value={vendor.key}>
+                                  {vendor.name}{vendor.blocked ? " (blocked for this team)" : ""}
+                                </option>
                               ))}
                             </optgroup>
                           ))}
