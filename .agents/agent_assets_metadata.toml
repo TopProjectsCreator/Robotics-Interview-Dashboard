@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "ZUba4F4g2Bte1I0FfVKGF"
+uri = "file://generated-artifacts/robotics-parts-poster-final.jpg"
+type = "image"
+title = "Robotics Parts Poster"
+description = "Print-ready 18 × 24-inch poster at 300 DPI, promoting supplier search, stock tracking, and robot part allocation."
+logical_id = "3b9f4bac-3de2-4754-91d6-32385d8f3739"
+content_hash = "sha256:0b0b58f1cd3db1145585e364ad9c0332e8a641bedb7622ad808e0add56c11cd7"
+size = 3784250
+mtime_ms = 1793148074327
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:b23cb77f-38e7-4505-b289-f0f20b5d9c01/3b9f4bac-3de2-4754-91d6-32385d8f3739/c11f4814-e027-41f9-94ec-3b9d83cbf553"
+storage_version_token = "1793148079960108"
+content_type = "image/jpeg"
