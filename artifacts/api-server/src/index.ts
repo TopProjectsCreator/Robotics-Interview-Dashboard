@@ -103,6 +103,7 @@ async function ensureSchema(): Promise<void> {
     "assistant_conversations",
     "assistant_messages",
     "assistant_prompt_runs",
+    "assistant_builder_runs",
     "assistant_skills",
     "audit_logs",
     "broadcast_acks",
@@ -215,6 +216,26 @@ async function ensureSchema(): Promise<void> {
     );
 
   const statements = [
+    `create table if not exists "assistant_builder_runs" (
+       "id" text primary key,
+       "team_id" text not null,
+       "coordinator_id" text not null,
+       "conversation_id" text not null,
+       "prompt" text not null,
+       "status" text not null,
+       "question_id" text,
+       "questions" jsonb,
+       "answers" jsonb not null default '{}'::jsonb,
+       "activities" text not null default '[]',
+       "result" text,
+       "error" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "assistant_builder_runs_owner_created_idx"
+       on "assistant_builder_runs" ("team_id", "coordinator_id", "created_at")`,
+    `create index if not exists "assistant_builder_runs_question_idx"
+       on "assistant_builder_runs" ("team_id", "coordinator_id", "question_id")`,
     `create table if not exists "custom_workspaces" (
        "id" text primary key,
        "team_id" text,

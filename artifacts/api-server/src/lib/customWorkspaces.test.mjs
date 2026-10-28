@@ -1213,6 +1213,56 @@ test("LLM requests require workspace visibility and the LLM capability", async (
   assert.equal(harness.calls.llm.length, 2, "denied requests must not reach the model");
 });
 
+test("a basic test workspace completes five verified reviews before publishing", async (t) => {
+  const harness = await createHarness(t);
+  const { runAssistantWorkspaceTool } = await import(`./assistantWorkspaceTools.ts?test=${++importId}`);
+  const created = await runAssistantWorkspaceTool("create_custom_workspace", {
+    title: "test",
+    description: "Five-round publish verification",
+    prompt: "Show the word test",
+    html: "<main>test</main>",
+    capabilities: [],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+  });
+  assert.match(created.detail, /created custom workspace draft/);
+  const draft = harness.workspaces.find((workspace) => workspace.title === "test");
+  assert.ok(draft);
+
+  for (const round of [1, 2, 3, 4, 5]) {
+    const critique = await runAssistantWorkspaceTool("critique_custom_workspace", {
+      workspaceId: draft.id,
+      round,
+    }, {
+      accountId: "coordinator-b",
+      authorName: "Team B coordinator",
+      teamId: "team-b",
+    });
+    assert.equal(JSON.parse(critique.content).completedRounds, round);
+    const verification = await runAssistantWorkspaceTool("verify_custom_workspace_fixes", {
+      workspaceId: draft.id,
+      round,
+    }, {
+      accountId: "coordinator-b",
+      authorName: "Team B coordinator",
+      teamId: "team-b",
+    });
+    assert.equal(JSON.parse(verification.content).verified, true);
+  }
+
+  assert.equal(draft.critiqueRounds, 5);
+  assert.equal(draft.verifiedCritiqueRounds, 5);
+  const published = await harness.request("coordinator-b", "POST", `/custom-workspaces/${draft.id}/publish`, {
+    accessMode: "team",
+    allowedInterviewerIds: [],
+  });
+  assert.equal(published.status, 200);
+  assert.equal((await published.json()).workspace.status, "published");
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === draft.id).html, "<main>test</main>");
+});
+
 test("assistant-created custom apps remain drafts owned by the current team", async (t) => {
   const harness = await createHarness(t);
   const { DEFAULT_ASSISTANT_MODEL, resolveAssistantModel } = await import(`./assistantModel.ts?test=${++importId}`);
