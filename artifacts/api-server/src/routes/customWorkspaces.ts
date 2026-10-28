@@ -819,7 +819,7 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
   const teamId = await requestTeamId(req);
   const workspaceId = String(req.params.id ?? "");
   if (limited(`visual-publish:${authenticatedInterviewerId(req)}`, 5)) {
-    res.status(429).json({ error: "Visual publish checks are temporarily rate limited." });
+    res.status(429).json({ error: "Workspace publishing is temporarily rate limited." });
     return;
   }
   const accessSettings = await saveableAccessSettings(req.body, teamId);
@@ -845,203 +845,58 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     res.status(409).json({ error: "Complete and independently verify all five critique rounds before publishing this workspace." });
     return;
   }
-  const accountId = authenticatedInterviewerId(req) ?? "";
-  res.status(200);
-  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-  const emit = (event: Record<string, unknown>) => {
-    res.write(`${JSON.stringify(event)}\n`);
-    (res as Response & { flush?: () => void }).flush?.();
-  };
 
+  // Publishing is a simple state change. All builder and critique work must
+  // finish before this button is enabled; do not start another agent here.
+  const client = await pool.connect();
   try {
-    let html = current.html;
-    let finalScreenshot = "";
-    const finalScreenshots: Partial<Record<WorkspaceTheme, string>> = {};
-    let finalReview: { passed: boolean; issues: string[]; repair: string } | null = null;
-    const sourceFilesResult = await pool.query<{ path: string; content: string }>(
-      `select "path", "content" from "custom_workspace_files"
-        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-        order by "path"`,
+    await client.query("BEGIN");
+    const locked = await client.query<{
+      status: string;
+      critiqueRounds: number;
+      verifiedCritiqueRounds: number;
+    }>(
+      `select "status", "critique_rounds" as "critiqueRounds",
+              "verified_critique_rounds" as "verifiedCritiqueRounds"
+         from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        limit 1 for update`,
       [workspaceId, teamId],
     );
-    let sourceFiles = sourceFilesResult.rows.length
-      ? sourceFilesResult.rows
-      : [{ path: "index.html", content: current.html }];
-    for (let attempt = 0; attempt <= VISUAL_REPAIR_LIMIT; attempt += 1) {
-      emit({
-        type: "tool_start",
-        id: `runtime-${attempt + 1}`,
-        tool: "Check browser runtime",
-        detail: `Opening the isolated draft in light and dark themes (attempt ${attempt + 1}).`,
-      });
-      const runtimeDetails: string[] = [];
-      for (const theme of ["light", "dark"] as const) {
-        const screenshotId = `screenshot-${theme}-${attempt + 1}`;
-        emit({
-          type: "tool_start",
-          id: screenshotId,
-          tool: `Capture ${theme} theme screenshot`,
-          detail: "Rendering at 1280 × 900.",
-        });
-        let preview: Awaited<ReturnType<typeof visualTools.capture>>;
-        try {
-          preview = await visualTools.capture(html, theme);
-        } catch (captureError) {
-          emit({
-            type: "failed",
-            message: "The browser runtime check could not run on this server. The workspace remains a draft.",
-            issues: [captureError instanceof Error ? captureError.message : "Browser preview unavailable."],
-          });
-          return;
-        }
-        finalScreenshots[theme] = preview.screenshot;
-        if (theme === "light") finalScreenshot = preview.screenshot;
-        emit({
-          type: "screenshot",
-          id: screenshotId,
-          theme,
-          image: `data:image/png;base64,${preview.screenshot}`,
-        });
-        runtimeDetails.push(...preview.runtimeIssues.map((issue) => `${theme} theme — ${issue.kind}: ${issue.message}`));
-      }
-      emit({
-        type: "tool_done",
-        id: `runtime-${attempt + 1}`,
-        passed: runtimeDetails.length === 0,
-        detail: runtimeDetails.length ? runtimeDetails.join(" · ") : "No JavaScript errors or failed resource loads.",
-      });
-      if (runtimeDetails.length) {
-        if (attempt === VISUAL_REPAIR_LIMIT) {
-          emit({ type: "failed", message: "Browser runtime checks still found errors. The workspace remains a draft.", issues: runtimeDetails });
-          return;
-        }
-        emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair browser runtime issues", detail: runtimeDetails.join(" · ") });
-        const repaired = await visualTools.repair(
-          current.prompt,
-          html,
-          `Browser runtime diagnostics:\n${runtimeDetails.join("\n")}`,
-          sourceFiles,
-        );
-        html = repaired.html;
-        sourceFiles = repaired.sourceFiles;
-        emit({ type: "tool_done", id: `repair-${attempt + 1}` });
-        continue;
-      }
-      const themeReviews: Array<{ theme: WorkspaceTheme; review: Awaited<ReturnType<typeof visualTools.inspect>> }> = [];
-      for (const theme of ["light", "dark"] as const) {
-        const reviewId = `review-${theme}-${attempt + 1}`;
-        emit({
-          type: "tool_start",
-          id: reviewId,
-          tool: `Review ${theme} theme contrast and layout`,
-          detail: `Checking the ${theme} rendering against the brief and Robotics workspace style.`,
-        });
-        const review = await visualTools.inspect(current.prompt, theme, finalScreenshots[theme] ?? "");
-        themeReviews.push({ theme, review });
-        emit({
-          type: "review",
-          id: reviewId,
-          theme,
-          passed: review.passed,
-          issues: review.issues,
-        });
-      }
-      finalReview = {
-        passed: themeReviews.every(({ review }) => review.passed),
-        issues: themeReviews.flatMap(({ theme, review }) =>
-          review.issues.length
-            ? review.issues.map((issue) => `${theme} theme — ${issue}`)
-            : review.passed
-              ? []
-              : [`${theme} theme — the visual review did not identify a specific issue.`],
-        ),
-        repair: themeReviews
-          .filter(({ review }) => !review.passed)
-          .map(({ theme, review }) => `${theme.toUpperCase()} THEME:\n${[...review.issues, review.repair].filter(Boolean).join("\n") || "Correct contrast and align colors with the dashboard theme tokens."}`)
-          .join("\n\n"),
-      };
-      if (finalReview.passed) break;
-      if (attempt === VISUAL_REPAIR_LIMIT) {
-        emit({ type: "failed", message: "Visual review still found issues. The workspace remains a draft.", issues: finalReview.issues });
-        return;
-      }
-      emit({ type: "tool_start", id: `repair-${attempt + 1}`, tool: "Repair visual issues", detail: finalReview.issues.join(" · ") || finalReview.repair });
-      const repaired = await visualTools.repair(
-        current.prompt,
-        html,
-        finalReview.repair || finalReview.issues.join("\n"),
-        sourceFiles,
-      );
-      html = repaired.html;
-      sourceFiles = repaired.sourceFiles;
-      emit({ type: "tool_done", id: `repair-${attempt + 1}` });
-    }
-
-    if (!finalReview?.passed) {
-      emit({ type: "failed", message: "Visual review could not confirm this workspace." });
+    const draft = locked.rows[0];
+    if (draft?.status !== "draft") {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Workspace not found." });
       return;
     }
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const locked = await client.query<{ html: string; status: string }>(
-        `select "html", "status" from "custom_workspaces"
-          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} limit 1 for update`,
-        [workspaceId, teamId],
-      );
-      if (locked.rows[0]?.status !== "draft" || locked.rows[0].html !== current.html) {
-        await client.query("ROLLBACK");
-        emit({ type: "failed", message: "This draft changed while it was being reviewed. Reload it and try again." });
-        return;
-      }
-      if (html !== current.html || JSON.stringify(sourceFiles) !== JSON.stringify(
-        sourceFilesResult.rows.length ? sourceFilesResult.rows : [{ path: "index.html", content: current.html }],
-      )) {
-        await client.query(
-          `insert into "custom_workspace_versions"
-            ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
-           values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, 'Before visual QA repair')`,
-          [
-            randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities),
-            JSON.stringify(sourceFilesResult.rows.length ? sourceFilesResult.rows : [{ path: "index.html", content: current.html }]),
-            accountId,
-          ],
-        );
-      }
-      const result = await client.query(
-        `update "custom_workspaces" set "html" = $3, "status" = 'published', "access_mode" = $4,
-                  "allowed_interviewer_ids" = $5::jsonb, "updated_at" = now()
-          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
-          returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
-                    "allowed_interviewer_ids" as "allowedInterviewerIds",
-                    "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-        [workspaceId, teamId, html, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
-      );
-      for (const file of sourceFiles) {
-        await client.query(
-          `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
-           values ($1, $2, $3, $4, $5, $6)
-           on conflict ("workspace_id", "path") do update
-             set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
-          [randomUUID(), teamId, workspaceId, file.path, file.content, accountId],
-        );
-      }
-      await client.query("COMMIT");
-      emit({ type: "complete", workspace: result.rows[0], image: `data:image/png;base64,${finalScreenshot}` });
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
+    if (Number(draft.critiqueRounds) < 5 || Number(draft.verifiedCritiqueRounds) < 5) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "Complete and independently verify all five critique rounds before publishing this workspace." });
+      return;
     }
+    const result = await client.query(
+      `update "custom_workspaces"
+          set "status" = 'published', "access_mode" = $3,
+              "allowed_interviewer_ids" = $4::jsonb, "updated_at" = now()
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'
+        returning "id", "title", "description", "html", "capabilities", "status", "access_mode" as "accessMode",
+                  "allowed_interviewer_ids" as "allowedInterviewerIds",
+                  "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [workspaceId, teamId, accessSettings.accessMode, JSON.stringify(accessSettings.allowedInterviewerIds)],
+    );
+    if (!result.rows[0]) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Workspace not found." });
+      return;
+    }
+    await client.query("COMMIT");
+    res.json({ workspace: result.rows[0] });
   } catch (error) {
-    req.log.error({ err: error, workspaceId }, "Custom workspace visual publish failed");
-    emit({ type: "failed", message: "Visual review failed, so this workspace was not published." });
+    await client.query("ROLLBACK").catch(() => undefined);
+    req.log.error({ err: error, workspaceId }, "Custom workspace publish failed");
+    res.status(500).json({ error: "Could not publish the workspace." });
   } finally {
-    res.end();
+    client.release();
   }
 });
 

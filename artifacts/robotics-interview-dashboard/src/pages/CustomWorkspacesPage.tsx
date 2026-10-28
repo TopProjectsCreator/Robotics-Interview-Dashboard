@@ -16,18 +16,6 @@ type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
 type BuilderModel = { id: string; name?: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
-type PublishAgentEvent = {
-  type: "tool_start" | "tool_done" | "screenshot" | "review" | "complete" | "failed";
-  id?: string;
-  tool?: string;
-  detail?: string;
-  image?: string;
-  theme?: "light" | "dark";
-  passed?: boolean;
-  issues?: string[];
-  message?: string;
-  workspace?: Workspace;
-};
 type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; status: "running" | "done" | "failed" };
 type AgentQuestion = {
   id: string;
@@ -320,8 +308,8 @@ export function CustomWorkspacesPage() {
   const [agentQuestion, setAgentQuestion] = useState<AgentQuestion | null>(null);
   const [builderRun, setBuilderRun] = useState<BuilderRun | null>(null);
   const builderRunRef = useRef<BuilderRun | null>(null);
+  const autoResumeAttempts = useRef(new Map<string, number>());
   const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
-  const [publishScreenshots, setPublishScreenshots] = useState<Partial<Record<"light" | "dark", string>>>({});
   const frame = useRef<HTMLIFrameElement>(null);
   const active = useMemo(() => selected ?? items[0] ?? null, [items, selected]);
   useEffect(() => { builderRunRef.current = builderRun; }, [builderRun]);
@@ -604,7 +592,6 @@ export function CustomWorkspacesPage() {
   const generate = async () => {
     setError("");
     setBusy(true);
-    setPublishScreenshots({});
     setPublishAgentSteps([{ id: "generate", label: "Start workspace agent", detail: "The assistant will build the app through multiple tool rounds.", status: "running" }]);
     try {
       const beforeIds = new Set(items.map((item) => item.id));
@@ -631,10 +618,22 @@ export function CustomWorkspacesPage() {
               status: "running",
             },
           ]);
-          const reviewRun = await runBuilderAgent(
-            critiqueContinuationPrompt(draft.id),
-            new Set(latest.map((workspace) => workspace.id)),
-          );
+          let reviewRun: BuilderRun | null = null;
+          for (let retry = 0; retry < 3; retry += 1) {
+            try {
+              reviewRun = await runBuilderAgent(
+                critiqueContinuationPrompt(draft.id),
+                new Set(latest.map((workspace) => workspace.id)),
+              );
+              if (reviewRun?.status === "failed" || reviewRun?.status === "interrupted") {
+                throw new Error("The workspace builder stopped before completing this review round.");
+              }
+              break;
+            } catch (err) {
+              if (retry === 2) throw err;
+              await new Promise((resolve) => window.setTimeout(resolve, 1000 * 2 ** retry));
+            }
+          }
           if (reviewRun?.status === "waiting_for_answer") {
             throw new Error("The workspace agent needs your answer before it can finish the critique rounds. Answer its question to continue.");
           }
@@ -661,7 +660,6 @@ export function CustomWorkspacesPage() {
     if (!builderRun || !canManage) return;
     setBusy(true);
     setError("");
-    setPublishScreenshots({});
     setPublishAgentSteps([{ id: "recover", label: "Continue builder", detail: "Starting a new server run from the saved request, answers, and draft files.", status: "running" }]);
     try {
       const savedAnswers = Object.keys(builderRun.answers).length
@@ -677,108 +675,67 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (
+      !canManage ||
+      busy ||
+      !active ||
+      active.status !== "draft" ||
+      !builderRun ||
+      !["failed", "interrupted"].includes(builderRun.status) ||
+      builderRun.question ||
+      Number(active.critiqueRounds ?? 0) >= 5 ||
+      Number(active.verifiedCritiqueRounds ?? 0) >= 5
+    ) return;
+
+    const isThisDraft = builderRun.prompt.includes(active.id);
+    const attempts = autoResumeAttempts.current.get(active.id) ?? 0;
+    if (!isThisDraft || attempts >= 3) return;
+    autoResumeAttempts.current.set(active.id, attempts + 1);
+
+    setBusy(true);
+    setError("");
+    setPublishAgentSteps([{ id: `auto-resume-${attempts + 1}`, label: "Resume workspace reviews", detail: "Continuing the saved draft automatically.", status: "running" }]);
+    void (async () => {
+      try {
+        for (let round = 0; round < 5; round += 1) {
+          const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
+          const latest = workspaces.find((workspace) => workspace.id === active.id);
+          if (!latest || (Number(latest.critiqueRounds ?? 0) >= 5 && Number(latest.verifiedCritiqueRounds ?? 0) >= 5)) break;
+          const resumed = await runBuilderAgent(
+            critiqueContinuationPrompt(active.id),
+            new Set(workspaces.map((workspace) => workspace.id)),
+          );
+          if (resumed?.status === "waiting_for_answer") return;
+          if (resumed?.status === "failed" || resumed?.status === "interrupted") {
+            throw new Error("The workspace builder stopped again. It will retry automatically.");
+          }
+        }
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not resume workspace reviews.");
+      } finally {
+        setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Automatic continuation finished." } : step));
+        setBusy(false);
+      }
+    })();
+  }, [active?.id, active?.status, active?.critiqueRounds, active?.verifiedCritiqueRounds, builderRun?.id, builderRun?.status, builderRun?.question, canManage, busy]);
   const publish = async () => {
     if (!active) return;
-    if (builderRun && ["running", "waiting_for_answer"].includes(builderRun.status)) {
-      setError("The workspace agent is still running. Wait for it to finish before publishing.");
+    if (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) {
+      setError("Publishing becomes available after the builder completes and verifies all five review rounds.");
       return;
     }
     setBusy(true);
     setError("");
-    setPublishAgentSteps([]);
-    setPublishScreenshots({});
     try {
-      const publishRequest = () => fetch(`${API}/${active.id}/publish`, {
+      const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/publish`, {
         method: "POST",
         body: JSON.stringify({ accessMode, allowedInterviewerIds }),
-        credentials: "include",
-        headers: (() => {
-          const headers = new Headers({ "Content-Type": "application/json" });
-          const token = getStoredAuthToken();
-          if (token) headers.set("Authorization", `Bearer ${token}`);
-          return headers;
-        })(),
       });
-      let response = await publishRequest();
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        const message = typeof body.error === "string" ? body.error : "Could not publish the workspace.";
-        if (response.status !== 409 || !message.includes("all five critique rounds")) {
-          throw new Error(message);
-        }
-
-        setPublishAgentSteps([{
-          id: "critique-rounds",
-          label: "Complete required critique rounds",
-          detail: "Starting the independent critique and fix cycle automatically.",
-          status: "running",
-        }]);
-        const reviewRun = await runBuilderAgent(
-          `Revise custom workspace draft ${active.id}. The coordinator clicked Publish, but the server reports that all five mandatory independent critique rounds are incomplete. Continue this existing draft; do not create a duplicate. Inspect its saved source files and use critique_custom_workspace to determine and complete the next required round. Complete exactly five sequential rounds total, independently verifying each round after fixing its eligible findings with verify_custom_workspace_fixes. For rounds 1–4 fix every score above 6 and below 6; for round 5 fix every score above 6. If verification reports unresolved findings, keep fixing and re-verify that same round before advancing. Do not publish from the assistant and do not ask the coordinator to start a round manually. Stop only after all five rounds are independently verified.`,
-          new Set(items.map((item) => item.id)),
-        );
-        if (reviewRun?.status === "waiting_for_answer") {
-          throw new Error("The workspace agent needs your answer before it can finish the critique rounds. Answer its question, then publish again.");
-        }
-        setPublishAgentSteps((steps) => steps.map((step) => step.id === "critique-rounds" && step.status === "running"
-          ? { ...step, status: "done", detail: "The critique agent finished. Starting the publish checks." }
-          : step));
-
-        response = await publishRequest();
-        if (!response.ok) {
-          const retryBody = await response.json().catch(() => ({}));
-          throw new Error(typeof retryBody.error === "string" ? retryBody.error : "Could not publish the workspace.");
-        }
-      }
-      if (!response.body) throw new Error("The visual review stream is unavailable.");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let completed = false;
-      let streamFailed = false;
-      const handleEvent = (event: PublishAgentEvent) => {
-        if (event.type === "tool_start" && event.id) {
-          setPublishAgentSteps((current) => [...current, { id: event.id!, label: event.tool ?? "Agent step", detail: event.detail, status: "running" }]);
-        } else if (event.type === "tool_done" && event.id) {
-          setPublishAgentSteps((current) => current.map((step) => step.id === event.id
-            ? { ...step, status: event.passed === false ? "failed" : "done", detail: event.detail ?? step.detail }
-            : step));
-        } else if (event.type === "screenshot" && event.image) {
-          setPublishScreenshots((current) => ({
-            ...current,
-            [event.theme ?? "light"]: event.image!,
-          }));
-          setPublishAgentSteps((current) => current.map((step) => step.id === event.id ? { ...step, status: "done" } : step));
-        } else if (event.type === "review" && event.id) {
-          setPublishAgentSteps((current) => current.map((step) => step.id === event.id
-            ? { ...step, status: event.passed ? "done" : "failed", detail: event.issues?.join(" · ") || (event.passed ? "No visible issues found." : "Visual issues found.") }
-            : step));
-        } else if (event.type === "complete" && event.workspace) {
-          completed = true;
-          setSelected(event.workspace);
-          setPublishAgentSteps((current) => [...current, { id: "published", label: "Publish workspace", detail: "Visual check passed.", status: "done" }]);
-          void refresh();
-        } else if (event.type === "failed") {
-          streamFailed = true;
-          setError(event.message ?? "Visual review failed; the workspace remains a draft.");
-          setPublishAgentSteps((current) => current.map((step) => step.status === "running" ? { ...step, status: "failed" } : step));
-        }
-      };
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try { handleEvent(JSON.parse(line) as PublishAgentEvent); } catch { /* Ignore malformed progress frames. */ }
-        }
-        if (done) break;
-      }
-      if (buffer.trim()) {
-        try { handleEvent(JSON.parse(buffer) as PublishAgentEvent); } catch { /* Ignore malformed final frame. */ }
-      }
-      if (!completed && !streamFailed) setError("The agent did not finish the visual review.");
+      setSelected(result.workspace);
+      setPublishAgentSteps([{ id: "published", label: "Publish workspace", detail: "Published.", status: "done" }]);
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish the workspace.");
     } finally {
@@ -806,7 +763,6 @@ export function CustomWorkspacesPage() {
     if (!active || !revisionPrompt.trim()) return;
     setBusy(true);
     setError("");
-    setPublishScreenshots({});
     setPublishAgentSteps([{ id: "revise", label: "Start workspace revision agent", detail: "The assistant will inspect and edit the saved source tree.", status: "running" }]);
     try {
       await runBuilderAgent(`Revise custom workspace draft ${active.id}. Requested changes: ${revisionPrompt}\n\nUse list_custom_workspace_files and read_custom_workspace_file before editing. Keep the changes in this draft's persistent source tree and do not publish.`, new Set(items.map((item) => item.id)));
@@ -953,12 +909,15 @@ export function CustomWorkspacesPage() {
             </label>
             {active.status === "published" && <button type="button" disabled={busy || !accessChanged} onClick={() => void saveAccess()} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Save access</button>}
           </div>}
-          {active && canManage && active.status === "draft" && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
+          {active && canManage && active.status === "draft" && Number(active.critiqueRounds ?? 0) >= 5 && Number(active.verifiedCritiqueRounds ?? 0) >= 5 && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
+          {active && canManage && active.status === "draft" && (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) && <span className="text-xs text-[#60757c] dark:text-[#b3c3cb]" data-testid="publish-readiness">
+            Builder reviews: {Number(active.critiqueRounds ?? 0)}/5 complete, {Number(active.verifiedCritiqueRounds ?? 0)}/5 verified
+          </span>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
-          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{publishScreenshots.light || publishScreenshots.dark ? "Checks light- and dark-theme screenshots and browser runtime, repairs code or contrast issues, and blocks publishing if they remain." : "This agent runs on the server. You can leave this tab; draft files are saved as the agent works, and completed tool logs return here."}</p>
+          <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">The builder runs on the server. Publishing is available after all five review rounds are independently verified.</p>
           {builderRun && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--foreground))]" data-testid="builder-run-status">
             <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : builderRun.status === "interrupted" || builderRun.status === "failed" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
               {builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
@@ -1002,16 +961,6 @@ export function CustomWorkspacesPage() {
           {builderRun?.result && <div className="mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3" data-testid="builder-run-result">
             <h4 className="text-xs font-semibold text-[hsl(var(--foreground))]">Latest builder result</h4>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[hsl(var(--foreground))]">{builderRun.result}</p>
-          </div>}
-          {(["light", "dark"] as const).filter((theme) => publishScreenshots[theme]).length > 0 && <div className="mt-3 grid max-w-4xl gap-3 md:grid-cols-2">
-            {(["light", "dark"] as const).map((theme) => publishScreenshots[theme] && <figure key={theme}>
-              <img
-                src={publishScreenshots[theme]}
-                alt={theme === "light" ? "Latest screenshot reviewed by the builder agent" : "Latest dark-theme screenshot reviewed by the builder agent"}
-                className="max-h-72 w-full rounded-lg border border-[hsl(var(--border))] object-contain object-left-top"
-              />
-              <figcaption className="mt-1 text-[11px] text-[#60757c] dark:text-[#b3c3cb]">Latest 1280 × 900 {theme} theme render reviewed before publishing.</figcaption>
-            </figure>)}
           </div>}
         </section>}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">

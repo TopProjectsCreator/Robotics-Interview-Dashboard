@@ -380,11 +380,10 @@ async function createHarness(t) {
         ensureTeamScope('"team_id"', "$2", teamId);
         const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
         if (!row) return { rows: [], rowCount: 0 };
-        if (statement.includes('set "html" = $3, "status" = \'published\'')) {
-          row.html = accessMode;
+        if (statement.includes('set "status" = \'published\'')) {
           row.status = "published";
-          row.accessMode = allowedIdsJson;
-          row.allowedInterviewerIds = JSON.parse(values[4]);
+          row.accessMode = accessMode;
+          row.allowedInterviewerIds = JSON.parse(allowedIdsJson);
         } else if (statement.includes('set "html" = $3')) {
           row.html = accessMode;
           if (row.status === "draft" && statement.includes('"capabilities" = case')) {
@@ -888,18 +887,12 @@ test("coordinators can update selected members but cannot grant access across te
     { accessMode: "selected", allowedInterviewerIds: ["admin-a"] },
   );
   assert.equal(selectedOnPublish.status, 200);
-  const publishEvents = (await selectedOnPublish.text()).trim().split("\n").map((line) => JSON.parse(line));
-  const publishedEvent = publishEvents.find((event) => event.type === "complete");
-  const failedPublish = publishEvents.find((event) => event.type === "failed");
-  if (publishedEvent) {
-    assert.deepEqual(publishedEvent.workspace.allowedInterviewerIds, ["admin-a"]);
-  } else {
-    assert.ok(failedPublish, "publish must either pass visual QA or explicitly fail");
-    assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "draft");
-  }
+  const publishResult = await selectedOnPublish.json();
+  assert.deepEqual(publishResult.workspace.allowedInterviewerIds, ["admin-a"]);
+  assert.equal(publishResult.workspace.status, "published");
   assert.equal(
     (await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-draft")).status,
-    publishedEvent ? 200 : 404,
+    200,
   );
 });
 
@@ -915,7 +908,7 @@ function seedBrokenWorkspacePreview(harness) {
   return draft;
 }
 
-test("runtime errors and missing local assets are reported, repaired in saved files, and checked again", async (t) => {
+test("publishing does not run an agent or modify the saved source files", async (t) => {
   const harness = await createHarness(t);
   seedBrokenWorkspacePreview(harness);
 
@@ -923,34 +916,16 @@ test("runtime errors and missing local assets are reported, repaired in saved fi
     accessMode: "team",
   });
   assert.equal(response.status, 200);
-  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
-  const runtimeCheck = events.find((event) => event.type === "tool_done" && event.id === "runtime-1");
-  assert.equal(runtimeCheck.passed, false);
-  assert.match(runtimeCheck.detail, /JavaScript exception:.*runtime boom/);
-  assert.match(runtimeCheck.detail, /Asset load failure|Blocked resource/);
-  assert.ok(events.some((event) => event.type === "tool_start" && event.tool === "Repair browser runtime issues"));
-  assert.ok(
-    events.some((event) => event.type === "complete"),
-    `the repaired preview should pass on the next check: ${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
-  );
-
-  const repairRequest = harness.calls.llm.find((request) =>
-    request.messages[0]?.content?.includes("Repair the standalone internal app"),
-  );
-  const repairPayload = JSON.parse(repairRequest.messages[1].content);
-  assert.ok(repairPayload.savedSourceFiles.some((file) => file.path === "app.js"));
+  assert.equal((await response.json()).workspace.status, "published");
+  assert.equal(harness.calls.llm.length, 0);
   assert.equal(
     harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "app.js").content,
-    "window.previewReady = true;",
-  );
-  assert.doesNotMatch(
-    harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "index.html").content,
-    /missing\.png/,
+    'throw new Error("runtime boom");',
   );
   assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "published");
 });
 
-test("dark-theme contrast failures are repaired and both themes pass before publishing", async (t) => {
+test("publishing a reviewed draft returns JSON without visual review requests", async (t) => {
   const harness = await createHarness(t);
   harness.calls.darkReviewRejectOnce = true;
 
@@ -958,35 +933,13 @@ test("dark-theme contrast failures are repaired and both themes pass before publ
     accessMode: "team",
   });
   assert.equal(response.status, 200);
-  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.ok(events.some((event) => event.type === "screenshot" && event.theme === "light"));
-  assert.ok(
-    events.some((event) => event.type === "screenshot" && event.theme === "dark"),
-    `dark screenshot missing: ${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
-  );
-  assert.ok(events.some((event) =>
-    event.type === "review" && event.theme === "dark" && event.passed === false &&
-    event.issues.includes("Dark card text has insufficient contrast."),
-  ));
-  assert.ok(events.some((event) => event.type === "tool_start" && event.tool === "Repair visual issues"));
-  assert.ok(events.some((event) => event.type === "complete"));
+  const result = await response.json();
+  assert.equal(result.workspace.status, "published");
+  assert.equal(harness.calls.llm.length, 0);
   assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "published");
-
-  const reviewRequests = harness.calls.llm.filter((request) =>
-    request.messages[0]?.content?.includes("visual QA agent"),
-  );
-  assert.ok(reviewRequests.some((request) =>
-    request.messages[0].content.includes("DARK-THEME") &&
-    request.messages[0].content.includes("hard-coded light surfaces"),
-  ));
-  const repairRequest = harness.calls.llm.find((request) =>
-    request.messages[0]?.content?.includes("Repair the standalone internal app"),
-  );
-  assert.match(JSON.parse(repairRequest.messages[1].content).visualAndRuntimeFindings, /DARK THEME:/);
-  assert.match(JSON.parse(repairRequest.messages[1].content).visualAndRuntimeFindings, /insufficient contrast/);
 });
 
-test("persistent browser runtime failures block publication and leave the draft unchanged", async (t) => {
+test("publishing ignores browser-runtime agent state and remains immediate", async (t) => {
   const harness = await createHarness(t);
   seedBrokenWorkspacePreview(harness);
   harness.calls.keepRuntimeBroken = true;
@@ -994,18 +947,54 @@ test("persistent browser runtime failures block publication and leave the draft 
   const response = await harness.request("coordinator-a", "POST", "/custom-workspaces/workspace-a-draft/publish", {
     accessMode: "team",
   });
-  const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(
-    events.filter((event) => event.type === "tool_start" && event.tool === "Check browser runtime").length,
-    3,
-    `${JSON.stringify(events.map(({ image, ...event }) => event))}; ${JSON.stringify(harness.calls.routeErrors)}`,
-  );
-  assert.match(events.find((event) => event.type === "failed").message, /Browser runtime checks still found errors/);
-  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-a-draft").status, "draft");
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).workspace.status, "published");
+  assert.equal(harness.calls.llm.length, 0);
   assert.match(
     harness.savedWorkspaceFiles.get("workspace-a-draft").find((file) => file.path === "app.js").content,
     /runtime boom/,
   );
+});
+
+test("a disposable demo team publishes instantly and is fully cleaned up", async (t) => {
+  const harness = await createHarness(t);
+  const teamId = "demo-publish-team";
+  const accountId = "demo-publish-coordinator";
+  const workspaceId = "demo-publish-workspace";
+  USERS[accountId] = { teamId, role: "coordinator" };
+  const demoDraft = {
+    ...WORKSPACE_SEEDS.find((workspace) => workspace.id === "workspace-a-draft"),
+    id: workspaceId,
+    teamId,
+    createdBy: accountId,
+    status: "draft",
+    critiqueRounds: 5,
+    verifiedCritiqueRounds: 5,
+  };
+  harness.workspaces.push(demoDraft);
+  harness.savedWorkspaceFiles.set(workspaceId, [{ path: "index.html", content: demoDraft.html }]);
+
+  try {
+    const response = await harness.request(accountId, "POST", `/custom-workspaces/${workspaceId}/publish`, {
+      accessMode: "team",
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).workspace.status, "published");
+    assert.equal(harness.calls.llm.length, 0, "publishing must not start a builder or visual-review agent");
+  } finally {
+    delete USERS[accountId];
+    harness.workspaces.splice(harness.workspaces.indexOf(demoDraft), 1);
+    harness.savedWorkspaceFiles.delete(workspaceId);
+    for (const index of harness.versions.map((version, i) => version.workspaceId === workspaceId ? i : -1).filter((i) => i >= 0).reverse()) {
+      harness.versions.splice(index, 1);
+    }
+    for (let index = harness.records.length - 1; index >= 0; index -= 1) {
+      if (harness.records[index].workspaceId === workspaceId) harness.records.splice(index, 1);
+    }
+  }
+  assert.equal(USERS[accountId], undefined);
+  assert.equal(harness.workspaces.some((workspace) => workspace.id === workspaceId), false);
+  assert.equal(harness.savedWorkspaceFiles.has(workspaceId), false);
 });
 
 test("coordinators can preview and restore published versions without changing app permissions", async (t) => {

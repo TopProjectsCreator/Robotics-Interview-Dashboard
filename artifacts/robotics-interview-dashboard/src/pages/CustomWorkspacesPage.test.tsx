@@ -25,6 +25,8 @@ const workspace = {
   accessMode: "team",
   allowedInterviewerIds: [],
   html: "<main>Current app</main>",
+  critiqueRounds: 5,
+  verifiedCritiqueRounds: 5,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
 };
@@ -235,8 +237,8 @@ describe("automatic custom workspace critiques", () => {
 });
 
 describe("custom workspace visual publish review", () => {
-  it("automatically runs and verifies the required critique rounds before retrying publish", async () => {
-    const draft = { ...workspace, status: "draft" };
+  it("keeps Publish unavailable until the builder verifies all five rounds", async () => {
+    const draft = { ...workspace, status: "draft", critiqueRounds: 0, verifiedCritiqueRounds: 0 };
     const publishedWorkspace = { ...workspace, status: "published" };
     let publishAttempts = 0;
     let builderStarted = false;
@@ -297,18 +299,13 @@ describe("custom workspace visual publish review", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<CustomWorkspacesPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
-
-    expect(await screen.findByText("Publish workspace")).toBeInTheDocument();
-    expect(await screen.findByText("critique round 1: 10 ranked flaws")).toBeInTheDocument();
-    expect(publishAttempts).toBe(2);
-    expect(fetchMock).toHaveBeenCalledWith("/api/assistant/ask/stream", expect.objectContaining({
-      method: "POST",
-      credentials: "include",
-    }));
+    expect(await screen.findByTestId("publish-readiness")).toHaveTextContent("0/5 complete");
+    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+    expect(publishAttempts).toBe(0);
+    expect(builderStarted).toBe(false);
   });
 
-  it("shows live agent actions and the screenshot reviewed before publishing", async () => {
+  it("publishes a completed draft without starting another agent", async () => {
     let published = false;
     const draft = { ...workspace, status: "draft" };
     const publishedWorkspace = { ...workspace, status: "published" };
@@ -335,9 +332,7 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1/publish") {
         published = true;
-        return new Response(`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`, {
-          headers: { "Content-Type": "application/x-ndjson" },
-        });
+        return Response.json({ workspace: publishedWorkspace });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -346,24 +341,12 @@ describe("custom workspace visual publish review", () => {
     render(<CustomWorkspacesPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
 
-    expect(await screen.findByText("Builder agent activity")).toBeInTheDocument();
-    expect(await screen.findByText("Capture light theme screenshot")).toBeInTheDocument();
-    expect(await screen.findByText("Capture dark theme screenshot")).toBeInTheDocument();
-    expect(await screen.findByText("Check browser runtime")).toBeInTheDocument();
-    expect(await screen.findByText("Review dark theme contrast and layout")).toBeInTheDocument();
-    expect(await screen.findByText("No JavaScript errors or failed resource loads.")).toBeInTheDocument();
-    expect(await screen.findByRole("img", { name: "Latest screenshot reviewed by the builder agent" }))
-      .toHaveAttribute("src", "data:image/png;base64,bGlnaHQ=");
-    expect(await screen.findByRole("img", { name: "Latest dark-theme screenshot reviewed by the builder agent" }))
-      .toHaveAttribute("src", "data:image/png;base64,ZGFyaw==");
     expect(await screen.findByText("Publish workspace")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/publish", expect.objectContaining({
-      method: "POST",
-      credentials: "include",
-    }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/publish", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/assistant/ask/stream", expect.anything());
   });
 
-  it("shows runtime failures as failed activity and keeps the draft unpublished", async () => {
+  it("keeps the draft when the direct publish request fails", async () => {
     const draft = { ...workspace, status: "draft" };
     const frames = [
       { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
@@ -383,9 +366,7 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1/publish") {
-        return new Response(`${frames.map((frame) => JSON.stringify(frame)).join("\n")}\n`, {
-          headers: { "Content-Type": "application/x-ndjson" },
-        });
+        return Response.json({ error: "Could not publish the workspace." }, { status: 500 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -393,8 +374,7 @@ describe("custom workspace visual publish review", () => {
     render(<CustomWorkspacesPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
 
-    expect(await screen.findByText(/JavaScript exception: render failed/)).toBeInTheDocument();
-    expect(await screen.findByText(/Browser runtime checks still found errors/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not publish the workspace.");
     expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
     expect(screen.queryByText("Publish workspace")).not.toBeInTheDocument();
   });

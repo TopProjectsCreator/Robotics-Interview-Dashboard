@@ -4181,6 +4181,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Required critique rounds are incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /custom-workspaces/{workspaceId}/access:
     patch:
       operationId: updateCustomWorkspaceAccess
