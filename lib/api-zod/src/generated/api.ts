@@ -3750,6 +3750,8 @@ export const StopAssistantPromptResponse = zod.object({
  */
 export const getPartsDashboardResponseVendorsItemLastSyncOneItemCountMin = 0;
 
+
+
 export const getPartsDashboardResponseRobotsItemPreviewOneObjectPathRegExp = new RegExp('^/objects/[A-Za-z0-9-]{8,128}$');
 export const getPartsDashboardResponseRobotsItemPreviewOneFileNameMax = 255;
 
@@ -3772,7 +3774,9 @@ export const GetPartsDashboardResponse = zod.object({
   "checkedAt": zod.coerce.date(),
   "itemCount": zod.number().int().min(getPartsDashboardResponseVendorsItemLastSyncOneItemCountMin).describe('Number of supplier catalog records collected in the latest check.'),
   "source": zod.string().url(),
-  "message": zod.string()
+  "message": zod.string(),
+  "remainingPages": zod.number().int().min(1).optional().describe('Current sitemap product pages still eligible to crawl; present only while incomplete.'),
+  "estimatedSecondsRemaining": zod.number().int().min(1).optional().describe('Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.')
 }),zod.null()]).describe('Latest persisted sync outcome, if this supplier has been checked.')
 })),
   "robots": zod.array(zod.object({
@@ -4087,6 +4091,8 @@ export const syncPartsCatalogResponseVendorsItemItemCountMin = 0;
 
 
 
+
+
 export const SyncPartsCatalogResponse = zod.object({
   "vendors": zod.array(zod.object({
   "vendorKey": zod.string(),
@@ -4097,7 +4103,9 @@ export const SyncPartsCatalogResponse = zod.object({
   "created": zod.number().int(),
   "updated": zod.number().int(),
   "source": zod.string().url().describe('Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed.'),
-  "message": zod.string()
+  "message": zod.string(),
+  "remainingPages": zod.number().int().min(1).optional().describe('Current sitemap product pages still eligible to crawl; present only while incomplete.'),
+  "estimatedSecondsRemaining": zod.number().int().min(1).optional().describe('Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.')
 })),
   "totalItems": zod.number().int(),
   "created": zod.number().int(),

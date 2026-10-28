@@ -17,4 +17,14 @@ export interface PartsVendorSyncState {
   itemCount: number;
   source: string;
   message: string;
+  /**
+     * Current sitemap product pages still eligible to crawl; present only while incomplete.
+     * @minimum 1
+     */
+  remainingPages?: number;
+  /**
+     * Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.
+     * @minimum 1
+     */
+  estimatedSecondsRemaining?: number;
 }

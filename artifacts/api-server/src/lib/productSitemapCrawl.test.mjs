@@ -7,6 +7,8 @@ const {
   parseSitemapProductUrls,
   parseSchemaOrgProduct,
   productUrlSlug,
+  estimateSitemapCrawlSecondsRemaining,
+  sitemapCrawlProgress,
 } = await import("./productSitemapCrawl.ts");
 
 const TARGET = { domain: "gobilda.com" };
@@ -131,4 +133,34 @@ test("product URL slugs are stable identifiers", () => {
     "worm-gear-set-24-1-ratio-6mm-d-bore-worm",
   );
   assert.equal(productUrlSlug("not a url"), null);
+});
+
+test("crawl estimate uses page pacing and future scheduled slice waits", () => {
+  assert.equal(
+    estimateSitemapCrawlSecondsRemaining(60, 10_000, 60, 60_000),
+    660,
+  );
+  assert.equal(
+    estimateSitemapCrawlSecondsRemaining(61, 10_000, 60, 60_000),
+    730,
+  );
+});
+
+test("crawl estimate refreshes with eligible progress and is omitted for settled states", () => {
+  const earlier = sitemapCrawlProgress(
+    "incomplete",
+    121,
+    estimateSitemapCrawlSecondsRemaining(121, 10_000, 60, 60_000),
+  );
+  const later = sitemapCrawlProgress(
+    "incomplete",
+    58,
+    estimateSitemapCrawlSecondsRemaining(58, 10_000, 60, 60_000),
+  );
+  assert.deepEqual(earlier, { remainingPages: 121, estimatedSecondsRemaining: 1390 });
+  assert.deepEqual(later, { remainingPages: 58, estimatedSecondsRemaining: 640 });
+  assert.equal(sitemapCrawlProgress("synced", 0, 0), null);
+  assert.equal(sitemapCrawlProgress("unavailable", 58, 638), null);
+  assert.equal(sitemapCrawlProgress("incomplete", 0, 638), null);
+  assert.equal(sitemapCrawlProgress("incomplete", 58, null), null);
 });

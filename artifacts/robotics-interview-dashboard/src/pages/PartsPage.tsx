@@ -87,6 +87,27 @@ function formatQuantity(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
+function formatApproximateDuration(seconds: number): string {
+  const totalMinutes = Math.max(1, Math.ceil(seconds / 60));
+  if (totalMinutes < 60) {
+    return `${totalMinutes} minute${totalMinutes === 1 ? "" : "s"}`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (totalHours < 24) {
+    return minutes === 0
+      ? `${totalHours} hour${totalHours === 1 ? "" : "s"}`
+      : `${totalHours} hour${totalHours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours === 0
+    ? `${days} day${days === 1 ? "" : "s"}`
+    : `${days} day${days === 1 ? "" : "s"} ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
 function readPartsOrderDraft(): PartsOrderLine[] {
   if (typeof window === "undefined") return [];
   try {
@@ -1136,6 +1157,18 @@ export default function PartsPage() {
                                 </Badge>
                               </div>
                               <p className="mt-1 text-sm text-muted-foreground">{stateDetail}</p>
+                              {syncResult?.status === "incomplete" &&
+                                typeof syncResult.remainingPages === "number" &&
+                                syncResult.remainingPages > 0 &&
+                                typeof syncResult.estimatedSecondsRemaining === "number" &&
+                                syncResult.estimatedSecondsRemaining > 0 && (
+                                  <p
+                                    className="mt-1 text-sm text-muted-foreground"
+                                    data-testid={`status-parts-source-eta-${vendor.key}`}
+                                  >
+                                    Approximate completion estimate: about {formatApproximateDuration(syncResult.estimatedSecondsRemaining)}. Supplier response times and other crawls can affect it.
+                                  </p>
+                                )}
                               {syncResult && (
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   Checked {new Date(syncResult.checkedAt).toLocaleString()} · {formatQuantity(syncResult.itemCount)} catalog item(s) imported

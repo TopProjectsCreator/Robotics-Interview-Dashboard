@@ -76,6 +76,8 @@ import {
   PRODUCT_CRAWL_DEFAULT_BUDGET,
   PRODUCT_CRAWL_DELAY_MS,
   crawlDelay,
+  sitemapCrawlProgress,
+  estimateSitemapCrawlSecondsRemaining,
   fetchProductPage,
   fetchSitemapProductUrls,
   productUrlSlug,
@@ -1564,27 +1566,42 @@ type CatalogFeedSyncVendor = {
   updated: number;
   source: string;
   message: string;
+  remainingPages?: number;
+  estimatedSecondsRemaining?: number;
 };
 
 async function readPartsSupplierSyncStates() {
   const result = await pool.query(
     `select "vendor_key" as "vendorKey", "status", "checked_at" as "checkedAt",
-            "item_count" as "itemCount", "source", "message"
+            "item_count" as "itemCount", "source", "message",
+            "remaining_pages" as "remainingPages",
+            "estimated_seconds_remaining" as "estimatedSecondsRemaining"
      from "parts_supplier_sync_states"`,
   );
   return new Map<string, PartsVendorSyncState>(
-    result.rows.map((row) => [
-      String(row.vendorKey),
-      {
-        status: String(row.status) as PartsVendorSyncState["status"],
-        checkedAt: row.checkedAt instanceof Date
-          ? row.checkedAt
-          : new Date(String(row.checkedAt)),
-        itemCount: Number(row.itemCount),
-        source: String(row.source),
-        message: String(row.message),
-      },
-    ]),
+    result.rows.map((row) => {
+      const status = String(row.status) as PartsVendorSyncState["status"];
+      const progress = sitemapCrawlProgress(
+        status,
+        row.remainingPages == null ? null : Number(row.remainingPages),
+        row.estimatedSecondsRemaining == null
+          ? null
+          : Number(row.estimatedSecondsRemaining),
+      );
+      return [
+        String(row.vendorKey),
+        {
+          status,
+          checkedAt: row.checkedAt instanceof Date
+            ? row.checkedAt
+            : new Date(String(row.checkedAt)),
+          itemCount: Number(row.itemCount),
+          source: String(row.source),
+          message: String(row.message),
+          ...(progress ?? {}),
+        },
+      ];
+    }),
   );
 }
 
@@ -1594,14 +1611,17 @@ async function savePartsSupplierSyncState(
 ) {
   await pool.query(
     `insert into "parts_supplier_sync_states"
-       ("vendor_key", "status", "checked_at", "item_count", "source", "message")
-     values ($1, $2, $3, $4, $5, $6)
+       ("vendor_key", "status", "checked_at", "item_count", "source", "message",
+        "remaining_pages", "estimated_seconds_remaining")
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
      on conflict ("vendor_key") do update set
        "status" = excluded."status",
        "checked_at" = excluded."checked_at",
        "item_count" = excluded."item_count",
        "source" = excluded."source",
-       "message" = excluded."message"
+       "message" = excluded."message",
+       "remaining_pages" = excluded."remaining_pages",
+       "estimated_seconds_remaining" = excluded."estimated_seconds_remaining"
      where "parts_supplier_sync_states"."checked_at" <= excluded."checked_at"`,
     [
       vendorKey,
@@ -1610,6 +1630,10 @@ async function savePartsSupplierSyncState(
       state.itemCount,
       state.source,
       state.message,
+      state.status === "incomplete" ? state.remainingPages ?? null : null,
+      state.status === "incomplete"
+        ? state.estimatedSecondsRemaining ?? null
+        : null,
     ],
   );
 }
@@ -1799,6 +1823,12 @@ async function collectSitemapCrawledCatalog(
       created: 0,
       updated: 0,
       message: "A crawl slice for this supplier was already running; the last persisted state is reported.",
+      ...(current?.remainingPages !== undefined
+        ? {
+            remainingPages: current.remainingPages,
+            estimatedSecondsRemaining: current.estimatedSecondsRemaining,
+          }
+        : {}),
     };
   }
   sitemapCrawlInFlight.add(vendor.key);
@@ -2031,6 +2061,13 @@ async function crawlSitemapSlice(
     itemCount,
     created,
     updated,
+    remainingPages: remaining,
+    estimatedSecondsRemaining: estimateSitemapCrawlSecondsRemaining(
+      remaining,
+      PRODUCT_CRAWL_DELAY_MS,
+      SITEMAP_CRAWL_PAGE_BUDGET,
+      SITEMAP_CRAWL_BACKLOG_DELAY_MS,
+    ) ?? undefined,
     message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.${skippedNote}`,
   };
 }
@@ -2575,6 +2612,12 @@ export async function syncPublicPartsCatalogs() {
       updated: counts.updated,
       source: collection.source,
       message: collection.message,
+      ...("remainingPages" in collection && collection.status === "incomplete"
+        ? {
+            remainingPages: collection.remainingPages,
+            estimatedSecondsRemaining: collection.estimatedSecondsRemaining,
+          }
+        : {}),
     };
     await savePartsSupplierSyncState(collection.vendor.key, {
       status: vendorResults[index].status,
@@ -2582,6 +2625,8 @@ export async function syncPublicPartsCatalogs() {
       itemCount: vendorResults[index].itemCount,
       source: vendorResults[index].source,
       message: vendorResults[index].message,
+      remainingPages: vendorResults[index].remainingPages,
+      estimatedSecondsRemaining: vendorResults[index].estimatedSecondsRemaining,
     });
     logger.info(
       {
@@ -2723,6 +2768,14 @@ async function runSitemapCrawlSlices(): Promise<boolean> {
       itemCount: collection.itemCount,
       source: collection.source,
       message: collection.message,
+      remainingPages:
+        collection.status === "incomplete" && "remainingPages" in collection
+          ? collection.remainingPages
+          : undefined,
+      estimatedSecondsRemaining:
+        collection.status === "incomplete" && "estimatedSecondsRemaining" in collection
+          ? collection.estimatedSecondsRemaining
+          : undefined,
     });
     if (collection.status === "incomplete") backlogRemains = true;
     logger.info(
@@ -2739,6 +2792,14 @@ async function runSitemapCrawlSlices(): Promise<boolean> {
     );
   } catch (error) {
     backlogRemains = true;
+    const previous = (await readPartsSupplierSyncStates()).get(vendor.key);
+    await savePartsSupplierSyncState(vendor.key, {
+      status: "unavailable",
+      checkedAt: new Date(),
+      itemCount: previous?.itemCount ?? 0,
+      source: vendor.productSitemapUrl as string,
+      message: "The background product sitemap crawl could not be advanced; it will retry automatically.",
+    });
     logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
   }
   return backlogRemains;

@@ -25,6 +25,38 @@ registerHooks({
 });
 
 const timestamp = new Date("2026-10-01T12:00:00.000Z");
+const supplierSyncRows = [
+  {
+    vendorKey: "gobilda",
+    status: "incomplete",
+    checkedAt: timestamp,
+    itemCount: 120,
+    source: "https://www.gobilda.com/xmlsitemap.php?type=products&page=1",
+    message: "53 pages still to crawl.",
+    remainingPages: 53,
+    estimatedSecondsRemaining: 660,
+  },
+  {
+    vendorKey: "andymark",
+    status: "synced",
+    checkedAt: timestamp,
+    itemCount: 40,
+    source: "https://www.andymark.com/products.json",
+    message: "Complete feed.",
+    remainingPages: 15,
+    estimatedSecondsRemaining: 300,
+  },
+  {
+    vendorKey: "servocity",
+    status: "unavailable",
+    checkedAt: timestamp,
+    itemCount: 25,
+    source: "https://www.servocity.com/xmlsitemap.php?type=products&page=1",
+    message: "The supplier source could not be reached.",
+    remainingPages: 15,
+    estimatedSecondsRemaining: 300,
+  },
+];
 const items = [
   {
     id: "team-a-gear",
@@ -201,7 +233,7 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   const pool = {
     async query(statement, values = []) {
       if (statement.includes('from "parts_supplier_sync_states"')) {
-        return { rows: [], rowCount: 0 };
+        return { rows: supplierSyncRows, rowCount: supplierSyncRows.length };
       }
       if (statement.includes('from "parts_robots" where')) {
         return { rows: [], rowCount: 0 };
@@ -316,6 +348,23 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
       availableUnits: dashboard.summary.availableUnits,
     },
     { ownedUnits: 11, assignedUnits: 3, availableUnits: 8 },
+  );
+  assert.deepEqual(
+    {
+      remainingPages: dashboard.vendors.find(({ key }) => key === "gobilda").lastSync.remainingPages,
+      estimatedSecondsRemaining: dashboard.vendors.find(({ key }) => key === "gobilda").lastSync.estimatedSecondsRemaining,
+    },
+    { remainingPages: 53, estimatedSecondsRemaining: 660 },
+  );
+  assert.equal(
+    dashboard.vendors.find(({ key }) => key === "andymark").lastSync.remainingPages,
+    undefined,
+    "completed suppliers must not expose stale crawl progress",
+  );
+  assert.equal(
+    dashboard.vendors.find(({ key }) => key === "servocity").lastSync.estimatedSecondsRemaining,
+    undefined,
+    "failed supplier checks must not expose a crawl estimate",
   );
 
   const inventory = await get("/parts/catalog?inventoryOnly=true&limit=100");

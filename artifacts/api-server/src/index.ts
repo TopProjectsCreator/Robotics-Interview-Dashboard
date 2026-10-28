@@ -771,6 +771,8 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "revoked_sessions" ("token_hash" text primary key, "expires_at" timestamptz not null)`,
     `create table if not exists "seating_settings" ("id" integer primary key default 1, "team_id" text, "rows" integer not null default 4, "cols" integer not null default 6, "updated_at" timestamptz not null default now())`,
     `create table if not exists "parts_supplier_sync_states" ("vendor_key" text primary key, "status" text not null, "checked_at" timestamptz not null, "item_count" integer not null, "source" text not null, "message" text not null, constraint "parts_supplier_sync_states_valid_result" check ("status" in ('synced', 'search_only', 'unavailable', 'incomplete') and "item_count" >= 0))`,
+    `alter table "parts_supplier_sync_states" add column if not exists "remaining_pages" integer`,
+    `alter table "parts_supplier_sync_states" add column if not exists "estimated_seconds_remaining" integer`,
     ...privateTableRlsStatements,
   ];
   for (const sql of statements) {

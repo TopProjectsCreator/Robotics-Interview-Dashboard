@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createItem: vi.fn(),
   getDetails: vi.fn(),
   identifyImage: vi.fn(),
+  dashboardVendors: null as Array<Record<string, unknown>> | null,
   sessionTeams: new WeakMap<object, string>(),
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
 }));
@@ -110,7 +111,7 @@ vi.mock("@workspace/api-client-react", async () => {
             0,
           );
           return {
-            vendors: [testVendor],
+            vendors: mocks.dashboardVendors ?? [testVendor],
             robots: [],
             summary: {
               vendorCount: 1,
@@ -244,6 +245,7 @@ function startSearch(query = "early result") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  mocks.dashboardVendors = null;
   if (mediaDevicesDescriptor) {
     Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
   } else {
@@ -290,6 +292,79 @@ describe("progressive Parts search", () => {
       sku: null,
       uncertainty: "medium",
       uncertaintyReason: "The exact bracket version is unclear.",
+    });
+  });
+
+  it("shows approximate crawl time only for incomplete supplier pagination", async () => {
+    const lastSync = (status: string, remainingPages: number, etaSeconds: number) => ({
+      status,
+      checkedAt: "2026-10-28T12:00:00.000Z",
+      itemCount: 120,
+      source: "https://www.gobilda.com/xmlsitemap.php?type=products&page=1",
+      message: status === "incomplete"
+        ? `Product sitemap enumerated; ${remainingPages} pages still to crawl.`
+        : "Supplier check complete.",
+      remainingPages,
+      estimatedSecondsRemaining: etaSeconds,
+    });
+    mocks.dashboardVendors = [
+      {
+        ...testVendor,
+        key: "gobilda",
+        name: "goBILDA",
+        coverageState: "feed_sync_required",
+        lastSync: lastSync("incomplete", 53, 3_660),
+      },
+      {
+        ...testVendor,
+        key: "andymark",
+        name: "AndyMark",
+        lastSync: lastSync("synced", 53, 3_660),
+      },
+      {
+        ...testVendor,
+        key: "servocity",
+        name: "ServoCity",
+        lastSync: lastSync("unavailable", 53, 3_660),
+      },
+      {
+        ...testVendor,
+        key: "optii",
+        name: "Optii",
+        lastSync: null,
+      },
+    ];
+
+    const page = await renderPartsPage();
+    expect(
+      await within(page.container).findByTestId("status-parts-source-eta-gobilda"),
+    ).toHaveTextContent(
+      "Approximate completion estimate: about 1 hour 1 minute. Supplier response times and other crawls can affect it.",
+    );
+    expect(within(page.container).getByTestId("card-parts-source-gobilda"))
+      .toHaveTextContent("53 pages still to crawl");
+    expect(within(page.container).queryByTestId("status-parts-source-eta-andymark"))
+      .not.toBeInTheDocument();
+    expect(within(page.container).queryByTestId("status-parts-source-eta-servocity"))
+      .not.toBeInTheDocument();
+    expect(within(page.container).queryByTestId("status-parts-source-eta-optii"))
+      .not.toBeInTheDocument();
+
+    mocks.dashboardVendors = [
+      {
+        ...mocks.dashboardVendors[0],
+        lastSync: lastSync("incomplete", 58, 640),
+      },
+      ...mocks.dashboardVendors.slice(1),
+    ];
+    await act(async () => {
+      await page.queryClient.invalidateQueries({ queryKey: ["/parts/dashboard"] });
+    });
+    await waitFor(() => {
+      expect(within(page.container).getByTestId("status-parts-source-eta-gobilda"))
+        .toHaveTextContent("Approximate completion estimate: about 11 minutes.");
+      expect(within(page.container).getByTestId("card-parts-source-gobilda"))
+        .toHaveTextContent("58 pages still to crawl");
     });
   });
 

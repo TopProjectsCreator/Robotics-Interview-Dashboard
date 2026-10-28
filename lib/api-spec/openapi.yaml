@@ -4580,6 +4580,14 @@ components:
           format: uri
         message:
           type: string
+        remainingPages:
+          type: integer
+          minimum: 1
+          description: Current sitemap product pages still eligible to crawl; present only while incomplete.
+        estimatedSecondsRemaining:
+          type: integer
+          minimum: 1
+          description: Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.
     PartsRobot:
       type: object
       required: [id, name, preview, createdAt, updatedAt]
@@ -4996,6 +5004,14 @@ components:
           description: Official product feed URL checked during sync, including an attempted supplier-owned Shopify feed.
         message:
           type: string
+        remainingPages:
+          type: integer
+          minimum: 1
+          description: Current sitemap product pages still eligible to crawl; present only while incomplete.
+        estimatedSecondsRemaining:
+          type: integer
+          minimum: 1
+          description: Approximate duration based on the current backlog, configured page pacing, slice budget, and scheduled waits.
     PartsCatalogSyncResponse:
       type: object
       required: [vendors, totalItems, created, updated]

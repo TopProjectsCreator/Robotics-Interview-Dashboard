@@ -28,6 +28,54 @@ export const PRODUCT_CRAWL_DELAY_MS = 10_000;
 /** Keeps a single slice well inside a background tick. */
 export const PRODUCT_CRAWL_DEFAULT_BUDGET = 25;
 
+/**
+ * Estimates time from the currently eligible page backlog, the per-page crawl
+ * delay, and the scheduled wait before each future slice. Supplier response
+ * time and other concurrent work can increase the actual duration.
+ */
+export function estimateSitemapCrawlSecondsRemaining(
+  remainingPages: number,
+  pageDelayMs: number,
+  pageBudget: number,
+  sliceDelayMs: number,
+): number | null {
+  if (
+    !Number.isSafeInteger(remainingPages) ||
+    remainingPages <= 0 ||
+    !Number.isFinite(pageDelayMs) ||
+    pageDelayMs < 0 ||
+    !Number.isSafeInteger(pageBudget) ||
+    pageBudget <= 0 ||
+    !Number.isFinite(sliceDelayMs) ||
+    sliceDelayMs < 0
+  ) {
+    return null;
+  }
+
+  const futureSlices = Math.ceil(remainingPages / pageBudget);
+  return Math.ceil(
+    (remainingPages * pageDelayMs + futureSlices * sliceDelayMs) / 1000,
+  );
+}
+
+/** Prevent stale or non-crawling sync states from exposing an ETA. */
+export function sitemapCrawlProgress(
+  status: string,
+  remainingPages: unknown,
+  estimatedSecondsRemaining: unknown,
+): { remainingPages: number; estimatedSecondsRemaining: number } | null {
+  if (
+    status !== "incomplete" ||
+    typeof remainingPages !== "number" ||
+    !Number.isSafeInteger(remainingPages) ||
+    remainingPages <= 0 ||
+    typeof estimatedSecondsRemaining !== "number" ||
+    !Number.isSafeInteger(estimatedSecondsRemaining) ||
+    estimatedSecondsRemaining <= 0
+  ) return null;
+  return { remainingPages, estimatedSecondsRemaining };
+}
+
 export type SitemapCrawlTarget = {
   /** Supplier domain, used to reject off-host URLs from a sitemap. */
   domain: string;
