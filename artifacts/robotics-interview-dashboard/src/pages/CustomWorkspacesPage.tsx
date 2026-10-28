@@ -736,6 +736,65 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
+  const startExistingDraftReviews = async () => {
+    if (!active || active.status !== "draft" || !canManage) return;
+    const workspaceId = active.id;
+    setBusy(true);
+    setError("");
+    setPublishAgentSteps([{
+      id: "start-existing-reviews",
+      label: "Start reviews on this saved draft",
+      detail: "The existing workspace will be reviewed without creating a duplicate.",
+      status: "running",
+    }]);
+    try {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
+        const current = workspaces.find((workspace) => workspace.id === workspaceId);
+        if (!current) throw new Error("This draft is no longer available to your account.");
+        const completed = Number(current.critiqueRounds ?? 0);
+        const verified = Number(current.verifiedCritiqueRounds ?? 0);
+        if (completed >= 5 && verified >= 5) break;
+        const nextRound = Math.min(completed, verified) + 1;
+        setPublishAgentSteps((steps) => [
+          ...steps.map((step) => step.status === "running" ? { ...step, status: "done" as const } : step),
+          {
+            id: `existing-critique-${attempt + 1}`,
+            label: `Complete review round ${nextRound} of 5`,
+            detail: "Continuing the selected draft; no new workspace will be created.",
+            status: "running",
+          },
+        ]);
+        const run = await runBuilderAgent(
+          critiqueContinuationPrompt(workspaceId),
+          new Set(workspaces.map((workspace) => workspace.id)),
+        );
+        if (run?.status === "waiting_for_answer") {
+          setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
+            ? { ...step, status: "done" as const, detail: "Waiting for your answer to continue." }
+            : step));
+          return;
+        }
+        if (run?.status === "failed" || run?.status === "interrupted") {
+          throw new Error("The review run stopped. The saved draft is unchanged and can be continued.");
+        }
+      }
+      const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
+      const finalDraft = workspaces.find((workspace) => workspace.id === workspaceId);
+      if (Number(finalDraft?.critiqueRounds ?? 0) < 5 || Number(finalDraft?.verifiedCritiqueRounds ?? 0) < 5) {
+        throw new Error("The draft is saved, but the review run stopped before all five rounds were verified. Start it again to continue.");
+      }
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
+        ? { ...step, status: "done" as const, detail: "All five review rounds are verified." }
+        : step));
+      await refresh();
+    } catch (err) {
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" as const } : step));
+      setError(err instanceof Error ? err.message : "Could not start reviews for this draft.");
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(() => {
     if (
       !canManage ||
@@ -974,6 +1033,21 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) && <span className="text-xs text-[#60757c] dark:text-[#b3c3cb]" data-testid="publish-readiness">
             Builder reviews: {Number(active.critiqueRounds ?? 0)}/5 complete, {Number(active.verifiedCritiqueRounds ?? 0)}/5 verified
           </span>}
+          {active && canManage && active.status === "draft" &&
+            (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) &&
+            !(builderRun?.prompt.includes(active.id) && ["running", "waiting_for_answer"].includes(builderRun.status)) &&
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void startExistingDraftReviews()}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              data-testid="button-start-draft-reviews"
+            >
+              {busy && <LoaderCircle size={14} className="animate-spin" />}
+              {builderRun?.prompt.includes(active.id) && ["failed", "interrupted"].includes(builderRun.status)
+                ? "Continue review rounds"
+                : "Start review rounds"}
+            </button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">

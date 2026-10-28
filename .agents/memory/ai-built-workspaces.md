@@ -33,6 +33,12 @@ Critiques must start automatically as soon as the initial draft source is saved,
 
 **How to apply:** Treat custom workspaces as applications, not entries in the fixed workspace enum. Route every capability through server-side authorization scoped to team, workspace, and caller. Keep agent execution independent of browser lifetime and preserve tool-call activity for later review. Inject the current dashboard theme tokens into the preview and require the assistant and visual QA to use them. Enforce rounds 1–5 sequentially; make findings below 6 eligible in rounds 1–4, alongside findings above 6. Require a separate saved-source verifier to clear each round and invalidate reviews after later source edits.
 
+An existing draft with incomplete reviews and no active builder run must have an explicit owner-scoped action to start or continue its saved review loop; selecting a draft alone must not create a second workspace.
+
+**Why:** On 2026-10-28, the user asked to resume an older existing draft after observing that its review rounds had never started.
+
+**How to apply:** Keep the action inside the draft-owner UI, send the existing draft ID through the `Revise custom workspace draft` flow, and verify saved counters before enabling Publish. Do not reset ownership or bypass server authorization.
+
 Custom workspace builds reuse the coordinator's existing /assistant MCP connections and relevant enabled team skills; do not build a second connection or skill store. Subagents may directly edit files in their assigned draft using the same team/workspace authorization checks; the primary agent coordinates work and verifies results.
 
 **Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help, and clarified that subagents must be able to edit.

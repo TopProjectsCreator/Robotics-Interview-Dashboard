@@ -234,6 +234,57 @@ describe("automatic custom workspace critiques", () => {
     expect(critiquePrompt).toContain("verify_custom_workspace_fixes");
     expect(screen.getByText("Complete critique round 1 of 5")).toBeInTheDocument();
   });
+
+  it("starts review rounds on an existing draft without creating another workspace", async () => {
+    const draft = {
+      ...workspace,
+      title: "Gothic Cathedral 3D Chess",
+      status: "draft",
+      critiqueRounds: 0,
+      verifiedCritiqueRounds: 0,
+    };
+    let streamCalls = 0;
+    let reviewPrompt = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") {
+        return Response.json({
+          workspaces: [{
+            ...draft,
+            critiqueRounds: streamCalls > 0 ? 5 : 0,
+            verifiedCritiqueRounds: streamCalls > 0 ? 5 : 0,
+          }],
+        });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/assistant/ask/stream") {
+        streamCalls += 1;
+        reviewPrompt = JSON.parse(String(init?.body)).question;
+        return new Response(`data: ${JSON.stringify({ done: true, answer: "Review complete." })}\n\n`, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.click(await screen.findByTestId("button-start-draft-reviews"));
+
+    await waitFor(() => expect(streamCalls).toBe(1));
+    expect(reviewPrompt).toContain("Revise custom workspace draft custom-app-1");
+    expect(reviewPrompt).toContain("do not wait for Publish");
+    expect(reviewPrompt).toContain("verify_custom_workspace_fixes");
+    expect(reviewPrompt).not.toContain("Build a custom workspace app for the team");
+    expect(await screen.findByRole("button", { name: "Publish" })).toBeInTheDocument();
+    expect(screen.getAllByText("Gothic Cathedral 3D Chess")).toHaveLength(2);
+  });
 });
 
 describe("custom workspace visual publish review", () => {
