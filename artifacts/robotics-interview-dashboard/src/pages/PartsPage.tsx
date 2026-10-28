@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   AlertCircle,
   ArrowUpRight,
   Bot,
-  Boxes,
   Camera,
   Check,
+  ChevronDown,
   ExternalLink,
   Info,
   Loader2,
@@ -19,8 +19,6 @@ import {
   ShieldCheck,
   ShoppingCart,
   Trash2,
-  Users,
-  Wrench,
 } from "lucide-react";
 import {
   getGetPartsDashboardQueryKey,
@@ -61,7 +59,7 @@ import {
   type PartsImageReviewedPart,
 } from "@/components/PartsImageIdentifyDialog";
 
-type PageTab = "inventory" | "search";
+type PageTab = "stockroom" | "find" | "builds";
 type Notice = { kind: "success" | "error"; text: string };
 type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "currency"> & {
   price: string;
@@ -304,13 +302,13 @@ function CatalogSearchCard({ item }: { item: PartsCatalogItem }) {
             <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
           )}
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-md bg-muted px-2.5 py-1.5 text-foreground">Catalog product</span>
+            <span className="rounded-md bg-muted px-2.5 py-1.5 text-foreground">Saved supplier item</span>
             <span className="rounded-md bg-primary/10 px-2.5 py-1.5 text-primary">
               Team stock: {formatQuantity(item.quantityAvailable)} available
             </span>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Price and supplier availability are not included in this catalog record.
+            Price and current supplier availability are not included in this saved item.
           </p>
         </div>
         <div className="mt-auto border-t border-border pt-3">
@@ -327,33 +325,6 @@ function CatalogSearchCard({ item }: { item: PartsCatalogItem }) {
             <span className="text-sm text-muted-foreground">No supplier product page saved</span>
           )}
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function QuantityMetric({
-  label,
-  value,
-  icon: Icon,
-  detail,
-}: {
-  label: string;
-  value: number;
-  icon: typeof Package;
-  detail: string;
-}) {
-  return (
-    <Card className="border-border bg-card">
-      <CardContent className="flex items-start justify-between gap-3 p-4 sm:p-5">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatQuantity(value)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-        </div>
-        <span className="rounded-xl bg-primary/10 p-2.5 text-primary">
-          <Icon size={19} aria-hidden="true" />
-        </span>
       </CardContent>
     </Card>
   );
@@ -529,6 +500,102 @@ function PartCard({
   );
 }
 
+function DraftOrderTray({
+  orderDraft,
+  draftQuantities,
+  orderTotalsByCurrency,
+  isOpen,
+  onToggle,
+  onClear,
+  onSetQuantity,
+}: {
+  orderDraft: PartsOrderLine[];
+  draftQuantities: number;
+  orderTotalsByCurrency: Record<string, number>;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClear: () => void;
+  onSetQuantity: (url: string, quantity: number) => void;
+}) {
+  return (
+    <details open={isOpen} className="parts-disclosure h-fit rounded-xl border border-border bg-card" data-testid="details-parts-order">
+      <summary
+        aria-expanded={isOpen}
+        aria-controls="parts-order-content"
+        onClick={(event) => { event.preventDefault(); onToggle(); }}
+      >
+        <span className="parts-disclosure-trigger">
+          <span className="inline-flex items-center gap-2 font-semibold">
+            <ShoppingCart size={16} className="text-primary" aria-hidden="true" />
+            Order tray <Badge variant="secondary">{formatQuantity(draftQuantities)} items</Badge>
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            {Object.entries(orderTotalsByCurrency).map(([currency, total]) => formatMoney(total, currency)).join(" · ") || "No priced items"}
+          </span>
+        </span>
+        <span className="parts-disclosure-cue">{isOpen ? "Hide order" : "View order"} <ChevronDown size={15} aria-hidden="true" /></span>
+      </summary>
+      <section id="parts-order-content" className="p-3 pt-0" aria-label="Draft order tray">
+        <div className="rounded-xl border border-primary/25 bg-card">
+          <header className="flex items-start justify-between gap-3 border-b border-border p-4">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                Draft order <Badge variant="secondary">{formatQuantity(draftQuantities)} items</Badge>
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Saved in this browser. Confirm price, shipping, tax, and availability with the supplier.</p>
+            </div>
+            {orderDraft.length > 0 && (
+              <Button type="button" size="sm" variant="outline" onClick={onClear} aria-label="Clear draft order">
+                <Trash2 size={14} aria-hidden="true" /> Clear
+              </Button>
+            )}
+          </header>
+          <div className="space-y-3 p-3">
+            {orderDraft.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-5 text-sm text-muted-foreground">
+                Nothing in the tray yet. Add a priced supplier result to start a draft.
+              </p>
+            ) : (
+              <>
+                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                  {orderDraft.map(({ product, quantity }) => (
+                    <article key={product.url} className="flex items-center gap-2 rounded-lg border border-border bg-background p-2">
+                      <PartImage src={product.imageUrl ?? ""} alt="" className="size-12 shrink-0 rounded-md border border-border bg-muted object-contain" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
+                        <p className="text-xs text-muted-foreground">{product.vendorName} · {product.priceIsStartingAt ? "From " : ""}{formatMoney(Number(product.price), product.currency)}</p>
+                        <p className="text-sm font-semibold tabular-nums text-foreground">{formatMoney(Number(product.price) * quantity, product.currency)}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Decrease quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, quantity - 1)}>
+                          <Minus size={14} aria-hidden="true" />
+                        </Button>
+                        <span className="w-7 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>{quantity}</span>
+                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Increase quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, quantity + 1)}>
+                          <Plus size={14} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="border-t border-border pt-3">
+                  <p className="text-xs text-muted-foreground">{Object.keys(orderTotalsByCurrency).length > 1 ? "Subtotal by supplier currency" : "Estimated subtotal"}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                    {Object.entries(orderTotalsByCurrency).map(([currency, total]) => (
+                      <p key={currency} className="text-lg font-semibold tabular-nums text-foreground">{formatMoney(total, currency)}</p>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Draft only — no supplier order or payment has been submitted.</p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    </details>
+  );
+}
+
 export default function PartsPage() {
   const queryClient = useQueryClient();
   const sessionQuery = useGetSession({
@@ -542,7 +609,7 @@ export default function PartsPage() {
       refetchOnWindowFocus: true,
     },
   });
-  const [tab, setTab] = useState<PageTab>("inventory");
+  const [tab, setTab] = useState<PageTab>("stockroom");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryVendor, setInventoryVendor] = useState("");
   const [pageSize, setPageSize] = useState(100);
@@ -574,6 +641,13 @@ export default function PartsPage() {
   const [selectedRobot, setSelectedRobot] = useState<PartsRobot | null>(null);
   const [selectedPart, setSelectedPart] = useState<PartsCatalogItem | null>(null);
   const [vendorBlockBusyKey, setVendorBlockBusyKey] = useState<string | null>(null);
+  const inventoryTabRef = useRef<HTMLButtonElement>(null);
+  const supplierTabRef = useRef<HTMLButtonElement>(null);
+  const buildsTabRef = useRef<HTMLButtonElement>(null);
+  const [partsOrderOpen, setPartsOrderOpen] = useState(false);
+  const [partsTotalsOpen, setPartsTotalsOpen] = useState(false);
+  const [partsCoverageOpen, setPartsCoverageOpen] = useState(false);
+  const [coverageSourcesOpen, setCoverageSourcesOpen] = useState(false);
 
   const catalogQuery = useListPartsCatalog({
     search: inventorySearch.trim() || undefined,
@@ -708,18 +782,18 @@ export default function PartsPage() {
         incomplete > 0 ? `Pagination did not finish for: ${incompleteNames.join(", ")}.` : "",
         unavailable > 0 ? `Feeds unavailable: ${unavailableNames.join(", ")}.` : "",
         searchOnly > 0
-          ? `No verified public full-catalog feed: ${searchOnlyNames.join(", ")}. They remain available in global search.`
+          ? `A full supplier list is not available for: ${searchOnlyNames.join(", ")}. Those suppliers remain available in product search.`
           : "",
         "A completed feed sync covers only products exposed by that public feed.",
       ].filter(Boolean);
       setNotice({
         kind: synced > 0 ? "success" : "error",
-        text: `Catalog sync finished: ${formatQuantity(result.totalItems)} product variants from ${synced} fully paginated public feed(s) (${formatQuantity(result.created)} new, ${formatQuantity(result.updated)} refreshed). ${details.join(" ")}`,
+        text: `Supplier list update finished: ${formatQuantity(result.totalItems)} products from ${synced} supplier list(s) (${formatQuantity(result.created)} new, ${formatQuantity(result.updated)} refreshed). ${details.join(" ")}`,
       });
     } catch (error) {
       setNotice({
         kind: "error",
-        text: errorMessage(error, "Unable to sync public supplier catalogs."),
+        text: errorMessage(error, "Unable to update supplier lists."),
       });
     }
   };
@@ -753,11 +827,11 @@ export default function PartsPage() {
         setSearchStatus(event.status);
         if (event.status === "partial") {
           setSearchError(
-            `Search completed with partial supplier coverage: ${event.failedProviderCount} of ${event.providerCount} discovery providers failed. Verified results found so far are shown below.`,
+            `Some suppliers could not be reached: ${event.failedProviderCount} of ${event.providerCount} search providers failed. Verified products found so far are shown below.`,
           );
         } else if (event.status === "unavailable") {
           setSearchError(
-            `Live supplier search failed completely: all ${event.failedProviderCount} of ${event.providerCount} discovery providers were unavailable. Matching indexed products are still shown below; try again shortly.`,
+            `Supplier search is temporarily unavailable: all ${event.failedProviderCount} search providers could not be reached. Saved product matches may still appear below; try again shortly.`,
           );
         } else if (event.resultCount === 0) {
           setSearchError("No verified supplier products matched this search. Try a broader term or search again.");
@@ -771,12 +845,12 @@ export default function PartsPage() {
         if (receivedResultCount > 0) {
           setSearchStatus("partial");
           setSearchError(
-            `Supplier search ended before completion. ${receivedResultCount} verified result(s) received so far remain available; additional supplier results may be missing.`,
+            `Supplier search ended early. ${receivedResultCount} verified product(s) found so far remain available; more may be missing.`,
           );
         } else {
           setSearchStatus("unavailable");
           setSearchError(
-            `${errorMessage(error, "Supplier search is unavailable right now.")} Matching indexed products may still appear below.`,
+            `${errorMessage(error, "Supplier search is unavailable right now.")} Parts already saved in Stockroom may still appear below.`,
           );
         }
       }
@@ -819,7 +893,7 @@ export default function PartsPage() {
     const url = normalizedProductUrl(product.url) ?? product.url;
     setSaveFeedback((previous) => ({
       ...previous,
-      [url]: { status: "pending", message: "Saving to inventory…" },
+      [url]: { status: "pending", message: "Adding to Stockroom…" },
     }));
     try {
       await createItemMutation.mutateAsync({
@@ -833,14 +907,14 @@ export default function PartsPage() {
           quantityOwned: 0,
         },
       });
-      setNotice({ kind: "success", text: `${product.title} saved to inventory.` });
+      setNotice({ kind: "success", text: `${product.title} added to Stockroom.` });
       setSaveFeedback((previous) => ({
         ...previous,
-        [url]: { status: "success", message: "Saved to inventory." },
+        [url]: { status: "success", message: "Added to Stockroom." },
       }));
       await refreshParts();
     } catch (error) {
-      const message = errorMessage(error, "Unable to save this part to inventory.");
+      const message = errorMessage(error, "Unable to add this part to Stockroom.");
       setNotice({ kind: "error", text: message });
       setSaveFeedback((previous) => ({
         ...previous,
@@ -896,7 +970,7 @@ export default function PartsPage() {
       setCustomImageUrl("");
       setCustomQuantity("0");
       setCustomDialogOpen(false);
-      setNotice({ kind: "success", text: `${name} added to inventory.` });
+      setNotice({ kind: "success", text: `${name} added to Stockroom.` });
       await refreshParts();
     } catch (error) {
       setNotice({ kind: "error", text: errorMessage(error, "Unable to add this part.") });
@@ -920,7 +994,7 @@ export default function PartsPage() {
           quantityOwned: part.quantityOwned,
         },
       });
-      setNotice({ kind: "success", text: `${part.name} added to inventory.` });
+      setNotice({ kind: "success", text: `${part.name} added to Stockroom.` });
       await refreshParts();
     } catch (error) {
       const message = errorMessage(error, "Unable to add this part.");
@@ -966,43 +1040,45 @@ export default function PartsPage() {
   const refreshRobotDashboard = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: getGetPartsDashboardQueryKey() });
   }, [queryClient]);
+  const focusPartsTab = (nextTab: PageTab) => {
+    setTab(nextTab);
+    ({
+      stockroom: inventoryTabRef,
+      find: supplierTabRef,
+      builds: buildsTabRef,
+    })[nextTab].current?.focus();
+  };
+  const handlePartsTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const tabOrder: PageTab[] = ["stockroom", "find", "builds"];
+    const currentIndex = tabOrder.indexOf(tab);
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      focusPartsTab(tabOrder[(currentIndex + 1) % tabOrder.length]);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      focusPartsTab(tabOrder[(currentIndex + tabOrder.length - 1) % tabOrder.length]);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusPartsTab("stockroom");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusPartsTab("builds");
+    }
+  };
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-6 bg-background p-4 text-foreground sm:p-6 xl:p-8">
-      <div className="mx-auto w-full max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <main className="parts-workspace min-h-[calc(100dvh-4rem)] space-y-6 bg-background p-4 text-foreground sm:p-6 xl:p-8">
+      <div className="mx-auto w-full max-w-[1440px] space-y-6">
+        <header className="parts-hero flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">
+            <div className="parts-kicker mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em]">
               <ShieldCheck size={14} aria-hidden="true" />
-              Protected team workspace
+              Robotics · parts bench
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Parts & inventory</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Search all 19 suppliers, sync verified public catalogs, track owned stock, and reserve parts for each robot.
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Parts</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              Track parts your team owns, find supplier parts, and reserve stock for each robot.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/parts/assistant"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <Bot size={16} aria-hidden="true" />
-              Parts assistant
-            </Link>
-            <Button
-              variant="outline"
-              disabled={syncMutation.isPending}
-              onClick={() => void syncPublicCatalogs()}
-            >
-              {syncMutation.isPending
-                ? <Loader2 className="animate-spin" size={16} aria-hidden="true" />
-                : <RefreshCw size={16} aria-hidden="true" />}
-              {syncMutation.isPending ? "Syncing catalogs…" : "Sync public catalogs"}
-            </Button>
-            <Button onClick={() => setTab("search")}>
-              <Search size={16} aria-hidden="true" />
-              Find parts
-            </Button>
           </div>
         </header>
 
@@ -1032,160 +1108,187 @@ export default function PartsPage() {
           </div>
         ) : dashboard ? (
           <>
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Parts totals">
-              <QuantityMetric
-                label="Catalog items"
-                value={dashboard.summary.catalogItems}
-                icon={Package}
-                detail="Saved supplier parts"
-              />
-              <QuantityMetric
-                label="Owned units"
-                value={dashboard.summary.ownedUnits}
-                icon={Boxes}
-                detail="Total tracked stock"
-              />
-              <QuantityMetric
-                label="Assigned units"
-                value={dashboard.summary.assignedUnits}
-                icon={Users}
-                detail="Allocated across robots"
-              />
-              <QuantityMetric
-                label="Available units"
-                value={dashboard.summary.availableUnits}
-                icon={Wrench}
-                detail={`${dashboard.summary.vendorCount} suppliers supported`}
-              />
-            </section>
-
-            <Card className="border-border bg-card">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="text-base">Robots</CardTitle>
-                    <CardDescription className="mt-1">
-                      Create the robots you build, then assign catalog quantities below.
-                    </CardDescription>
-                  </div>
-                  <form onSubmit={createRobot} className="flex w-full gap-2 sm:max-w-md">
-                    <Input
-                      value={robotName}
-                      onChange={(event) => setRobotName(event.target.value.slice(0, 80))}
-                      placeholder="Robot name"
-                      aria-label="New robot name"
-                      maxLength={80}
-                    />
-                    <Button type="submit" disabled={createRobotMutation.isPending || !robotName.trim()}>
-                      {createRobotMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-                      Add robot
-                    </Button>
-                  </form>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {robots.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                    No robots yet. Add one to start assigning parts.
-                  </p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {robots.map((robot) => (
-                      <button
-                        key={robot.id}
-                        type="button"
-                        onClick={() => setSelectedRobot(robot)}
-                        className="group flex min-h-24 flex-col justify-between rounded-xl border border-border bg-background p-4 text-left transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        data-testid={`card-robot-${robot.id}`}
-                        aria-label={`Open build details for ${robot.name}`}
-                      >
-                        <span className="flex items-center justify-between gap-3">
-                          <span className="flex min-w-0 items-center gap-2">
-                            <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                            <span className="truncate text-sm font-semibold text-foreground">{robot.name}</span>
-                          </span>
-                          <ArrowUpRight size={15} className="shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
-                        </span>
-                        <span className="mt-4 text-xs text-muted-foreground">Open allocated BOM and costs</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="flex flex-wrap items-center gap-2 border-b border-border" role="tablist" aria-label="Parts views">
+            <div className="parts-tablist flex flex-wrap items-center gap-2" role="tablist" aria-label="Parts views">
               <button
                 type="button"
                 role="tab"
-                aria-selected={tab === "inventory"}
-                onClick={() => setTab("inventory")}
-                className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                  tab === "inventory"
+                id="parts-stockroom-tab"
+                ref={inventoryTabRef}
+                aria-controls={tab === "stockroom" ? "parts-stockroom-panel" : undefined}
+                aria-selected={tab === "stockroom"}
+                tabIndex={tab === "stockroom" ? 0 : -1}
+                onClick={() => setTab("stockroom")}
+                onKeyDown={handlePartsTabKeyDown}
+                className={`parts-tab text-sm font-semibold transition-colors ${
+                  tab === "stockroom"
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Inventory
+                Stockroom
               </button>
               <button
                 type="button"
                 role="tab"
-                aria-selected={tab === "search"}
-                onClick={() => setTab("search")}
-                className={`border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                  tab === "search"
+                id="parts-find-tab"
+                ref={supplierTabRef}
+                aria-controls={tab === "find" ? "parts-supplier-panel" : undefined}
+                aria-selected={tab === "find"}
+                tabIndex={tab === "find" ? 0 : -1}
+                onClick={() => setTab("find")}
+                onKeyDown={handlePartsTabKeyDown}
+                className={`parts-tab text-sm font-semibold transition-colors ${
+                  tab === "find"
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Supplier catalog
+                Find parts
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="parts-builds-tab"
+                ref={buildsTabRef}
+                aria-controls={tab === "builds" ? "parts-builds-panel" : undefined}
+                aria-selected={tab === "builds"}
+                tabIndex={tab === "builds" ? 0 : -1}
+                onClick={() => setTab("builds")}
+                onKeyDown={handlePartsTabKeyDown}
+                className={`parts-tab text-sm font-semibold transition-colors ${tab === "builds" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Robot builds
               </button>
             </div>
 
-            {tab === "search" ? (
-              <section className="space-y-4" aria-label="Search supplier catalogs">
-                <Card className="border-border bg-card" data-testid="card-parts-source-coverage">
+            {tab === "find" ? (
+              <section
+                id="parts-supplier-panel"
+                role="tabpanel"
+                tabIndex={0}
+                aria-labelledby="parts-find-tab"
+                className="flex flex-col gap-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Find supplier parts"
+              >
+                <Card className="border-border bg-card">
                   <CardHeader>
-                    <CardTitle className="text-base">Supplier catalog coverage</CardTitle>
+                    <CardTitle className="text-base">Find a part across suppliers</CardTitle>
                     <CardDescription>
-                      Every supplier has an official source listed. A feed is marked complete only when sync verifies that pagination reached its end; live search results are discovery samples.
+                      Search supplier pages and parts already saved in your Stockroom. Confirm current price and availability on the supplier&apos;s page.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-sm text-foreground" data-testid="status-parts-source-coverage">
-                      {vendors.some((item) => item.lastSync)
-                        ? `Latest checks: ${vendors.filter((item) => item.lastSync?.status === "synced").length} complete feed(s), ${vendors.filter((item) => item.lastSync?.status === "incomplete").length} incomplete, ${vendors.filter((item) => item.lastSync?.status === "search_only").length} discovery-only, and ${vendors.filter((item) => item.lastSync?.status === "unavailable").length} unavailable.`
-                        : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} public feed(s) await end-of-feed verification; other suppliers remain partial, access-restricted, or custom-fabrication sources.`}
-                    </p>
-                    <details className="rounded-lg border border-border bg-background p-3">
-                      <summary
-                        className="cursor-pointer text-sm font-medium text-foreground"
-                        data-testid="button-show-parts-source-coverage"
+                  <CardContent className="space-y-4">
+                    <form onSubmit={runSearch} className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto_auto]">
+                      <label className="text-sm font-medium">
+                        Part, SKU, or material
+                        <Input
+                          value={searchText}
+                          onChange={(event) => setSearchText(event.target.value.slice(0, 120))}
+                          placeholder="e.g. 8 mm shaft collar"
+                          maxLength={120}
+                          className="mt-1 h-10"
+                        />
+                      </label>
+                      <Button type="submit" className="self-end" disabled={searchBusy || searchText.trim().length < 2}>
+                        {searchBusy ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                        Search
+                      </Button>
+                      <Link
+                        href="/parts/assistant"
+                        className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md border border-input bg-background px-4 text-sm font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-testid="link-parts-assistant"
                       >
-                        Show all {vendors.length} supplier sources and coverage states
-                      </summary>
-                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        <Bot size={16} aria-hidden="true" />
+                        Ask Parts Assistant
+                      </Link>
+                    </form>
+                    {searchError && (
+                      <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
+                        <AlertCircle className="mt-0.5 shrink-0" size={16} /> {searchError}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <details open={partsCoverageOpen} className="parts-disclosure order-last rounded-xl border border-border bg-card" data-testid="details-parts-coverage">
+                  <summary
+                    aria-expanded={partsCoverageOpen}
+                    aria-controls="parts-coverage-content"
+                    onClick={(event) => { event.preventDefault(); setPartsCoverageOpen((open) => !open); }}
+                    data-testid="button-toggle-parts-source-coverage"
+                  >
+                    <span className="parts-disclosure-trigger">
+                    <span className="font-semibold">Supplier updates</span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {formatQuantity(vendors.length)} suppliers · {vendors.filter((vendor) => vendor.lastSync?.status === "synced").length} full lists checked
+                    </span>
+                    </span>
+                    <span className="parts-disclosure-cue">
+                      {partsCoverageOpen ? "Hide supplier status" : "View supplier status"} <ChevronDown size={15} aria-hidden="true" />
+                    </span>
+                  </summary>
+                  <div id="parts-coverage-content">
+                  <Card className="m-3 mt-0 border-border bg-card" data-testid="card-parts-source-coverage">
+                    <CardHeader>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <CardTitle className="text-base">Supplier status</CardTitle>
+                          <CardDescription className="mt-1 max-w-2xl">
+                            A full list means the supplier&apos;s published product list finished loading. Search-only suppliers can still return products, but no full list is available here.
+                          </CardDescription>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={syncMutation.isPending}
+                          onClick={() => void syncPublicCatalogs()}
+                          data-testid="button-sync-parts-suppliers"
+                        >
+                          {syncMutation.isPending ? <Loader2 className="animate-spin" size={15} aria-hidden="true" /> : <RefreshCw size={15} aria-hidden="true" />}
+                          {syncMutation.isPending ? "Checking supplier lists…" : "Update supplier lists"}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-foreground" data-testid="status-parts-source-coverage">
+                        {vendors.some((item) => item.lastSync)
+                          ? `Latest update: ${vendors.filter((item) => item.lastSync?.status === "synced").length} supplier list(s) finished, ${vendors.filter((item) => item.lastSync?.status === "incomplete").length} still loading, ${vendors.filter((item) => item.lastSync?.status === "search_only").length} available through search only, and ${vendors.filter((item) => item.lastSync?.status === "unavailable").length} could not be reached.`
+                          : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} supplier list(s) are ready to check. Other suppliers can be searched, require supplier access, or provide made-to-order work.`}
+                      </p>
+                      <details open={coverageSourcesOpen} className="parts-disclosure rounded-lg border border-border bg-background">
+                        <summary
+                          aria-expanded={coverageSourcesOpen}
+                          aria-controls="parts-supplier-sources"
+                          onClick={(event) => { event.preventDefault(); setCoverageSourcesOpen((open) => !open); }}
+                          className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          data-testid="button-show-parts-source-coverage"
+                        >
+                          <span>{coverageSourcesOpen ? "Hide" : "Show"} supplier update details</span>
+                          <span className="parts-disclosure-cue">
+                            {coverageSourcesOpen ? "Hide suppliers" : "View suppliers"} <ChevronDown size={15} aria-hidden="true" />
+                          </span>
+                        </summary>
+                      <div id="parts-supplier-sources" className="grid gap-2 p-3 pt-0 md:grid-cols-2">
                         {vendors.map((vendor) => {
                           const syncResult = vendor.lastSync;
                           const stateLabel = syncResult
                             ? {
-                                synced: "Complete feed",
-                                search_only: "Discovery only",
-                                unavailable: "Source unavailable",
-                                incomplete: "Pagination incomplete",
+                                synced: "Full list checked",
+                                search_only: "Search only",
+                                unavailable: "Could not reach supplier",
+                                incomplete: "Still loading",
                               }[syncResult.status]
                             : {
-                                feed_sync_required: "Feed needs verification",
-                                discovery_only: "Discovery only",
-                                access_restricted: "Authorized API required",
-                                custom_fabrication: "Custom fabrication",
+                                feed_sync_required: "Ready to check",
+                                discovery_only: "Search only",
+                                access_restricted: "Supplier access required",
+                                custom_fabrication: "Made to order",
                               }[vendor.coverageState];
                           const stateDetail = syncResult?.message ?? {
-                            feed_sync_required: "A public feed is configured; completeness is confirmed only after sync reaches its end.",
-                            discovery_only: "Official supplier pages are searchable, but a complete public SKU feed has not been verified.",
-                            access_restricted: "The official product API requires approved customer access; public search remains discovery-only.",
-                            custom_fabrication: "Custom fabrication services do not provide a verified, complete stock-SKU catalog.",
+                            feed_sync_required: "A public supplier list can be checked for saved products.",
+                            discovery_only: "Supplier products can be found with search; no full product list is available here.",
+                            access_restricted: "A supplier-approved account is needed to load the full list. Public search may still find items.",
+                            custom_fabrication: "This supplier makes parts to order instead of listing standard stock items.",
                           }[vendor.coverageState];
                           return (
                             <article
@@ -1207,7 +1310,7 @@ export default function PartsPage() {
                               <p className="mt-1 text-sm text-muted-foreground">{stateDetail}</p>
                               {vendor.blocked && (
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  This supplier is excluded from search and new sourcing. Saved inventory remains available.
+                                  This supplier is excluded from search and new orders. Parts already saved to Stockroom remain available.
                                 </p>
                               )}
                               {syncResult?.status === "incomplete" &&
@@ -1224,7 +1327,7 @@ export default function PartsPage() {
                                 )}
                               {syncResult && (
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  Checked {new Date(syncResult.checkedAt).toLocaleString()} · {formatQuantity(syncResult.itemCount)} catalog item(s) imported
+                                  Checked {new Date(syncResult.checkedAt).toLocaleString()} · {formatQuantity(syncResult.itemCount)} products added
                                 </p>
                               )}
                               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -1269,147 +1372,14 @@ export default function PartsPage() {
                           );
                         })}
                       </div>
-                    </details>
-                  </CardContent>
-                </Card>
+                      </details>
+                    </CardContent>
+                  </Card>
+                  </div>
+                </details>
 
-                <Card className="border-border bg-card">
-                  <CardHeader>
-                    <CardTitle className="text-base">Search all suppliers</CardTitle>
-                    <CardDescription>
-                      We combine verified live supplier products with matching products already in the indexed catalog. A live product can appear without a published price or image; search results still do not cover every supplier SKU or guarantee current stock.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <form onSubmit={runSearch} className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto]">
-                      <label className="text-sm font-medium">
-                        Part, SKU, or material
-                        <Input
-                          value={searchText}
-                          onChange={(event) => setSearchText(event.target.value.slice(0, 120))}
-                          placeholder="e.g. 8 mm shaft collar"
-                          maxLength={120}
-                          className="mt-1 h-10"
-                        />
-                      </label>
-                      <Button type="submit" className="self-end" disabled={searchBusy || searchText.trim().length < 2}>
-                        {searchBusy ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
-                        Search
-                      </Button>
-                    </form>
-                    {searchError && (
-                      <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
-                        <AlertCircle className="mt-0.5 shrink-0" size={16} /> {searchError}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="border-primary/25 bg-card">
-                  <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-                    <div>
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <ShoppingCart size={18} aria-hidden="true" />
-                        Draft order
-                        <Badge variant="secondary">{formatQuantity(draftQuantities)} items</Badge>
-                      </CardTitle>
-                      <CardDescription className="mt-1">
-                        Saved in this browser. Prices are supplier-page snapshots; shipping, tax, and availability must be confirmed with the supplier.
-                      </CardDescription>
-                    </div>
-                    {orderDraft.length > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setOrderDraft([])}
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                        Clear
-                      </Button>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {orderDraft.length === 0 ? (
-                      <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                        Your draft is empty. Add a verified product below to start an order list.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                          {orderDraft.map(({ product, quantity }) => (
-                            <div
-                              key={product.url}
-                              className="flex items-center gap-3 rounded-lg border border-border bg-background p-2.5"
-                            >
-                              <PartImage
-                                src={product.imageUrl ?? ""}
-                                alt=""
-                                className="size-14 shrink-0 rounded-md border border-border bg-muted object-contain"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {product.vendorName} · {product.priceIsStartingAt ? "From " : ""}
-                                  {formatMoney(Number(product.price), product.currency)} each
-                                </p>
-                                <p className="text-sm font-semibold tabular-nums text-foreground">
-                                  {formatMoney(Number(product.price) * quantity, product.currency)}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="outline"
-                                  className="size-10"
-                                  aria-label={`Decrease quantity of ${product.title}`}
-                                  onClick={() => setDraftQuantity(product.url, quantity - 1)}
-                                >
-                                  <Minus size={14} aria-hidden="true" />
-                                </Button>
-                                <span className="w-8 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>
-                                  {quantity}
-                                </span>
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="outline"
-                                  className="size-10"
-                                  aria-label={`Increase quantity of ${product.title}`}
-                                  onClick={() => setDraftQuantity(product.url, quantity + 1)}
-                                >
-                                  <Plus size={14} aria-hidden="true" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="border-t border-border pt-3">
-                          <p className="text-xs text-muted-foreground">
-                            {Object.keys(orderTotalsByCurrency).length > 1
-                              ? "Subtotal by supplier currency"
-                              : "Estimated subtotal"}
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1">
-                            {Object.entries(orderTotalsByCurrency).map(([currency, total]) => (
-                              <p key={currency} className="text-lg font-semibold tabular-nums text-foreground">
-                                {formatMoney(total, currency)}
-                                {Object.keys(orderTotalsByCurrency).length > 1 && (
-                                  <span className="ml-1 text-xs font-normal text-muted-foreground">{currency}</span>
-                                )}
-                              </p>
-                            ))}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Draft only — no supplier order or payment has been submitted.
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]" data-testid="parts-find-results-layout">
+                <div className="min-w-0 space-y-4">
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
                     <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
@@ -1418,31 +1388,31 @@ export default function PartsPage() {
                 {!searchBusy && searchStatus && (
                   <p role="status" className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
                     {searchStatus === "available"
-                      ? `Search complete. ${liveResultGroups.length} verified live product group(s) found.`
+                      ? `Search complete. ${liveResultGroups.length} verified supplier result(s) found.`
                       : searchStatus === "partial"
-                        ? "Search complete with partial supplier coverage. Results found before completion remain available."
-                        : "Search complete, but live supplier discovery did not return results. Indexed catalog matches remain available."}
+                        ? "Some suppliers could not be reached. Products found so far are still available below."
+                        : "Search complete, but suppliers did not return live results. Saved product matches may still appear below."}
                   </p>
                 )}
 
                 {lastSearch && savedCatalogSearchQuery.isLoading && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} aria-hidden="true" /> Loading indexed product matches…
+                    <Loader2 className="animate-spin" size={16} aria-hidden="true" /> Loading Stockroom matches…
                   </div>
                 )}
 
                 {lastSearch && savedCatalogSearchQuery.isError && (
                   <p role="alert" className="text-sm text-destructive">
-                    Could not load indexed catalog products. Live supplier results remain available.
+                    Could not load parts already saved in Stockroom. Live supplier results remain available.
                   </p>
                 )}
 
                 {lastSearch && (
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                     <span>
-                      {liveResultGroups.length} live product group(s)
+                      {liveResultGroups.length} supplier result(s)
                       {savedCatalogSearchQuery.data
-                        ? ` · ${formatQuantity(savedCatalogSearchQuery.data.total)} indexed catalog match(es)`
+                        ? ` · ${formatQuantity(savedCatalogSearchQuery.data.total)} Stockroom part match(es)`
                         : ""}
                       {` for “${lastSearch}”`}
                     </span>
@@ -1536,7 +1506,7 @@ export default function PartsPage() {
                                 {saveState?.status === "pending"
                                   ? <Loader2 className="animate-spin" size={15} />
                                   : alreadyInInventory ? <Check size={15} /> : <Package size={15} />}
-                                {alreadyInInventory ? "In inventory" : saveState?.status === "pending" ? "Saving…" : "Save to inventory"}
+                                {alreadyInInventory ? "In Stockroom" : saveState?.status === "pending" ? "Adding…" : "Add to Stockroom"}
                               </Button>
                               <Button
                                 size="sm"
@@ -1579,7 +1549,7 @@ export default function PartsPage() {
                   additionalCatalogSearchItems.length === 0 && (
                     <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm text-muted-foreground">
-                        No matching supplier products or indexed catalog records were found.
+                         No matching supplier parts or Stockroom items were found.
                       </p>
                       {savedCatalogSearchQuery.data?.total === 0 && (
                         <Button
@@ -1590,7 +1560,7 @@ export default function PartsPage() {
                           data-testid="button-sync-catalogs-from-search"
                         >
                           {syncMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                          {syncMutation.isPending ? "Syncing…" : "Sync public catalogs"}
+                          {syncMutation.isPending ? "Updating supplier lists…" : "Update supplier lists"}
                         </Button>
                       )}
                     </div>
@@ -1599,7 +1569,7 @@ export default function PartsPage() {
                 {savedCatalogSearchQuery.data && savedCatalogSearchQuery.data.total > 100 && (
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">
-                      Indexed products {savedSearchOffset + 1}–{Math.min(savedSearchOffset + 100, savedCatalogSearchQuery.data.total)} of {formatQuantity(savedCatalogSearchQuery.data.total)}
+                      Stockroom parts {savedSearchOffset + 1}–{Math.min(savedSearchOffset + 100, savedCatalogSearchQuery.data.total)} of {formatQuantity(savedCatalogSearchQuery.data.total)}
                     </span>
                     <div className="flex gap-2">
                       <Button
@@ -1621,9 +1591,90 @@ export default function PartsPage() {
                     </div>
                   </div>
                 )}
+                </div>
+                <aside className="order-first min-w-0 xl:order-none xl:sticky xl:top-5 xl:self-start" aria-label="Draft order tray">
+                  <DraftOrderTray
+                    orderDraft={orderDraft}
+                    draftQuantities={draftQuantities}
+                    orderTotalsByCurrency={orderTotalsByCurrency}
+                    isOpen={partsOrderOpen}
+                    onToggle={() => setPartsOrderOpen((open) => !open)}
+                    onClear={() => setOrderDraft([])}
+                    onSetQuantity={setDraftQuantity}
+                  />
+                </aside>
+                </div>
+              </section>
+            ) : tab === "builds" ? (
+              <section
+                id="parts-builds-panel"
+                role="tabpanel"
+                tabIndex={0}
+                aria-labelledby="parts-builds-tab"
+                aria-label="Robot builds"
+                className="space-y-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Card className="border-border bg-card">
+                  <CardHeader>
+                    <p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Robot builds</p>
+                    <h2 className="text-2xl font-semibold tracking-tight">Plan the parts on each robot</h2>
+                    <CardDescription>Create a robot, open its parts list, then reserve stock from the Stockroom view.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <form onSubmit={createRobot} className="flex flex-col gap-2 sm:flex-row sm:max-w-xl">
+                      <Input
+                        value={robotName}
+                        onChange={(event) => setRobotName(event.target.value.slice(0, 80))}
+                        placeholder="Robot name"
+                        aria-label="New robot name"
+                        maxLength={80}
+                      />
+                      <Button type="submit" disabled={createRobotMutation.isPending || !robotName.trim()} data-testid="button-add-parts-robot">
+                        {createRobotMutation.isPending ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                        Add robot
+                      </Button>
+                    </form>
+                    {robots.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border bg-background px-5 py-10 text-center">
+                        <Bot size={24} className="mx-auto text-primary" aria-hidden="true" />
+                        <h2 className="mt-3 font-semibold text-foreground">No robot builds yet</h2>
+                         <p className="mt-1 text-sm text-muted-foreground">Add a robot above to open its parts list and cost details.</p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {robots.map((robot) => (
+                          <button
+                            key={robot.id}
+                            type="button"
+                            onClick={() => setSelectedRobot(robot)}
+                            className="group flex min-h-36 flex-col justify-between rounded-xl border border-border bg-background p-4 text-left transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            data-testid={`card-robot-${robot.id}`}
+                            aria-label={`Open build details for ${robot.name}`}
+                          >
+                            <span className="flex items-center justify-between gap-3">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Bot size={17} aria-hidden="true" /></span>
+                                <span className="truncate text-sm font-semibold text-foreground">{robot.name}</span>
+                              </span>
+                              <ArrowUpRight size={15} className="shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+                            </span>
+                            <span className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-primary">Open build details <ArrowUpRight size={13} aria-hidden="true" /></span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </section>
             ) : (
-              <section className="space-y-4" aria-label="Parts inventory">
+              <section
+                id="parts-stockroom-panel"
+                role="tabpanel"
+                tabIndex={0}
+                aria-labelledby="parts-stockroom-tab"
+                className="flex flex-col gap-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Stockroom"
+              >
                 <Dialog open={customDialogOpen} onOpenChange={setCustomDialogOpen}>
                   <DialogContent>
                     <DialogHeader>
@@ -1743,11 +1794,59 @@ export default function PartsPage() {
                   saving={createItemMutation.isPending}
                   onSave={savePhotoIdentifiedPart}
                 />
-                <Card className="border-border bg-card">
-                  <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                <details open={partsTotalsOpen} className="parts-disclosure order-last rounded-xl border border-border bg-card" data-testid="details-parts-totals">
+                  <summary
+                    aria-expanded={partsTotalsOpen}
+                    aria-controls="parts-totals-content"
+                    onClick={(event) => { event.preventDefault(); setPartsTotalsOpen((open) => !open); }}
+                    data-testid="button-toggle-parts-totals"
+                  >
+                    <span className="parts-disclosure-trigger">
+                      <span className="font-semibold">Stock totals</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {formatQuantity(dashboard.summary.catalogItems)} parts in catalog · {formatQuantity(dashboard.summary.availableUnits)} units available
+                      </span>
+                    </span>
+                    <span className="parts-disclosure-cue">{partsTotalsOpen ? "Hide totals" : "View stock totals"} <ChevronDown size={15} aria-hidden="true" /></span>
+                  </summary>
+                  <section id="parts-totals-content" className="grid gap-3 p-3 pt-0 sm:grid-cols-2 xl:grid-cols-4" aria-label="Parts totals">
+                    {[
+                      { label: "Parts in catalog", value: dashboard.summary.catalogItems, note: "catalog entries", highlight: false },
+                      { label: "Owned units", value: dashboard.summary.ownedUnits, note: "on hand", highlight: false },
+                      { label: "Assigned units", value: dashboard.summary.assignedUnits, note: "on robot builds", highlight: false },
+                      { label: "Available units", value: dashboard.summary.availableUnits, note: "ready to allocate", highlight: true },
+                    ].map((metric) => (
+                      <Card key={metric.label} className={`border-border bg-card ${metric.highlight ? "border-primary/35 bg-primary/[.045]" : ""}`}>
+                        <CardContent className="p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[.12em] text-muted-foreground">{metric.label}</p>
+                          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatQuantity(metric.value)}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{metric.note}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </section>
+                </details>
+                <Card className="border-border bg-card" data-testid="card-stockroom-tools">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">Find a part in your stockroom</CardTitle>
+                        <CardDescription>Filter the team’s saved stock, then update quantities or allocate parts to a robot.</CardDescription>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)} data-testid="button-scan-stockroom-part">
+                          <Camera size={14} aria-hidden="true" /> Scan part
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)} data-testid="button-add-stockroom-part">
+                          <Plus size={14} aria-hidden="true" /> Add custom part
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 pt-0">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <label className="text-sm font-medium">
-                        Search saved parts
+                        Search stockroom
                         <span className="relative mt-1 block">
                           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                           <Input
@@ -1757,6 +1856,7 @@ export default function PartsPage() {
                               setPageSize(100);
                             }}
                             placeholder="Part name or SKU"
+                            aria-label="Search stockroom"
                             className="pl-9"
                           />
                         </span>
@@ -1784,29 +1884,33 @@ export default function PartsPage() {
                         </select>
                       </label>
                     </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm text-muted-foreground">
+                          {catalogQuery.isLoading
+                            ? "Loading stockroom…"
+                            : `${formatQuantity(catalogItems.length)} shown of ${formatQuantity(catalogQuery.data?.total ?? 0)} saved parts`}
+                        </span>
+                        {catalogQuery.isError && <span role="alert" className="text-sm text-destructive">Could not load saved parts.</span>}
+                      </div>
+                      {catalogQuery.data && catalogQuery.data.total > catalogItems.length && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPageSize((size) => Math.min(size + 100, catalogQuery.data?.total ?? size + 100))}
+                          data-testid="button-load-more-stockroom"
+                        >
+                          Load more parts
+                        </Button>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-                  <span>
-                    {catalogQuery.isLoading
-                      ? "Loading catalog…"
-                      : `${formatQuantity(catalogItems.length)} shown of ${formatQuantity(catalogQuery.data?.total ?? 0)} saved item(s)`}
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)}>
-                      <Camera size={14} aria-hidden="true" /> Scan with camera
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)}>
-                      <Plus size={14} aria-hidden="true" /> Add custom part
-                    </Button>
-                  </div>
-                  {catalogQuery.isError && <span role="alert" className="text-destructive">Could not load saved catalog items.</span>}
-                </div>
-
                 {catalogQuery.isLoading ? (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-5 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} /> Loading inventory…
+                    <Loader2 className="animate-spin" size={16} /> Loading Stockroom…
                   </div>
                 ) : catalogItems.length === 0 ? (
                   <Card className="border-dashed border-border bg-card">
@@ -1814,9 +1918,9 @@ export default function PartsPage() {
                       <span className="rounded-2xl bg-primary/10 p-3 text-primary"><Package size={24} /></span>
                       <h2 className="mt-4 font-semibold text-foreground">No saved parts yet</h2>
                       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                        Sync available public catalogs or search across all suppliers to add parts to the team inventory.
+                        Search suppliers and save parts here, or add a custom part to start tracking stock.
                       </p>
-                      <Button className="mt-4" onClick={() => setTab("search")}>
+                      <Button className="mt-4" onClick={() => setTab("find")}>
                         <Search size={16} /> Find supplier parts
                       </Button>
                     </CardContent>
@@ -1837,15 +1941,9 @@ export default function PartsPage() {
                   </div>
                 )}
 
-                {catalogQuery.data && catalogQuery.data.total > catalogItems.length && (
-                  <div className="flex justify-center">
-                    <Button variant="outline" onClick={() => setPageSize((size) => Math.min(size + 100, catalogQuery.data?.total ?? size + 100))}>
-                      Load more parts
-                    </Button>
-                  </div>
-                )}
               </section>
             )}
+
           </>
         ) : null}
        </div>

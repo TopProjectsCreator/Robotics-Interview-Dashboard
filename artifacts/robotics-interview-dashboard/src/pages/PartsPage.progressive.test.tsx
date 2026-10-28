@@ -11,8 +11,12 @@ const mocks = vi.hoisted(() => ({
   dashboardVendors: null as Array<Record<string, unknown>> | null,
   sessionTeams: new WeakMap<object, string>(),
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
+  teamRobots: new Map<string, Array<Record<string, unknown>>>(),
   blockedVendors: new Map<string, Set<string>>(),
   blockVendor: vi.fn(),
+  createRobot: vi.fn(),
+  setAllocation: vi.fn(),
+  syncCatalogs: vi.fn(),
   role: "coordinator" as string,
 }));
 
@@ -107,7 +111,21 @@ vi.mock("@workspace/api-client-react", async () => {
         isPending: false,
       };
     },
-    useCreatePartsRobot: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCreatePartsRobot: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ data }: { data: { name: string } }) => {
+          const result = await mocks.createRobot({ data });
+          const robots = mocks.teamRobots.get(teamId) ?? [];
+          mocks.teamRobots.set(teamId, [
+            ...robots,
+            { id: `${teamId}-robot-${robots.length + 1}`, name: data.name },
+          ]);
+          return result;
+        },
+        isPending: false,
+      };
+    },
     useGetPartsCatalogDetails: (partId: string, options?: {
       query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
     }) => {
@@ -139,7 +157,7 @@ vi.mock("@workspace/api-client-react", async () => {
               ...vendor,
               blocked: mocks.blockedVendors.get(teamId)?.has(String(vendor.key)) ?? false,
             })),
-            robots: [],
+            robots: mocks.teamRobots.get(teamId) ?? [],
             summary: {
               vendorCount: 1,
               catalogItems: items.length,
@@ -184,8 +202,46 @@ vi.mock("@workspace/api-client-react", async () => {
         ...options?.query,
       });
     },
-    useSetPartsRobotAllocation: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useSyncPartsCatalog: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useSetPartsRobotAllocation: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ robotId, partId, data }: {
+          robotId: string;
+          partId: string;
+          data: { quantity: number };
+        }) => {
+          const result = await mocks.setAllocation({ robotId, partId, data });
+          const robots = mocks.teamRobots.get(teamId) ?? [];
+          const robot = robots.find((item) => item.id === robotId);
+          const items = mocks.teamInventory.get(teamId) ?? [];
+          mocks.teamInventory.set(teamId, items.map((item) => {
+            if (item.id !== partId) return item;
+            const allocations = (item.allocations as Array<Record<string, unknown>> ?? [])
+              .filter((allocation) => allocation.robotId !== robotId);
+            if (data.quantity > 0) {
+              allocations.push({
+                robotId,
+                robotName: robot?.name ?? "Robot",
+                quantity: data.quantity,
+              });
+            }
+            const quantityAssigned = allocations.reduce(
+              (total, allocation) => total + Number(allocation.quantity ?? 0),
+              0,
+            );
+            return {
+              ...item,
+              allocations,
+              quantityAssigned,
+              quantityAvailable: Math.max(0, Number(item.quantityOwned ?? 0) - quantityAssigned),
+            };
+          }));
+          return result;
+        },
+        isPending: false,
+      };
+    },
+    useSyncPartsCatalog: () => ({ mutateAsync: mocks.syncCatalogs, isPending: false }),
     useUpdatePartsCatalogStock: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdatePartsCatalogDetails: () => {
       const teamId = getTeamId();
@@ -243,7 +299,7 @@ const earlyProduct = {
   inStock: true,
 };
 
-async function renderPartsPage(teamId = "team-a") {
+async function renderPartsPage(teamId = "team-a", initialView: "stockroom" | "find" | "builds" = "find") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -255,9 +311,24 @@ async function renderPartsPage(teamId = "team-a") {
       </Router>
     </QueryClientProvider>,
   );
-  fireEvent.click(within(view.container).getByRole("button", { name: "Find parts" }));
-  await within(view.container).findByRole("tab", { name: "Supplier catalog" });
+  await within(view.container).findByRole("tab", { name: "Stockroom" });
+  if (initialView !== "stockroom") {
+    fireEvent.click(within(view.container).getByRole("tab", {
+      name: initialView === "find" ? "Find parts" : "Robot builds",
+    }));
+  }
   return { ...view, queryClient };
+}
+
+function openSupplierCoverage(container: HTMLElement) {
+  fireEvent.click(within(container).getByTestId("button-toggle-parts-source-coverage"));
+  fireEvent.click(within(container).getByTestId("button-show-parts-source-coverage"));
+}
+
+function openStockTotals(container: HTMLElement) {
+  const trigger = within(container).getByTestId("button-toggle-parts-totals");
+  if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+  return within(container).getByLabelText("Parts totals");
 }
 
 function startSearch(query = "early result") {
@@ -274,6 +345,7 @@ afterEach(() => {
   vi.clearAllMocks();
   mocks.dashboardVendors = null;
   mocks.blockedVendors.clear();
+  mocks.teamRobots.clear();
   mocks.role = "coordinator";
   if (mediaDevicesDescriptor) {
     Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
@@ -311,10 +383,22 @@ describe("progressive Parts search", () => {
     mocks.teamInventory.clear();
     mocks.teamInventory.set("team-a", []);
     mocks.teamInventory.set("team-b", []);
+    mocks.teamRobots.clear();
+    mocks.teamRobots.set("team-a", []);
+    mocks.teamRobots.set("team-b", []);
     mocks.blockedVendors.clear();
     mocks.role = "coordinator";
     mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
+    mocks.createRobot.mockResolvedValue({});
+    mocks.setAllocation.mockResolvedValue({});
+    mocks.syncCatalogs.mockResolvedValue({
+      vendors: [{ status: "synced", vendorName: "AndyMark" }],
+      totalItems: 1,
+      created: 1,
+      updated: 0,
+    });
+    window.localStorage.removeItem("robotics-parts-order-draft-v1");
     mocks.blockVendor.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
@@ -368,6 +452,7 @@ describe("progressive Parts search", () => {
     ];
 
     const page = await renderPartsPage();
+    openSupplierCoverage(page.container);
     expect(
       await within(page.container).findByTestId("status-parts-source-eta-gobilda"),
     ).toHaveTextContent(
@@ -400,7 +485,7 @@ describe("progressive Parts search", () => {
     });
   });
 
-  it("lets admins block and restore suppliers from coverage management", async () => {
+  it("lets admins block and restore suppliers from supplier status", async () => {
     mocks.dashboardVendors = [
       testVendor,
       {
@@ -412,7 +497,7 @@ describe("progressive Parts search", () => {
       },
     ];
     const page = await renderPartsPage();
-    fireEvent.click(within(page.container).getByTestId("button-show-parts-source-coverage"));
+    openSupplierCoverage(page.container);
 
     fireEvent.click(within(page.container).getByTestId("button-parts-vendor-block-andymark"));
     await waitFor(() => {
@@ -441,7 +526,7 @@ describe("progressive Parts search", () => {
     mocks.role = "interviewer";
     mocks.blockedVendors.set("team-a", new Set(["andymark"]));
     const page = await renderPartsPage();
-    fireEvent.click(within(page.container).getByTestId("button-show-parts-source-coverage"));
+    openSupplierCoverage(page.container);
 
     expect(within(page.container).getByTestId("card-parts-source-andymark"))
       .toHaveTextContent("Blocked for this team");
@@ -452,7 +537,7 @@ describe("progressive Parts search", () => {
   it("keeps blocked suppliers available for inventory filtering but not new catalog entries", async () => {
     mocks.blockedVendors.set("team-a", new Set(["andymark"]));
     const page = await renderPartsPage();
-    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
 
     const inventoryFilter = within(page.container).getByLabelText("Filter supplier");
     expect(within(inventoryFilter).getByRole("option", {
@@ -463,6 +548,176 @@ describe("progressive Parts search", () => {
     const customSupplier = screen.getByLabelText("Supplier *");
     expect(within(customSupplier).queryByRole("option", { name: "AndyMark" }))
       .not.toBeInTheDocument();
+  });
+
+  it("opens in Stockroom and keeps the three named views easy to switch between", async () => {
+    const stockroom = await renderPartsPage("team-a", "stockroom");
+    expect(within(stockroom.container).getByRole("tab", { name: "Stockroom" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(within(stockroom.container).getByLabelText("Stockroom")).toBeInTheDocument();
+    expect(within(stockroom.container).queryByRole("textbox", { name: "Part, SKU, or material" }))
+      .not.toBeInTheDocument();
+
+    const stockroomTab = within(stockroom.container).getByRole("tab", { name: "Stockroom" });
+    stockroomTab.focus();
+    fireEvent.keyDown(stockroomTab, { key: "ArrowRight" });
+    const findTab = within(stockroom.container).getByRole("tab", { name: "Find parts" });
+    expect(findTab).toHaveFocus();
+    fireEvent.keyDown(findTab, { key: "ArrowRight" });
+    const buildsTab = within(stockroom.container).getByRole("tab", { name: "Robot builds" });
+    expect(buildsTab)
+      .toHaveFocus();
+    expect(buildsTab)
+      .toHaveAttribute("aria-selected", "true");
+    expect(within(stockroom.container).getByRole("heading", { name: "Plan the parts on each robot" })).toBeInTheDocument();
+    fireEvent.keyDown(buildsTab, { key: "Home" });
+    expect(within(stockroom.container).getByRole("tab", { name: "Stockroom" })).toHaveFocus();
+    fireEvent.keyDown(within(stockroom.container).getByRole("tab", { name: "Stockroom" }), { key: "End" });
+    expect(buildsTab).toHaveFocus();
+  });
+
+  it("creates a robot from Robot builds and opens its build card", async () => {
+    const page = await renderPartsPage("team-a", "builds");
+    fireEvent.change(within(page.container).getByRole("textbox", { name: "New robot name" }), {
+      target: { value: "Field test rover" },
+    });
+    fireEvent.click(within(page.container).getByRole("button", { name: "Add robot" }));
+
+    await waitFor(() => expect(mocks.createRobot).toHaveBeenCalledWith({
+      data: { name: "Field test rover" },
+    }));
+    expect(await within(page.container).findByRole("button", {
+      name: "Open build details for Field test rover",
+    })).toBeInTheDocument();
+  });
+
+  it("places the draft order beside supplier results and makes key disclosures actionable", async () => {
+    const page = await renderPartsPage();
+    expect(within(page.container).getByTestId("parts-find-results-layout")).toBeInTheDocument();
+    expect(within(page.container).getByRole("link", { name: "Ask Parts Assistant" })).toHaveAttribute("href", "/parts/assistant");
+    const tray = within(page.container).getByRole("complementary", { name: "Draft order tray" });
+    expect(tray).toContainElement(within(page.container).getByTestId("details-parts-order"));
+
+    const orderDetails = within(page.container).getByTestId("details-parts-order");
+    const orderTrigger = orderDetails.querySelector("summary");
+    if (!orderTrigger) throw new Error("The draft-order disclosure trigger was not found.");
+    expect(orderTrigger).toHaveTextContent("View order");
+    expect(orderTrigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(orderTrigger);
+    expect(orderTrigger).toHaveTextContent("Hide order");
+    expect(orderTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(orderDetails).toHaveAttribute("open");
+
+    const coverageDetails = within(page.container).getByTestId("details-parts-coverage");
+    const coverageTrigger = coverageDetails.querySelector("summary");
+    if (!coverageTrigger) throw new Error("The supplier-coverage disclosure trigger was not found.");
+    expect(coverageTrigger).toHaveTextContent("View supplier status");
+    expect(coverageTrigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(coverageTrigger);
+    expect(coverageTrigger).toHaveTextContent("Hide supplier status");
+    expect(coverageTrigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
+    const totals = openStockTotals(page.container);
+    expect(totals).toBeInTheDocument();
+    expect(within(page.container).queryByTestId("details-parts-robots")).not.toBeInTheDocument();
+  });
+
+  it("lets a user allocate an inventory part to a robot from the reorganized workspace", async () => {
+    mocks.teamRobots.set("team-a", [{ id: "team-a-robot-1", name: "Competition robot" }]);
+    mocks.teamInventory.set("team-a", [{
+      id: "team-a-shaft",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "Shaft collar",
+      sku: "SC-1",
+      category: "Hardware",
+      description: null,
+      productUrl: null,
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 5,
+      quantityAssigned: 0,
+      quantityAvailable: 5,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    const page = await renderPartsPage();
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
+
+    const quantity = await within(page.container).findByRole("spinbutton", {
+      name: "Quantity of Shaft collar assigned to selected robot",
+    });
+    fireEvent.change(within(page.container).getByRole("combobox", {
+      name: "Choose a robot for Shaft collar",
+    }), { target: { value: "team-a-robot-1" } });
+    fireEvent.change(quantity, { target: { value: "2" } });
+    fireEvent.click(within(page.container).getByRole("button", { name: "Set" }));
+
+    await waitFor(() => {
+      expect(mocks.setAllocation).toHaveBeenCalledWith({
+        robotId: "team-a-robot-1",
+        partId: "team-a-shaft",
+        data: { quantity: 2 },
+      });
+    });
+    expect(await within(page.container).findByRole("status"))
+      .toHaveTextContent("Robot allocation updated.");
+    const totals = openStockTotals(page.container);
+    await waitFor(() => {
+      expect(within(totals).getByText("Assigned units").parentElement).toHaveTextContent("2");
+    });
+  });
+
+  it("updates supplier lists from the supplier status area", async () => {
+    const page = await renderPartsPage();
+    fireEvent.click(within(page.container).getByTestId("button-toggle-parts-source-coverage"));
+    fireEvent.click(within(page.container).getByRole("button", { name: "Update supplier lists" }));
+
+    await waitFor(() => expect(mocks.syncCatalogs).toHaveBeenCalledTimes(1));
+    expect(await within(page.container).findByText(/Supplier list update finished/))
+      .toBeInTheDocument();
+  });
+
+  it("lets a user add a priced supplier result to the expandable draft order", async () => {
+    mocks.consumeSearch.mockImplementation(async (_params, onEvent) => {
+      await onEvent({
+        type: "result",
+        result: {
+          ...earlyProduct,
+          title: "Draft-order bracket",
+          url: "https://www.andymark.com/products/draft-order-bracket",
+          price: "14.50",
+          currency: "USD",
+        },
+      });
+      await onEvent({
+        type: "complete",
+        status: "available",
+        providerCount: 2,
+        failedProviderCount: 0,
+        resultCount: 1,
+      });
+    });
+    const page = await renderPartsPage();
+    startSearch("priced bracket");
+
+    fireEvent.click(await within(page.container).findByRole("button", { name: "Add to draft" }));
+    expect(await within(page.container).findByText("Draft-order bracket added to the draft order. No purchase has been placed."))
+      .toBeInTheDocument();
+
+    const orderDetails = within(page.container).getByTestId("details-parts-order");
+    const orderSummary = orderDetails.querySelector("summary");
+    if (!orderSummary) throw new Error("The draft order summary was not found.");
+    fireEvent.click(orderSummary);
+    fireEvent.click(within(orderDetails).getByRole("button", {
+      name: "Increase quantity of Draft-order bracket",
+    }));
+    expect(orderDetails).toHaveTextContent("2 items");
+    expect(JSON.parse(window.localStorage.getItem("robotics-parts-order-draft-v1") ?? "[]"))
+      .toMatchObject([{ product: { title: "Draft-order bracket" }, quantity: 2 }]);
   });
 
   it("lets a user save a verified result before the stream completes", async () => {
@@ -485,7 +740,7 @@ describe("progressive Parts search", () => {
     await renderPartsPage();
     startSearch();
 
-    const saveButton = await screen.findByRole("button", { name: "Save to inventory" });
+    const saveButton = await screen.findByRole("button", { name: "Add to Stockroom" });
     expect(screen.getByText("Searching across 19 suppliers…")).toBeInTheDocument();
     expect(screen.queryByText(/Search complete/)).not.toBeInTheDocument();
 
@@ -501,13 +756,13 @@ describe("progressive Parts search", () => {
         quantityOwned: 0,
       },
     }));
-    expect(await screen.findByText("Saved to inventory.")).toBeInTheDocument();
+    expect(await screen.findByText("Added to Stockroom.")).toBeInTheDocument();
     expect(screen.queryByText(/Search complete/)).not.toBeInTheDocument();
 
     await act(async () => {
       finishSearch();
     });
-    expect(await screen.findByText(/Search complete\. 1 verified live product group/)).toBeInTheDocument();
+    expect(await screen.findByText(/Search complete\. 1 verified supplier result/)).toBeInTheDocument();
   });
 
   it("communicates partial provider failure without removing found results", async () => {
@@ -527,9 +782,9 @@ describe("progressive Parts search", () => {
 
     expect(await screen.findByText("Early result part")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "partial supplier coverage: 1 of 4 discovery providers failed",
+      "Some suppliers could not be reached: 1 of 4 search providers failed",
     );
-    expect(screen.getByRole("status")).toHaveTextContent("partial supplier coverage");
+    expect(screen.getByRole("status")).toHaveTextContent("Some suppliers could not be reached");
   });
 
   it("communicates when every live provider fails", async () => {
@@ -547,10 +802,10 @@ describe("progressive Parts search", () => {
     startSearch("total outage");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "all 4 of 4 discovery providers were unavailable",
+      "all 4 search providers could not be reached",
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Search complete, but live supplier discovery did not return results",
+      "Search complete, but suppliers did not return live results",
     );
     expect(screen.queryByText("No matching supplier products or indexed catalog records were found.")).not.toBeInTheDocument();
   });
@@ -566,9 +821,9 @@ describe("progressive Parts search", () => {
 
     expect(await screen.findByText("Early result part")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Supplier search ended before completion",
+      "Supplier search ended early",
     );
-    expect(screen.getByRole("status")).toHaveTextContent("partial supplier coverage");
+    expect(screen.getByRole("status")).toHaveTextContent("Some suppliers could not be reached");
   });
 
   it("ignores results and completion events from an older search", async () => {
@@ -632,8 +887,8 @@ describe("progressive Parts search", () => {
   it("saves reviewed camera details through the Parts catalog path and refreshes inventory totals", async () => {
     const { queryClient } = await renderPartsPage();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    fireEvent.click(screen.getByRole("tab", { name: "Inventory" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Scan with camera" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Stockroom" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Scan part" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
     await screen.findByDisplayValue("Camera suggested bracket");
@@ -658,7 +913,7 @@ describe("progressive Parts search", () => {
     }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/parts/dashboard"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/parts/catalog"] });
-    expect(await screen.findByText("Reviewed bracket added to inventory.")).toBeInTheDocument();
+    expect(await screen.findByText("Reviewed bracket added to Stockroom.")).toBeInTheDocument();
   });
 
   it("shows a camera-added part and updated totals to a teammate without reloading, while keeping other teams separate", async () => {
@@ -686,14 +941,13 @@ describe("progressive Parts search", () => {
     const teammate = await renderPartsPage("team-a");
     const otherTeam = await renderPartsPage("team-b");
     for (const session of [writer, teammate, otherTeam]) {
-      fireEvent.click(within(session.container).getByRole("tab", { name: "Inventory" }));
+      fireEvent.click(within(session.container).getByRole("tab", { name: "Stockroom" }));
     }
-
     await within(otherTeam.container).findByText("Team B private bracket");
     expect(within(writer.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
     expect(within(teammate.container).queryByText("Team B private bracket")).not.toBeInTheDocument();
 
-    fireEvent.click(within(writer.container).getByRole("button", { name: "Scan with camera" }));
+    fireEvent.click(within(writer.container).getByRole("button", { name: "Scan part" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Capture and identify" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Capture and identify" }));
     await screen.findByDisplayValue("Camera suggested bracket");
@@ -711,12 +965,12 @@ describe("progressive Parts search", () => {
     await within(writer.container).findByText("Photo-added team bracket");
     await within(teammate.container).findByText("Photo-added team bracket", {}, { timeout: 10_000 });
     await waitFor(() => {
-      const totals = within(teammate.container).getByLabelText("Parts totals");
-      expect(within(totals).getByText("Catalog items").parentElement).toHaveTextContent("1");
+      const totals = openStockTotals(teammate.container);
+      expect(within(totals).getByText("Parts in catalog").parentElement).toHaveTextContent("1");
       expect(within(totals).getByText("Owned units").parentElement).toHaveTextContent("3");
     }, { timeout: 10_000 });
 
-    expect(within(teammate.container).getByText("1 shown of 1 saved item(s)")).toBeInTheDocument();
+    expect(within(teammate.container).getByText("1 shown of 1 saved parts")).toBeInTheDocument();
     expect(within(otherTeam.container).queryByText("Photo-added team bracket")).not.toBeInTheDocument();
     expect(within(otherTeam.container).queryByText("Team B private bracket")).toBeInTheDocument();
   }, 15_000);
@@ -767,9 +1021,8 @@ describe("progressive Parts search", () => {
     const teamA = await renderPartsPage("team-a");
     const teamB = await renderPartsPage("team-b");
     for (const session of [teamA, teamB]) {
-      fireEvent.click(within(session.container).getByRole("tab", { name: "Inventory" }));
+      fireEvent.click(within(session.container).getByRole("tab", { name: "Stockroom" }));
     }
-
     expect(await within(teamA.container).findByRole("button", { name: "Open details for Tracked gear" })).toBeInTheDocument();
     expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked bearing" })).toBeInTheDocument();
     expect(within(teamA.container).getByRole("button", { name: "Open details for Tracked allocation" })).toBeInTheDocument();
@@ -786,10 +1039,13 @@ describe("progressive Parts search", () => {
     expect(bearingCard).toHaveTextContent("Owned 3");
     expect(bearingCard).toHaveTextContent("Assigned 0");
 
-    const totals = within(teamA.container).getByLabelText("Parts totals");
+    const totals = openStockTotals(teamA.container);
+    expect(within(totals).getByText("Parts in catalog").parentElement).toHaveTextContent("5");
     expect(within(totals).getByText("Owned units").parentElement).toHaveTextContent("9");
     expect(within(totals).getByText("Assigned units").parentElement).toHaveTextContent("3");
-    expect(within(teamA.container).getByText("4 shown of 4 saved item(s)")).toBeInTheDocument();
+    expect(within(teamA.container).getByTestId("button-toggle-parts-totals"))
+      .toHaveTextContent("5 parts in catalog · 6 units available");
+    expect(within(teamA.container).getByText("4 shown of 4 saved parts")).toBeInTheDocument();
   });
 
   it("opens part details, saves inventory fields separately, and reloads the persisted values", async () => {
@@ -816,7 +1072,7 @@ describe("progressive Parts search", () => {
     }]);
 
     const firstPage = await renderPartsPage("team-a");
-    fireEvent.click(within(firstPage.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(firstPage.container).getByRole("tab", { name: "Stockroom" }));
     expect(within(firstPage.container).getByLabelText("Owned stock for Precision bracket")).toHaveValue(4);
     fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -860,7 +1116,7 @@ describe("progressive Parts search", () => {
 
     firstPage.unmount();
     const reloadedPage = await renderPartsPage("team-a");
-    fireEvent.click(within(reloadedPage.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(reloadedPage.container).getByRole("tab", { name: "Stockroom" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open details for Precision bracket" }));
     const reloadedDialog = within(await screen.findByRole("dialog"));
     expect(await screen.findByDisplayValue("Shelf A")).toBeInTheDocument();
@@ -896,7 +1152,7 @@ describe("progressive Parts search", () => {
       .mockImplementationOnce(loadMockPartDetails);
 
     const page = await renderPartsPage("team-a");
-    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open details for Retryable bracket" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -937,7 +1193,7 @@ describe("progressive Parts search", () => {
     );
 
     const page = await renderPartsPage("team-a");
-    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open details for Unavailable bracket" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -972,7 +1228,7 @@ describe("progressive Parts search", () => {
     );
 
     const page = await renderPartsPage("team-a");
-    fireEvent.click(within(page.container).getByRole("tab", { name: "Inventory" }));
+    fireEvent.click(within(page.container).getByRole("tab", { name: "Stockroom" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open details for Protected bracket" }));
 
     const dialog = await screen.findByRole("dialog");

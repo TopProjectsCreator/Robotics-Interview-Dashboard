@@ -56,8 +56,9 @@ describe("workspace navigation", () => {
       .not.toContain("Recurring tasks");
   });
 
-  it("keeps parts, CAD, and code routes in their own workspaces", () => {
+  it("shows the Parts assistant inside Parts and keeps other routes in their workspaces", () => {
     expect(workspaceAreaForPath("/parts")).toBe("parts");
+    expect(workspaceAreaForPath("/parts/assistant")).toBe("parts");
     expect(workspaceAreaForPath("/parts?search=shaft")).toBe("parts");
     expect(workspaceAreaForPath("/cad")).toBe("cad");
     expect(workspaceAreaForPath("/cad/")).toBe("cad");
@@ -71,7 +72,10 @@ describe("workspace navigation", () => {
       "Parts",
       "CAD",
       "Code",
+      "Parts assistant",
     ]);
+    expect(getWorkspaceNavigation("parts").find(({ label }) => label === "Parts assistant")?.href)
+      .toBe("/parts/assistant");
     expect(getWorkspaceNavigation("cad").map(({ label }) => label)).toEqual([
       "Interview",
       "Chat",
@@ -99,6 +103,8 @@ describe("workspace navigation", () => {
       "Parts",
       "AI assistant",
     ]);
+    expect(getWorkspaceNavigation("parts", visible).map(({ label }) => label))
+      .toContain("Parts assistant");
   });
 
   it("hides sections whose workspace is hidden", () => {
@@ -110,5 +116,9 @@ describe("workspace navigation", () => {
     expect(
       getWorkspaceNavigation("chat", withoutChat).map(({ label }) => label),
     ).not.toContain("AI assistant");
+    const withoutParts = new Set<WorkspaceKey>(["chat"]);
+    expect(
+      getWorkspaceNavigation("parts", withoutParts).map(({ label }) => label),
+    ).not.toContain("Parts assistant");
   });
 });

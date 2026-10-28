@@ -46,6 +46,10 @@ const CHAT_LINKS: WorkspaceNavItem[] = [
   { href: "/assistant", label: "AI assistant", iconKey: "assistant", kind: "section", workspace: "chat" },
 ];
 
+const PARTS_LINKS: WorkspaceNavItem[] = [
+  { href: "/parts/assistant", label: "Parts assistant", iconKey: "assistant", kind: "section", workspace: "parts" },
+];
+
 // Custom apps is intentionally NOT in the sidebar: it is an unfinished admin
 // experiment with no settled purpose. The route still exists at
 // /custom-workspaces for admins; do not surface a tab for it until we decide
@@ -100,6 +104,7 @@ export function getWorkspaceNavigation(
     return [...workspaces, ...INTERVIEW_LINKS.filter(isVisible)];
   }
   if (area === "chat") return [...workspaces, ...CHAT_LINKS.filter(isVisible)];
+  if (area === "parts") return [...workspaces, ...PARTS_LINKS.filter(isVisible)];
   if (area === "cad") return workspaces;
   if (area === "code") return [...workspaces, ...CODE_LINKS.filter(isVisible)];
   return workspaces;
