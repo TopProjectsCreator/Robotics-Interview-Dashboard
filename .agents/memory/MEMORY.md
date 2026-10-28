@@ -1,5 +1,6 @@
 - [Generated API contract discipline](generated-api-contract-discipline.md) — validate server response shapes against regenerated Zod schemas before wiring frontend hooks.
 - [Embedded authentication](embedded-authentication.md) — iframe login needs included credentials and secure SameSite=None cookies when served over HTTPS.
+- [Builder-run verification](builder-run-verification.md) — use supported auth endpoints for authorized API tests; a client timeout does not prove a long review stopped.
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
 - [External database ownership](external-database-ownership.md) — verify database hosts and preserve the configured secondary Supabase routing.
 - [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
