@@ -49,10 +49,18 @@ describe("workspace header theme and responsive styling", () => {
     expect(workspaceHeader).toContain("sm:px-5");
     expect(workspaceHeader).toContain("lg:px-9");
     expect(workspaceHeader).toContain('data-testid="button-mobile-menu"');
-    expect(workspaceHeader).toContain("lg:hidden");
+    expect(workspaceHeader).toContain("xl:hidden");
     expect(workspaceHeader).toContain("sm:flex");
     expect(appSource).toContain("hidden sm:inline");
     expect(workspaceHeader).toContain("{activeTeamName}");
     expect(workspaceHeader).toContain("Team workspace");
+  });
+
+  it("keeps the sidebar as a drawer through iPad-sized viewports", () => {
+    expect(appSource).toContain('matchMedia("(min-width: 1280px)")');
+    expect(appSource).toContain('data-testid="button-close-mobile-navigation"');
+    expect(appSource).toContain("xl:hidden");
+    expect(appSource).toContain("xl:translate-x-0");
+    expect(appSource).toContain("xl:pl-[248px]");
   });
 });
