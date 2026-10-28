@@ -47,6 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+/generated-artifacts/
 
 # Local-only opencode encrypted_content auto-heal tooling (per-runner, not for commit)
 scripts/fix-opencode-fork.py
