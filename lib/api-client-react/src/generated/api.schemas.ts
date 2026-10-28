@@ -772,6 +772,33 @@ export interface SystemUsage {
   applicantCount: number;
 }
 
+export interface TeamMailboxSettings {
+  teamId: string;
+  /** @nullable */
+  mailbox: string | null;
+  /** @nullable */
+  forwardingAddress: string | null;
+  enabled: boolean;
+  configured: boolean;
+  /** @maxItems 50 */
+  allowedSenders: string[];
+  legacy: boolean;
+}
+
+export interface TeamMailboxSettingsInput {
+  enabled: boolean;
+  /** @maxItems 50 */
+  allowedSenders: string[];
+}
+
+export interface TeamMailboxSyncResult {
+  /** @minimum 0 */
+  posted: number;
+  /** @minimum 0 */
+  skipped: number;
+  reason?: string;
+}
+
 export interface ErrorResponse {
   error: string;
 }

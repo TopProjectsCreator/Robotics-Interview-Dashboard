@@ -36,4 +36,5 @@ export * from "./teams";
 export * from "./featureRequests";
 export * from "./personalNotepad";
 export * from "./ingestedEmails";
+export * from "./maildropInboxes";
 export * from "./cadPreviewJobs";

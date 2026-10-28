@@ -32,6 +32,71 @@ export const GetSystemUsageResponse = zod.object({
 
 
 /**
+ * @summary Read the signed-in team's inbox settings
+ */
+export const getTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp = new RegExp('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$');
+export const getTeamMailboxSettingsResponseAllowedSendersMax = 50;
+
+
+
+export const GetTeamMailboxSettingsResponse = zod.object({
+  "teamId": zod.string(),
+  "mailbox": zod.string().nullable(),
+  "forwardingAddress": zod.string().nullable(),
+  "enabled": zod.boolean(),
+  "configured": zod.boolean(),
+  "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(getTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp)])).max(getTeamMailboxSettingsResponseAllowedSendersMax),
+  "legacy": zod.boolean()
+})
+
+
+/**
+ * Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+ * @summary Update the signed-in team's inbox settings
+ */
+export const updateTeamMailboxSettingsBodyAllowedSendersItemTwoRegExp = new RegExp('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$');
+export const updateTeamMailboxSettingsBodyAllowedSendersMax = 50;
+
+
+
+export const UpdateTeamMailboxSettingsBody = zod.object({
+  "enabled": zod.boolean(),
+  "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(updateTeamMailboxSettingsBodyAllowedSendersItemTwoRegExp)])).max(updateTeamMailboxSettingsBodyAllowedSendersMax)
+})
+
+export const updateTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp = new RegExp('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$');
+export const updateTeamMailboxSettingsResponseAllowedSendersMax = 50;
+
+
+
+export const UpdateTeamMailboxSettingsResponse = zod.object({
+  "teamId": zod.string(),
+  "mailbox": zod.string().nullable(),
+  "forwardingAddress": zod.string().nullable(),
+  "enabled": zod.boolean(),
+  "configured": zod.boolean(),
+  "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(updateTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp)])).max(updateTeamMailboxSettingsResponseAllowedSendersMax),
+  "legacy": zod.boolean()
+})
+
+
+/**
+ * @summary Check the signed-in team's inbox now
+ */
+export const syncTeamMailboxResponsePostedMin = 0;
+
+export const syncTeamMailboxResponseSkippedMin = 0;
+
+
+
+export const SyncTeamMailboxResponse = zod.object({
+  "posted": zod.number().int().min(syncTeamMailboxResponsePostedMin),
+  "skipped": zod.number().int().min(syncTeamMailboxResponseSkippedMin),
+  "reason": zod.string().optional()
+})
+
+
+/**
  * @summary Start an interviewer session
  */
 

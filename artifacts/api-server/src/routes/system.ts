@@ -1,10 +1,17 @@
 import { Router, type IRouter } from "express";
 import {
   GetSystemUsageResponse,
+  GetTeamMailboxSettingsResponse,
+  UpdateTeamMailboxSettingsBody,
 } from "@workspace/api-zod";
 import { pool } from "@workspace/db";
-import { requestTeamId, requireAdmin, requireCoordinator } from "../middlewares/adminAuth";
-import { ingestMailboxIntoChat, maildropAllowedSenders, maildropConfigured, maildropMailbox } from "../lib/maildrop";
+import { requestTeamId, requireAdmin, requireCoordinator, requireInboxAdmin } from "../middlewares/adminAuth";
+import {
+  forwardingAddress,
+  getTeamMailboxSettings,
+  ingestMailboxIntoChat,
+  saveTeamMailboxSettings,
+} from "../lib/maildrop";
 import {
   normalizeWorkspaceVisibility,
   readWorkspaceVisibility,
@@ -82,21 +89,57 @@ router.get("/system/usage", requireAdmin, async (req, res): Promise<void> => {
   );
 });
 
-// Team inbox status. Admins only: tells them whether email forwarding is
-// wired up, without exposing the mailbox credentials.
-router.get("/system/mailbox", requireAdmin, async (_req, res): Promise<void> => {
-  res.json({
-    configured: maildropConfigured(),
-    mailbox: maildropMailbox() ? "set" : "not set",
-    allowedSenders: maildropAllowedSenders().length,
+function mailboxSettingsResponse(settings: Awaited<ReturnType<typeof getTeamMailboxSettings>>) {
+  return GetTeamMailboxSettingsResponse.parse({
+    ...settings,
+    forwardingAddress: settings.mailbox ? forwardingAddress(settings.mailbox) : null,
+    configured: settings.enabled && settings.allowedSenders.length > 0,
   });
+}
+
+// Inbox configuration belongs to the signed-in team's Admins. The team ID is
+// always derived from the authenticated account, never from request data.
+router.get("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void> => {
+  try {
+    res.json(mailboxSettingsResponse(await getTeamMailboxSettings(await requestTeamId(req))));
+  } catch (error) {
+    req.log.error({ err: error }, "Team inbox settings read failed");
+    res.status(500).json({ error: "Unable to read team inbox settings." });
+  }
 });
 
-// Check the team inbox now instead of waiting for the next poll.
-router.post("/system/mailbox/sync", requireAdmin, async (req, res): Promise<void> => {
-  const teamId = await requestTeamId(req);
-  const result = await ingestMailboxIntoChat(teamId);
-  res.json(result);
+router.put("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void> => {
+  const parsed = UpdateTeamMailboxSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter valid approved sender email addresses." });
+    return;
+  }
+  try {
+    const settings = await saveTeamMailboxSettings(
+      await requestTeamId(req),
+      parsed.data.enabled,
+      parsed.data.allowedSenders,
+    );
+    res.json(mailboxSettingsResponse(settings));
+  } catch (error) {
+    if (error instanceof TypeError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "Team inbox settings update failed");
+    res.status(500).json({ error: "Unable to update team inbox settings." });
+  }
+});
+
+// Check only the signed-in team's inbox, without accepting a client-selected ID.
+router.post("/system/mailbox/sync", requireInboxAdmin, async (req, res): Promise<void> => {
+  try {
+    const teamId = await requestTeamId(req);
+    res.json(await ingestMailboxIntoChat(teamId));
+  } catch (error) {
+    req.log.error({ err: error }, "Manual team inbox check failed");
+    res.status(500).json({ error: "Unable to check the team inbox." });
+  }
 });
 
 // Which users can open each workspace (per interviewer account ID, with legacy

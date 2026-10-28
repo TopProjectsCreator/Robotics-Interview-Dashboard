@@ -39,6 +39,7 @@ import {
   useListFeatureRequests, getListFeatureRequestsQueryKey, useCreateFeatureRequest, useUpdateFeatureRequest,
   useEditOwnFeatureRequest, useDeleteOwnFeatureRequest,
   useGetSiteStats, getGetSiteStatsQueryKey,
+   useGetTeamMailboxSettings, getGetTeamMailboxSettingsQueryKey, useUpdateTeamMailboxSettings, useSyncTeamMailbox,
   useInterpretApplicantSearch,
   useCreateSpreadsheet,
   getInterviewChat,
@@ -378,7 +379,7 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
     return () => { window.removeEventListener("pointerdown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open ]);
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
-  const isCoordinatorMenu = session.data?.role === "coordinator";
+  const isCoordinatorMenu = session.data?.role === "coordinator" || session.data?.role === "admin";
   return <div ref={ref} className="relative">
     <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-2xl">
@@ -589,6 +590,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
   const qc = useQueryClient();
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const [, setLocation] = useLocation();
   const [notifyState, setNotifyState] = useState(() => browserNotifyPermission());
   const [refreshed, setRefreshed] = useState(false);
@@ -601,45 +603,63 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
-  const [mailbox, setMailbox] = useState<{ configured: boolean; allowedSenders: number } | null>(null);
+  const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
+  const mailboxQuery = useGetTeamMailboxSettings({
+    query: { queryKey: getGetTeamMailboxSettingsQueryKey(), enabled: isAdmin, retry: false },
+  });
+  const updateMailbox = useUpdateTeamMailboxSettings();
+  const checkMailbox = useSyncTeamMailbox();
+  const [mailboxEnabled, setMailboxEnabled] = useState(false);
+  const [mailboxSenders, setMailboxSenders] = useState<string[]>([]);
+  const [mailboxSenderDraft, setMailboxSenderDraft] = useState("");
   const [mailboxResult, setMailboxResult] = useState<string | null>(null);
-  const [mailboxBusy, setMailboxBusy] = useState(false);
-  const loadMailbox = async () => {
-    setMailboxBusy(true);
-    try {
-      const token = getStoredAuthToken();
-      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox`, {
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (response.ok) setMailbox(await response.json() as { configured: boolean; allowedSenders: number });
-    } catch {
-      // Leave the panel as-is when the check cannot run.
-    } finally {
-      setMailboxBusy(false);
+  useEffect(() => {
+    if (!mailboxQuery.data) return;
+    setMailboxEnabled(mailboxQuery.data.enabled);
+    setMailboxSenders(mailboxQuery.data.allowedSenders);
+  }, [mailboxQuery.data]);
+  const addMailboxSender = () => {
+    const address = mailboxSenderDraft.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setMailboxResult("Enter a valid email address first.");
+      return;
     }
-  };
-  const syncMailbox = async () => {
-    setMailboxBusy(true);
-    try {
-      const token = getStoredAuthToken();
-      const response = await fetch(`${import.meta.env.BASE_URL}api/system/mailbox/sync`, {
-        method: "POST",
-        credentials: "include",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const result = await response.json() as { posted?: number; reason?: string };
-      setMailboxResult(result.posted ? `${result.posted} new email(s) posted into the chat.` : result.reason ?? "No new mail.");
-      await loadMailbox();
-    } catch {
-      setMailboxResult("Could not check the inbox right now.");
-    } finally {
-      setMailboxBusy(false);
+    if (mailboxSenders.includes(address)) {
+      setMailboxResult("That sender is already approved.");
+      return;
     }
+    if (mailboxSenders.length >= 50) {
+      setMailboxResult("You can approve up to 50 sender addresses.");
+      return;
+    }
+    setMailboxSenders([...mailboxSenders, address]);
+    setMailboxSenderDraft("");
+    setMailboxResult(null);
   };
-  useEffect(() => { void loadMailbox(); }, []);
+  const saveMailbox = () => {
+    setMailboxResult(null);
+    updateMailbox.mutate({ data: { enabled: mailboxEnabled, allowedSenders: mailboxSenders } }, {
+      onSuccess: (saved) => {
+        setMailboxEnabled(saved.enabled);
+        setMailboxSenders(saved.allowedSenders);
+        void qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() });
+        setMailboxResult(saved.enabled
+          ? "Inbox settings saved and enabled."
+          : "Inbox settings saved. Forwarded mail will not be posted while it is disabled.");
+      },
+      onError: (error) => setMailboxResult(error instanceof Error ? error.message : "Could not save inbox settings."),
+    });
+  };
+  const syncMailbox = () => {
+    setMailboxResult(null);
+    checkMailbox.mutate(undefined, {
+      onSuccess: (result) => setMailboxResult(
+        result.posted ? `${result.posted} new email(s) posted into the chat.` : result.reason ?? "No new mail.",
+      ),
+      onError: () => setMailboxResult("Could not check the inbox right now."),
+    });
+  };
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
   const [brandColorDraft, setBrandColorDraft] = useState("#16869a");
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -913,15 +933,43 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
-      {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-inbox">
+      {isAdmin && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Email sent to the team address is posted into the team chat. Nothing is posted unless the address is set up and the sender is on the allow list.</p>
-        <SettingRow title="Inbox" detail={mailbox === null ? "Checking…" : mailbox.configured ? "Connected — new mail appears in the chat" : "Not set up yet"}>
-          <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-semibold ${mailbox?.configured ? "text-[#168069] dark:text-[#6fce8f]" : "text-[#8a8f93]"}`}>{mailbox?.configured ? "Connected" : "Not set up"}</span>
-            <button type="button" disabled={mailboxBusy} onClick={() => void syncMailbox()} data-testid="button-team-inbox-check" className={ghostButton}>{mailboxBusy ? "Checking…" : "Check now"}</button>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
+        {mailboxQuery.isLoading && <p className="mt-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-loading">Loading inbox settings…</p>}
+        {mailboxQuery.isError && <p className="mt-3 text-xs text-[#a34d46] dark:text-[#e89087]" data-testid="team-inbox-load-error">Could not load this team’s inbox settings.</p>}
+        {mailboxQuery.data && <>
+          <SettingRow title="Enable inbox" detail="Only approved senders are posted to your team chat">
+            <Toggle on={mailboxEnabled} onChange={setMailboxEnabled} testId="toggle-team-inbox-enabled" label="Enable team inbox" />
+          </SettingRow>
+          <div className="mt-2 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
+            <p className="text-xs font-semibold">Approved senders</p>
+            <p className="mt-1 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Only approved senders can post to the shared chat. Domain rules migrated from the previous setup also apply to subdomains.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {mailboxSenders.map((address) => <span key={address} data-testid={`team-inbox-sender-${address}`} className="inline-flex items-center gap-1.5 rounded-full bg-[#e6f2f0] px-2.5 py-1 text-xs text-[#245b60] dark:bg-[#183941] dark:text-[#b1dde0]">
+                {address}
+                <button type="button" aria-label={`Remove ${address}`} data-testid={`button-remove-team-inbox-sender-${address}`} onClick={() => setMailboxSenders(mailboxSenders.filter(sender => sender !== address))} className="rounded-full px-1 font-bold hover:bg-black/10 dark:hover:bg-white/10">×</button>
+              </span>)}
+              {mailboxSenders.length === 0 && <span className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">No approved senders yet.</span>}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input type="email" value={mailboxSenderDraft} onChange={event => setMailboxSenderDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addMailboxSender(); } }} data-testid="input-team-inbox-sender" placeholder="name@example.com" className={`${field} min-w-0 flex-1`} />
+              <button type="button" onClick={addMailboxSender} data-testid="button-add-team-inbox-sender" className={ghostButton}>Add</button>
+            </div>
           </div>
-        </SettingRow>
+          {mailboxQuery.data.forwardingAddress && <div className="mt-3 rounded-xl border border-[#dce5e5] p-3 dark:border-[#31495a]">
+            <p className="text-xs font-semibold">Forwarding address for this team</p>
+            <div className="mt-2 flex items-center gap-2">
+              <code data-testid="team-inbox-forwarding-address" className="mono min-w-0 flex-1 break-all rounded-lg bg-[#f1f6f5] px-2.5 py-2 text-xs text-[#183a4b] dark:bg-[#182935] dark:text-[#c3d3db]">{mailboxQuery.data.forwardingAddress}</code>
+              <CopyButton text={mailboxQuery.data.forwardingAddress} label="Copy team forwarding address" testId="button-copy-team-inbox-address" className={ghostButton} />
+            </div>
+            <p className="mt-2 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">In your email provider, create a forwarding rule to send the messages you want to share to this address. Provider setup must be completed by your team. You do not need server access or provider credentials here.</p>
+          </div>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" disabled={updateMailbox.isPending} onClick={saveMailbox} data-testid="button-save-team-inbox" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{updateMailbox.isPending ? "Saving…" : "Save inbox settings"}</button>
+            <button type="button" disabled={!mailboxEnabled || mailboxSenders.length === 0 || checkMailbox.isPending} onClick={syncMailbox} data-testid="button-team-inbox-check" className={ghostButton}>{checkMailbox.isPending ? "Checking…" : "Check now"}</button>
+          </div>
+        </>}
         {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}
       </div>}
       {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-branding">

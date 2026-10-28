@@ -58,6 +58,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemUsage"
+  /system/mailbox:
+    get:
+      operationId: getTeamMailboxSettings
+      tags: [system]
+      summary: Read the signed-in team's inbox settings
+      responses:
+        "200":
+          description: The team's Maildrop forwarding settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMailboxSettings"
+    put:
+      operationId: updateTeamMailboxSettings
+      tags: [system]
+      summary: Update the signed-in team's inbox settings
+      description: Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamMailboxSettingsInput"
+      responses:
+        "200":
+          description: Saved team inbox settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMailboxSettings"
+        "400":
+          description: Invalid inbox settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admins only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /system/mailbox/sync:
+    post:
+      operationId: syncTeamMailbox
+      tags: [system]
+      summary: Check the signed-in team's inbox now
+      responses:
+        "200":
+          description: Inbox check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMailboxSyncResult"
   /auth/login:
     post:
       operationId: login
@@ -5242,6 +5296,61 @@ components:
           description: "Plan MAU quota (SUPABASE_MAU_QUOTA, default 50000)"
         applicantCount:
           type: integer
+    TeamMailboxSettings:
+      type: object
+      additionalProperties: false
+      required: [teamId, mailbox, forwardingAddress, enabled, configured, allowedSenders, legacy]
+      properties:
+        teamId:
+          type: string
+        mailbox:
+          type: [string, "null"]
+        forwardingAddress:
+          type: [string, "null"]
+        enabled:
+          type: boolean
+        configured:
+          type: boolean
+        allowedSenders:
+          type: array
+          maxItems: 50
+          items:
+            oneOf:
+              - type: string
+                format: email
+              - type: string
+                pattern: '^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$'
+        legacy:
+          type: boolean
+    TeamMailboxSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [enabled, allowedSenders]
+      properties:
+        enabled:
+          type: boolean
+        allowedSenders:
+          type: array
+          maxItems: 50
+          items:
+            oneOf:
+              - type: string
+                format: email
+              - type: string
+                pattern: '^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$'
+    TeamMailboxSyncResult:
+      type: object
+      additionalProperties: false
+      required: [posted, skipped]
+      properties:
+        posted:
+          type: integer
+          minimum: 0
+        skipped:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
     ErrorResponse:
       type: object
       required: [error]

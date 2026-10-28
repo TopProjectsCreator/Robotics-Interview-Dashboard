@@ -315,6 +315,39 @@ export function requireCoordinator(
 }
 
 /**
+ * Inbox configuration is limited to team Admins. Keep accepting the legacy
+ * stored value while also recognizing accounts stored with the product label.
+ */
+export function requireInboxAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  requireAdmin(req, res, () => {
+    const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
+    if (!interviewerId) {
+      res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    db.select({ role: interviewerAccountsTable.role })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, interviewerId))
+      .limit(1)
+      .then(([account]) => {
+        if (account?.role !== "admin" && account?.role !== "coordinator") {
+          res.status(403).json({ error: "Admins only" });
+          return;
+        }
+        next();
+      })
+      .catch((error) => {
+        req.log.error({ err: error }, "Team inbox admin role check failed");
+        res.status(503).json({ error: "Authentication unavailable" });
+      });
+  });
+}
+
+/**
  * Restricts the CAD backup-storage status to Wolverines coordinators. Both
  * role and team are read from the account identified by the signed session;
  * request parameters and client-selected identity are never trusted here.

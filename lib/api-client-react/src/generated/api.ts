@@ -243,6 +243,9 @@ import type {
   TeamBranding,
   TeamCreateInput,
   TeamCreateResponse,
+  TeamMailboxSettings,
+  TeamMailboxSettingsInput,
+  TeamMailboxSyncResult,
   TeamNameRules,
   TeamNameRulesUpdateInput,
   TeamVerifyResponse,
@@ -440,6 +443,226 @@ export function useGetSystemUsage<TData = Awaited<ReturnType<typeof getSystemUsa
 
 
 
+
+export const getGetTeamMailboxSettingsUrl = () => {
+
+
+
+
+  return `/api/system/mailbox`
+}
+
+/**
+ * @summary Read the signed-in team's inbox settings
+ */
+export const getTeamMailboxSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamMailboxSettings> => {
+
+  return customFetch<TeamMailboxSettings>(getGetTeamMailboxSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamMailboxSettingsQueryKey = () => {
+    return [
+    `/api/system/mailbox`
+    ] as const;
+    }
+
+
+export const getGetTeamMailboxSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getTeamMailboxSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamMailboxSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamMailboxSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamMailboxSettings>>> = ({ signal }) => getTeamMailboxSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamMailboxSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamMailboxSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamMailboxSettings>>>
+export type GetTeamMailboxSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read the signed-in team's inbox settings
+ */
+
+export function useGetTeamMailboxSettings<TData = Awaited<ReturnType<typeof getTeamMailboxSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamMailboxSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamMailboxSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTeamMailboxSettingsUrl = () => {
+
+
+
+
+  return `/api/system/mailbox`
+}
+
+/**
+ * Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+ * @summary Update the signed-in team's inbox settings
+ */
+export const updateTeamMailboxSettings = async (teamMailboxSettingsInput: TeamMailboxSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamMailboxSettings> => {
+
+  return customFetch<TeamMailboxSettings>(getUpdateTeamMailboxSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamMailboxSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamMailboxSettingsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamMailboxSettings>>, TError,{data: BodyType<TeamMailboxSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamMailboxSettings>>, TError,{data: BodyType<TeamMailboxSettingsInput>}, TContext> => {
+
+const mutationKey = ['updateTeamMailboxSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamMailboxSettings>>, {data: BodyType<TeamMailboxSettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateTeamMailboxSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamMailboxSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamMailboxSettings>>>
+    export type UpdateTeamMailboxSettingsMutationBody = BodyType<TeamMailboxSettingsInput>
+    export type UpdateTeamMailboxSettingsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the signed-in team's inbox settings
+ */
+export const useUpdateTeamMailboxSettings = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamMailboxSettings>>, TError,{data: BodyType<TeamMailboxSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamMailboxSettings>>,
+        TError,
+        {data: BodyType<TeamMailboxSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamMailboxSettingsMutationOptions(options));
+    }
+
+export const getSyncTeamMailboxUrl = () => {
+
+
+
+
+  return `/api/system/mailbox/sync`
+}
+
+/**
+ * @summary Check the signed-in team's inbox now
+ */
+export const syncTeamMailbox = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamMailboxSyncResult> => {
+
+  return customFetch<TeamMailboxSyncResult>(getSyncTeamMailboxUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSyncTeamMailboxMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncTeamMailbox>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncTeamMailbox>>, TError,void, TContext> => {
+
+const mutationKey = ['syncTeamMailbox'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncTeamMailbox>>, void> = () => {
+
+
+          return  syncTeamMailbox(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncTeamMailboxMutationResult = NonNullable<Awaited<ReturnType<typeof syncTeamMailbox>>>
+
+    export type SyncTeamMailboxMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Check the signed-in team's inbox now
+ */
+export const useSyncTeamMailbox = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncTeamMailbox>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncTeamMailbox>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSyncTeamMailboxMutationOptions(options));
+    }
 
 export const getLoginUrl = () => {
 

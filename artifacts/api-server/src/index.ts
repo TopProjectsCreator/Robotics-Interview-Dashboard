@@ -132,6 +132,7 @@ async function ensureSchema(): Promise<void> {
     "interview_queue",
     "interview_whiteboards",
     "interviewer_accounts",
+    "maildrop_inboxes",
     "personal_notepad",
     "onshape_mcp_connections",
     "onshape_mcp_oauth_states",
@@ -635,6 +636,7 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "cad_preview_jobs" ("id" text primary key, "team_id" text, "object_path" text not null, "format" text not null, "status" text not null default 'preparing', "preview_id" text, "error" text, "manifest" jsonb, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "ingested_emails" ("id" text primary key, "team_id" text, "mailbox" text not null, "message_id" text not null, "sender" text not null default '', "subject" text not null default '', "posted_message_id" text, "received_at" timestamptz, "ingested_at" timestamptz not null default now())`,
     `create unique index if not exists "ingested_emails_mailbox_message_unique" on "ingested_emails" ("mailbox", "message_id")`,
+    `create table if not exists "maildrop_inboxes" ("team_id" text primary key, "mailbox" text not null unique, "enabled" boolean not null default false, "allowed_senders" jsonb not null default '[]'::jsonb check (jsonb_typeof("allowed_senders") = 'array'), "updated_at" timestamptz not null default now())`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
@@ -925,9 +927,9 @@ server.listen(port, () => {
       startAssistantScheduledTaskDispatcher();
       // Persisted assistant prompts continue independently of the browser tab.
       startAssistantPromptDispatcher();
-      // Team inbox: email forwarded into the team mailbox is posted into the
-      // chat. Inert until a mailbox and an allow list are configured.
-      startMailboxPoller("default");
+      // Team inbox settings are team-scoped and polled from both database
+      // instances. Migrate the default team's legacy environment settings first.
+      void startMailboxPoller();
       // Pick up CAD preview conversions that a restart interrupted.
       void resumeStalePreviewJobs();
       // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
