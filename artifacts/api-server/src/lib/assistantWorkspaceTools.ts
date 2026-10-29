@@ -11,6 +11,7 @@ import { userCanSeeWorkspace, type WorkspaceKey } from "./workspaceVisibility";
 import { getAssistantModel } from "./assistantModel";
 import { nextAssistantTaskOccurrence, validateAssistantTaskSchedule, type AssistantTaskRecurrence } from "./assistantSchedule";
 import { customWorkspaceDraftId } from "./assistantBuilderJobs";
+import { deleteCustomWorkspace } from "./customWorkspaceDeletion";
 
 const assistantTaskTool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   type: "function" as const,
@@ -48,6 +49,14 @@ const ASSISTANT_SCHEDULED_SAFE_TOOLS = new Set([
   "send_team_chat_message",
   "create_team_chat_channel",
 ]);
+const pendingCustomWorkspaceDeletions = new Map<string, {
+  accountId: string;
+  teamId: string;
+  workspaceId: string;
+  title: string;
+  expiresAt: number;
+}>();
+const CUSTOM_WORKSPACE_DELETE_CONFIRMATION_TTL_MS = 10 * 60 * 1000;
 
 async function snapshotCustomWorkspaceBeforeFileChange(
   workspaceId: string,
@@ -220,6 +229,20 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
       sdkVersion: { type: "string", maxLength: 32 },
     },
     ["name"],
+  ),
+  tool(
+    "list_custom_workspaces",
+    "List the current team's custom app workspaces by exact id, title, and status. Coordinator only; never include another team's apps.",
+    {},
+  ),
+  tool(
+    "delete_custom_workspace",
+    "Request deletion of one exact custom app by workspaceId. First call with no confirmationCode only returns a one-time confirmation code and does not delete. After showing the exact app title and warning that its saved versions, source files, and app data will be permanently removed, delete only if the user's current message is exactly 'confirm delete CODE' and the same code is supplied. Any other reply leaves the app intact.",
+    {
+      workspaceId: { type: "string", minLength: 1, maxLength: 128 },
+      confirmationCode: { type: "string", minLength: 12, maxLength: 12 },
+    },
+    ["workspaceId"],
   ),
   tool(
     "create_custom_workspace",
@@ -472,10 +495,10 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "ask_user" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
-    const account = context.accountId ? await accountById(context.accountId) : undefined;
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "ask_user" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace") {
+    const account = await chatAccountInTeam(context);
     if (account?.role !== "coordinator") {
-      return { content: "Only coordinators can create custom workspace drafts.", detail: "access denied" };
+      return { content: "Only coordinators in this team can manage custom workspaces.", detail: "access denied" };
     }
   } else if (!(await canUseWorkspace(context, workspace))) {
     return { content: `This account does not have access to the ${workspace} workspace.`, detail: "access denied" };
@@ -1019,6 +1042,114 @@ export async function runAssistantWorkspaceTool(
       }
       throw error;
     }
+  }
+
+  if (name === "list_custom_workspaces") {
+    const account = await chatAccountInTeam(context);
+    if (account?.role !== "coordinator") {
+      return { content: "Only coordinators in this team can list custom workspaces.", detail: "access denied" };
+    }
+    const workspaces = await pool.query<{ id: string; title: string; status: string }>(
+      `select "id", "title", "status" from "custom_workspaces"
+        where ${teamSqlCondition('"team_id"', "$1")}
+        order by lower("title"), "id"`,
+      [context.teamId],
+    );
+    return {
+      content: JSON.stringify(workspaces.rows),
+      detail: `listed ${workspaces.rowCount ?? 0} custom workspaces for this team`,
+    };
+  }
+
+  if (name === "delete_custom_workspace") {
+    const account = await chatAccountInTeam(context);
+    if (account?.role !== "coordinator") {
+      return { content: "Only coordinators in this team can delete custom workspaces.", detail: "access denied" };
+    }
+    const workspaceId = textArg(args, "workspaceId", 128);
+    if (!workspaceId) {
+      return { content: "Choose a custom workspace from this team's list before requesting deletion.", detail: "workspace id required" };
+    }
+    const found = await pool.query<{ id: string; title: string; status: string }>(
+      `select "id", "title", "status" from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        limit 1`,
+      [workspaceId, context.teamId],
+    );
+    const workspace = found.rows[0];
+    if (!workspace) {
+      return { content: "That custom workspace was not found in this team. Nothing was deleted.", detail: "custom workspace not found" };
+    }
+
+    const now = Date.now();
+    for (const [code, pending] of pendingCustomWorkspaceDeletions) {
+      if (pending.expiresAt <= now) pendingCustomWorkspaceDeletions.delete(code);
+    }
+    const confirmationCode = textArg(args, "confirmationCode", 12).toUpperCase();
+    const explicitConfirmation = (context.confirmationText ?? "")
+      .match(/^\s*confirm\s+delete\s+([a-z0-9]{12})\s*[.!]?\s*$/i)?.[1]?.toUpperCase();
+    if (confirmationCode) {
+      const pending = pendingCustomWorkspaceDeletions.get(confirmationCode);
+      if (
+        !pending ||
+        pending.expiresAt <= now ||
+        pending.accountId !== context.accountId ||
+        pending.teamId !== context.teamId ||
+        pending.workspaceId !== workspaceId ||
+        explicitConfirmation !== confirmationCode
+      ) {
+        return {
+          content: `Nothing was deleted. To confirm deletion of "${workspace.title}", reply with exactly: confirm delete CODE (using the confirmation code previously shown for this app).`,
+          detail: "deletion confirmation mismatch",
+        };
+      }
+      try {
+        const deleted = await deleteCustomWorkspace(
+          (statement, values) => pool.query<{ id: string; title: string }>(statement, values),
+          teamSqlCondition,
+          workspaceId,
+          context.teamId,
+        );
+        pendingCustomWorkspaceDeletions.delete(confirmationCode);
+        if (!deleted) {
+          return { content: "The workspace was already removed or is no longer available in this team.", detail: "custom workspace not found" };
+        }
+        pushRealtimeHint("custom_workspaces", "DELETE");
+        return {
+          content: `Deleted "${deleted.title}". Its saved versions, source files, and workspace data were permanently removed.`,
+          detail: `deleted custom workspace ${deleted.id}`,
+        };
+      } catch {
+        return {
+          content: `Could not delete "${workspace.title}". It remains intact; you can retry using the same confirmation code.`,
+          detail: "custom workspace deletion failed",
+        };
+      }
+    }
+
+    const cancellation = (context.confirmationText ?? "")
+      .match(/^\s*(?:no|cancel|stop|never\s+mind|don't|do\s+not)[.! ]*\s*$/i);
+    if (cancellation) {
+      for (const [code, pending] of pendingCustomWorkspaceDeletions) {
+        if (pending.accountId === context.accountId && pending.teamId === context.teamId) {
+          pendingCustomWorkspaceDeletions.delete(code);
+        }
+      }
+      return { content: `Deletion canceled. "${workspace.title}" and its data remain intact.`, detail: "deletion canceled" };
+    }
+
+    const code = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    pendingCustomWorkspaceDeletions.set(code, {
+      accountId: context.accountId,
+      teamId: context.teamId,
+      workspaceId,
+      title: workspace.title,
+      expiresAt: now + CUSTOM_WORKSPACE_DELETE_CONFIRMATION_TTL_MS,
+    });
+    return {
+      content: `No changes have been made. To permanently delete "${workspace.title}" (workspace id ${workspace.id}), reply with exactly: confirm delete ${code}. This permanently removes its saved versions, source files, and workspace data. Any other reply cancels.`,
+      detail: `requested explicit deletion confirmation for ${workspace.id}`,
+    };
   }
 
   if (name === "create_custom_workspace") {

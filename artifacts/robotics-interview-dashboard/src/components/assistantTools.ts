@@ -119,6 +119,8 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "list_code_projects", label: "List code projects", hint: "Team projects", write: false },
       { name: "create_code_project", label: "Create code project", hint: "Start a new project", write: true },
       { name: "create_custom_workspace", label: "Create custom workspace", hint: "Build a team app draft", write: true },
+      { name: "list_custom_workspaces", label: "List custom workspaces", hint: "Find current team apps", write: false },
+      { name: "delete_custom_workspace", label: "Delete custom workspace", hint: "Exact app + confirmation required", write: true },
       { name: "critique_custom_workspace", label: "Review custom workspace", hint: "Independent design critique", write: true },
       { name: "verify_custom_workspace_fixes", label: "Verify workspace fixes", hint: "Check critique changes", write: true },
       { name: "spawn_workspace_subagent", label: "Delegate workspace work", hint: "Work on a focused task", write: true },

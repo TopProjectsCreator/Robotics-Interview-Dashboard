@@ -197,7 +197,7 @@ describe("AssistantModelPicker", () => {
 
     expect(skillsToggle).toHaveAttribute("aria-expanded", "false");
     expect(webSearchTool).not.toBeChecked();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("79 of 80 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("81 of 82 enabled");
   });
 
   it("reports disabled tools when a tool is toggled off", async () => {
@@ -220,7 +220,7 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(80);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(82);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
@@ -241,6 +241,8 @@ describe("AssistantModelPicker", () => {
       "create_team_chat_channel",
       "ask_user",
       "create_custom_workspace",
+      "list_custom_workspaces",
+      "delete_custom_workspace",
       "list_code_project_files",
       "write_code_file",
     ]) {
@@ -287,7 +289,7 @@ describe("AssistantModelPicker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     expect(await screen.findByTestId("assistant-dynamic-tools")).toBeInTheDocument();
-    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("82 of 82 enabled");
+    expect(screen.getByTestId("assistant-tools-count")).toHaveTextContent("84 of 84 enabled");
     fireEvent.click(screen.getByRole("checkbox", { name: "Onshape: Get Document tool" }));
     expect(onDisabledToolsChange).toHaveBeenCalledWith(["onshape_getDocument"]);
     fireEvent.click(screen.getByRole("button", { name: "Read-only" }));
@@ -444,10 +446,10 @@ describe("AssistantModelPicker", () => {
     );
 
     const gear = screen.getByTestId("assistant-tools-gear");
-    expect(gear).toHaveAttribute("title", expect.stringContaining("79 of 80 tools enabled"));
+    expect(gear).toHaveAttribute("title", expect.stringContaining("81 of 82 tools enabled"));
 
     fireEvent.click(gear);
-    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("79 of 80 enabled");
+    expect(await screen.findByTestId("assistant-tools-count")).toHaveTextContent("81 of 82 enabled");
     expect(screen.getByRole("checkbox", { name: "Web search tool" })).not.toBeChecked();
 
     const skillsToggle = screen.getByTestId("toggle-assistant-skills");

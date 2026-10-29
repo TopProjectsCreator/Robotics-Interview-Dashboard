@@ -184,6 +184,7 @@ async function createHarness(t) {
     queries: [],
     llm: [],
     routeErrors: [],
+    deleteWorkspaceError: false,
     keepRuntimeBroken: false,
     darkReviewRejectOnce: false,
     verificationRejectOnce: false,
@@ -218,7 +219,28 @@ async function createHarness(t) {
         assert.equal(values[Number(placeholder.slice(1)) - 1], teamId);
       };
 
+      if (statement.startsWith('delete from "custom_workspaces"')) {
+        const [id, teamId] = values;
+        ensureTeamScope('"team_id"', "$2", teamId);
+        if (calls.deleteWorkspaceError) throw new Error("simulated delete failure");
+        const index = workspaces.findIndex((workspace) => workspace.id === id && workspace.teamId === teamId);
+        if (index < 0) return { rows: [], rowCount: 0 };
+        const [deleted] = workspaces.splice(index, 1);
+        versions.splice(0, versions.length, ...versions.filter((version) => version.workspaceId !== id));
+        records.splice(0, records.length, ...records.filter((record) => record.workspaceId !== id));
+        savedWorkspaceFiles.delete(id);
+        return { rows: [{ id: deleted.id, title: deleted.title }], rowCount: 1 };
+      }
+
       if (statement.startsWith("select") && statement.includes('from "custom_workspaces"')) {
+        if (statement.includes('order by lower("title"), "id"')) {
+          const [teamId] = values;
+          ensureTeamScope('"team_id"', "$1", teamId);
+          const rows = workspaces
+            .filter((workspace) => workspace.teamId === teamId)
+            .map(({ id, title, status }) => ({ id, title, status }));
+          return { rows, rowCount: rows.length };
+        }
         if (statement.includes('select "html", "capabilities"')) {
           const [id, teamId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -686,7 +708,7 @@ async function createHarness(t) {
     namedExports: {
       accountById: async (accountId) => {
         const user = USERS[accountId];
-        return user ? { id: accountId, role: user.role } : null;
+        return user ? { id: accountId, role: user.role, teamId: user.teamId } : null;
       },
     },
   });
@@ -809,6 +831,125 @@ test("workspace lists, reads, and coordinator changes stay within the caller's t
 
   const creatorOnlyRead = await harness.request("admin-a-other", "GET", "/custom-workspaces/workspace-a-owner");
   assert.equal(creatorOnlyRead.status, 404);
+});
+
+test("workspace deletion is coordinator-only, team-scoped, and cascades app data", async (t) => {
+  const harness = await createHarness(t);
+
+  assert.equal((await harness.request("admin-a", "DELETE", "/custom-workspaces/workspace-a")).status, 403);
+  assert.equal((await harness.request("member-a", "DELETE", "/custom-workspaces/workspace-a")).status, 403);
+  assert.equal((await harness.request("coordinator-b", "DELETE", "/custom-workspaces/workspace-a")).status, 404);
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+
+  harness.calls.deleteWorkspaceError = true;
+  const failed = await harness.request("coordinator-a", "DELETE", "/custom-workspaces/workspace-a");
+  assert.equal(failed.status, 500);
+  assert.match((await failed.json()).error, /has not been removed/);
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+  assert.ok(harness.records.some((record) => record.workspaceId === "workspace-a"));
+  harness.calls.deleteWorkspaceError = false;
+
+  const response = await harness.request("coordinator-a", "DELETE", "/custom-workspaces/workspace-a");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    deleted: true,
+    workspace: { id: "workspace-a", title: "Team A app" },
+  });
+  assert.ok(!harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+  assert.ok(!harness.versions.some((version) => version.workspaceId === "workspace-a"));
+  assert.ok(!harness.savedWorkspaceFiles.has("workspace-a"));
+  assert.ok(!harness.records.some((record) => record.workspaceId === "workspace-a"));
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-b"));
+  assert.ok(harness.records.some((record) => record.workspaceId === "workspace-b"));
+  assert.equal((await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a")).status, 404);
+});
+
+test("assistant workspace list and deletion require coordinator-scoped exact confirmation", async (t) => {
+  const harness = await createHarness(t);
+  const { ASSISTANT_WORKSPACE_TOOLS, runAssistantWorkspaceTool } =
+    await import(`./assistantWorkspaceTools.ts?test=${++importId}`);
+  const toolNames = new Set(ASSISTANT_WORKSPACE_TOOLS.map((item) => item.function.name));
+  assert.ok(toolNames.has("list_custom_workspaces"));
+  assert.ok(toolNames.has("delete_custom_workspace"));
+
+  const coordinatorA = {
+    accountId: "coordinator-a",
+    authorName: "Team A coordinator",
+    teamId: "team-a",
+    role: "coordinator",
+  };
+  const listed = await runAssistantWorkspaceTool("list_custom_workspaces", {}, coordinatorA);
+  const teamAApps = JSON.parse(listed.content);
+  assert.ok(teamAApps.some((workspace) => workspace.id === "workspace-a"));
+  assert.ok(!teamAApps.some((workspace) => workspace.id === "workspace-b"));
+  const nonCoordinatorList = await runAssistantWorkspaceTool("list_custom_workspaces", {}, {
+    accountId: "member-a",
+    teamId: "team-a",
+  });
+  assert.equal(nonCoordinatorList.detail, "access denied");
+  const nonCoordinatorDelete = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+  }, { accountId: "member-a", teamId: "team-a" });
+  assert.equal(nonCoordinatorDelete.detail, "access denied");
+
+  const foreignDelete = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    role: "coordinator",
+  });
+  assert.equal(foreignDelete.detail, "custom workspace not found");
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+
+  const firstRequest = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+  }, coordinatorA);
+  assert.match(firstRequest.content, /Team A app/);
+  assert.match(firstRequest.content, /saved versions, source files, and workspace data/);
+  assert.match(firstRequest.content, /confirm delete ([A-F0-9]{12})/);
+  assert.match(firstRequest.detail, /requested explicit deletion confirmation/);
+  const confirmationCode = firstRequest.content.match(/confirm delete ([A-F0-9]{12})/)[1];
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+
+  const mismatch = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+    confirmationCode,
+  }, { ...coordinatorA, confirmationText: "yes, delete the app" });
+  assert.equal(mismatch.detail, "deletion confirmation mismatch");
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+
+  const canceled = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+  }, { ...coordinatorA, confirmationText: "cancel" });
+  assert.equal(canceled.detail, "deletion canceled");
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+
+  const secondRequest = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+  }, coordinatorA);
+  const secondCode = secondRequest.content.match(/confirm delete ([A-F0-9]{12})/)[1];
+  harness.calls.deleteWorkspaceError = true;
+  const failedDelete = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+    confirmationCode: secondCode,
+  }, { ...coordinatorA, confirmationText: `confirm delete ${secondCode}` });
+  assert.equal(failedDelete.detail, "custom workspace deletion failed");
+  assert.match(failedDelete.content, /It remains intact/);
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+  harness.calls.deleteWorkspaceError = false;
+
+  const confirmed = await runAssistantWorkspaceTool("delete_custom_workspace", {
+    workspaceId: "workspace-a",
+    confirmationCode: secondCode,
+  }, { ...coordinatorA, confirmationText: `confirm delete ${secondCode}` });
+  assert.equal(confirmed.detail, "deleted custom workspace workspace-a");
+  assert.match(confirmed.content, /Deleted "Team A app"/);
+  assert.ok(!harness.workspaces.some((workspace) => workspace.id === "workspace-a"));
+  assert.ok(!harness.versions.some((version) => version.workspaceId === "workspace-a"));
+  assert.ok(!harness.records.some((record) => record.workspaceId === "workspace-a"));
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-b"));
 });
 
 test("selected access is enforced for the app, records, and LLM", async (t) => {

@@ -43,6 +43,7 @@
 - [Cross-border data disclosures](cross-border-data-disclosures.md) — operator reports US/Canada storage, globally routed Kilo free models, and no minimum age for applicant records.
 - [Passkey client contract](simplewebauthn-client-contract.md) — await browser capability detection and unwrap the API's `publicKey` options before WebAuthn ceremonies.
 - [Vitest React runtime](vitest-react-development-env.md) — run dashboard component tests with `NODE_ENV=development` so React Testing Library can access `React.act`.
+- [Per-test database mocks](per-test-database-mocks.md) — shared helpers must use the caller's mocked query adapter, not capture a test-specific pool that module caching can retain.
 - [App-level MCP connections](app-level-mcp-connections.md) — keep provider credentials and MCP tools scoped to the signed-in account and active team; don't widen unrelated assistant permissions.
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.

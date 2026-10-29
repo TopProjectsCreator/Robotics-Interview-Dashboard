@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 
@@ -221,6 +231,7 @@ export function CustomWorkspacesPage() {
   const canManage = session.data?.role === "coordinator";
   const [items, setItems] = useState<Workspace[]>([]);
   const [selected, setSelected] = useState<Workspace | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const [prompt, setPrompt] = useState("");
   const [builderModels, setBuilderModels] = useState<BuilderModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
@@ -829,6 +840,37 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
+  const deleteWorkspace = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request<{ deleted: boolean }>(`${API}/${encodeURIComponent(target.id)}`, {
+        method: "DELETE",
+      });
+      if (!result.deleted) throw new Error("The workspace was not deleted.");
+      setItems((current) => current.filter((item) => item.id !== target.id));
+      setSelected((current) => current?.id === target.id ? null : current);
+      setPreviewVersion(null);
+      setPreviewVersionWorkspaceId(null);
+      setVersions([]);
+      setSourceFiles([]);
+      setSourceFilesWorkspaceId(null);
+      setSelectedSourcePath("");
+      setDeleteTarget(null);
+      try {
+        await refresh();
+      } catch {
+        setError("Workspace deleted, but the manager could not refresh. Reload this page to update the list.");
+      }
+    } catch (err) {
+      setDeleteTarget(null);
+      setError(err instanceof Error ? err.message : "Could not delete the workspace. It remains intact.");
+    } finally {
+      setBusy(false);
+    }
+  };
   const revise = async () => {
     if (!active || !revisionPrompt.trim()) return;
     setBusy(true);
@@ -978,6 +1020,16 @@ export function CustomWorkspacesPage() {
               </select>
             </label>
             {active.status === "published" && <button type="button" disabled={busy || !accessChanged} onClick={() => void saveAccess()} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Save access</button>}
+            <button
+              type="button"
+              aria-label={`Delete ${active.title}`}
+              data-testid="button-delete-workspace"
+              disabled={busy}
+              onClick={() => setDeleteTarget(active)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-950/40"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
           </div>}
           {active && canManage && active.status === "draft" && Number(active.critiqueRounds ?? 0) >= 5 && Number(active.verifiedCritiqueRounds ?? 0) >= 5 && <button type="button" disabled={busy} onClick={() => void publish()} className="inline-flex items-center gap-2 rounded-lg bg-[#183a4b] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 dark:bg-[#e6f0f2] dark:text-[#183a4b]"><Rocket size={14} /> Publish</button>}
           {active && canManage && active.status === "draft" && (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) && <span className="text-xs text-[#60757c] dark:text-[#b3c3cb]" data-testid="publish-readiness">
@@ -1093,5 +1145,29 @@ export function CustomWorkspacesPage() {
         </div>}
       </section>
     </div>
+    <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !busy) setDeleteTarget(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes this custom workspace, including its saved versions, source files, and workspace data. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy || !deleteTarget}
+            onClick={(event) => {
+              event.preventDefault();
+              void deleteWorkspace();
+            }}
+            className="bg-red-700 text-white hover:bg-red-800"
+            data-testid="button-confirm-delete-workspace"
+          >
+            {busy ? "Deleting…" : "Delete workspace"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </main>;
 }

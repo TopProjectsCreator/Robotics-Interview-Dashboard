@@ -17,6 +17,8 @@ import {
 import { accountById } from "../lib/interviewerAccounts";
 import { teamSqlCondition } from "../lib/teams";
 import { getAssistantModel } from "../lib/assistantModel";
+import { deleteCustomWorkspace } from "../lib/customWorkspaceDeletion";
+import { pushRealtimeHint } from "../lib/realtime";
 
 /** Builder-management guard that also supports legacy admin accounts. */
 function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -471,6 +473,28 @@ router.get("/custom-workspaces/team-members", requireCoordinator, async (req, re
     [teamId],
   );
   res.json({ members: members.rows });
+});
+
+router.delete("/custom-workspaces/:id", requireCoordinator, async (req, res): Promise<void> => {
+  const workspaceId = String(req.params.id ?? "");
+  const teamId = await requestTeamId(req);
+  try {
+    const deleted = await deleteCustomWorkspace(
+      (statement, values) => pool.query<{ id: string; title: string }>(statement, values),
+      teamSqlCondition,
+      workspaceId,
+      teamId,
+    );
+    if (!deleted) {
+      res.status(404).json({ error: "Workspace not found." });
+      return;
+    }
+    pushRealtimeHint("custom_workspaces", "DELETE");
+    res.json({ deleted: true, workspace: deleted });
+  } catch (error) {
+    req.log?.error?.({ err: error, workspaceId }, "Custom workspace deletion failed");
+    res.status(500).json({ error: "Could not delete the workspace. It has not been removed." });
+  }
 });
 
 router.post("/custom-workspaces/generate", requireCoordinator, async (req, res): Promise<void> => {

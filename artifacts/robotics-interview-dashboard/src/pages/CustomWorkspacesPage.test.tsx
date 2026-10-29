@@ -113,6 +113,69 @@ describe("custom workspace access settings", () => {
   });
 });
 
+describe("custom workspace deletion", () => {
+  const setup = (deleteFailure = false) => {
+    let deleted = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: deleted ? [] : [workspace] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces/custom-app-1" && init?.method === "DELETE") {
+        if (deleteFailure) return Response.json({ error: "Could not delete the workspace. It has not been removed." }, { status: 500 });
+        deleted = true;
+        return Response.json({ deleted: true, workspace: { id: workspace.id, title: workspace.title } });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  it("names the app, warns about deleted data, and refreshes the list after confirmation", async () => {
+    const fetchMock = setup();
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("button-delete-workspace"));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Delete “Team planner”?" })).toBeInTheDocument();
+    expect(screen.getByText(/saved versions, source files, and workspace data/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1", expect.objectContaining({ method: "DELETE" }));
+    expect(screen.getByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("button-delete-workspace"));
+    fireEvent.click(await screen.findByTestId("button-confirm-delete-workspace"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/custom-workspaces/custom-app-1",
+      expect.objectContaining({ method: "DELETE" }),
+    ));
+    await waitFor(() => expect(screen.getByText("No custom workspaces yet.")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Team planner" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the workspace selected and reports a clear error when deletion fails", async () => {
+    const fetchMock = setup(true);
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-delete-workspace"));
+    fireEvent.click(await screen.findByTestId("button-confirm-delete-workspace"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not delete the workspace. It has not been removed.");
+    expect(screen.getByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+    expect(screen.getByTestId("button-delete-workspace")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces", expect.anything());
+  });
+});
+
 describe("custom workspace version history", () => {
   it("previews and restores a saved version of a published app", async () => {
     const restoreRequests: string[] = [];
@@ -232,7 +295,7 @@ describe("automatic custom workspace critiques", () => {
     expect(critiquePrompt).toContain("Revise custom workspace draft custom-app-1");
     expect(critiquePrompt).toContain("do not wait for Publish");
     expect(critiquePrompt).toContain("verify_custom_workspace_fixes");
-    expect(screen.getByText("Complete critique round 1 of 5")).toBeInTheDocument();
+    expect(screen.getByTestId("publish-agent-activity")).toBeInTheDocument();
   });
 
   it("automatically starts review rounds on an existing draft without creating another workspace", async () => {
