@@ -10,6 +10,7 @@ import { readWorkspaceVisibility } from "./workspaceAccess";
 import { userCanSeeWorkspace, type WorkspaceKey } from "./workspaceVisibility";
 import { getAssistantModel } from "./assistantModel";
 import { nextAssistantTaskOccurrence, validateAssistantTaskSchedule, type AssistantTaskRecurrence } from "./assistantSchedule";
+import { customWorkspaceDraftId } from "./assistantBuilderJobs";
 
 const assistantTaskTool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   type: "function" as const,
@@ -359,6 +360,8 @@ type ToolContext = {
   accountId: string;
   teamId: string;
   authorName: string;
+  builderRunId?: string;
+  builderWorkspaceId?: string;
   role?: string;
   allowedToolNames?: string[];
   disabledTools?: string[];
@@ -1030,18 +1033,42 @@ export async function runAssistantWorkspaceTool(
     ) {
       return { content: "The custom workspace draft is invalid or too large.", detail: "invalid custom workspace" };
     }
-    const id = randomUUID();
+    const id = context.builderWorkspaceId ||
+      (context.builderRunId ? customWorkspaceDraftId(context.builderRunId) : randomUUID());
     const serializedCapabilities = JSON.stringify(capabilities);
+    const client = await pool.connect();
     try {
-      const created = await pool.query(
+      await client.query("BEGIN");
+      const inserted = await client.query(
         `insert into "custom_workspaces"
           ("id", "team_id", "title", "description", "prompt", "html", "capabilities", "status", "created_by")
          values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'draft', $8)
+         on conflict ("id") do nothing
          returning "id", "title", "description", "capabilities", "status",
                    "created_at" as "createdAt", "updated_at" as "updatedAt"`,
         [id, context.teamId, title, description, prompt, html, serializedCapabilities, context.accountId],
       );
-      await pool.query(
+      if (inserted.rowCount === 0) {
+        const existing = await client.query(
+          `select "id", "title", "description", "capabilities", "status",
+                  "created_at" as "createdAt", "updated_at" as "updatedAt"
+             from "custom_workspaces"
+            where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+              and "created_by" = $3 and "status" = 'draft'
+            limit 1`,
+          [id, context.teamId, context.accountId],
+        );
+        if (!existing.rowCount) {
+          throw new Error("The durable builder draft id is already in use.");
+        }
+        await client.query("COMMIT");
+        return {
+          content: `${JSON.stringify(existing.rows[0])}\n\nThis durable builder draft already exists. Continue from its saved source files; do not create another workspace.`,
+          detail: `reused custom workspace draft ${existing.rows[0].title}`,
+        };
+      }
+      const created = inserted.rows[0];
+      await client.query(
         `insert into "custom_workspace_versions"
           ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
          values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, 'Created by assistant')`,
@@ -1050,18 +1077,22 @@ export async function runAssistantWorkspaceTool(
           JSON.stringify([{ path: "index.html", content: html }]), context.accountId,
         ],
       );
-      await pool.query(
+      await client.query(
         `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
          values ($1, $2, $3, 'index.html', $4, $5)`,
         [randomUUID(), context.teamId, id, html, context.authorName || "AI assistant"],
       );
+      await client.query("COMMIT");
       pushRealtimeHint("custom_workspaces", "INSERT");
       return {
-        content: `${JSON.stringify(created.rows[0])}\n\nThe draft is saved. Continue by listing its files, reading index.html, and using the custom workspace file tools to refine the persistent app source before reporting completion.`,
+        content: `${JSON.stringify(created)}\n\nThe draft is saved. Continue by listing its files, reading index.html, and using the custom workspace file tools to refine the persistent app source before reporting completion.`,
         detail: `created custom workspace draft ${title}`,
       };
     } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
       throw error;
+    } finally {
+      client.release();
     }
   }
 

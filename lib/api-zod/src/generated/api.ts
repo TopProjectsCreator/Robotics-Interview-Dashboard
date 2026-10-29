@@ -3152,12 +3152,82 @@ export const GetPendingAssistantQuestionsResponse = zod.object({
 
 
 /**
+ * @summary Start a custom workspace builder as a durable server job
+ */
+export const queueCustomWorkspaceBuilderRunBodyQuestionMax = 20000;
+
+export const queueCustomWorkspaceBuilderRunBodyModelMax = 200;
+
+
+
+export const QueueCustomWorkspaceBuilderRunBody = zod.object({
+  "question": zod.string().min(1).max(queueCustomWorkspaceBuilderRunBodyQuestionMax),
+  "model": zod.string().max(queueCustomWorkspaceBuilderRunBodyModelMax).optional().describe('Optional model id selected from the configured provider\'s live model list.'),
+  "thinkingLevel": zod.enum(['low', 'medium', 'high']).optional()
+})
+
+export const QueueCustomWorkspaceBuilderRunResponse = zod.object({
+  "run": zod.union([zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "prompt": zod.string(),
+  "question": zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}).nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Get a custom workspace builder run by id
+ */
+export const GetAssistantBuilderRunParams = zod.object({
+  "runId": zod.coerce.string()
+})
+
+export const GetAssistantBuilderRunResponse = zod.object({
+  "run": zod.union([zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "prompt": zod.string(),
+  "question": zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}).nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
  * @summary Get the signed-in coordinator's latest custom workspace builder run
  */
 export const GetLatestAssistantBuilderRunResponse = zod.object({
   "run": zod.union([zod.object({
   "id": zod.string(),
-  "status": zod.enum(['running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
   "prompt": zod.string(),
   "question": zod.object({
   "id": zod.string(),

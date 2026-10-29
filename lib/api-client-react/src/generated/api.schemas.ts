@@ -2629,6 +2629,29 @@ export interface AssistantInput {
   chatContext?: AssistantInputChatContextItem[];
 }
 
+export type CustomWorkspaceBuilderInputThinkingLevel = typeof CustomWorkspaceBuilderInputThinkingLevel[keyof typeof CustomWorkspaceBuilderInputThinkingLevel];
+
+
+export const CustomWorkspaceBuilderInputThinkingLevel = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface CustomWorkspaceBuilderInput {
+  /**
+     * @minLength 1
+     * @maxLength 20000
+     */
+  question: string;
+  /**
+     * Optional model id selected from the configured provider's live model list.
+     * @maxLength 200
+     */
+  model?: string;
+  thinkingLevel?: CustomWorkspaceBuilderInputThinkingLevel;
+}
+
 export type AssistantTaskRecurrenceFrequency = typeof AssistantTaskRecurrenceFrequency[keyof typeof AssistantTaskRecurrenceFrequency];
 
 
@@ -2835,6 +2858,7 @@ export type AssistantBuilderRunStatus = typeof AssistantBuilderRunStatus[keyof t
 
 
 export const AssistantBuilderRunStatus = {
+  queued: 'queued',
   running: 'running',
   waiting_for_answer: 'waiting_for_answer',
   completed: 'completed',

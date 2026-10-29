@@ -2268,6 +2268,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantPendingQuestionsResponse"
+  /assistant/custom-workspace-builder/runs:
+    post:
+      operationId: queueCustomWorkspaceBuilderRun
+      tags: [assistant]
+      summary: Start a custom workspace builder as a durable server job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceBuilderInput"
+      responses:
+        "201":
+          description: Builder run queued for server-side execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantBuilderRunResponse"
+        "400":
+          description: Invalid custom workspace builder request
+        "401":
+          description: Authentication required
+  /assistant/custom-workspace-builder/runs/{runId}:
+    parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getAssistantBuilderRun
+      tags: [assistant]
+      summary: Get a custom workspace builder run by id
+      responses:
+        "200":
+          description: Builder job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantBuilderRunResponse"
+        "404":
+          description: Builder run not found
   /assistant/custom-workspace-builder/runs/latest:
     get:
       operationId: getLatestAssistantBuilderRun
@@ -7733,6 +7775,21 @@ components:
                 type: string
               message:
                 type: string
+    CustomWorkspaceBuilderInput:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        model:
+          type: string
+          maxLength: 200
+          description: Optional model id selected from the configured provider's live model list.
+        thinkingLevel:
+          type: string
+          enum: [low, medium, high]
     AssistantTaskRecurrence:
       type: object
       required: [frequency, hour, minute, daysOfWeek]
@@ -7942,7 +7999,7 @@ components:
           type: string
         status:
           type: string
-          enum: [running, waiting_for_answer, completed, failed, interrupted]
+          enum: [queued, running, waiting_for_answer, completed, failed, interrupted]
         prompt:
           type: string
         question:

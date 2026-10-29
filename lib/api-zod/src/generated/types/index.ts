@@ -172,6 +172,8 @@ export * from './customWorkspace';
 export * from './customWorkspaceAccessInput';
 export * from './customWorkspaceAccessInputAccessMode';
 export * from './customWorkspaceAccessMode';
+export * from './customWorkspaceBuilderInput';
+export * from './customWorkspaceBuilderInputThinkingLevel';
 export * from './customWorkspaceCapabilitiesItem';
 export * from './customWorkspaceDataInput';
 export * from './customWorkspaceDataInputRecord';

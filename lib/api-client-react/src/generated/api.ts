@@ -117,6 +117,7 @@ import type {
   CustomMcpConnectionInput,
   CustomMcpConnections,
   CustomWorkspaceAccessInput,
+  CustomWorkspaceBuilderInput,
   CustomWorkspaceDataInput,
   CustomWorkspaceDataList,
   CustomWorkspaceEnvelope,
@@ -8544,6 +8545,154 @@ export function useGetPendingAssistantQuestions<TData = Awaited<ReturnType<typeo
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPendingAssistantQuestionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getQueueCustomWorkspaceBuilderRunUrl = () => {
+
+
+
+
+  return `/api/assistant/custom-workspace-builder/runs`
+}
+
+/**
+ * @summary Start a custom workspace builder as a durable server job
+ */
+export const queueCustomWorkspaceBuilderRun = async (customWorkspaceBuilderInput: CustomWorkspaceBuilderInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantBuilderRunResponse> => {
+
+  return customFetch<AssistantBuilderRunResponse>(getQueueCustomWorkspaceBuilderRunUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customWorkspaceBuilderInput)
+  }
+);}
+
+
+
+
+
+export const getQueueCustomWorkspaceBuilderRunMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>, TError,{data: BodyType<CustomWorkspaceBuilderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>, TError,{data: BodyType<CustomWorkspaceBuilderInput>}, TContext> => {
+
+const mutationKey = ['queueCustomWorkspaceBuilderRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>, {data: BodyType<CustomWorkspaceBuilderInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  queueCustomWorkspaceBuilderRun(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QueueCustomWorkspaceBuilderRunMutationResult = NonNullable<Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>>
+    export type QueueCustomWorkspaceBuilderRunMutationBody = BodyType<CustomWorkspaceBuilderInput>
+    export type QueueCustomWorkspaceBuilderRunMutationError = ErrorType<void>
+
+    /**
+ * @summary Start a custom workspace builder as a durable server job
+ */
+export const useQueueCustomWorkspaceBuilderRun = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>, TError,{data: BodyType<CustomWorkspaceBuilderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof queueCustomWorkspaceBuilderRun>>,
+        TError,
+        {data: BodyType<CustomWorkspaceBuilderInput>},
+        TContext
+      > => {
+      return useMutation(getQueueCustomWorkspaceBuilderRunMutationOptions(options));
+    }
+
+export const getGetAssistantBuilderRunUrl = (runId: string,) => {
+
+
+
+
+  return `/api/assistant/custom-workspace-builder/runs/${runId}`
+}
+
+/**
+ * @summary Get a custom workspace builder run by id
+ */
+export const getAssistantBuilderRun = async (runId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantBuilderRunResponse> => {
+
+  return customFetch<AssistantBuilderRunResponse>(getGetAssistantBuilderRunUrl(runId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantBuilderRunQueryKey = (runId: string,) => {
+    return [
+    `/api/assistant/custom-workspace-builder/runs/${runId}`
+    ] as const;
+    }
+
+
+export const getGetAssistantBuilderRunQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantBuilderRun>>, TError = ErrorType<void>>(runId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantBuilderRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantBuilderRunQueryKey(runId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantBuilderRun>>> = ({ signal }) => getAssistantBuilderRun(runId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: runId !== null && runId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantBuilderRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantBuilderRunQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantBuilderRun>>>
+export type GetAssistantBuilderRunQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a custom workspace builder run by id
+ */
+
+export function useGetAssistantBuilderRun<TData = Awaited<ReturnType<typeof getAssistantBuilderRun>>, TError = ErrorType<void>>(
+ runId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantBuilderRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantBuilderRunQueryOptions(runId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

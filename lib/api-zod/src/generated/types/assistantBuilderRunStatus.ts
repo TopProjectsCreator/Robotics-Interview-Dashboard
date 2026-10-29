@@ -10,6 +10,7 @@ export type AssistantBuilderRunStatus = typeof AssistantBuilderRunStatus[keyof t
 
 
 export const AssistantBuilderRunStatus = {
+  queued: 'queued',
   running: 'running',
   waiting_for_answer: 'waiting_for_answer',
   completed: 'completed',
