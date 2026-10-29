@@ -235,7 +235,7 @@ describe("automatic custom workspace critiques", () => {
     expect(screen.getByText("Complete critique round 1 of 5")).toBeInTheDocument();
   });
 
-  it("starts review rounds on an existing draft without creating another workspace", async () => {
+  it("automatically starts review rounds on an existing draft without creating another workspace", async () => {
     const draft = {
       ...workspace,
       title: "Gothic Cathedral 3D Chess",
@@ -275,7 +275,6 @@ describe("automatic custom workspace critiques", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<CustomWorkspacesPage />);
-    fireEvent.click(await screen.findByTestId("button-start-draft-reviews"));
 
     await waitFor(() => expect(streamCalls).toBe(1));
     expect(reviewPrompt).toContain("Revise custom workspace draft custom-app-1");
@@ -284,6 +283,48 @@ describe("automatic custom workspace critiques", () => {
     expect(reviewPrompt).not.toContain("Build a custom workspace app for the team");
     expect(await screen.findByRole("button", { name: "Publish" })).toBeInTheDocument();
     expect(screen.getAllByText("Gothic Cathedral 3D Chess")).toHaveLength(2);
+    expect(screen.queryByTestId("button-start-draft-reviews")).not.toBeInTheDocument();
+  });
+
+  it("does not start a duplicate review while the draft already has an active builder run", async () => {
+    const draft = {
+      ...workspace,
+      title: "Gothic Cathedral 3D Chess",
+      status: "draft",
+      critiqueRounds: 0,
+      verifiedCritiqueRounds: 0,
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: {
+        id: "active-review-run",
+        status: "running",
+        prompt: "Revise custom workspace draft custom-app-1",
+        question: null,
+        answers: {},
+        activities: [],
+        result: null,
+        error: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      } });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+
+    expect(await screen.findByTestId("publish-readiness")).toHaveTextContent("0/5 complete");
+    await waitFor(() => expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Building"));
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/assistant/ask/stream", expect.anything());
   });
 });
 
@@ -293,6 +334,7 @@ describe("custom workspace visual publish review", () => {
     const publishedWorkspace = { ...workspace, status: "published" };
     let publishAttempts = 0;
     let builderStarted = false;
+    let streamCalls = 0;
     const visualFrames = [
       { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
       { type: "complete", workspace: publishedWorkspace },
@@ -326,8 +368,9 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/assistant/ask/stream") {
         const { question } = JSON.parse(String(init?.body)) as { question: string };
         expect(question).toContain("Revise custom workspace draft custom-app-1");
-        expect(question).toContain("exactly five sequential rounds");
+        expect(question).toContain("five-round independent critique");
         expect(question).toContain("verify_custom_workspace_fixes");
+        streamCalls += 1;
         builderStarted = true;
         return new Response([
           `data: ${JSON.stringify({ activity: { tool: "critique_custom_workspace", detail: "critique round 1: 10 ranked flaws" } })}\n\n`,
@@ -351,9 +394,10 @@ describe("custom workspace visual publish review", () => {
 
     render(<CustomWorkspacesPage />);
     expect(await screen.findByTestId("publish-readiness")).toHaveTextContent("0/5 complete");
+    await waitFor(() => expect(streamCalls).toBe(5));
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(publishAttempts).toBe(0);
-    expect(builderStarted).toBe(false);
+    expect(builderStarted).toBe(true);
   });
 
   it("publishes a completed draft without starting another agent", async () => {
@@ -519,6 +563,8 @@ describe("custom workspace visual publish review", () => {
       id: "workspace-with-files",
       title: "Workspace with files",
       status: "draft",
+      critiqueRounds: 5,
+      verifiedCritiqueRounds: 5,
     };
     const emptyWorkspace = {
       id: "empty-workspace",
@@ -526,6 +572,8 @@ describe("custom workspace visual publish review", () => {
       description: "No saved entry file",
       capabilities: [],
       status: "draft",
+      critiqueRounds: 5,
+      verifiedCritiqueRounds: 5,
       accessMode: "team",
       allowedInterviewerIds: [],
       createdAt: "2026-10-02T00:00:00.000Z",

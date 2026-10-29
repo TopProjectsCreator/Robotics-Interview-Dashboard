@@ -329,10 +329,15 @@ export function CustomWorkspacesPage() {
   const [agentQuestion, setAgentQuestion] = useState<AgentQuestion | null>(null);
   const [builderRun, setBuilderRun] = useState<BuilderRun | null>(null);
   const builderRunRef = useRef<BuilderRun | null>(null);
+  const [builderRunLoaded, setBuilderRunLoaded] = useState(false);
   const autoResumeAttempts = useRef(new Map<string, number>());
+  const autoStartedDraftReviews = useRef(new Set<string>());
   const [publishAgentSteps, setPublishAgentSteps] = useState<PublishAgentStep[]>([]);
   const frame = useRef<HTMLIFrameElement>(null);
-  const active = useMemo(() => selected ?? items[0] ?? null, [items, selected]);
+  const active = useMemo(() => selected ?? items.find((item) =>
+    item.status === "draft" &&
+    (Number(item.critiqueRounds ?? 0) < 5 || Number(item.verifiedCritiqueRounds ?? 0) < 5),
+  ) ?? items[0] ?? null, [items, selected]);
   useEffect(() => { builderRunRef.current = builderRun; }, [builderRun]);
 
   const refresh = async () => {
@@ -350,18 +355,22 @@ export function CustomWorkspacesPage() {
   useEffect(() => {
     if (!canManage) return;
     let active = true;
+    setBuilderRunLoaded(false);
     const reload = () => request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest")
       .then(({ run }) => {
         if (!active) return;
         const normalizedRun = normalizeBuilderRun(run);
         setBuilderRun(normalizedRun);
+        setBuilderRunLoaded(true);
         if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         if (normalizedRun?.question) setAgentQuestion(normalizedRun.question);
         else if (normalizedRun?.status === "completed" || normalizedRun?.status === "interrupted" || normalizedRun?.status === "failed") {
           setAgentQuestion(null);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Could not check the current builder run.");
+      });
     void reload();
     return () => { active = false; };
   }, [canManage]);
@@ -840,6 +849,33 @@ export function CustomWorkspacesPage() {
       }
     })();
   }, [active?.id, active?.status, active?.critiqueRounds, active?.verifiedCritiqueRounds, builderRun?.id, builderRun?.status, builderRun?.question, canManage, busy]);
+  useEffect(() => {
+    if (
+      !canManage ||
+      !builderRunLoaded ||
+      busy ||
+      !active ||
+      active.status !== "draft" ||
+      (Number(active.critiqueRounds ?? 0) >= 5 && Number(active.verifiedCritiqueRounds ?? 0) >= 5) ||
+      (builderRun && ["running", "waiting_for_answer"].includes(builderRun.status)) ||
+      (builderRun && ["failed", "interrupted"].includes(builderRun.status) && builderRun.prompt.includes(active.id)) ||
+      autoStartedDraftReviews.current.has(active.id)
+    ) return;
+
+    autoStartedDraftReviews.current.add(active.id);
+    void startExistingDraftReviews();
+  }, [
+    active?.id,
+    active?.status,
+    active?.critiqueRounds,
+    active?.verifiedCritiqueRounds,
+    builderRunLoaded,
+    builderRun?.id,
+    builderRun?.status,
+    builderRun?.question,
+    canManage,
+    busy,
+  ]);
   const publish = async () => {
     if (!active) return;
     if (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) {
@@ -1033,21 +1069,6 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) && <span className="text-xs text-[#60757c] dark:text-[#b3c3cb]" data-testid="publish-readiness">
             Builder reviews: {Number(active.critiqueRounds ?? 0)}/5 complete, {Number(active.verifiedCritiqueRounds ?? 0)}/5 verified
           </span>}
-          {active && canManage && active.status === "draft" &&
-            (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) &&
-            !(builderRun?.prompt.includes(active.id) && ["running", "waiting_for_answer"].includes(builderRun.status)) &&
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void startExistingDraftReviews()}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-              data-testid="button-start-draft-reviews"
-            >
-              {busy && <LoaderCircle size={14} className="animate-spin" />}
-              {builderRun?.prompt.includes(active.id) && ["failed", "interrupted"].includes(builderRun.status)
-                ? "Continue review rounds"
-                : "Start review rounds"}
-            </button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
