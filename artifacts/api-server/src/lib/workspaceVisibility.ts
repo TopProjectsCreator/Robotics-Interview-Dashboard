@@ -105,7 +105,7 @@ export function userCanSeeWorkspace(
   role: string | undefined | null,
   workspace: WorkspaceKey,
 ): boolean {
-  if (role === "coordinator") return true;
+  if (role === "coordinator" || role === "admin") return true;
   const list = visibility[workspace] ?? [];
   if (typeof userId === "string" && userId.trim() && list.includes(userId.trim())) return true;
   if (typeof role === "string" && role.trim() && list.includes(role.trim())) return true;

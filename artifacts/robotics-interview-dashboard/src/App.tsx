@@ -388,7 +388,7 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
     return () => { window.removeEventListener("pointerdown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open ]);
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
-  const isCoordinatorMenu = session.data?.role === "coordinator";
+  const isCoordinatorMenu = session.data?.role === "coordinator" || session.data?.role === "admin";
   return <div ref={ref} className="relative">
     <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-2xl">
@@ -590,7 +590,7 @@ export function FeatureRequestSection() {
 function AdminOnlyRoute({ children }: { children: ReactNode }) {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   if (session.data?.authenticated !== true) return null;
-  if (session.data.role !== "coordinator") return <Redirect to="/dashboard" />;
+  if (session.data.role !== "coordinator" && session.data.role !== "admin") return <Redirect to="/dashboard" />;
   return <>{children}</>;
 }
 
@@ -6519,7 +6519,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       : parent?.message.replace(/\s+/g, " ").trim().slice(0, 110);
     // Admins moderate every message, including AI assistant ones. Everyone
     // else can only manage their own messages (never the AI's).
-    const isAdminChat = session.data?.role === "coordinator";
+    const isAdminChat = session.data?.role === "coordinator" || session.data?.role === "admin";
     const canManage = isAdminChat
       || (item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant");
     const editing = editingMessageId === item.id;
@@ -6533,7 +6533,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
-          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
+          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); }, onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message.") })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
            {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
         </div>
       </div>}
@@ -6868,7 +6868,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    </label>;
                  })}
                  {missingChannelAccounts.map(member => {
-                   const roleLabel = member.role === "coordinator" ? "Admin" : member.role === "treasurer" ? "Treasurer" : "Team member";
+                   const roleLabel = member.role === "coordinator" || member.role === "admin" ? "Admin" : member.role === "treasurer" ? "Treasurer" : "Team member";
                    return <label key={member.id} className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition bg-[#e3f4f2] hover:bg-[#d9efec]`}>
                      <input type="checkbox" checked={channelMemberIdsDraft.includes(member.id)} onChange={() => toggleChannelMemberDraft(member.id)} className="h-4 w-4 accent-[#16869a]" aria-label={`Invite ${member.displayName}`} />
                      <span className="min-w-0 flex-1 truncate font-medium text-[#183a4b]">{member.displayName}</span>
@@ -7492,7 +7492,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const assistantSession = useGetSession({
     query: { queryKey: getGetSessionQueryKey() },
   });
-  const canManageAssistantTools = assistantSession.data?.role === "coordinator";
+  const canManageAssistantTools = assistantSession.data?.role === "coordinator" || assistantSession.data?.role === "admin";
   const assistantIdentity = `${assistantSession.data?.interviewerId ?? ""}:${assistantSession.data?.teamId ?? ""}`;
   const assistantIdentityRef = useRef(assistantIdentity);
   assistantIdentityRef.current = assistantIdentity;
