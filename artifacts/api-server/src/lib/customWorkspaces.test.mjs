@@ -20,6 +20,7 @@ const USERS = {
   "coordinator-a": { teamId: "team-a", role: "coordinator" },
   "admin-a": { teamId: "team-a", role: "admin" },
   "admin-a-other": { teamId: "team-a", role: "admin" },
+  "member-a": { teamId: "team-a", role: "interviewer" },
   "coordinator-b": { teamId: "team-b", role: "coordinator" },
   "admin-b": { teamId: "team-b", role: "admin" },
 };
@@ -123,7 +124,7 @@ const WORKSPACE_SEEDS = [
     capabilities: ["data", "llm"],
     status: "published",
     accessMode: "selected",
-    allowedInterviewerIds: ["admin-a"],
+    allowedInterviewerIds: ["admin-a", "member-a"],
     createdBy: "coordinator-a",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -760,6 +761,19 @@ test("workspace lists, reads, and coordinator changes stay within the caller's t
   const listed = await listResponse.json();
   assert.deepEqual(listed.workspaces.map((workspace) => workspace.id), ["workspace-b"]);
 
+  const memberListResponse = await harness.request("member-a", "GET", "/custom-workspaces");
+  assert.equal(memberListResponse.status, 200);
+  const memberWorkspaceIds = (await memberListResponse.json()).workspaces.map((workspace) => workspace.id);
+  assert.ok(memberWorkspaceIds.includes("workspace-a"));
+  assert.ok(memberWorkspaceIds.includes("workspace-a-selected"));
+  assert.ok(!memberWorkspaceIds.includes("workspace-a-owner"));
+  assert.ok(!memberWorkspaceIds.includes("workspace-a-draft"));
+  assert.ok(!memberWorkspaceIds.includes("workspace-b"));
+  assert.equal(
+    (await harness.request("member-a", "GET", "/custom-workspaces/workspace-a")).status,
+    200,
+  );
+
   const otherTeamRead = await harness.request("admin-b", "GET", "/custom-workspaces/workspace-a");
   assert.equal(otherTeamRead.status, 404);
 
@@ -802,16 +816,46 @@ test("selected access is enforced for the app, records, and LLM", async (t) => {
 
   const allowedApp = await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-selected");
   assert.equal(allowedApp.status, 200);
-  assert.deepEqual((await allowedApp.json()).workspace.allowedInterviewerIds, ["admin-a"]);
+  assert.deepEqual((await allowedApp.json()).workspace.allowedInterviewerIds, ["admin-a", "member-a"]);
 
+  const allowedMemberApp = await harness.request("member-a", "GET", "/custom-workspaces/workspace-a-selected");
+  assert.equal(allowedMemberApp.status, 200);
   const allowedRecords = await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a-selected/data");
   assert.equal(allowedRecords.status, 200);
   assert.deepEqual((await allowedRecords.json()).records.map((record) => record.id), ["record-a-selected"]);
+  const allowedMemberRecords = await harness.request("member-a", "GET", "/custom-workspaces/workspace-a-selected/data");
+  assert.equal(allowedMemberRecords.status, 200);
+  assert.deepEqual((await allowedMemberRecords.json()).records.map((record) => record.id), ["record-a-selected"]);
+  const memberCreated = await harness.request("member-a", "POST", "/custom-workspaces/workspace-a-selected/data", {
+    record: { source: "team member" },
+  });
+  assert.equal(memberCreated.status, 201);
+  const memberRecord = (await memberCreated.json()).record;
+  assert.deepEqual(memberRecord.value, { source: "team member" });
+  const memberUpdated = await harness.request(
+    "member-a",
+    "PATCH",
+    `/custom-workspaces/workspace-a-selected/data/${memberRecord.id}`,
+    { record: { source: "updated by team member" } },
+  );
+  assert.equal(memberUpdated.status, 200);
+  assert.deepEqual((await memberUpdated.json()).record.value, { source: "updated by team member" });
+  const memberDeleted = await harness.request(
+    "member-a",
+    "DELETE",
+    `/custom-workspaces/workspace-a-selected/data/${memberRecord.id}`,
+  );
+  assert.equal(memberDeleted.status, 200);
+  assert.equal((await memberDeleted.json()).deleted, true);
   const allowedLlm = await harness.request("admin-a", "POST", "/custom-workspaces/workspace-a-selected/llm", {
     prompt: "Summarize these records",
   });
   assert.equal(allowedLlm.status, 200);
-  assert.equal(harness.calls.llm.length, 1);
+  const allowedMemberLlm = await harness.request("member-a", "POST", "/custom-workspaces/workspace-a-selected/llm", {
+    prompt: "Summarize these records as a team member",
+  });
+  assert.equal(allowedMemberLlm.status, 200);
+  assert.equal(harness.calls.llm.length, 2);
 
   const deniedApp = await harness.request("admin-a-other", "GET", "/custom-workspaces/workspace-a-selected");
   assert.equal(deniedApp.status, 404);
@@ -841,7 +885,7 @@ test("selected access is enforced for the app, records, and LLM", async (t) => {
     prompt: "This must not be sent to the model",
   });
   assert.equal(deniedLlm.status, 404);
-  assert.equal(harness.calls.llm.length, 1, "denied requests must not reach the model");
+  assert.equal(harness.calls.llm.length, 2, "denied requests must not reach the model");
   assert.deepEqual(
     harness.records.find((record) => record.id === "record-a-selected").value,
     { visible: "selected record" },
@@ -859,7 +903,7 @@ test("coordinators can update selected members but cannot grant access across te
   const membersResponse = await harness.request("coordinator-a", "GET", "/custom-workspaces/team-members");
   assert.equal(membersResponse.status, 200);
   const members = await membersResponse.json();
-  assert.deepEqual(members.members.map((member) => member.id).sort(), ["admin-a", "admin-a-other", "coordinator-a"]);
+  assert.deepEqual(members.members.map((member) => member.id).sort(), ["admin-a", "admin-a-other", "coordinator-a", "member-a"]);
   assert.equal((await harness.request("admin-a", "GET", "/custom-workspaces/team-members")).status, 403);
 
   const changed = await harness.request("coordinator-a", "PATCH", "/custom-workspaces/workspace-a/access", {

@@ -82,6 +82,7 @@ import NotFound from "@/pages/not-found";
 const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
 const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
 const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").then((m) => ({ default: m.CustomWorkspacesPage })));
+const CustomWorkspaceAppPage = lazy(() => import("@/pages/CustomWorkspaceAppPage").then((m) => ({ default: m.CustomWorkspaceAppPage })));
 const RecurringTasksPage = lazy(() => import("@/pages/RecurringTasksPage").then((m) => ({ default: m.RecurringTasksPage })));
 import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
@@ -128,6 +129,8 @@ import {
 } from "./useWorkspaceVisibility";
 
 import { useRealtimeHealthy } from "./realtimeHealth";
+import { useAccessibleCustomWorkspaces } from "./lib/customWorkspaces";
+import { CustomWorkspaceOverviewCard, CustomWorkspaceSidebarLinks } from "./components/CustomWorkspaceNavigation";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -3301,6 +3304,12 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   // issued before sign-in.
   const isSignedIn = session.data?.authenticated === true;
   const sessionUserId = session.data?.interviewerId;
+  const customWorkspacesQuery = useAccessibleCustomWorkspaces(
+    isSignedIn,
+    session.data?.teamId,
+    sessionUserId,
+  );
+  const customWorkspaces = customWorkspacesQuery.data ?? [];
   // Accounts always have a role; default a missing one to the most restricted
   // role so legacy role-based settings keep working (as before the per-user switch).
   const sessionRole = session.data?.role ?? "interviewer";
@@ -3432,6 +3441,11 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
               </Link>
             );
           })}
+          <CustomWorkspaceSidebarLinks
+            workspaces={customWorkspaces}
+            currentPath={shellPath}
+            onNavigate={() => setMobileNav(false)}
+          />
         </nav>
         {workspaceArea === "interview" && displayPromoVisible && (
           <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4">
@@ -3631,6 +3645,12 @@ function WorkspaceOverview() {
   const sessionUserId = session.data?.interviewerId;
   const sessionRole = session.data?.role ?? "interviewer";
   const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, sessionRole, sessionUserId);
+  const customWorkspacesQuery = useAccessibleCustomWorkspaces(
+    session.data?.authenticated === true,
+    session.data?.teamId,
+    sessionUserId,
+  );
+  const customWorkspaces = customWorkspacesQuery.data ?? [];
   const isCoordinator = sessionRole === "coordinator";
   const canSee = (key: WorkspaceKey) =>
     userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
@@ -3640,7 +3660,8 @@ function WorkspaceOverview() {
   const visibleList = WORKSPACE_KEYS.filter((key) => canSee(key));
   const workspaceNumber = (key: WorkspaceKey) =>
     String(visibleList.indexOf(key) + 1).padStart(2, "0");
-  const spaceCount = String(visibleList.length).padStart(2, "0");
+  const totalSpaces = visibleList.length + customWorkspaces.length;
+  const spaceCount = String(totalSpaces).padStart(2, "0");
   return (
     <div className="fade-up min-h-[calc(100dvh-160px)] rounded-3xl bg-[#f1f5f4] px-4 py-5 text-[#182232] dark:bg-[#101b23] dark:text-[#e8eff2] sm:px-7 sm:py-7">
       <div className="mx-auto max-w-[1120px]">
@@ -3662,11 +3683,19 @@ function WorkspaceOverview() {
               </Link>
             )}
             <span className="mono hidden rounded-full border border-[#d6e1df] bg-white/70 px-3 py-1.5 text-[10px] uppercase tracking-[.12em] text-[#718189] dark:border-[#344953] dark:bg-[#1a2b34] dark:text-[#b6c7ce] sm:inline-flex">
-              {spaceCount} {visibleList.length === 1 ? "space" : "spaces"}
+              {spaceCount} {totalSpaces === 1 ? "space" : "spaces"}
             </span>
           </div>
         </header>
-        {visibleList.length === 0 && (
+        {customWorkspacesQuery.isError && (
+          <p className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6c4bd] bg-[#fff4f1] p-4 text-sm text-[#7b3c32] dark:border-[#70433e] dark:bg-[#382725] dark:text-[#f1c4ba]" role="alert" data-testid="status-custom-workspace-list-error">
+            <span>Custom apps could not be loaded.</span>
+            <button type="button" onClick={() => void customWorkspacesQuery.refetch()} className="min-h-11 rounded-full border border-current px-4 font-semibold" data-testid="button-retry-custom-workspace-list">
+              Retry
+            </button>
+          </p>
+        )}
+        {visibleList.length === 0 && customWorkspaces.length === 0 && !customWorkspacesQuery.isLoading && (
           <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
             No workspaces are assigned to your account yet. Ask an admin to add you in Settings → Workspace access.
           </p>
@@ -3884,6 +3913,13 @@ function WorkspaceOverview() {
           </span>
         </Link>
         )}
+        {customWorkspaces.map((workspace, index) => (
+          <CustomWorkspaceOverviewCard
+            key={workspace.id}
+            workspace={workspace}
+            number={visibleList.length + index + 1}
+          />
+        ))}
       </div>
       </div>
     </div>
@@ -9220,8 +9256,9 @@ function Router() {
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>
         <Route path="/cad"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CadWorkspacePage /></Suspense></Shell></Route>
         <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
-        {/* Admins only: hidden from the sidebar and blocked for any other role. */}
+        {/* Coordinator-only builder; app runtime pages use server-side app access. */}
         <Route path="/custom-workspaces"><Shell><AdminOnlyRoute><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></AdminOnlyRoute></Shell></Route>
+        <Route path="/custom-workspaces/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspaceAppPage workspaceId={id} /></Suspense></Shell>}</Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/error/:code">{({ code }) => <ErrorCodeRoute params={{ code }} />}</Route>

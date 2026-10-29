@@ -5,6 +5,7 @@ import { applyCodeFileContent } from "./codeCollaboration";
 import { pushRealtimeHint } from "./realtime";
 import { teamSqlCondition } from "./teams";
 import { accountById } from "./interviewerAccounts";
+import { inlineLocalSvgAssets } from "./customWorkspaceAssets";
 import { readWorkspaceVisibility } from "./workspaceAccess";
 import { userCanSeeWorkspace, type WorkspaceKey } from "./workspaceVisibility";
 import { getAssistantModel } from "./assistantModel";
@@ -221,7 +222,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace",
-    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. After creating the initial functional draft and saving its source files, immediately start critique round 1; do not wait for the coordinator to click Publish or ask them to start critiques. Before reporting the build finished, complete exactly five sequential critique rounds (1, 2, 3, 4, then 5); five rounds are mandatory. Each separate critique agent must return exactly 10 ranked actionable flaws scored 1–10. In rounds 1–4 fix scores above 6 and below 6; in round 5 fix scores above 6 only. After fixing eligible findings, call verify_custom_workspace_fixes. This is a separate independent reviewer agent that checks each required finding against the latest saved source. If critique or verification fails or returns unresolved findings, keep editing the saved source and retry that same critique/verification automatically; do not stop, advance early, wait for a Publish click, or finish until verification passes. Verify round 5 before reporting completion. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
+    "Create a new custom app workspace draft. Match the Robotics dashboard design system: navy headings, teal #16869a primary actions, restrained yellow #f8c84a accents, cool-gray surfaces, white cards, subtle borders, rounded corners, compact mono metadata, and accessible light/dark variants using injected --workspace-* and shared theme tokens. Do not invent a competing brand or duplicate the host navigation. After creating the initial functional draft and saving its source files, immediately start critique round 1; do not wait for the coordinator to click Publish or ask them to start critiques. Before reporting the build finished, complete exactly five sequential critique rounds (1, 2, 3, 4, then 5); five rounds are mandatory. Each separate critique agent must return exactly 10 ranked actionable flaws scored 1–10. In rounds 1–4 fix scores above 6 and below 6; in round 5 fix scores above 6 only. After fixing eligible findings, call verify_custom_workspace_fixes. This is a separate independent reviewer agent that checks each required finding against the latest saved source. If critique or verification fails or returns unresolved findings, keep editing the saved source and retry that same critique/verification automatically; do not stop, advance early, wait for a Publish click, or finish until verification passes. Verify round 5 before reporting completion. Start with a functional standalone HTML/CSS/JavaScript app in html (saved as index.html), then use the custom workspace file tools to inspect and refine its persistent source tree. Create standalone .svg files for reusable illustrations when useful and reference them with local relative paths; the preview inlines safe local SVGs. SVG assets must not contain scripts, event handlers, foreignObject, or external references. Never publish automatically. It runs in a sandboxed iframe with no direct network, OS process, or Git server hosting. It can call window.workspaceAPI.data.list/create/update/delete and window.workspaceAPI.llm.ask only when those capabilities are requested. Never claim to provision a real server.",
     {
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 1000 },
@@ -303,13 +304,13 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "create_custom_workspace_file",
-    "Create a new source file in a custom workspace draft. Existing paths are never overwritten.",
+    "Create a new source file in a custom workspace draft, including standalone .svg illustration assets. Existing paths are never overwritten.",
     { workspaceId: { type: "string" }, path: { type: "string", minLength: 1, maxLength: 255 }, content: { type: "string", maxLength: 120000 } },
     ["workspaceId", "path", "content"],
   ),
   tool(
     "write_custom_workspace_file",
-    "Replace an existing source file in a custom workspace draft.",
+    "Replace an existing source file in a custom workspace draft, including standalone .svg illustration assets.",
     { workspaceId: { type: "string" }, path: { type: "string", minLength: 1, maxLength: 255 }, content: { type: "string", maxLength: 120000 } },
     ["workspaceId", "path", "content"],
   ),
@@ -444,7 +445,7 @@ async function compileCustomWorkspace(workspaceId: string, teamId: string): Prom
     const js = files.get(src.replace(/^\.\//, ""));
     return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
   });
-  return html;
+  return inlineLocalSvgAssets(html, result.rows);
 }
 
 async function projectExists(projectId: string, teamId: string): Promise<boolean> {

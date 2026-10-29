@@ -50,12 +50,6 @@ const PARTS_LINKS: WorkspaceNavItem[] = [
   { href: "/parts/assistant", label: "Parts assistant", iconKey: "assistant", kind: "section", workspace: "parts" },
 ];
 
-// Custom apps is intentionally NOT in the sidebar: it is an unfinished admin
-// experiment with no settled purpose. The route still exists at
-// /custom-workspaces for admins; do not surface a tab for it until we decide
-// what it is actually for.
-const CODE_LINKS: WorkspaceNavItem[] = [];
-
 /** Sections that live inside a workspace but are shared with other areas. */
 const SECTION_LINKS: WorkspaceNavItem[] = [
   { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section", workspace: "interview" },
@@ -98,7 +92,9 @@ export function getWorkspaceNavigation(
   const workspaces = visible
     ? WORKSPACE_LINKS.filter((item) => visible.has(item.workspace))
     : WORKSPACE_LINKS;
-  if (area === "overview") return [...workspaces, ...CODE_LINKS];
+  // Custom apps are appended from the server-filtered access list in Shell;
+  // they are intentionally not part of the fixed workspace enum.
+  if (area === "overview") return workspaces;
   const isVisible = (item: WorkspaceNavItem) => !visible || visible.has(item.workspace);
   if (area === "interview") {
     return [...workspaces, ...INTERVIEW_LINKS.filter(isVisible)];
@@ -106,7 +102,7 @@ export function getWorkspaceNavigation(
   if (area === "chat") return [...workspaces, ...CHAT_LINKS.filter(isVisible)];
   if (area === "parts") return [...workspaces, ...PARTS_LINKS.filter(isVisible)];
   if (area === "cad") return workspaces;
-  if (area === "code") return [...workspaces, ...CODE_LINKS.filter(isVisible)];
+  if (area === "code") return workspaces;
   return workspaces;
 }
 
