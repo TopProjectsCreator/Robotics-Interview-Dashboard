@@ -6208,6 +6208,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   }, [olderChat]);
   const chatPrevLenRef = useRef(0);
   const chatOldestRef = useRef("");
+  const chatForceScrollRef = useRef(false);
   useEffect(() => {
     const el = chatScrollRef.current;
     const n = chatItems.length;
@@ -6219,8 +6220,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       return;
     }
     chatOldestRef.current = oldest;
-    if (chatPrevLenRef.current === 0 || (n > chatPrevLenRef.current && chatStickRef.current)) {
+    if (chatPrevLenRef.current === 0 || (n > chatPrevLenRef.current && (chatStickRef.current || chatForceScrollRef.current))) {
       el.scrollTop = el.scrollHeight;
+      chatForceScrollRef.current = false;
     }
     chatPrevLenRef.current = n;
   }, [chatItems]);
@@ -6410,6 +6412,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         },
       }), 30000, "send");
       userPosted = true;
+      chatForceScrollRef.current = true;
       const configuredSlowmode = slowmodeConfig.data?.slowmodeSeconds ?? 0;
       if (configuredSlowmode > 0 && (conversationScope === "shared" || conversationScope === "channel")) startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
@@ -6476,6 +6479,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setReplyingTo(null);
       setChatError("");
     } catch (error) {
+      chatForceScrollRef.current = false;
       reportDiag(`chat-send failed at ${stage}`, diagContext());
       if (!userPosted) {
         for (const id of uploadedIds) {
