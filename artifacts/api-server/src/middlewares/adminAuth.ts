@@ -5,6 +5,7 @@ import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, revokedSessionsTable, ru
 import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 import { ADMIN_SESSION_TTL_MS, isAdminSessionExpired } from "../lib/adminSessionPolicy";
+import { isAdminRole } from "../lib/roles";
 
 const SESSION_COOKIE = "robotics_admin_session";
 
@@ -301,7 +302,7 @@ export function requireCoordinator(
       .where(eq(interviewerAccountsTable.id, interviewerId))
       .limit(1)
       .then(([account]) => {
-        if (account?.role !== "coordinator") {
+        if (!isAdminRole(account?.role)) {
           res.status(403).json({ error: "Admins only" });
           return;
         }
@@ -339,7 +340,7 @@ export function requireWolverinesCoordinator(
       .limit(1)
       .then(([account]) => {
         const teamId = account?.teamId?.trim() || DEFAULT_TEAM_ID;
-        if (account?.role !== "coordinator" || teamId !== DEFAULT_TEAM_ID) {
+        if (!isAdminRole(account?.role) || teamId !== DEFAULT_TEAM_ID) {
           res.status(403).json({ error: "Wolverines coordinators only" });
           return;
         }

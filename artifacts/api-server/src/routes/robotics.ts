@@ -158,6 +158,7 @@ import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { isAdminRole } from "../lib/roles";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter } from "../lib/teams";
@@ -3506,7 +3507,7 @@ async function accessibleChatChannelIds(teamId: string, viewer: ChannelViewer | 
     .from(chatChannelsTable)
     .where(teamFilter(chatChannelsTable.teamId, teamId))
     .orderBy(desc(chatChannelsTable.updatedAt));
-  if (viewer.role === "coordinator") return channels.map((channel) => channel.id);
+  if (isAdminRole(viewer.role)) return channels.map((channel) => channel.id);
   const memberships = await db.select({ channelId: chatChannelMembersTable.channelId })
     .from(chatChannelMembersTable)
     .where(and(eq(chatChannelMembersTable.memberId, viewer.id), teamFilter(chatChannelMembersTable.teamId, teamId)));
@@ -3542,7 +3543,7 @@ async function resolveChatConversation(
     const channel = await chatChannelById(channelId, teamId);
     if (!channel) return { error: "That channel was not found." };
     const viewer = options.viewer;
-    const isAdmin = viewer?.role === "coordinator";
+    const isAdmin = viewer ? isAdminRole(viewer.role) : false;
     const isInvited = viewer ? await isChatChannelMember(channelId, viewer.id) : false;
     if (!viewer || (!isAdmin && !isInvited)) {
       return { error: "You are not a member of that channel." };
@@ -3803,7 +3804,7 @@ async function whiteboardConversationForAccount(
     const team = teamId?.trim() ? teamId : undefined;
     const channel = team ? await chatChannelById(channelId, team) : undefined;
     if (!channel) return null;
-    if (viewer?.role === "coordinator") {
+    if (viewer && isAdminRole(viewer.role)) {
       return { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
     }
     const memberId = viewer?.id ? viewer.id : "";
@@ -4553,7 +4554,7 @@ function chatChannelResponse(
       }),
     // Admins see every channel but "youAreMember" stays honest about invites.
     youAreMember: memberRows.some((member) => member.memberId === viewer.id),
-    canManage: viewer.role === "coordinator",
+    canManage: isAdminRole(viewer.role),
     lastMessageAt: last?.lastMessageAt ?? null,
     lastMessageAuthor: last?.lastMessageAuthor ?? null,
     lastMessage: last?.lastMessage ?? null,
@@ -5327,7 +5328,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   }
   // The admin role is STORED as "coordinator" (the Settings UI just labels it
   // "Admin"). Comparing against the label literally is how this bypass broke.
-  const isAdmin = account.role === "coordinator";
+  const isAdmin = isAdminRole(account.role);
   if (!isAdmin) {
     if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only edit your own messages." });
@@ -5401,7 +5402,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     return;
   }
   // Stored admin role is "coordinator" — the UI label "Admin" is display-only.
-  if (account.role !== "coordinator") {
+  if (!isAdminRole(account.role)) {
     if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only delete your own messages." });
       return;
@@ -5625,7 +5626,7 @@ router.delete("/queue/chat/scheduled/:scheduledId", requireAdmin, async (req, re
     res.status(404).json({ error: "Scheduled message not found." });
     return;
   }
-  const canCancel = row.createdBy === accountId || account.role === "coordinator" || account.role === "admin";
+  const canCancel = row.createdBy === accountId || isAdminRole(account.role);
   if (!canCancel) {
     res.status(403).json({ error: "Only the scheduler or a coordinator can cancel this." });
     return;
