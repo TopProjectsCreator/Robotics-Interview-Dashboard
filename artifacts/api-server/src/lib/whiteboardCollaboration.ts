@@ -2,7 +2,15 @@ import type { IncomingMessage, Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import { and, eq } from "drizzle-orm";
-import { db, runWithInstance, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import {
+  db,
+  runWithInstance,
+  currentInstance,
+  DEFAULT_TEAM_ID,
+  interviewerAccountsTable,
+  interviewWhiteboardsTable,
+  type DbInstance,
+} from "@workspace/db";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
@@ -46,6 +54,8 @@ type CollaborationClient = {
 type CollaborationRoom = {
   whiteboardId: string;
   teamId: string;
+  // DB instance this team's rows live on; see schedulePersist.
+  instance: DbInstance;
   clients: Set<CollaborationClient>;
   currentData: string;
   pendingData?: { data: string; updatedBy: string };
@@ -195,7 +205,15 @@ function normalizeCursor(value: unknown): Pick<CursorPresence, "x" | "y" | "visi
 function roomFor(whiteboardId: string, currentData: string, teamId?: string | null): CollaborationRoom {
   const existing = rooms.get(whiteboardId);
   if (existing) return existing;
-  const room: CollaborationRoom = { whiteboardId, teamId: teamId?.trim() ? teamId : DEFAULT_TEAM_ID, clients: new Set(), currentData };
+  const room: CollaborationRoom = {
+    whiteboardId,
+    teamId: teamId?.trim() ? teamId : DEFAULT_TEAM_ID,
+    // openCollaboration runs inside runWithInstance(identity.instance), so
+    // the instance captured here is the one this team's rows live on.
+    instance: currentInstance(),
+    clients: new Set(),
+    currentData,
+  };
   rooms.set(whiteboardId, room);
   return room;
 }
@@ -207,9 +225,14 @@ function schedulePersist(room: CollaborationRoom): void {
     const pending = room.pendingData;
     room.pendingData = undefined;
     if (!pending) return;
-    void db.update(interviewWhiteboardsTable)
-      .set({ data: pending.data, updatedAt: new Date() })
-      .where(and(eq(interviewWhiteboardsTable.id, room.whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
+    // This timer callback runs outside the request's AsyncLocalStorage
+    // context, so `db` would resolve to primary even for teams that live on
+    // the secondary instance and the update would silently match 0 rows.
+    // Re-pin to the room's instance for every socket-driven persist.
+    void runWithInstance(room.instance, () =>
+      db.update(interviewWhiteboardsTable)
+        .set({ data: pending.data, updatedAt: new Date() })
+        .where(and(eq(interviewWhiteboardsTable.id, room.whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId))))
       .catch((error) => logger.error({ err: error, whiteboardId: room.whiteboardId }, "Whiteboard collaboration persist failed"));
   }, 180);
 }
@@ -317,9 +340,12 @@ async function openCollaboration(
       room.pendingData = undefined;
       rooms.delete(whiteboardId);
       if (pending) {
-        void db.update(interviewWhiteboardsTable)
-          .set({ data: pending.data, updatedAt: new Date() })
-          .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
+        // Same instance re-pin as schedulePersist: the close callback runs
+        // outside the request context.
+        void runWithInstance(room.instance, () =>
+          db.update(interviewWhiteboardsTable)
+            .set({ data: pending.data, updatedAt: new Date() })
+            .where(and(eq(interviewWhiteboardsTable.id, whiteboardId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId))))
           .catch((error) => logger.error({ err: error, whiteboardId }, "Whiteboard collaboration final persist failed"));
       }
     }

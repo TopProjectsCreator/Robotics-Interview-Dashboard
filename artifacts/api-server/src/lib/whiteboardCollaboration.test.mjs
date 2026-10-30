@@ -136,6 +136,19 @@ const db = {
         whereClause = clause;
         return this;
       },
+      returning() {
+        return {
+          then(resolve, reject) {
+            return execute().then(resolve, reject);
+          },
+          catch(reject) {
+            return execute().catch(reject);
+          },
+          finally(callback) {
+            return execute().finally(callback);
+          },
+        };
+      },
       then(resolve, reject) {
         return execute().then(resolve, reject);
       },

@@ -8,7 +8,15 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, runWithInstance, codeFilesTable, interviewerAccountsTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import {
+  db,
+  runWithInstance,
+  currentInstance,
+  codeFilesTable,
+  interviewerAccountsTable,
+  DEFAULT_TEAM_ID,
+  type DbInstance,
+} from "@workspace/db";
 import { findAccountAnywhere } from "./teams";
 import {
   interviewerIdFromSession,
@@ -27,6 +35,8 @@ const AWARENESS_UPDATE = 2;
 type CodeClient = { socket: WebSocket; awarenessIds: Set<number> };
 type CodeRoom = {
   fileId: string;
+  // DB instance this file's row lives on; see schedulePersist.
+  instance: DbInstance;
   doc: Y.Doc;
   awareness: Awareness;
   clients: Set<CodeClient>;
@@ -111,11 +121,26 @@ function schedulePersist(room: CodeRoom): void {
     room.lastPersisted = Math.max(room.lastPersisted, revision);
     room.chain = room.chain.then(async () => {
       try {
-        await db.update(codeFilesTable)
-          .set({ content, updatedAt: new Date() })
-          .where(eq(codeFilesTable.id, room.fileId));
+        // This timer callback runs outside the request's AsyncLocalStorage
+        // context, so `db` would resolve to primary even for teams that live
+        // on the secondary instance — the update would silently match 0 rows
+        // and clients would still be told "saved". Re-pin to the room's
+        // instance, and only report "saved" when a row was actually updated.
+        const updated = await runWithInstance(room.instance, () =>
+          db.update(codeFilesTable)
+            .set({ content, updatedAt: new Date() })
+            .where(eq(codeFilesTable.id, room.fileId))
+            .returning({ id: codeFilesTable.id }),
+        );
         if (room.revision === revision) {
-          for (const client of room.clients) sendJson(client.socket, { type: "saved" });
+          if (updated.length) {
+            for (const client of room.clients) sendJson(client.socket, { type: "saved" });
+          } else {
+            logger.error({ fileId: room.fileId, instance: room.instance }, "Code collaboration persist matched no rows");
+            for (const client of room.clients) {
+              sendJson(client.socket, { type: "error", message: "Code changes could not be saved." });
+            }
+          }
         }
       } catch (error) {
         logger.error({ err: error, fileId: room.fileId }, "Code collaboration persist failed");
@@ -134,7 +159,11 @@ function roomFor(fileId: string, content: string): CodeRoom {
   const doc = new Y.Doc();
   if (content) doc.getText("content").insert(0, content.slice(0, MAX_CODE_BYTES));
   const room: CodeRoom = {
-    fileId, doc, awareness: new Awareness(doc),
+    fileId,
+    // open() runs inside runWithInstance(identity.instance), so the instance
+    // captured here is the one this team's rows live on.
+    instance: currentInstance(),
+    doc, awareness: new Awareness(doc),
     clients: new Set(), revision: 0, lastPersisted: 0, chain: Promise.resolve(),
   };
   room.awareness.setLocalState(null);
@@ -224,9 +253,12 @@ async function open(socket: WebSocket, fileId: string, displayName: string, team
     if (!room.clients.size) {
       if (room.timer) clearTimeout(room.timer);
       const content = room.doc.getText("content").toString().slice(0, MAX_CODE_BYTES);
-      db.update(codeFilesTable)
-        .set({ content, updatedAt: new Date() })
-        .where(eq(codeFilesTable.id, fileId))
+      // Same instance re-pin as schedulePersist: the close callback runs
+      // outside the request context.
+      runWithInstance(room.instance, () =>
+        db.update(codeFilesTable)
+          .set({ content, updatedAt: new Date() })
+          .where(eq(codeFilesTable.id, fileId)))
         .catch((error) => logger.error({ err: error, fileId }, "Code collaboration final persist failed"));
       room.doc.destroy();
       room.awareness.destroy();

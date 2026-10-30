@@ -3790,6 +3790,22 @@ function spreadsheetResponse(
   };
 }
 
+/**
+ * The generated OpenAPI Zod schemas model workbook sheets as plain
+ * `zod.object({ id, name })`: orval only emits `.passthrough()` for objects
+ * without declared properties, so the `additionalProperties: true` on sheet
+ * items in the spec (SpreadsheetData, lib/api-spec/openapi.yaml) is silently
+ * dropped and parsing strips every other fortune-sheet field — celldata,
+ * config, row/column sizing, etc. Persisting or returning the schema-parsed
+ * value destroyed spreadsheet contents on every save. Keep the generated
+ * schemas as the validation gate, but always take the `data` payload itself
+ * from the raw value (parseSpreadsheetData enforces structure and size
+ * limits) instead of the schema-stripped copy.
+ */
+function spreadsheetDataFromRaw(raw: unknown) {
+  return parseSpreadsheetData(raw);
+}
+
 async function whiteboardConversationForAccount(
   whiteboard: { conversationScope: string; conversationPeer: string | null },
   displayName: string,
@@ -4119,7 +4135,13 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
     conversationPeer: conversation.key,
   }).returning();
   pushRealtimeHint("interview_whiteboards", "INSERT");
-  res.status(201).json(CreateSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+  // See spreadsheetDataFromRaw: splice the workbook back into the response;
+  // CreateSpreadsheetResponse.parse strips the sheet fields. The inserted row
+  // stores exactly initialSpreadsheetData(), so the object round-trips.
+  res.status(201).json({
+    ...CreateSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)),
+    data: initialSpreadsheetData(),
+  });
 });
 
 router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
@@ -4144,11 +4166,14 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   const conversation = spreadsheet
     ? await whiteboardConversationForAccount(spreadsheet, account.displayName, channelViewerFor(account), teamId)
     : null;
-  if (!spreadsheet || !conversation || !parseSpreadsheetData(spreadsheet.data)) {
+  const storedData = spreadsheet ? spreadsheetDataFromRaw(spreadsheet.data) : null;
+  if (!spreadsheet || !conversation || !storedData) {
     res.status(404).json({ error: "Spreadsheet not found." });
     return;
   }
-  res.json(GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+  // See spreadsheetDataFromRaw: GetSpreadsheetResponse.parse strips the
+  // workbook fields, so splice the structurally validated data back in.
+  res.json({ ...GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)), data: storedData });
 });
 
 router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res): Promise<void> => {
@@ -4167,7 +4192,12 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
     res.status(400).json({ error: "Spreadsheet title cannot be empty." });
     return;
   }
-  const requestedData = parsed.data.data === undefined ? null : parseSpreadsheetData(parsed.data.data);
+  // See spreadsheetDataFromRaw: source the payload from the raw request body,
+  // not parsed.data.data — the generated body schema strips the workbook
+  // fields, and persisting that would destroy the sheet contents on save.
+  const requestedData = parsed.data.data === undefined
+    ? null
+    : spreadsheetDataFromRaw((req.body as { data?: unknown } | undefined)?.data);
   if (parsed.data.data !== undefined && !requestedData) {
     res.status(400).json({ error: "Spreadsheet data must contain a valid workbook or legacy sheet." });
     return;
@@ -4207,7 +4237,7 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
       })
       .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .returning();
-    return { ok: true as const, spreadsheet: updated, conversation };
+    return { ok: true as const, spreadsheet: updated, conversation, data: nextData };
   });
 
   if (!result.ok) {
@@ -4215,7 +4245,12 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
     return;
   }
   pushRealtimeHint("interview_whiteboards");
-  res.json(UpdateSpreadsheetResponse.parse(spreadsheetResponse(result.spreadsheet, result.conversation)));
+  // See spreadsheetDataFromRaw: splice the stored workbook back into the
+  // response; UpdateSpreadsheetResponse.parse strips it.
+  res.json({
+    ...UpdateSpreadsheetResponse.parse(spreadsheetResponse(result.spreadsheet, result.conversation)),
+    data: result.data,
+  });
 });
 
 const CUSTOM_EMOJI_MAX_BYTES = 512 * 1024;
