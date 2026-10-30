@@ -83,6 +83,7 @@ import type {
   ChatMessageUpdateInput,
   ChatMessagesReadInput,
   ChatMessagesReadResult,
+  ChatNotificationEventPage,
   ChatPoll,
   ChatPollInput,
   ChatPollVoteInput,
@@ -149,6 +150,7 @@ import type {
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
   GetBroadcastCommandsParams,
+  GetChatNotificationEventsParams,
   GetDisplayStateParams,
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
@@ -6106,6 +6108,91 @@ export function useGetChatConversations<TData = Awaited<ReturnType<typeof getCha
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetChatConversationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetChatNotificationEventsUrl = (params?: GetChatNotificationEventsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/notifications?${stringifiedParams}` : `/api/queue/chat/notifications`
+}
+
+/**
+ * Returns bounded message-level events for the signed-in interviewer in their active team and accessible channels. Without a cursor, returns only the current watermark to avoid an initial-login backlog.
+ * @summary Read new chat messages after a notification cursor
+ */
+export const getChatNotificationEvents = async (params?: GetChatNotificationEventsParams, options?: Parameters<typeof customFetch>[1]): Promise<ChatNotificationEventPage> => {
+
+  return customFetch<ChatNotificationEventPage>(getGetChatNotificationEventsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatNotificationEventsQueryKey = (params?: GetChatNotificationEventsParams,) => {
+    return [
+    `/api/queue/chat/notifications`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetChatNotificationEventsQueryOptions = <TData = Awaited<ReturnType<typeof getChatNotificationEvents>>, TError = ErrorType<ErrorResponse>>(params?: GetChatNotificationEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatNotificationEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatNotificationEventsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatNotificationEvents>>> = ({ signal }) => getChatNotificationEvents(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatNotificationEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatNotificationEventsQueryResult = NonNullable<Awaited<ReturnType<typeof getChatNotificationEvents>>>
+export type GetChatNotificationEventsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read new chat messages after a notification cursor
+ */
+
+export function useGetChatNotificationEvents<TData = Awaited<ReturnType<typeof getChatNotificationEvents>>, TError = ErrorType<ErrorResponse>>(
+ params?: GetChatNotificationEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatNotificationEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatNotificationEventsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

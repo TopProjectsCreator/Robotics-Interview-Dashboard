@@ -1,183 +1,231 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetChatConversationsQueryKey, useGetChatConversations } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
+import { getChatNotificationEvents, type ChatNotificationEvent } from "@workspace/api-client-react";
+import {
+  chatNotificationDestination,
+  claimNotificationMessage,
+  isAuthoredByMe,
+  isCurrentChatConversation,
+  notificationEventBody,
+  notificationEventTitle,
+} from "./lib/chatNotificationLogic";
 
-const LAST_SEEN_KEY = "robotics-notify-last-seen";
 const POLL_MS = 8000;
+const ACTIVE_VIEW_TTL_MS = 12_000;
 
-function notifySupported(): boolean {
-  return typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted";
+type StoredActiveView = {
+  path: string;
+  peer: string | null;
+  channelId: string | null;
+  expiresAt: number;
+};
+
+function scopedKey(teamId: string, interviewerId: string, suffix: string): string {
+  return `robotics-chat-notify:${teamId}:${interviewerId}:${suffix}`;
 }
 
-function readSeen(): Record<string, string> {
+function readCursor(key: string): { initialized: boolean; cursor: string | undefined } {
   try {
-    const raw = window.localStorage.getItem(LAST_SEEN_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return { initialized: false, cursor: undefined };
+    const parsed = JSON.parse(raw) as { cursor?: unknown };
+    return { initialized: true, cursor: typeof parsed.cursor === "string" ? parsed.cursor : undefined };
+  } catch {
+    return { initialized: false, cursor: undefined };
+  }
+}
+
+function writeCursor(key: string, cursor: string | null): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ cursor }));
+  } catch {
+    // Polling still works for this tab; message identities remain in memory.
+  }
+}
+
+function readActiveViews(key: string): Record<string, StoredActiveView> {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as Record<string, StoredActiveView> : {};
   } catch {
     return {};
   }
 }
 
-function writeSeen(seen: Record<string, string>): void {
-  try {
-    window.localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(seen));
-  } catch {
-    // Private browsing etc.
-  }
-}
-
-function fire(title: string, body: string, tag: string): void {
-  if (!notifySupported()) return;
-  try {
-    const note = new Notification(title, { body, tag });
-    note.onclick = () => {
-      window.focus();
-      note.close();
-    };
-  } catch {
-    // Blocked or unsupported; the in-app unread markers still work.
-  }
+function notificationAvailable(): boolean {
+  return typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted";
 }
 
 /**
- * OS notifications for chat activity, independent of which page is open.
- *
- * The in-chat mention notifier only runs while the chat panel is mounted and
- * only for the conversation being viewed, so a DM arriving while you were on
- * Overview or Parts produced nothing at all. This watcher polls the same
- * conversation summary endpoint and notifies for:
- *   - a new direct message from someone else
- *   - a new team-channel message from someone else
- *   - a new message in an invite-only channel the account belongs to
- * "seen" watermarks live in localStorage, so switching tabs or pages never
- * re-notifies, and marking a DM read (red dot cleared) marks it seen.
+ * Polls a message-level cursor feed. One browser tab polls at a time where
+ * Web Locks are available; local message-ID claims provide an additional
+ * dedupe guard across reconnects and tabs.
  */
 export function useGlobalChatNotifications(options: {
   myLabel: string;
+  interviewerId: string;
+  teamId: string;
   viewingPeer: string | null;
-  viewingShared: boolean;
   viewingChannel: string | null;
   enabled: boolean;
 }): void {
-  const qc = useQueryClient();
-  const { myLabel, viewingPeer, viewingShared, viewingChannel, enabled } = options;
-  const seenRef = useRef<Record<string, string> | null>(null);
-  const primedRef = useRef(false);
-  const markSeen = useCallback((key: string, at: string) => {
-    const current = seenRef.current ?? readSeen();
-    const next = { ...current, [key]: at };
-    seenRef.current = next;
-    writeSeen(next);
-  }, []);
+  const queryClient = useQueryClient();
+  const [location, setLocation] = useLocation();
+  const { myLabel, interviewerId, teamId, viewingPeer, viewingChannel, enabled } = options;
+  const memoryScope = `${teamId}:${interviewerId}`;
+  const memorySeenRef = useRef({ scope: memoryScope, ids: new Set<string>() });
+  if (memorySeenRef.current.scope !== memoryScope) {
+    memorySeenRef.current = { scope: memoryScope, ids: new Set() };
+  }
+  const path = location.split(/[?#]/, 1)[0];
 
-  // Share watermarks with the DM red dots so opening a DM silences it.
   useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== "robotics-dm-last-seen" || !event.newValue) return;
+    if (!enabled || !interviewerId || !teamId) return;
+    let stopped = false;
+    let inFlight = false;
+    const cursorKey = scopedKey(teamId, interviewerId, "cursor");
+    const seenKey = scopedKey(teamId, interviewerId, "seen");
+    const activeViewsKey = scopedKey(teamId, interviewerId, "active-views");
+    const lockName = scopedKey(teamId, interviewerId, "poll-lock");
+    const tabKey = "robotics-chat-notify-tab-id";
+    let tabId = "";
+    try {
+      tabId = window.sessionStorage.getItem(tabKey) ?? "";
+      if (!tabId) {
+        tabId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        window.sessionStorage.setItem(tabKey, tabId);
+      }
+    } catch {
+      tabId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    const currentView = {
+      path,
+      peer: viewingPeer,
+      channelId: viewingChannel,
+    };
+    let localCursorInitialized = false;
+    let localCursor: string | undefined;
+    const refreshActiveView = () => {
       try {
-        const dm = JSON.parse(event.newValue) as Record<string, string>;
-        seenRef.current = { ...(seenRef.current ?? {}), ...dm };
+        const activeViews = readActiveViews(activeViewsKey);
+        for (const [id, view] of Object.entries(activeViews)) {
+          if (view.expiresAt <= Date.now()) delete activeViews[id];
+        }
+        if ((path === "/chat" || path === "/queue") && document.visibilityState !== "hidden") {
+          activeViews[tabId] = { ...currentView, expiresAt: Date.now() + ACTIVE_VIEW_TTL_MS };
+        } else {
+          delete activeViews[tabId];
+        }
+        window.localStorage.setItem(activeViewsKey, JSON.stringify(activeViews));
       } catch {
-        // ignore malformed value
+        // Active conversation suppression still applies in this tab.
       }
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    refreshActiveView();
+    const activeViewTimer = window.setInterval(refreshActiveView, 4000);
+    document.addEventListener("visibilitychange", refreshActiveView);
 
-  const conversations = useGetChatConversations({
-    query: {
-      queryKey: getGetChatConversationsQueryKey(),
-      refetchInterval: POLL_MS,
-      enabled: Boolean(enabled),
-      staleTime: 2000,
-    },
-  });
+    const shouldSuppress = (event: ChatNotificationEvent): boolean => {
+      if (document.visibilityState !== "hidden" && isCurrentChatConversation(event, currentView)) return true;
+      const activeViews = readActiveViews(activeViewsKey);
+      return Object.values(activeViews).some(view =>
+        view.expiresAt > Date.now() && isCurrentChatConversation(event, view),
+      );
+    };
 
-  useEffect(() => {
-    const data = conversations.data;
-    if (!data || !enabled) return;
-    if (seenRef.current === null) {
-      seenRef.current = readSeen();
-    }
-    const me = myLabel.trim().toLowerCase();
-    // Never trust the payload shape: a partial/empty response must not take
-    // the whole app down with it.
-    const items = Array.isArray(data.items) ? data.items : [];
-    const shared = data.shared ?? null;
-    const channelItems = Array.isArray(data.channels) ? data.channels : [];
-
-    if (!primedRef.current) {
-      // First poll after load: record watermarks without firing a backlog.
-      primedRef.current = true;
-      for (const item of items) markSeen(`dm:${item.peer.trim().toLowerCase()}`, item.lastMessageAt);
-      if (shared) markSeen("shared", shared.lastMessageAt);
-      for (const channel of channelItems) markSeen(`channel:${channel.channelId}`, channel.lastMessageAt);
-      return;
-    }
-
-    for (const item of items) {
-      const peer = item.peer.trim().toLowerCase();
-      if (!peer) continue;
-      const key = `dm:${peer}`;
-      const seenAt = seenRef.current?.[key];
-      if (item.lastMessageAuthor.trim().toLowerCase() === me) {
-        markSeen(key, item.lastMessageAt);
-        continue;
-      }
-      const viewingThisDm = (viewingPeer ?? "").trim().toLowerCase() === peer;
-      if (viewingThisDm) {
-        markSeen(key, item.lastMessageAt);
-        continue;
-      }
-      if (!seenAt || item.lastMessageAt > seenAt) {
-        markSeen(key, item.lastMessageAt);
-        if (document.visibilityState === "hidden" || !viewingShared) {
-          fire(`${item.lastMessageAuthor} · direct message`, item.lastMessage || "New direct message", key);
+    const processEvents = (events: ChatNotificationEvent[]) => {
+      for (const event of events) {
+        const seenIds = memorySeenRef.current.ids;
+        if (!event.id || seenIds.has(event.id)) continue;
+        seenIds.add(event.id);
+        if (seenIds.size > 2000) {
+          const oldest = seenIds.values().next().value;
+          if (oldest) seenIds.delete(oldest);
+        }
+        if (isAuthoredByMe(event, myLabel) || shouldSuppress(event)) continue;
+        if (!claimNotificationMessage(seenKey, event.id) || !notificationAvailable()) continue;
+        try {
+          const note = new Notification(notificationEventTitle(event), {
+            body: notificationEventBody(event),
+            tag: `chat-message-${event.id}`,
+          });
+          note.onclick = () => {
+            window.focus();
+            setLocation(chatNotificationDestination(event));
+            note.close();
+          };
+        } catch {
+          // Chat unread indicators remain available when desktop notifications fail.
         }
       }
-    }
+    };
 
-    if (shared) {
-      const seenAt = seenRef.current?.shared;
-      const fromOther = shared.lastMessageAuthor.trim().toLowerCase() !== me;
-      if (viewingShared) {
-        markSeen("shared", shared.lastMessageAt);
-      } else if (fromOther && (!seenAt || shared.lastMessageAt > seenAt)) {
-        markSeen("shared", shared.lastMessageAt);
-        if (document.visibilityState === "hidden" || !viewingShared) {
-          fire("New team chat message", `${shared.lastMessageAuthor}: ${shared.lastMessage}`.slice(0, 140), "shared");
+    const poll = async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
+      try {
+        const runFeed = async () => {
+          let stored = readCursor(cursorKey);
+          if (!stored.initialized && localCursorInitialized) {
+            stored = { initialized: true, cursor: localCursor };
+          }
+          let cursor = stored.cursor;
+          let pages = 0;
+          do {
+            if (stopped || pages >= 100) break;
+            const requestParams = {
+              ...(stored.initialized && cursor ? { cursor } : {}),
+              limit: 100,
+            };
+            const page = await queryClient.fetchQuery({
+              queryKey: ["chat-notification-events", teamId, interviewerId, cursor ?? "initial"],
+              queryFn: () => getChatNotificationEvents(requestParams),
+              staleTime: 0,
+            });
+            if (stopped) break;
+            processEvents(page.items);
+            // The initial request only establishes a baseline. Its response is
+            // a valid cursor even when the team has no messages yet.
+            writeCursor(cursorKey, page.nextCursor);
+            cursor = page.nextCursor ?? undefined;
+            stored = { initialized: true, cursor };
+            localCursorInitialized = true;
+            localCursor = cursor;
+            pages += 1;
+            if (!page.hasMore) break;
+          } while (true);
+        };
+
+        if ("locks" in navigator && navigator.locks) {
+          await navigator.locks.request(lockName, { ifAvailable: true }, async lock => {
+            if (lock) await runFeed();
+          });
+        } else {
+          await runFeed();
         }
+      } catch {
+        // Keep the existing cursor; a failed request will retry on the next poll.
+      } finally {
+        inFlight = false;
       }
-    }
+    };
 
-    for (const channel of channelItems) {
-      const key = `channel:${channel.channelId}`;
-      const seenAt = seenRef.current?.[key];
-      if (channel.lastMessageAuthor.trim().toLowerCase() === me) {
-        markSeen(key, channel.lastMessageAt);
-        continue;
+    void poll();
+    const timer = window.setInterval(() => void poll(), POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.clearInterval(activeViewTimer);
+      document.removeEventListener("visibilitychange", refreshActiveView);
+      try {
+        const activeViews = readActiveViews(activeViewsKey);
+        delete activeViews[tabId];
+        window.localStorage.setItem(activeViewsKey, JSON.stringify(activeViews));
+      } catch {
+        // No-op when browser storage is unavailable.
       }
-      const viewingThisChannel = (viewingChannel ?? "").trim() === channel.channelId.trim();
-      if (viewingThisChannel) {
-        markSeen(key, channel.lastMessageAt);
-        continue;
-      }
-      if (!seenAt || channel.lastMessageAt > seenAt) {
-        markSeen(key, channel.lastMessageAt);
-        if (document.visibilityState === "hidden" || !viewingShared) {
-          fire(`${channel.lastMessageAuthor} · ${channel.channelName}`, channel.lastMessage || "New channel message", key);
-        }
-      }
-    }
-  }, [conversations.data, enabled, markSeen, myLabel, viewingPeer, viewingShared, viewingChannel]);
-
-  // Keep the conversations cache warm for the chat panel's unread dots.
-  useEffect(() => {
-    if (!enabled) return;
-    const timer = window.setInterval(() => {
-      qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
-    }, 30000);
-    return () => window.clearInterval(timer);
-  }, [enabled, qc]);
+    };
+  }, [enabled, interviewerId, myLabel, path, queryClient, setLocation, teamId, viewingChannel, viewingPeer]);
 }

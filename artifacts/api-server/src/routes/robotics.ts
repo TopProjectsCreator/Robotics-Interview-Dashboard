@@ -51,6 +51,8 @@ import {
   MarkInterviewChatReadBody,
   MarkInterviewChatReadResponse,
   GetChatConversationsResponse,
+  GetChatNotificationEventsQueryParams,
+  GetChatNotificationEventsResponse,
   ListChatChannelsResponse,
   CreateChatChannelBody,
   CreateChatChannelResponse,
@@ -139,6 +141,7 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
+import { decodeChatNotificationCursor, encodeChatNotificationCursor } from "../lib/chatNotificationCursor";
 import { pushRealtimeHint } from "../lib/realtime";
 import { broadcastWhiteboardScene, mergeWhiteboardDataForSave } from "../lib/whiteboardCollaboration";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "../lib/boardOperations";
@@ -4890,6 +4893,122 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
   } catch (error) {
     req.log.error({ err: error }, "Direct conversation list failed");
     res.status(500).json({ error: "Unable to load your direct messages." });
+  }
+});
+
+router.get("/queue/chat/notifications", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = GetChatNotificationEventsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const cursorValue = parsed.data.cursor;
+  const cursor = cursorValue !== undefined ? decodeChatNotificationCursor(cursorValue) : null;
+  if (cursorValue !== undefined && !cursor) {
+    res.status(400).json({ error: "Invalid chat notification cursor." });
+    return;
+  }
+
+  try {
+    const teamId = await requestTeamId(req);
+    const accessibleIds = (await accessibleChatChannelIds(teamId, channelViewerFor(account))) ?? [];
+    const eventsCte = `
+      with eligible as (
+        select m.id, m.created_at, m.author, m.message, 'direct'::text as scope,
+               case
+                 when lower(split_part(m.conversation_peer, chr(31), 1)) = lower($1)
+                   then split_part(m.conversation_peer, chr(31), 2)
+                 else split_part(m.conversation_peer, chr(31), 1)
+               end as peer,
+               null::text as "channelId", null::text as "channelName"
+          from interview_chat_messages m
+         where m.conversation_scope = 'direct'
+           and (lower(split_part(m.conversation_peer, chr(31), 1)) = lower($1)
+             or lower(split_part(m.conversation_peer, chr(31), 2)) = lower($1))
+           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
+           and m.deleted_at is null
+        union all
+        select m.id, m.created_at, m.author, m.message, 'shared'::text as scope,
+               null::text as peer, null::text as "channelId", null::text as "channelName"
+          from interview_chat_messages m
+         where m.conversation_scope = 'shared' and m.conversation_peer is null
+           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
+           and m.deleted_at is null
+        union all
+        select m.id, m.created_at, m.author, m.message, 'channel'::text as scope,
+               null::text as peer, c.id as "channelId", c.name as "channelName"
+          from interview_chat_messages m
+          join chat_channels c on c.id = m.conversation_peer
+         where m.conversation_scope = 'channel'
+           and m.conversation_peer = any($3::text[])
+           and c.team_id = $2
+           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
+           and m.deleted_at is null
+      )`;
+    const parameters = [account.displayName, teamId, accessibleIds];
+
+    if (!cursor) {
+      const { rows } = await pool.query(
+        `${eventsCte}
+         select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt", id from eligible
+          order by created_at desc, id desc limit 1`,
+        parameters,
+      );
+      const newest = rows[0] as { createdAt: string; id: string } | undefined;
+      res.json(GetChatNotificationEventsResponse.parse({
+        items: [],
+        nextCursor: newest
+          ? encodeChatNotificationCursor(String(newest.createdAt), String(newest.id))
+          : encodeChatNotificationCursor("1970-01-01T00:00:00.000000Z", ""),
+        hasMore: false,
+      }));
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `${eventsCte}
+       select id, scope,
+              to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt",
+              author, left(message, 140) as message,
+              peer, "channelId", "channelName"
+         from eligible
+        where (created_at, id) > ($4::timestamptz, $5::text)
+        order by created_at asc, id asc
+        limit $6`,
+      [...parameters, cursor.createdAt, cursor.id, parsed.data.limit + 1],
+    );
+    const hasMore = rows.length > parsed.data.limit;
+    const batch = rows.slice(0, parsed.data.limit) as {
+      id: string;
+      scope: "direct" | "shared" | "channel";
+      createdAt: string;
+      author: string;
+      message: string;
+      peer: string | null;
+      channelId: string | null;
+      channelName: string | null;
+    }[];
+    const last = batch.at(-1);
+    res.json(GetChatNotificationEventsResponse.parse({
+      items: batch.map((item) => ({
+        ...item,
+        id: String(item.id),
+        createdAt: String(item.createdAt),
+        author: String(item.author),
+        message: String(item.message ?? ""),
+      })),
+      nextCursor: last ? encodeChatNotificationCursor(String(last.createdAt), String(last.id)) : parsed.data.cursor,
+      hasMore,
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Chat notification event feed failed");
+    res.status(500).json({ error: "Unable to load chat notifications." });
   }
 });
 

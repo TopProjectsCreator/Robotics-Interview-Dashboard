@@ -1809,6 +1809,39 @@ export interface ChatConversationList {
   channels: ChannelActivity[];
 }
 
+export type ChatNotificationEventScope = typeof ChatNotificationEventScope[keyof typeof ChatNotificationEventScope];
+
+
+export const ChatNotificationEventScope = {
+  direct: 'direct',
+  shared: 'shared',
+  channel: 'channel',
+} as const;
+
+export interface ChatNotificationEvent {
+  id: string;
+  scope: ChatNotificationEventScope;
+  createdAt: string;
+  author: string;
+  message: string;
+  /**
+     * Other interviewer for a direct message.
+     * @nullable
+     */
+  peer: string | null;
+  /** @nullable */
+  channelId: string | null;
+  /** @nullable */
+  channelName: string | null;
+}
+
+export interface ChatNotificationEventPage {
+  items: ChatNotificationEvent[];
+  /** @nullable */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface ChatChannelRef {
   id: string;
   name: string;
@@ -3657,6 +3690,19 @@ export const GetInterviewChatScope = {
   direct: 'direct',
   channel: 'channel',
 } as const;
+
+export type GetChatNotificationEventsParams = {
+/**
+ * Opaque cursor returned by the previous response.
+ * @maxLength 256
+ */
+cursor?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
 
 export type ListInterviewWhiteboardsParams = {
 scope?: ListInterviewWhiteboardsScope;

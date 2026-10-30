@@ -3212,11 +3212,11 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   const logout = useLogout();
   usePresenceHeartbeat(session.data?.authenticated === true, location);
   useRealtimeSync(session.data?.authenticated === true);
-  const shellPathForNotify = location.split(/[?#]/, 1)[0];
   useGlobalChatNotifications({
     myLabel: session.data?.label ?? "",
+    interviewerId: session.data?.interviewerId ?? "",
+    teamId: session.data?.teamId ?? "",
     viewingPeer: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer")?.trim() || null,
-    viewingShared: shellPathForNotify === "/chat" && !new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer"),
     viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
     enabled: session.data?.authenticated === true,
   });

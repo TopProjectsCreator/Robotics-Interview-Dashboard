@@ -1588,6 +1588,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatConversationList"
+  /queue/chat/notifications:
+    get:
+      operationId: getChatNotificationEvents
+      tags: [queue]
+      summary: Read new chat messages after a notification cursor
+      description: Returns bounded message-level events for the signed-in interviewer in their active team and accessible channels. Without a cursor, returns only the current watermark to avoid an initial-login backlog.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 256
+          description: Opaque cursor returned by the previous response.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A bounded, ordered batch of accessible chat messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatNotificationEventPage"
+        "400":
+          description: Invalid cursor or page size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /queue/chat/channels:
     get:
       operationId: listChatChannels
@@ -6853,6 +6894,40 @@ components:
           description: Invite-only channels the signed-in interviewer belongs to (all channels for admins), newest activity first.
           items:
             $ref: "#/components/schemas/ChannelActivity"
+    ChatNotificationEvent:
+      type: object
+      required: [id, scope, createdAt, author, message, peer, channelId, channelName]
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+          enum: [direct, shared, channel]
+        createdAt:
+          type: string
+        author:
+          type: string
+        message:
+          type: string
+        peer:
+          type: ["string", "null"]
+          description: Other interviewer for a direct message.
+        channelId:
+          type: ["string", "null"]
+        channelName:
+          type: ["string", "null"]
+    ChatNotificationEventPage:
+      type: object
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatNotificationEvent"
+        nextCursor:
+          type: ["string", "null"]
+        hasMore:
+          type: boolean
     ChannelActivity:
       type: object
       required: [channelId, channelName, channelEmoji, lastMessageAt, lastMessageAuthor, lastMessage, isUnread]

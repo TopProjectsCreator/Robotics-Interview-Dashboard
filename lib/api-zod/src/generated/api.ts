@@ -1860,6 +1860,38 @@ export const GetChatConversationsResponse = zod.object({
 
 
 /**
+ * Returns bounded message-level events for the signed-in interviewer in their active team and accessible channels. Without a cursor, returns only the current watermark to avoid an initial-login backlog.
+ * @summary Read new chat messages after a notification cursor
+ */
+export const getChatNotificationEventsQueryCursorMax = 256;
+
+export const getChatNotificationEventsQueryLimitDefault = 50;
+export const getChatNotificationEventsQueryLimitMax = 100;
+
+
+
+export const GetChatNotificationEventsQueryParams = zod.object({
+  "cursor": zod.coerce.string().max(getChatNotificationEventsQueryCursorMax).optional().describe('Opaque cursor returned by the previous response.'),
+  "limit": zod.coerce.number().int().min(1).max(getChatNotificationEventsQueryLimitMax).default(getChatNotificationEventsQueryLimitDefault)
+})
+
+export const GetChatNotificationEventsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "scope": zod.enum(['direct', 'shared', 'channel']),
+  "createdAt": zod.string(),
+  "author": zod.string(),
+  "message": zod.string(),
+  "peer": zod.string().nullable().describe('Other interviewer for a direct message.'),
+  "channelId": zod.string().nullable(),
+  "channelName": zod.string().nullable()
+})),
+  "nextCursor": zod.string().nullable(),
+  "hasMore": zod.boolean()
+})
+
+
+/**
  * Members see only their channels; admins (coordinators) see every team channel.
  * @summary List invite-only channels visible to the signed-in interviewer
  */
