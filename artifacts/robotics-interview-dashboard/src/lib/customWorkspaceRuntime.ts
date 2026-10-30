@@ -1,3 +1,5 @@
+import dashboardStylesheet from "../index.css?inline";
+
 export type WorkspaceSourceFile = { path: string; content: string };
 
 const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
@@ -103,8 +105,13 @@ function inlineSvgReferences(html: string, files: Map<string, string>): string {
     ));
 }
 
-export function sandboxDocument(html: string, darkMode: boolean): string {
-  const safeMeta = CSP + BRIDGE + THEME_TOKENS;
+export function sandboxDocument(
+  html: string,
+  darkMode: boolean,
+  stylesheet = dashboardStylesheet,
+): string {
+  const dashboardStyles = `<style data-dashboard-stylesheet>${stylesheet.replace(/<\/style/gi, "<\\/style")}</style>`;
+  const safeMeta = CSP + BRIDGE + dashboardStyles + THEME_TOKENS;
   const rootClass = darkMode ? "dark" : "";
   const themedHtml = /<html\b([^>]*)>/i.test(html)
     ? html.replace(/<html\b([^>]*)>/i, (_tag, attrs: string) => {

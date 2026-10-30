@@ -26,11 +26,14 @@ describe("custom workspace runtime", () => {
   });
 
   it("keeps the iframe isolated and injects the selected theme", () => {
-    const sandbox = sandboxDocument("<main>Preview</main>", true);
+    const sandbox = sandboxDocument("<main>Preview</main>", true, ".mono { font-family: monospace; }");
 
     expect(sandbox).toContain(`Content-Security-Policy`);
     expect(sandbox).toContain(`connect-src 'none'`);
     expect(sandbox).toContain(`window.workspaceAPI`);
+    expect(sandbox).toContain(`data-dashboard-stylesheet`);
+    expect(sandbox).toContain(`.mono`);
+    expect(sandbox).toContain(`--workspace-teal: #16869a`);
     expect(sandbox).toContain('<html class="dark">');
   });
 });
