@@ -3051,6 +3051,8 @@ export interface AssistantConfig {
   textModel: string;
   /** Vision model used for image input */
   visionModel: string;
+  /** Whether the team admin has locked model selection to the default */
+  locked: boolean;
 }
 
 export type AssistantModelThinkingLevelsItem = typeof AssistantModelThinkingLevelsItem[keyof typeof AssistantModelThinkingLevelsItem];
@@ -3067,10 +3069,65 @@ export interface AssistantModel {
   name?: string;
   /** Thinking levels supported by this model according to provider capability metadata; empty when unsupported. */
   thinkingLevels?: AssistantModelThinkingLevelsItem[];
+  inputModalities?: string[];
 }
 
 export interface AssistantModelList {
   items: AssistantModel[];
+  catalogItems: AssistantModel[];
+  /** Present when the saved policy needs an admin correction; items is empty until it is fixed. */
+  policyError?: string;
+}
+
+/**
+ * @nullable
+ */
+export type AssistantModelPolicyListMode = typeof AssistantModelPolicyListMode[keyof typeof AssistantModelPolicyListMode] | null;
+
+
+export const AssistantModelPolicyListMode = {
+  allow: 'allow',
+  block: 'block',
+} as const;
+
+export interface AssistantModelPolicy {
+  defaultModel: string;
+  locked: boolean;
+  /** @nullable */
+  listMode: AssistantModelPolicyListMode;
+  /** @maxItems 100 */
+  modelIds: string[];
+  availableModelIds: string[];
+  /** Present when the stored policy is invalid or references unavailable models. */
+  policyError?: string;
+}
+
+/**
+ * @nullable
+ */
+export type AssistantModelPolicyInputListMode = typeof AssistantModelPolicyInputListMode[keyof typeof AssistantModelPolicyInputListMode] | null;
+
+
+export const AssistantModelPolicyInputListMode = {
+  allow: 'allow',
+  block: 'block',
+} as const;
+
+export interface AssistantModelPolicyInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  defaultModel: string;
+  locked: boolean;
+  /** @nullable */
+  listMode: AssistantModelPolicyInputListMode;
+  /**
+     * @maxItems 100
+     * @items.minLength 1
+     * @items.maxLength 255
+     */
+  modelIds: string[];
 }
 
 export type AssistantHistoryItemsItem = {

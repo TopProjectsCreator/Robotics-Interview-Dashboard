@@ -11,4 +11,6 @@ export interface AssistantConfig {
   textModel: string;
   /** Vision model used for image input */
   visionModel: string;
+  /** Whether the team admin has locked model selection to the default */
+  locked: boolean;
 }

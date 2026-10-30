@@ -84,10 +84,22 @@ function createContinuationFixture(mode: ConnectionMode) {
       });
     }
     if (url.pathname === "/api/assistant/config") {
-      return jsonResponse({ textModel: "test-model", visionModel: "test-model" });
+      return jsonResponse({ textModel: "test-model", visionModel: "test-model", locked: false });
     }
     if (url.pathname === "/api/assistant/models") {
-      return jsonResponse({ items: [{ id: "test-model", name: "Test model" }] });
+      return jsonResponse({
+        items: [{ id: "test-model", name: "Test model" }],
+        catalogItems: [{ id: "test-model", name: "Test model" }],
+      });
+    }
+    if (url.pathname === "/api/assistant/model-policy") {
+      return jsonResponse({
+        defaultModel: "test-model",
+        locked: false,
+        listMode: null,
+        modelIds: [],
+        availableModelIds: ["test-model"],
+      });
     }
     if (url.pathname === "/api/onshape-mcp/status") {
       return jsonResponse({ connected: false });
@@ -116,7 +128,11 @@ function createContinuationFixture(mode: ConnectionMode) {
       return jsonResponse({ connected: true, endpointUrl: ENDPOINT });
     }
     if (url.pathname === "/api/assistant/custom-mcp/connection") {
-      return jsonResponse({ connected, endpointUrl: connected ? ENDPOINT : "" });
+      return jsonResponse({
+        connected,
+        endpointUrl: connected ? ENDPOINT : "",
+        connections: connected ? [{ id: "connection-1", endpointUrl: ENDPOINT }] : [],
+      });
     }
     if (url.pathname === "/api/assistant/ask/stream" && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown> & { question: string };
@@ -231,10 +247,22 @@ describe("assistant MCP connection prompt", () => {
         return jsonResponse({ items: savedMessages });
       }
       if (url.pathname === "/api/assistant/config") {
-        return jsonResponse({ textModel: "test-model", visionModel: "test-model" });
+        return jsonResponse({ textModel: "test-model", visionModel: "test-model", locked: false });
       }
       if (url.pathname === "/api/assistant/models") {
-        return jsonResponse({ items: [{ id: "test-model", name: "Test model" }] });
+        return jsonResponse({
+          items: [{ id: "test-model", name: "Test model" }],
+          catalogItems: [{ id: "test-model", name: "Test model" }],
+        });
+      }
+      if (url.pathname === "/api/assistant/model-policy") {
+        return jsonResponse({
+          defaultModel: "test-model",
+          locked: false,
+          listMode: null,
+          modelIds: [],
+          availableModelIds: ["test-model"],
+        });
       }
       if (url.pathname === "/api/onshape-mcp/status") {
         return jsonResponse({ connected: false });

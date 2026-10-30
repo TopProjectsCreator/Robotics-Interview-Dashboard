@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlarmClock, Bot, Settings, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -25,6 +25,16 @@ export type AssistantModelOption = {
   id: string;
   name?: string;
   thinkingLevels?: ("low" | "medium" | "high")[];
+  inputModalities?: string[];
+};
+
+export type AssistantModelPolicyView = {
+  defaultModel: string;
+  locked: boolean;
+  listMode: "allow" | "block" | null;
+  modelIds: string[];
+  availableModelIds: string[];
+  policyError?: string;
 };
 
 export type AssistantThinkingLevel = "auto" | "low" | "medium" | "high";
@@ -36,6 +46,15 @@ type AssistantModelPickerProps = {
   loading: boolean;
   error: boolean;
   onChange: (model: string) => void;
+  modelLocked?: boolean;
+  canManageAssistantPolicy?: boolean;
+  catalogModels?: AssistantModelOption[];
+  modelPolicy?: AssistantModelPolicyView;
+  modelPolicyLoading?: boolean;
+  modelPolicyError?: string;
+  modelPolicySaving?: boolean;
+  onSaveModelPolicy?: (policy: Omit<AssistantModelPolicyView, "availableModelIds">) => void;
+  onSettingsOpenChange?: (open: boolean) => void;
   showRecurringTasks?: boolean;
   canManageAssistantTools?: boolean;
   thinkingLevel?: AssistantThinkingLevel;
@@ -72,6 +91,15 @@ export function AssistantModelPicker({
   loading,
   error,
   onChange,
+  modelLocked = false,
+  canManageAssistantPolicy = false,
+  catalogModels = [],
+  modelPolicy,
+  modelPolicyLoading = false,
+  modelPolicyError = "",
+  modelPolicySaving = false,
+  onSaveModelPolicy,
+  onSettingsOpenChange,
   showRecurringTasks = false,
   canManageAssistantTools = true,
   thinkingLevel = "auto",
@@ -102,6 +130,28 @@ export function AssistantModelPicker({
   onDisconnectCustomMcp,
 }: AssistantModelPickerProps) {
   const options = models.length ? models : model ? [{ id: model }] : [];
+  const [policyDefault, setPolicyDefault] = useState("");
+  const [policyLocked, setPolicyLocked] = useState(false);
+  const [policyMode, setPolicyMode] = useState<"none" | "allow" | "block">("none");
+  const [policyIdsText, setPolicyIdsText] = useState("");
+  useEffect(() => {
+    if (!modelPolicy) return;
+    setPolicyDefault(modelPolicy.defaultModel);
+    setPolicyLocked(modelPolicy.locked);
+    setPolicyMode(modelPolicy.listMode ?? "none");
+    setPolicyIdsText(Array.isArray(modelPolicy.modelIds) ? modelPolicy.modelIds.join("\n") : "");
+  }, [modelPolicy]);
+  const policyIds = useMemo(
+    () => [...new Set(policyIdsText.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean))],
+    [policyIdsText],
+  );
+  const draftEffectiveModels = useMemo(() => catalogModels.filter((option) =>
+    policyMode === "allow"
+      ? policyIds.includes(option.id)
+      : policyMode === "block"
+        ? !policyIds.includes(option.id)
+        : true,
+  ), [catalogModels, policyIds, policyMode]);
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
@@ -156,7 +206,7 @@ export function AssistantModelPicker({
       <div className="assistant-model-picker-row">
         <Select
           value={options.some((option) => option.id === model) ? model : ""}
-          disabled={loading || models.length === 0}
+          disabled={loading || models.length === 0 || modelLocked}
           onValueChange={onChange}
         >
           <SelectTrigger
@@ -171,7 +221,7 @@ export function AssistantModelPicker({
             </span>
             <SelectValue
               className="assistant-model-current"
-              placeholder={loading ? "Loading…" : error ? "Unavailable" : "Choose a model"}
+              placeholder={loading ? "Loading…" : error ? "Unavailable" : modelLocked ? "Locked by admin" : "Choose a model"}
             />
           </SelectTrigger>
           <SelectContent
@@ -227,7 +277,10 @@ export function AssistantModelPicker({
             <AlarmClock size={17} aria-hidden="true" />
           </Link>
         )}
-        <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
+        <Popover open={toolsOpen} onOpenChange={(open) => {
+          setToolsOpen(open);
+          onSettingsOpenChange?.(open);
+        }}>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -276,6 +329,81 @@ export function AssistantModelPicker({
             {!canManageAssistantTools && (
               <p className="assistant-tools-subtitle">Only you can use these connections. Provider credentials are not shared with your team.</p>
             )}
+            {canManageAssistantPolicy && <section className="assistant-model-policy" aria-label="Team model policy" data-testid="assistant-model-policy">
+              <div className="assistant-model-policy-heading">
+                <div>
+                  <p className="assistant-onshape-setting-title">Team model policy</p>
+                  <p className="assistant-onshape-setting-status">Applies to assistant and workspace agents.</p>
+                </div>
+                {modelLocked && <span className="assistant-model-policy-lock">Locked</span>}
+              </div>
+              {modelPolicyLoading ? <p className="assistant-model-policy-note">Loading team policy…</p> : <>
+                <label className="assistant-model-policy-field">
+                  Default model
+                  <select
+                    aria-label="Team default model"
+                    value={policyDefault}
+                    onChange={(event) => setPolicyDefault(event.target.value)}
+                    disabled={!catalogModels.length}
+                    data-testid="assistant-policy-default"
+                  >
+                    {catalogModels.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name || option.id}{option.inputModalities?.includes("image") ? " · vision" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="assistant-model-policy-toggle">
+                  <Checkbox checked={policyLocked} onCheckedChange={(checked) => setPolicyLocked(checked === true)} />
+                  <span>Lock model choice to this default</span>
+                </label>
+                <label className="assistant-model-policy-field">
+                  Model restrictions
+                  <select
+                    aria-label="Model restriction mode"
+                    value={policyMode}
+                    onChange={(event) => setPolicyMode(event.target.value as "none" | "allow" | "block")}
+                    data-testid="assistant-policy-list-mode"
+                  >
+                    <option value="none">No list restriction</option>
+                    <option value="allow">Allow only listed models</option>
+                    <option value="block">Block listed models</option>
+                  </select>
+                </label>
+                {policyMode !== "none" && <label className="assistant-model-policy-field">
+                  Exact model IDs, one per line
+                  <textarea
+                    aria-label="Restricted model IDs"
+                    value={policyIdsText}
+                    onChange={(event) => setPolicyIdsText(event.target.value)}
+                    rows={3}
+                    maxLength={25_599}
+                    placeholder="provider/model-id"
+                    data-testid="assistant-policy-model-ids"
+                  />
+                </label>}
+                <p className="assistant-model-policy-note">
+                  Effective choices: {draftEffectiveModels.length}
+                  {draftEffectiveModels.length > 0 && ` · ${draftEffectiveModels.slice(0, 4).map((option) => option.name || option.id).join(", ")}${draftEffectiveModels.length > 4 ? ", …" : ""}`}
+                </p>
+                {modelPolicyError && <p role="alert" className="assistant-model-policy-error">{modelPolicyError}</p>}
+                <button
+                  type="button"
+                  className="assistant-onshape-setting-action"
+                  onClick={() => onSaveModelPolicy?.({
+                    defaultModel: policyDefault,
+                    locked: policyLocked,
+                    listMode: policyMode === "none" ? null : policyMode,
+                    modelIds: policyMode === "none" ? [] : policyIds,
+                  })}
+                  disabled={modelPolicySaving || !policyDefault || (policyMode !== "none" && policyIds.length === 0)}
+                  data-testid="assistant-policy-save"
+                >
+                  {modelPolicySaving ? "Saving…" : "Save team policy"}
+                </button>
+              </>}
+            </section>}
             {(onConnectOnshape || onDisconnectOnshape) && (
               <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">
                 <div className="assistant-onshape-setting-copy">
@@ -496,6 +624,7 @@ export function AssistantModelPicker({
           </PopoverContent>
         </Popover>
       </div>
+      {modelLocked && <span className="assistant-model-picker-error" role="status">Model choice is locked by your team admin.</span>}
       {error && (
         <span className="assistant-model-picker-error" role="status">
           Model list unavailable

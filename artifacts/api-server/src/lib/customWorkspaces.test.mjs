@@ -574,6 +574,11 @@ async function createHarness(t) {
   };
 
   mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool } });
+  mock.module("./assistantModel", {
+    namedExports: {
+      getAssistantModel: async () => "minimax/minimax-m3.1-flash:free",
+    },
+  });
   mock.module("@workspace/integrations-openai-ai-server", {
     namedExports: {
       openai: {

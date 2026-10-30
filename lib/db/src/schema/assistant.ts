@@ -78,6 +78,15 @@ export const assistantSkillsTable = pgTable("assistant_skills", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantModelPoliciesTable = pgTable("assistant_model_policies", {
+  teamId: text("team_id").primaryKey(),
+  defaultModel: text("default_model").notNull(),
+  locked: boolean("locked").notNull().default(false),
+  listMode: text("list_mode"),
+  modelIds: jsonb("model_ids").$type<string[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

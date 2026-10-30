@@ -9,4 +9,7 @@ import type { AssistantModel } from './assistantModel';
 
 export interface AssistantModelList {
   items: AssistantModel[];
+  catalogItems: AssistantModel[];
+  /** Present when the saved policy needs an admin correction; items is empty until it is fixed. */
+  policyError?: string;
 }

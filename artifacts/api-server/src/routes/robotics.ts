@@ -77,6 +77,9 @@ import {
   GenerateAssistantImageBody,
   GenerateAssistantImageResponse,
   ListAssistantModelsResponse,
+  GetAssistantModelPolicyResponse,
+  UpdateAssistantModelPolicyBody,
+  UpdateAssistantModelPolicyResponse,
   GetAssistantConversationMessagesParams,
   GetAssistantConversationMessagesResponse,
   CreateAssistantConversationBody,
@@ -251,10 +254,12 @@ import {
 import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
-  configuredAssistantModel,
+  AssistantModelPolicyError,
   getAssistantModel,
-  listAssistantProviderModels,
-  resolveAssistantModel,
+  getAssistantModelPolicy,
+  getAssistantModelPolicyWithCatalog,
+  resolveTeamAssistantModel,
+  saveAssistantModelPolicy,
 } from "../lib/assistantModel";
 import {
   assistantSkillInstructions,
@@ -990,10 +995,6 @@ function pollinationsImage(prompt: string, size?: string): { url: string; seed: 
   return { url, seed };
 }
 
-// Text model for the assistant (Kilo gateway, verified live with tool
-// calling). Override with AI_ASSISTANT_MODEL. Vision requests always go to
-// VISION_MODEL below, never here.
-const TEXT_MODEL = configuredAssistantModel();
 // Vision-capable free model (verified live: correctly describes generated
 // images). Override with AI_ASSISTANT_VISION_MODEL. Used only for the
 // follow-up turn after generate_image so the assistant SEES what it made.
@@ -1660,6 +1661,7 @@ function buildAssistantBaseMessages(options: {
   partsMode: boolean;
   hasChatContext: boolean;
   modelIds: string[];
+  modelLocked?: boolean;
   disabledNotice: string;
   onshapeTools: OnshapeMcpTool[];
   customMcpTools: CustomMcpTool[];
@@ -1675,7 +1677,7 @@ function buildAssistantBaseMessages(options: {
       role: "system",
       content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_VISUAL_ASSET_INSTRUCTIONS}\n\n${ASSISTANT_WORKSPACE_AGENT_CAPABILITIES}\n\nFor each critique round, use the separate verify_custom_workspace_fixes agent after applying required fixes. It must independently inspect the saved files. Unresolved findings block the next round; retry fixes and verification until all required findings pass. Do not report completion until round 5 is verified.`,
     });
-    systemMessages.push({ role: "system", content: assistantModelSelectionInstructions(options.modelIds) });
+    systemMessages.push({ role: "system", content: assistantModelSelectionInstructions(options.modelIds, options.modelLocked) });
     if (options.hasChatContext) {
       systemMessages.push({ role: "system", content: CHAT_MINI_TOOL_INSTRUCTIONS });
     }
@@ -3272,7 +3274,7 @@ router.post("/applicants/search/ai", requireCoordinator, async (req, res): Promi
 
   try {
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(await requestTeamId(req)),
       temperature: 0,
       max_tokens: 240,
       messages: [
@@ -3477,7 +3479,7 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
       return `Q${index + 1} [${type}]: ${question}\nA${index + 1}: ${answer}`;
     }).join("\n")
     : "(no transcript recorded)";
-  const model = await getAssistantModel();
+  const model = await getAssistantModel(teamId);
   const evaluationMessages = [
     {
       role: "system" as const,
@@ -5990,6 +5992,7 @@ router.post("/queue/chat/scheduled/interpret", requireAdmin, async (req, res): P
     res.status(400).json({ error: "Describe when the message should be sent." });
     return;
   }
+  const teamId = await requestTeamId(req);
   let localNow: string;
   try {
     localNow = new Intl.DateTimeFormat("en-US", {
@@ -6008,7 +6011,7 @@ router.post("/queue/chat/scheduled/interpret", requireAdmin, async (req, res): P
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(teamId),
       temperature: 0,
       messages: [
         {
@@ -6717,23 +6720,21 @@ async function generateAssistantAnswer(options: {
     .orderBy(asc(assistantMessagesTable.createdAt));
   try {
   const requestedModel = options.model?.trim();
-  let model = requestedModel || TEXT_MODEL;
+  let model = "";
   let freeModelIds: string[] = [];
   let assistantModels: AssistantProviderModel[] = [];
-  let modelCatalogAvailable = true;
+  let modelLocked = false;
   try {
-    assistantModels = await listFreeAssistantModels();
+    const policy = await getAssistantModelPolicy(teamId);
+    modelLocked = policy.locked;
+    assistantModels = await listFreeAssistantModels(teamId);
     freeModelIds = assistantModels.map((item) => item.id);
-    if (!requestedModel) model = resolveAssistantModel(TEXT_MODEL, assistantModels);
-  } catch (catalogError) {
-    modelCatalogAvailable = false;
-    log.warn({ err: catalogError }, "Assistant model catalog unavailable");
-  }
-  if (requestedModel && !modelCatalogAvailable) {
-    throw new AssistantAnswerError(503, "The selected model could not be verified right now. Try again.");
-  }
-  if (requestedModel && !freeModelIds.includes(requestedModel)) {
-    throw new AssistantAnswerError(400, "The selected model is not available.");
+    model = await getAssistantModel(teamId, requestedModel);
+    if (modelLocked) freeModelIds = [];
+  } catch (modelError) {
+    const status = modelError instanceof AssistantModelPolicyError ? modelError.status : 503;
+    const message = modelError instanceof Error ? modelError.message : "The selected model could not be verified right now.";
+    throw new AssistantAnswerError(status, message);
   }
   const initialModelInfo = assistantModels.find((item) => item.id === model);
   if (options.thinkingLevel && !initialModelInfo?.thinkingLevels.includes(options.thinkingLevel)) {
@@ -6760,6 +6761,7 @@ async function generateAssistantAnswer(options: {
     partsMode: false,
     hasChatContext: options.chatContext !== undefined,
     modelIds: freeModelIds,
+    modelLocked,
     disabledNotice,
     onshapeTools,
     customMcpTools,
@@ -6896,7 +6898,7 @@ async function generateAssistantAnswer(options: {
       // understanding through python_exec.
       try {
         const seen = await openai.chat.completions.create({
-          model: VISION_MODEL,
+          model: await resolveTeamAssistantModel(teamId, VISION_MODEL, "image"),
           temperature: 0.2,
           max_tokens: 1500,
           messages: [...thread, visionUserMessage(seenImages)],
@@ -8004,24 +8006,22 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     previousMessages = previousMessages.slice(0, -1);
   }
   const requestedModel = parsed.data.model?.trim();
-  let model = requestedModel || TEXT_MODEL;
+  let model = "";
   let freeModelIds: string[] = [];
   let assistantModels: AssistantProviderModel[] = [];
-  let modelCatalogAvailable = true;
+  let modelLocked = false;
   try {
-    assistantModels = await listFreeAssistantModels();
+    const policy = await getAssistantModelPolicy(teamId);
+    modelLocked = policy.locked;
+    assistantModels = await listFreeAssistantModels(teamId);
     freeModelIds = assistantModels.map((item) => item.id);
-    if (!requestedModel) model = resolveAssistantModel(TEXT_MODEL, assistantModels);
-  } catch (catalogError) {
-    modelCatalogAvailable = false;
-    req.log.warn({ err: catalogError }, "Assistant model catalog unavailable");
-  }
-  if (requestedModel && !modelCatalogAvailable) {
-    res.status(503).json({ error: "The selected model could not be verified right now. Try again." });
-    return;
-  }
-  if (requestedModel && !freeModelIds.includes(requestedModel)) {
-    res.status(400).json({ error: "The selected model is not available." });
+    model = await getAssistantModel(teamId, requestedModel);
+    if (modelLocked) freeModelIds = [];
+  } catch (modelError) {
+    const status = modelError instanceof AssistantModelPolicyError ? modelError.status : 503;
+    res.status(status).json({
+      error: modelError instanceof Error ? modelError.message : "The selected model could not be verified right now.",
+    });
     return;
   }
   const initialModelInfo = assistantModels.find((item) => item.id === model);
@@ -8050,6 +8050,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     partsMode,
     hasChatContext: false,
     modelIds: freeModelIds,
+    modelLocked,
     disabledNotice,
     onshapeTools,
     customMcpTools,
@@ -8413,7 +8414,11 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         // The vision model looks at what was just generated, so the answer
         // describes the real image instead of the prompt. That ends the turn.
         try {
-          const seen = await streamPass([...thread, visionUserMessage(seenImages)], false, { model: VISION_MODEL, maxTokens: 1500 });
+          const seen = await streamPass(
+            [...thread, visionUserMessage(seenImages)],
+            false,
+            { model: await resolveTeamAssistantModel(teamId, VISION_MODEL, "image"), maxTokens: 1500 },
+          );
           if (!seen.text.trim()) throw new Error("empty vision answer");
           answer = appendAnswer(answer, seen.text);
           if (executed.imageMarkdown) {
@@ -8863,12 +8868,9 @@ function assistantThinkingRequest(
     : { reasoning_effort: level };
 }
 
-async function listFreeAssistantModels(): Promise<AssistantProviderModel[]> {
-  const catalog = await listAssistantProviderModels();
-  const configuredModel = await getAssistantModel();
-  // Trust explicit provider metadata; free model ids do not all use :free.
-  return catalog
-    .filter((model) => model.isFree === true || model.id === configuredModel)
+async function listFreeAssistantModels(teamId = DEFAULT_TEAM_ID): Promise<AssistantProviderModel[]> {
+  const { effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
+  return effectiveModels
     .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
     .map((model) => {
       const thinkingParameter = assistantThinkingParameter(model.supported_parameters ?? model.supportedParameters);
@@ -8886,29 +8888,101 @@ async function listFreeAssistantModels(): Promise<AssistantProviderModel[]> {
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-async function listFreeAssistantModelIds(): Promise<string[]> {
-  return (await listFreeAssistantModels()).map((model) => model.id);
-}
-
-function assistantModelSelectionInstructions(modelIds: string[]): string {
+function assistantModelSelectionInstructions(modelIds: string[], locked = false): string {
+  if (locked) return "The team admin has locked model selection. Do not call set_assistant_model or suggest changing models.";
   if (modelIds.length === 0) {
-    return "Only change models when the admin explicitly asks. The model catalog is currently unavailable, so do not call set_assistant_model.";
+    return "No alternate models are permitted by the team policy. Do not call set_assistant_model.";
   }
   return `Only change models when the admin explicitly asks to switch or choose one. Then call set_assistant_model with an exact id from this list, and use that model for the rest of this answer. The browser will remember the selected model for later requests. Do not mention model pricing or tiers unless asked. Available model ids: ${modelIds.join(", ")}`;
 }
 
 router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const items = (await listFreeAssistantModels()).map(({ id, name, thinkingLevels }) => ({ id, name, thinkingLevels }));
-    res.json(ListAssistantModelsResponse.parse({ items }));
+    const teamId = await requestTeamId(req);
+    const { catalog, effectiveModels, policyError } = await getAssistantModelPolicyWithCatalog(teamId, true);
+    const toResponse = (models: typeof catalog) => models.map((model) => {
+      const thinkingParameter = assistantThinkingParameter(model.supported_parameters ?? model.supportedParameters);
+      const advertisedLevels = model.reasoning_levels ?? model.reasoningLevels ?? model.reasoning_efforts ?? model.reasoningEfforts;
+      const thinkingLevels = Array.isArray(advertisedLevels)
+        ? ASSISTANT_THINKING_LEVELS.filter((level) => advertisedLevels.includes(level))
+        : thinkingParameter ? [...ASSISTANT_THINKING_LEVELS] : [];
+      const inputModalities = Array.isArray(model.input_modalities)
+        ? model.input_modalities.filter((value): value is string => typeof value === "string")
+        : model.architecture && typeof model.architecture === "object" &&
+            Array.isArray((model.architecture as Record<string, unknown>).input_modalities)
+          ? ((model.architecture as Record<string, unknown>).input_modalities as unknown[]).filter((value): value is string => typeof value === "string")
+          : [];
+      return {
+        id: model.id,
+        ...(typeof model.name === "string" ? { name: model.name } : {}),
+        thinkingLevels: thinkingParameter ? thinkingLevels : [],
+        inputModalities,
+      };
+    });
+    res.json(ListAssistantModelsResponse.parse({
+      items: toResponse(effectiveModels),
+      catalogItems: toResponse(catalog),
+      ...(policyError ? { policyError } : {}),
+    }));
   } catch (error) {
     req.log.error({ err: error }, "Could not load models from the configured AI provider");
-    res.status(502).json({ error: "The model list is unavailable right now." });
+    res.status(error instanceof AssistantModelPolicyError ? error.status : 502).json({
+      error: error instanceof Error ? error.message : "The model list is unavailable right now.",
+    });
   }
 });
 
-router.get("/assistant/config", requireAdmin, async (_req, res): Promise<void> => {
-  res.json(GetAssistantConfigResponse.parse({ textModel: await getAssistantModel(), visionModel: VISION_MODEL }));
+router.get("/assistant/model-policy", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const { policy, effectiveModels, policyError } = await getAssistantModelPolicyWithCatalog(await requestTeamId(req), true);
+    res.json(GetAssistantModelPolicyResponse.parse({
+      ...policy,
+      availableModelIds: effectiveModels.map((model) => model.id),
+      ...(policyError ? { policyError } : {}),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load team assistant model policy");
+    res.status(error instanceof AssistantModelPolicyError ? error.status : 502).json({
+      error: error instanceof Error ? error.message : "The model policy is unavailable right now.",
+    });
+  }
+});
+
+router.put("/assistant/model-policy", requireCoordinator, async (req, res): Promise<void> => {
+  const body = UpdateAssistantModelPolicyBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const policy = await saveAssistantModelPolicy(teamId, body.data);
+    const { effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
+    res.json(UpdateAssistantModelPolicyResponse.parse({
+      ...policy,
+      availableModelIds: effectiveModels.map((model) => model.id),
+    }));
+  } catch (error) {
+    req.log.warn({ err: error }, "Team assistant model policy was not saved");
+    res.status(error instanceof AssistantModelPolicyError ? error.status : 503).json({
+      error: error instanceof Error ? error.message : "The model policy could not be saved.",
+    });
+  }
+});
+
+router.get("/assistant/config", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const policy = await getAssistantModelPolicy(await requestTeamId(req));
+    res.json(GetAssistantConfigResponse.parse({
+      textModel: policy.defaultModel,
+      visionModel: VISION_MODEL,
+      locked: policy.locked,
+    }));
+  } catch (error) {
+    res.status(error instanceof AssistantModelPolicyError ? error.status : 503).json({
+      error: error instanceof Error ? error.message : "The assistant model configuration is unavailable.",
+    });
+  }
 });
 
 router.get("/assistant/skills", requireCoordinator, async (req, res): Promise<void> => {

@@ -170,11 +170,23 @@ before(async () => {
   });
   mock.module("../lib/assistantModel", {
     namedExports: {
+      AssistantModelPolicyError: class AssistantModelPolicyError extends Error {
+        constructor(message, status) { super(message); this.status = status; }
+      },
       listAssistantProviderModels: async () => {
         calls.catalog.push(true);
         if (catalogError) throw catalogError;
         return modelCatalog;
       },
+      getAssistantModelPolicyWithCatalog: async () => {
+        calls.catalog.push(true);
+        if (catalogError) throw catalogError;
+        return {
+          policy: { locked: false },
+          effectiveModels: modelCatalog,
+        };
+      },
+      resolveTeamAssistantModel: async (_teamId, requestedModel) => requestedModel,
     },
   });
   mock.module("../middlewares/adminAuth", {
@@ -186,6 +198,7 @@ before(async () => {
         }
         next();
       },
+      requestTeamId: async () => "test-team",
     },
   });
 

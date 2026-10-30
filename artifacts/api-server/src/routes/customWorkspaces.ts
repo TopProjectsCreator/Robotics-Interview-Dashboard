@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { pool } from "@workspace/db";
+import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import type { NextFunction } from "express";
 import {
   authenticatedInterviewerId,
@@ -234,8 +234,9 @@ async function inspectWorkspaceScreenshot(
   requirements: string,
   theme: WorkspaceTheme,
   screenshotBase64: string,
+  teamId = DEFAULT_TEAM_ID,
 ): Promise<{ passed: boolean; issues: string[]; repair: string }> {
-  const model = await getAssistantModel();
+  const model = await getAssistantModel(teamId);
   const completion = await retryAiCall(() => openai.chat.completions.create({
     model,
     max_completion_tokens: 8192,
@@ -268,8 +269,9 @@ async function repairWorkspaceHtml(
   html: string,
   repair: string,
   sourceFiles: WorkspaceSourceFile[],
+  teamId = DEFAULT_TEAM_ID,
 ): Promise<{ title: string; description: string; html: string; sourceFiles: WorkspaceSourceFile[] }> {
-  const model = await getAssistantModel();
+  const model = await getAssistantModel(teamId);
   const completion = await retryAiCall(() => openai.chat.completions.create({
     model,
     max_completion_tokens: 8192,
@@ -370,7 +372,7 @@ async function createAutomaticWorkspaceIcon(workspaceId: string, teamId: string)
   const workspace = result.rows[0];
   if (!workspace) return;
 
-  const model = await getAssistantModel();
+  const model = await getAssistantModel(teamId);
   const completion = await retryAiCall(() => openai.chat.completions.create({
     model,
     temperature: 0.65,
@@ -710,7 +712,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(await requestTeamId(req)),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -864,7 +866,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(teamId),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -1258,7 +1260,7 @@ router.post("/custom-workspaces/:id/llm", requireAdmin, async (req, res): Promis
   }
   try {
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(await requestTeamId(req)),
       max_tokens: 800,
       messages: [{ role: "user", content: question }],
     });

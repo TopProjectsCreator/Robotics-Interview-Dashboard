@@ -36,6 +36,63 @@ describe("AssistantModelPicker", () => {
       .toHaveAttribute("href", "/assistant/scheduled-tasks");
   });
 
+  it("lets coordinators edit and save the team model policy", async () => {
+    const onSaveModelPolicy = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="text-model"
+        models={[{ id: "text-model", name: "Text model" }]}
+        catalogModels={[
+          { id: "text-model", name: "Text model" },
+          { id: "vision-model", name: "Vision model", inputModalities: ["text", "image"] },
+        ]}
+        modelPolicy={{
+          defaultModel: "text-model",
+          locked: false,
+          listMode: null,
+          modelIds: [],
+          availableModelIds: ["text-model", "vision-model"],
+        }}
+        loading={false}
+        error={false}
+        canManageAssistantPolicy
+        onChange={vi.fn()}
+        onSaveModelPolicy={onSaveModelPolicy}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    fireEvent.change(await screen.findByLabelText("Team default model"), { target: { value: "vision-model" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lock model choice to this default" }));
+    fireEvent.change(screen.getByLabelText("Model restriction mode"), { target: { value: "allow" } });
+    fireEvent.change(screen.getByLabelText("Restricted model IDs"), { target: { value: "vision-model" } });
+    fireEvent.click(screen.getByTestId("assistant-policy-save"));
+
+    expect(onSaveModelPolicy).toHaveBeenCalledWith({
+      defaultModel: "vision-model",
+      locked: true,
+      listMode: "allow",
+      modelIds: ["vision-model"],
+    });
+  });
+
+  it("does not expose admin policy controls to members and disables locked model selection", () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="text-model"
+        models={[{ id: "text-model", name: "Text model" }]}
+        loading={false}
+        error={false}
+        modelLocked
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Assistant model" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(screen.queryByTestId("assistant-model-policy")).not.toBeInTheDocument();
+  });
+
   it("shows the provider catalog name for the selected MiniMax default", () => {
     renderWithQuery(
       <AssistantModelPicker

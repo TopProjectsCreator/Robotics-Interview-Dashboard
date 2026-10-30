@@ -1270,7 +1270,7 @@ export async function runAssistantWorkspaceTool(
         .map((file) => ({ path: file.path, content: file.content.slice(0, 30_000) })),
     }).slice(0, 100_000);
     const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(),
+      model: await getAssistantModel(context.teamId),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -1368,7 +1368,7 @@ export async function runAssistantWorkspaceTool(
     let checks: { rank: number; fixed: boolean; reason: string }[] = [];
     if (required.length) {
       const completion = await openai.chat.completions.create({
-        model: await getAssistantModel(),
+        model: await getAssistantModel(context.teamId),
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
@@ -1462,7 +1462,7 @@ export async function runAssistantWorkspaceTool(
     const subagentToolNames = new Set(subagentTools.map((candidate) => candidate.function.name));
     for (let turn = 0; turn < 12; turn += 1) {
       const completion = await openai.chat.completions.create({
-        model: await getAssistantModel(),
+        model: await getAssistantModel(context.teamId),
         temperature: 0.2,
         messages,
         tools: subagentTools,

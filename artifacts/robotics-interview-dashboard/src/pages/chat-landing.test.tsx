@@ -495,6 +495,7 @@ describe("public chat discovery", () => {
         if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
         if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
         if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
+        if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
         return jsonResponse({});
       });
 

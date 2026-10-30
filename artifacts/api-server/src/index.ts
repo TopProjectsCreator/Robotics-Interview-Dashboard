@@ -105,6 +105,7 @@ async function ensureSchema(): Promise<void> {
     "assistant_prompt_runs",
     "assistant_builder_runs",
     "assistant_skills",
+    "assistant_model_policies",
     "audit_logs",
     "broadcast_acks",
     "broadcasts",
@@ -335,6 +336,14 @@ async function ensureSchema(): Promise<void> {
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
     `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
     `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "assistant_model_policies" (
+       "team_id" text primary key,
+       "default_model" text not null,
+       "locked" boolean not null default false,
+       "list_mode" text check ("list_mode" is null or "list_mode" in ('allow', 'block')),
+       "model_ids" jsonb not null default '[]'::jsonb check (jsonb_typeof("model_ids") = 'array' and jsonb_array_length("model_ids") <= 100),
+       "updated_at" timestamptz not null default now()
+     )`,
     // Invite-only chat channels. Admins (coordinators) create, rename, and
     // manage them; membership gates every read and write. Messages reuse
     // interview_chat_messages with conversation_scope='channel'.

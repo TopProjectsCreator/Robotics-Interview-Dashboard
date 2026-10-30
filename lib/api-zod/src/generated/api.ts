@@ -3488,8 +3488,66 @@ export const ListAssistantModelsResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string().optional(),
-  "thinkingLevels": zod.array(zod.enum(['low', 'medium', 'high'])).optional().describe('Thinking levels supported by this model according to provider capability metadata; empty when unsupported.')
-}))
+  "thinkingLevels": zod.array(zod.enum(['low', 'medium', 'high'])).optional().describe('Thinking levels supported by this model according to provider capability metadata; empty when unsupported.'),
+  "inputModalities": zod.array(zod.string()).optional()
+})),
+  "catalogItems": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().optional(),
+  "thinkingLevels": zod.array(zod.enum(['low', 'medium', 'high'])).optional().describe('Thinking levels supported by this model according to provider capability metadata; empty when unsupported.'),
+  "inputModalities": zod.array(zod.string()).optional()
+})),
+  "policyError": zod.string().optional().describe('Present when the saved policy needs an admin correction; items is empty until it is fixed.')
+})
+
+
+/**
+ * @summary Get the signed-in team's assistant model policy
+ */
+export const getAssistantModelPolicyResponseModelIdsMax = 100;
+
+
+
+export const GetAssistantModelPolicyResponse = zod.object({
+  "defaultModel": zod.string(),
+  "locked": zod.boolean(),
+  "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
+  "modelIds": zod.array(zod.string()).max(getAssistantModelPolicyResponseModelIdsMax),
+  "availableModelIds": zod.array(zod.string()),
+  "policyError": zod.string().optional().describe('Present when the stored policy is invalid or references unavailable models.')
+})
+
+
+/**
+ * Coordinator-only. Model IDs must match the current provider catalog.
+ * @summary Update the signed-in team's assistant model policy
+ */
+export const updateAssistantModelPolicyBodyDefaultModelMax = 255;
+
+export const updateAssistantModelPolicyBodyModelIdsItemMax = 255;
+
+export const updateAssistantModelPolicyBodyModelIdsMax = 100;
+
+
+
+export const UpdateAssistantModelPolicyBody = zod.object({
+  "defaultModel": zod.string().min(1).max(updateAssistantModelPolicyBodyDefaultModelMax),
+  "locked": zod.boolean(),
+  "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
+  "modelIds": zod.array(zod.string().min(1).max(updateAssistantModelPolicyBodyModelIdsItemMax)).max(updateAssistantModelPolicyBodyModelIdsMax)
+})
+
+export const updateAssistantModelPolicyResponseModelIdsMax = 100;
+
+
+
+export const UpdateAssistantModelPolicyResponse = zod.object({
+  "defaultModel": zod.string(),
+  "locked": zod.boolean(),
+  "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
+  "modelIds": zod.array(zod.string()).max(updateAssistantModelPolicyResponseModelIdsMax),
+  "availableModelIds": zod.array(zod.string()),
+  "policyError": zod.string().optional().describe('Present when the stored policy is invalid or references unavailable models.')
 })
 
 
@@ -3650,7 +3708,8 @@ export const ClearAssistantHistoryResponse = zod.void()
  */
 export const GetAssistantConfigResponse = zod.object({
   "textModel": zod.string().describe('Chat model answering assistant questions'),
-  "visionModel": zod.string().describe('Vision model used for image input')
+  "visionModel": zod.string().describe('Vision model used for image input'),
+  "locked": zod.boolean().describe('Whether the team admin has locked model selection to the default')
 })
 
 

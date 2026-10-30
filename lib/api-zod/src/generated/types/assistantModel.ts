@@ -12,4 +12,5 @@ export interface AssistantModel {
   name?: string;
   /** Thinking levels supported by this model according to provider capability metadata; empty when unsupported. */
   thinkingLevels?: AssistantModelThinkingLevelsItem[];
+  inputModalities?: string[];
 }

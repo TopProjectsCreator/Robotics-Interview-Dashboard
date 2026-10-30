@@ -9,13 +9,13 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
    useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
-  useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation,
+   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useUpdateAssistantModelPolicy,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
@@ -53,7 +53,7 @@ import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./c
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
 import { accountSetupErrorMessage } from "./lib/auth-error-messages";
-import { AssistantModelPicker, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
+import { AssistantModelPicker, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
@@ -7620,6 +7620,7 @@ function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
 }
 
 function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
+  const queryClient = useQueryClient();
   const assistantSession = useGetSession({
     query: { queryKey: getGetSessionQueryKey() },
   });
@@ -7787,9 +7788,35 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const streamAbort = useRef<AbortController | null>(null);
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
-  const assistantConfig = useGetAssistantConfig({ query: { queryKey: getGetAssistantConfigQueryKey() } });
+  const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
+  const assistantTeamScope = assistantSession.data?.teamId ?? "pending";
+  const assistantSessionReady = assistantSession.data?.authenticated === true && assistantTeamScope !== "pending";
+  const assistantConfig = useGetAssistantConfig({
+    query: { queryKey: [...getGetAssistantConfigQueryKey(), assistantTeamScope], enabled: assistantSessionReady },
+  });
   const assistantModels = useListAssistantModels({
-    query: { queryKey: getListAssistantModelsQueryKey(), staleTime: 5 * 60 * 1000 },
+    query: {
+      queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
+      enabled: assistantSessionReady,
+      staleTime: 5 * 60 * 1000,
+    },
+  });
+  const assistantModelPolicy = useGetAssistantModelPolicy({
+    query: {
+      queryKey: [...getGetAssistantModelPolicyQueryKey(), assistantTeamScope],
+      enabled: assistantSessionReady && canManageAssistantTools && assistantSettingsOpen,
+    },
+  });
+  const updateAssistantModelPolicy = useUpdateAssistantModelPolicy({
+    mutation: {
+      onSuccess: (policy) => {
+        queryClient.invalidateQueries({ queryKey: getListAssistantModelsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetAssistantConfigQueryKey() });
+        queryClient.setQueryData([...getGetAssistantModelPolicyQueryKey(), assistantTeamScope], policy);
+        setSelectedModel(policy.defaultModel);
+        try { window.localStorage.setItem("robotics-assistant-model", policy.defaultModel); } catch {}
+      },
+    },
   });
   const modelOptions = assistantModels.data?.items ?? [];
   const rememberModel = (model: string) => {
@@ -7800,11 +7827,10 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   };
-  const availableModel = resolveAssistantModelSelection(
-    selectedModel,
-    assistantConfig.data?.textModel,
-    modelOptions,
-  );
+  const modelLocked = assistantModelPolicy.data?.locked ?? assistantConfig.data?.locked ?? false;
+  const availableModel = modelLocked
+    ? assistantModelPolicy.data?.defaultModel ?? assistantConfig.data?.textModel ?? selectedModel
+    : resolveAssistantModelSelection(selectedModel, assistantConfig.data?.textModel, modelOptions);
   const thinkingLevel = thinkingByModel[availableModel] ?? "auto";
   const rememberThinkingLevel = (level: AssistantThinkingLevel) => {
     const next = { ...thinkingByModel, [availableModel]: level };
@@ -7817,18 +7843,16 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   };
   useEffect(() => {
     if (!modelOptions.length) return;
-    const nextModel = resolveAssistantModelSelection(
-      selectedModel,
-      assistantConfig.data?.textModel,
-      modelOptions,
-    );
+    const nextModel = modelLocked
+      ? assistantModelPolicy.data?.defaultModel ?? assistantConfig.data?.textModel ?? selectedModel
+      : resolveAssistantModelSelection(selectedModel, assistantConfig.data?.textModel, modelOptions);
     if (nextModel !== selectedModel) setSelectedModel(nextModel);
     try {
       window.localStorage.setItem("robotics-assistant-model", nextModel);
     } catch {
       // Storage can be unavailable in private browsing.
     }
-  }, [assistantConfig.data?.textModel, modelOptions, selectedModel]);
+  }, [assistantConfig.data?.textModel, assistantModelPolicy.data?.defaultModel, modelLocked, modelOptions, selectedModel]);
   const conversations = useListAssistantConversations({ query: { queryKey: [...getListAssistantConversationsQueryKey(), assistantIdentity], refetchInterval: streamHealthy ? false : (3000 )} });
   const scopedConversations = useMemo(
     () => (conversations.data?.items ?? []).filter((item) =>
@@ -8775,6 +8799,20 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             loading={assistantModels.isLoading}
             error={assistantModels.isError}
             onChange={rememberModel}
+            modelLocked={modelLocked}
+            canManageAssistantPolicy={canManageAssistantTools}
+            catalogModels={assistantModels.data?.catalogItems ?? []}
+            modelPolicy={assistantModelPolicy.data as AssistantModelPolicyView | undefined}
+            modelPolicyLoading={assistantModelPolicy.isLoading}
+            modelPolicyError={assistantModelPolicy.data?.policyError
+              ?? (assistantModelPolicy.isError
+                ? serverErrorMessage(assistantModelPolicy.error, "Could not load the team model policy.")
+              : updateAssistantModelPolicy.isError
+                ? serverErrorMessage(updateAssistantModelPolicy.error, "The team policy could not be saved.")
+                : "")}
+            modelPolicySaving={updateAssistantModelPolicy.isPending}
+            onSaveModelPolicy={(policy) => updateAssistantModelPolicy.mutate({ data: policy })}
+            onSettingsOpenChange={setAssistantSettingsOpen}
             showRecurringTasks={!partsMode}
             canManageAssistantTools={canManageAssistantTools}
             thinkingLevel={thinkingLevel}

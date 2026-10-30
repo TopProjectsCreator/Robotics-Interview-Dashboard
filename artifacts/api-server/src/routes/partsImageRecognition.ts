@@ -9,8 +9,13 @@ import {
   decodePartsImage,
   parsePartsImageIdentification,
 } from "../lib/partsImageRecognition";
-import { listAssistantProviderModels } from "../lib/assistantModel";
+import {
+  AssistantModelPolicyError,
+  getAssistantModelPolicyWithCatalog,
+  resolveTeamAssistantModel,
+} from "../lib/assistantModel";
 import { resolveFreeVisionFallback } from "../lib/partsVisionRouting";
+import { requestTeamId } from "../middlewares/adminAuth";
 
 const router: IRouter = Router();
 const FREE_VISION_ROUTER = "openrouter/free";
@@ -67,9 +72,10 @@ function safeFailureDiagnostics(error: unknown) {
   };
 }
 
-async function findFallbackModel(primaryModel: string): Promise<string | undefined> {
-  const catalog = await listAssistantProviderModels();
-  return resolveFreeVisionFallback([primaryModel, FREE_VISION_ROUTER], catalog);
+async function findFallbackModel(teamId: string, primaryModel: string): Promise<string | undefined> {
+  const { policy, effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
+  if (policy.locked) return undefined;
+  return resolveFreeVisionFallback([primaryModel, FREE_VISION_ROUTER], effectiveModels);
 }
 
 function waitForVisionFallback(): Promise<void> {
@@ -89,7 +95,15 @@ export const identifyPartsImageHandler: RequestHandler = async (req, res): Promi
     return;
   }
 
-  const primaryModel = configuredVisionModel();
+  const teamId = await requestTeamId(req);
+  let primaryModel: string;
+  try {
+    primaryModel = await resolveTeamAssistantModel(teamId, configuredVisionModel(), "image");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No image-capable model is available.";
+    res.status(error instanceof AssistantModelPolicyError ? error.status : 503).json({ error: message });
+    return;
+  }
   const messages = [
     {
       role: "system" as const,
@@ -149,7 +163,7 @@ Do not infer a manufacturer, supplier, product link, or exact product identity. 
     if (!fallbackResolved) {
       fallbackResolved = true;
       try {
-        const fallbackModel = await findFallbackModel(primaryModel);
+        const fallbackModel = await findFallbackModel(teamId, primaryModel);
         if (fallbackModel) {
           await waitForVisionFallback();
           model = fallbackModel;

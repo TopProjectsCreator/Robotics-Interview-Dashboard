@@ -37,6 +37,8 @@ import type {
   AssistantHistory,
   AssistantInput,
   AssistantModelList,
+  AssistantModelPolicy,
+  AssistantModelPolicyInput,
   AssistantPendingQuestionsResponse,
   AssistantPromptQueue,
   AssistantPromptRun,
@@ -9533,6 +9535,155 @@ export function useListAssistantModels<TData = Awaited<ReturnType<typeof listAss
 
 
 
+
+export const getGetAssistantModelPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/model-policy`
+}
+
+/**
+ * @summary Get the signed-in team's assistant model policy
+ */
+export const getAssistantModelPolicy = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantModelPolicy> => {
+
+  return customFetch<AssistantModelPolicy>(getGetAssistantModelPolicyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantModelPolicyQueryKey = () => {
+    return [
+    `/api/assistant/model-policy`
+    ] as const;
+    }
+
+
+export const getGetAssistantModelPolicyQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantModelPolicy>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantModelPolicyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantModelPolicy>>> = ({ signal }) => getAssistantModelPolicy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantModelPolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantModelPolicy>>>
+export type GetAssistantModelPolicyQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the signed-in team's assistant model policy
+ */
+
+export function useGetAssistantModelPolicy<TData = Awaited<ReturnType<typeof getAssistantModelPolicy>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantModelPolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAssistantModelPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/model-policy`
+}
+
+/**
+ * Coordinator-only. Model IDs must match the current provider catalog.
+ * @summary Update the signed-in team's assistant model policy
+ */
+export const updateAssistantModelPolicy = async (assistantModelPolicyInput: AssistantModelPolicyInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantModelPolicy> => {
+
+  return customFetch<AssistantModelPolicy>(getUpdateAssistantModelPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantModelPolicyInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantModelPolicyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantModelPolicy>>, TError,{data: BodyType<AssistantModelPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantModelPolicy>>, TError,{data: BodyType<AssistantModelPolicyInput>}, TContext> => {
+
+const mutationKey = ['updateAssistantModelPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantModelPolicy>>, {data: BodyType<AssistantModelPolicyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantModelPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantModelPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantModelPolicy>>>
+    export type UpdateAssistantModelPolicyMutationBody = BodyType<AssistantModelPolicyInput>
+    export type UpdateAssistantModelPolicyMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the signed-in team's assistant model policy
+ */
+export const useUpdateAssistantModelPolicy = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantModelPolicy>>, TError,{data: BodyType<AssistantModelPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantModelPolicy>>,
+        TError,
+        {data: BodyType<AssistantModelPolicyInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantModelPolicyMutationOptions(options));
+    }
 
 export const getListDashboardChartsUrl = () => {
 

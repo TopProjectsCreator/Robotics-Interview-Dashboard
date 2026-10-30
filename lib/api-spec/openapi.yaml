@@ -2560,6 +2560,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /assistant/model-policy:
+    get:
+      operationId: getAssistantModelPolicy
+      tags: [assistant]
+      summary: Get the signed-in team's assistant model policy
+      responses:
+        "200":
+          description: Team policy and the effective model choices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantModelPolicy"
+        "502":
+          description: The provider model catalog is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateAssistantModelPolicy
+      tags: [assistant]
+      summary: Update the signed-in team's assistant model policy
+      description: Coordinator-only. Model IDs must match the current provider catalog.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantModelPolicyInput"
+      responses:
+        "200":
+          description: Saved team model policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantModelPolicy"
+        "400":
+          description: Invalid, unavailable, or conflicting policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The provider model catalog is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /dashboard/charts:
     get:
       operationId: listDashboardCharts
@@ -8287,7 +8341,7 @@ components:
           type: string
     AssistantConfig:
       type: object
-      required: [textModel, visionModel]
+      required: [textModel, visionModel, locked]
       properties:
         textModel:
           type: string
@@ -8295,6 +8349,9 @@ components:
         visionModel:
           type: string
           description: "Vision model used for image input"
+        locked:
+          type: boolean
+          description: "Whether the team admin has locked model selection to the default"
     AssistantModel:
       type: object
       required: [id]
@@ -8309,14 +8366,69 @@ components:
           items:
             type: string
             enum: [low, medium, high]
+        inputModalities:
+          type: array
+          items:
+            type: string
     AssistantModelList:
       type: object
-      required: [items]
+      required: [items, catalogItems]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/AssistantModel"
+        catalogItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantModel"
+        policyError:
+          type: string
+          description: Present when the saved policy needs an admin correction; items is empty until it is fixed.
+    AssistantModelPolicy:
+      type: object
+      required: [defaultModel, locked, listMode, modelIds, availableModelIds]
+      properties:
+        defaultModel:
+          type: string
+        locked:
+          type: boolean
+        listMode:
+          type: ["string", "null"]
+          enum: [allow, block, null]
+        modelIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        availableModelIds:
+          type: array
+          items:
+            type: string
+        policyError:
+          type: string
+          description: Present when the stored policy is invalid or references unavailable models.
+    AssistantModelPolicyInput:
+      type: object
+      required: [defaultModel, locked, listMode, modelIds]
+      properties:
+        defaultModel:
+          type: string
+          minLength: 1
+          maxLength: 255
+        locked:
+          type: boolean
+        listMode:
+          type: ["string", "null"]
+          enum: [allow, block, null]
+        modelIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 255
     AssistantHistory:
       type: object
       required: [items]

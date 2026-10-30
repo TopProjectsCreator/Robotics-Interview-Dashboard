@@ -235,6 +235,7 @@ export function CustomWorkspacesPage() {
   const [prompt, setPrompt] = useState("");
   const [builderModels, setBuilderModels] = useState<BuilderModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
+  const [builderModelLocked, setBuilderModelLocked] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState("");
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
@@ -357,14 +358,18 @@ export function CustomWorkspacesPage() {
     setModelsLoading(true);
     setModelsError("");
     void Promise.all([
-      request<{ items: BuilderModel[] }>("/api/assistant/models"),
-      request<{ textModel: string }>("/api/assistant/config"),
+      request<{ items: BuilderModel[]; policyError?: string }>("/api/assistant/models"),
+      request<{ textModel: string; locked?: boolean }>("/api/assistant/config"),
     ]).then(([catalog, config]) => {
       if (!active) return;
       setBuilderModels(catalog.items);
+      if (catalog.policyError) setModelsError(catalog.policyError);
+      setBuilderModelLocked(config.locked === true);
       let savedModel = "";
       try { savedModel = window.localStorage.getItem("robotics-assistant-model") ?? ""; } catch {}
-      const initial = resolveAssistantModelSelection(savedModel, config.textModel, catalog.items);
+      const initial = config.locked
+        ? config.textModel
+        : resolveAssistantModelSelection(savedModel, config.textModel, catalog.items);
       setSelectedModel(initial);
       if (initial) {
         try { window.localStorage.setItem("robotics-assistant-model", initial); } catch {}
@@ -830,12 +835,13 @@ export function CustomWorkspacesPage() {
               data-testid="workspace-builder-model"
               value={selectedModel}
               onChange={(event) => chooseModel(event.target.value)}
-              disabled={!canManage || modelsLoading || builderModels.length === 0}
+              disabled={!canManage || builderModelLocked || modelsLoading || builderModels.length === 0}
               className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-base md:text-sm font-normal text-[hsl(var(--foreground))] disabled:opacity-60"
             >
               {builderModels.length === 0 && <option value="">{modelsLoading ? "Loading models…" : "Default assistant model"}</option>}
               {builderModels.map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}
             </select>
+            {builderModelLocked && <span className="font-normal text-xs text-[#60757c] dark:text-[#b3c3cb]">Model choice is locked to the team default.</span>}
             {modelsError && <span className="font-normal text-amber-700 dark:text-amber-300">Model list unavailable; builds will use the server default.</span>}
           </label>
           <fieldset className="mt-4">
