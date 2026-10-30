@@ -189,6 +189,7 @@ async function createHarness(t) {
     darkReviewRejectOnce: false,
     verificationRejectOnce: false,
     subagentWriteOnce: false,
+    automaticIconGeneration: false,
   };
   const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
     workspace.id,
@@ -306,7 +307,10 @@ async function createHarness(t) {
                 (workspace.accessMode === "selected" && workspace.allowedInterviewerIds.includes(accountId)))) ||
               workspace.createdBy === accountId),
           );
-          return { rows, rowCount: rows.length };
+          const rowsWithIconState = calls.automaticIconGeneration
+            ? rows.map((workspace) => ({ ...workspace, iconSvg: null }))
+            : rows;
+          return { rows: rowsWithIconState, rowCount: rowsWithIconState.length };
         }
 
         const [id, teamId, allowDraftOwner, accountId] = values;
@@ -494,7 +498,11 @@ async function createHarness(t) {
       if (statement.startsWith('insert into "custom_workspace_versions"')) {
         const [id, teamId, workspaceId, html, capabilities, sourceFiles, createdBy] = values;
         const message = values[7] ?? (
-          statement.includes("'Initial AI draft'") ? "Initial AI draft" : "Created by assistant"
+          statement.includes("'Initial AI draft'")
+            ? "Initial AI draft"
+            : statement.includes("Before automatic app icon generation")
+              ? "Before automatic app icon generation"
+              : "Created by assistant"
         );
         versions.push({
           id,
@@ -584,6 +592,17 @@ async function createHarness(t) {
             create: async (request) => {
               calls.llm.push(request);
               const systemPrompt = request.messages[0]?.content ?? "";
+              if (systemPrompt.includes("visual identity step of the custom workspace agent")) {
+                return {
+                  choices: [{
+                    message: {
+                      content: JSON.stringify({
+                        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="48" fill="#16869a"/></svg>',
+                      }),
+                    },
+                  }],
+                };
+              }
               if (systemPrompt.includes("visual QA agent")) {
                 const userText = request.messages[1]?.content?.find((item) => item.type === "text")?.text ?? "";
                 if (calls.darkReviewRejectOnce && userText.includes("dark theme screenshot")) {
@@ -950,6 +969,30 @@ test("assistant workspace list and deletion require coordinator-scoped exact con
   assert.ok(!harness.versions.some((version) => version.workspaceId === "workspace-a"));
   assert.ok(!harness.records.some((record) => record.workspaceId === "workspace-a"));
   assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-b"));
+});
+
+test("opening the workspace list automatically adds missing app artwork", async (t) => {
+  const harness = await createHarness(t);
+  harness.calls.automaticIconGeneration = true;
+
+  const response = await harness.request("admin-b", "GET", "/custom-workspaces");
+  assert.equal(response.status, 200);
+  const listed = await response.json();
+  assert.equal(listed.workspaces[0].iconDataUrl, null);
+
+  const deadline = Date.now() + 3000;
+  let savedIcon;
+  while (!savedIcon && Date.now() < deadline) {
+    savedIcon = harness.savedWorkspaceFiles.get("workspace-b")?.find((file) => file.path === "assets/icon.svg");
+    if (!savedIcon) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(savedIcon, "the background job should persist an icon without another user action");
+  assert.match(savedIcon.content, /<svg\b/);
+  assert.equal(harness.workspaces.find((workspace) => workspace.id === "workspace-b")?.status, "published");
+  assert.ok(harness.versions.some((version) => version.workspaceId === "workspace-b"));
+  assert.ok(harness.calls.llm.some((request) =>
+    String(request.messages[0]?.content ?? "").includes("visual identity step of the custom workspace agent"),
+  ));
 });
 
 test("selected access is enforced for the app, records, and LLM", async (t) => {

@@ -39,6 +39,12 @@ When a coordinator opens custom workspaces, saved drafts with incomplete reviews
 
 **How to apply:** After confirming the coordinator's latest builder run is not active, send each existing draft ID through the `Revise custom workspace draft` flow, verify saved counters before enabling Publish, and preserve server-side ownership checks.
 
+Custom workspace artwork must be generated automatically for new apps and backfilled for existing apps that lack a valid icon; users must not need to click or request generation.
+
+**Why:** The user explicitly said the artwork should already be there automatically, including for existing workspaces.
+
+**How to apply:** Generate missing artwork as a bounded background agent task when accessible workspaces are discovered. Skip valid assets and preserve the app's content and published status.
+
 Custom workspace builds reuse the coordinator's existing /assistant MCP connections and relevant enabled team skills; do not build a second connection or skill store. Subagents may directly edit files in their assigned draft using the same team/workspace authorization checks; the primary agent coordinates work and verifies results.
 
 **Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help, and clarified that subagents must be able to edit.
