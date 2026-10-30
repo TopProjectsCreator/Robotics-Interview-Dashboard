@@ -14,6 +14,7 @@ import {
   QueueAssistantPromptResponse,
   QueueCustomWorkspaceBuilderRunBody,
   GetAssistantBuilderRunParams,
+  GetAssistantBuilderRunResponse,
   StopAssistantPromptParams,
   StopAssistantPromptResponse,
   InterpretApplicantSearchBody,
@@ -165,7 +166,7 @@ import { authenticatedInterviewerId, createInterviewerSession, requestAdminSessi
 import { accountById } from "../lib/interviewerAccounts";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
-import { teamFilter } from "../lib/teams";
+import { teamFilter, teamSqlCondition } from "../lib/teams";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash } from "./presence";
 import { getIpStats } from "../lib/presence";
@@ -228,9 +229,6 @@ import {
   type AssistantQuestion,
 } from "../lib/assistantWorkspaceTools";
 import {
-  CUSTOM_WORKSPACE_BUILDER_ATTEMPT_KEY,
-  CUSTOM_WORKSPACE_BUILDER_CONTINUATION_KEY,
-  CUSTOM_WORKSPACE_BUILDER_RUN_KEY,
   CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS,
   CUSTOM_WORKSPACE_BUILDER_MAX_CONTINUATIONS,
   assistantRequestPayload,
@@ -306,7 +304,7 @@ const activeBuilderRuns = new Set<string>();
 const activeAssistantPromptControllers = new Map<string, AbortController>();
 let assistantPromptDispatcherStarted = false;
 const BUILDER_RUN_HEARTBEAT_MS = 10_000;
-const BUILDER_RUN_STALE_MS = 45_000;
+const BUILDER_RUN_STALE_MS = 90_000;
 const objectStorageService = new ObjectStorageService();
 
 function assistantConversationResponse(conversation: typeof assistantConversationsTable.$inferSelect, messageCount: number) {
@@ -798,6 +796,60 @@ async function recoverStaleAssistantPromptRuns(instance: DbInstance): Promise<vo
           eq(assistantBuilderRunsTable.coordinatorId, staleRun.accountId),
         ));
       });
+    }
+    const settledBuilderPrompts = await runWithInstance(instance, () => db.select().from(assistantPromptRunsTable).where(and(
+      or(
+        eq(assistantPromptRunsTable.status, "completed"),
+        eq(assistantPromptRunsTable.status, "failed"),
+      ),
+      lt(assistantPromptRunsTable.updatedAt, staleBefore),
+    )).limit(50));
+    for (const settledPrompt of settledBuilderPrompts) {
+      const builderRunId = customWorkspaceBuilderRunId(settledPrompt.payload);
+      if (!builderRunId || (settledPrompt.status === "failed" && settledPrompt.cancelRequested)) continue;
+      if (
+        settledPrompt.status === "failed" &&
+        customWorkspaceBuilderAttempt(settledPrompt.payload) + 1 >= CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS
+      ) continue;
+
+      const claimedForRecovery = await runWithInstance(instance, async () => {
+        const [builderRun] = await db.select().from(assistantBuilderRunsTable).where(and(
+          eq(assistantBuilderRunsTable.id, builderRunId),
+          eq(assistantBuilderRunsTable.teamId, settledPrompt.teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, settledPrompt.accountId),
+        )).limit(1);
+        const expectedStatus = settledPrompt.status === "completed" ? "running" : "failed";
+        if (
+          !builderRun ||
+          builderRun.status !== expectedStatus ||
+          builderRun.updatedAt.getTime() >= staleBefore.getTime()
+        ) return false;
+        const [claimed] = await db.update(assistantBuilderRunsTable).set({
+          status: "interrupted",
+          error: "The server restarted while saving builder progress. Resuming from persisted state.",
+          updatedAt: new Date(),
+        }).where(and(
+          eq(assistantBuilderRunsTable.id, builderRunId),
+          eq(assistantBuilderRunsTable.teamId, settledPrompt.teamId),
+          eq(assistantBuilderRunsTable.coordinatorId, settledPrompt.accountId),
+          eq(assistantBuilderRunsTable.status, expectedStatus),
+          lt(assistantBuilderRunsTable.updatedAt, staleBefore),
+        )).returning();
+        return Boolean(claimed);
+      });
+      if (!claimedForRecovery) continue;
+      const run = {
+        id: settledPrompt.id,
+        teamId: settledPrompt.teamId,
+        accountId: settledPrompt.accountId,
+        payload: settledPrompt.payload,
+        instance,
+      };
+      if (settledPrompt.status === "completed") {
+        await continueCustomWorkspaceBuilder(run, builderRunId);
+      } else {
+        await retryCustomWorkspaceBuilderPrompt(run, "The server restarted before the builder retry was queued.");
+      }
     }
     assistantPromptInstanceRetryAfter.delete(instance);
   } catch (error) {
@@ -7389,7 +7441,7 @@ router.get("/assistant/custom-workspace-builder/runs/:runId", requireCoordinator
     res.status(404).json({ error: "Builder run not found" });
     return;
   }
-  res.json(GetLatestAssistantBuilderRunResponse.parse({ run: assistantBuilderRunResponse(run) }));
+  res.json(GetAssistantBuilderRunResponse.parse({ run: assistantBuilderRunResponse(run) }));
 });
 
 router.get("/assistant/questions/pending", requireCoordinator, async (req, res): Promise<void> => {
@@ -7493,7 +7545,22 @@ router.post("/assistant/questions/:questionId/answer", requireCoordinator, async
     res.json({ submitted: true, resumed: true });
     return;
   }
+  const activePromptRuns = await db.select({
+    status: assistantPromptRunsTable.status,
+    payload: assistantPromptRunsTable.payload,
+  }).from(assistantPromptRunsTable).where(and(
+    eq(assistantPromptRunsTable.conversationId, savedRun!.conversationId),
+    eq(assistantPromptRunsTable.teamId, teamId),
+    or(
+      eq(assistantPromptRunsTable.status, "queued"),
+      eq(assistantPromptRunsTable.status, "running"),
+    ),
+  ));
+  const liveBuilderPromptExists = activePromptRuns.some(
+    (promptRun) => customWorkspaceBuilderRunId(promptRun.payload) === savedRun!.id,
+  );
   const isStale = savedRun!.status === "interrupted" ||
+    !liveBuilderPromptExists ||
     Date.now() - savedRun!.updatedAt.getTime() > BUILDER_RUN_STALE_MS;
   const savedAnswers = { ...savedRun!.answers, ...preparedAnswers };
   await db.update(assistantBuilderRunsTable).set({
@@ -7641,6 +7708,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   }
   const teamId = await requestTeamId(req);
   const delegatedRunId = req.get("x-assistant-run-id")?.trim();
+  const requestedBuilderRunId = req.get("x-assistant-builder-run-id")?.trim();
   let delegatedRun: typeof assistantPromptRunsTable.$inferSelect | undefined;
   if (delegatedRunId) {
     [delegatedRun] = await db.select().from(assistantPromptRunsTable).where(and(
@@ -7658,15 +7726,24 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     const proofMatches = proofBuffer.length === expectedProofBuffer.length &&
       timingSafeEqual(proofBuffer, expectedProofBuffer);
     if (!delegatedRun || delegatedRun.prompt !== parsed.data.question ||
-      delegatedRun.conversationId !== parsed.data.conversationId || !proofMatches) {
+      delegatedRun.conversationId !== parsed.data.conversationId || !proofMatches ||
+      customWorkspaceBuilderRunId(delegatedRun.payload) !== requestedBuilderRunId) {
       res.status(404).json({ error: "Queued assistant prompt not found." });
       return;
     }
   }
+  if (requestedBuilderRunId && !delegatedRun) {
+    res.status(404).json({ error: "Queued assistant prompt not found." });
+    return;
+  }
   const mcpOnly = account.role !== "coordinator";
-  const isCustomWorkspaceBuilderRun = !mcpOnly &&
-    /^(Build a custom workspace app for the team\.|Revise custom workspace draft )/i.test(parsed.data.question);
-  const builderRunId = isCustomWorkspaceBuilderRun ? randomUUID() : undefined;
+  const isCustomWorkspaceBuilderRun = !mcpOnly && isCustomWorkspaceBuilderPrompt(parsed.data.question);
+  const builderRunId = isCustomWorkspaceBuilderRun
+    ? (delegatedRun ? requestedBuilderRunId : randomUUID())
+    : undefined;
+  const builderWorkspaceId = builderRunId
+    ? customWorkspaceDraftIdFromPrompt(parsed.data.question, builderRunId)
+    : undefined;
   const conversationOwnerId = account.role === "coordinator" ? null : account.id;
   const conversation = await getOrCreateAssistantConversation(
     parsed.data.conversationId,
@@ -7928,15 +8005,34 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       });
   }, BUILDER_RUN_HEARTBEAT_MS);
   if (builderRunId) {
-    await db.insert(assistantBuilderRunsTable).values({
-      id: builderRunId,
-      teamId,
-      coordinatorId: account.id,
-      conversationId: conversation.id,
-      prompt: parsed.data.question,
-      status: "running",
-      activities: "[]",
-    });
+    if (delegatedRun) {
+      const [builderRun] = await db.update(assistantBuilderRunsTable).set({
+        status: "running",
+        questionId: null,
+        questions: null,
+        error: null,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantBuilderRunsTable.id, builderRunId),
+        eq(assistantBuilderRunsTable.teamId, teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, account.id),
+        inArray(assistantBuilderRunsTable.status, ["queued", "running", "failed", "interrupted"]),
+      )).returning();
+      if (!builderRun) {
+        res.status(409).json({ error: "This builder run is no longer available to continue." });
+        return;
+      }
+    } else {
+      await db.insert(assistantBuilderRunsTable).values({
+        id: builderRunId,
+        teamId,
+        coordinatorId: account.id,
+        conversationId: conversation.id,
+        prompt: parsed.data.question,
+        status: "running",
+        activities: "[]",
+      });
+    }
     activeBuilderRuns.add(builderRunId);
     builderHeartbeat = setInterval(() => {
       void db.update(assistantBuilderRunsTable)
@@ -8330,7 +8426,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
     if (builderRunId) {
       await db.update(assistantBuilderRunsTable).set({
-        status: "completed",
+        status: delegatedRun ? "running" : "completed",
         questionId: null,
         questions: null,
         activities: JSON.stringify(activities),

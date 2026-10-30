@@ -31,6 +31,27 @@ const workspace = {
   updatedAt: "2026-10-01T00:00:00.000Z",
 };
 
+function builderRunFixture(
+  id: string,
+  status: string,
+  prompt: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    status,
+    prompt,
+    question: null,
+    answers: {},
+    activities: [],
+    result: "Builder run complete.",
+    error: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:01:00.000Z",
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.removeItem("robotics-assistant-model");
@@ -248,15 +269,15 @@ describe("custom workspace version history", () => {
 });
 
 describe("automatic custom workspace critiques", () => {
-  it("starts the critique agent after generation without waiting for Publish", async () => {
+  it("queues the full critique workflow on the server after generation", async () => {
     const draft = {
       ...workspace,
       status: "draft",
       critiqueRounds: 0,
       verifiedCritiqueRounds: 0,
     };
-    let streamCalls = 0;
-    let critiquePrompt = "";
+    let queueCalls = 0;
+    let queuedPrompt = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
@@ -267,19 +288,16 @@ describe("automatic custom workspace critiques", () => {
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces") {
         return Response.json({
-          workspaces: streamCalls > 0
-            ? [{ ...draft, critiqueRounds: streamCalls > 1 ? 5 : 0, verifiedCritiqueRounds: streamCalls > 1 ? 5 : 0 }]
+          workspaces: queueCalls > 0
+            ? [{ ...draft, critiqueRounds: 5, verifiedCritiqueRounds: 5 }]
             : [],
         });
       }
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
-      if (path === "/api/assistant/ask/stream") {
-        streamCalls += 1;
-        const { question } = JSON.parse(String(init?.body)) as { question: string };
-        if (streamCalls === 2) critiquePrompt = question;
-        return new Response(`data: ${JSON.stringify({ done: true, answer: "Build step complete." })}\n\n`, {
-          headers: { "Content-Type": "text/event-stream" },
-        });
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        queueCalls += 1;
+        queuedPrompt = JSON.parse(String(init.body)).question;
+        return Response.json({ run: builderRunFixture("server-run-1", "completed", queuedPrompt) }, { status: 201 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -291,10 +309,12 @@ describe("automatic custom workspace critiques", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
 
-    await waitFor(() => expect(streamCalls).toBe(2));
-    expect(critiquePrompt).toContain("Revise custom workspace draft custom-app-1");
-    expect(critiquePrompt).toContain("do not wait for Publish");
-    expect(critiquePrompt).toContain("verify_custom_workspace_fixes");
+    await waitFor(() => expect(queueCalls).toBe(1));
+    expect(queuedPrompt).toContain("Build a custom workspace app for the team");
+    expect(queuedPrompt).toContain("five independently verified rounds");
+    expect(queuedPrompt).toContain("without waiting for Publish");
+    expect(queuedPrompt).toContain("critique or verification fails");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/assistant/ask/stream", expect.anything());
     expect(screen.getByTestId("publish-agent-activity")).toBeInTheDocument();
   });
 
@@ -306,7 +326,7 @@ describe("automatic custom workspace critiques", () => {
       critiqueRounds: 0,
       verifiedCritiqueRounds: 0,
     };
-    let streamCalls = 0;
+    let queueCalls = 0;
     let reviewPrompt = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -320,18 +340,16 @@ describe("automatic custom workspace critiques", () => {
         return Response.json({
           workspaces: [{
             ...draft,
-            critiqueRounds: streamCalls > 0 ? 5 : 0,
-            verifiedCritiqueRounds: streamCalls > 0 ? 5 : 0,
+            critiqueRounds: queueCalls > 0 ? 5 : 0,
+            verifiedCritiqueRounds: queueCalls > 0 ? 5 : 0,
           }],
         });
       }
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
-      if (path === "/api/assistant/ask/stream") {
-        streamCalls += 1;
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
         reviewPrompt = JSON.parse(String(init?.body)).question;
-        return new Response(`data: ${JSON.stringify({ done: true, answer: "Review complete." })}\n\n`, {
-          headers: { "Content-Type": "text/event-stream" },
-        });
+        queueCalls += 1;
+        return Response.json({ run: builderRunFixture("review-run-1", "completed", reviewPrompt) }, { status: 201 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -339,7 +357,7 @@ describe("automatic custom workspace critiques", () => {
 
     render(<CustomWorkspacesPage />);
 
-    await waitFor(() => expect(streamCalls).toBe(1));
+    await waitFor(() => expect(queueCalls).toBe(1));
     expect(reviewPrompt).toContain("Revise custom workspace draft custom-app-1");
     expect(reviewPrompt).toContain("do not wait for Publish");
     expect(reviewPrompt).toContain("verify_custom_workspace_fixes");
@@ -362,7 +380,7 @@ describe("automatic custom workspace critiques", () => {
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: {
         id: "active-review-run",
-        status: "running",
+        status: "queued",
         prompt: "Revise custom workspace draft custom-app-1",
         question: null,
         answers: {},
@@ -386,7 +404,7 @@ describe("automatic custom workspace critiques", () => {
     render(<CustomWorkspacesPage />);
 
     expect(await screen.findByTestId("publish-readiness")).toHaveTextContent("0/5 complete");
-    await waitFor(() => expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Building"));
+    await waitFor(() => expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Queued on server"));
     expect(fetchMock).not.toHaveBeenCalledWith("/api/assistant/ask/stream", expect.anything());
   });
 });
@@ -397,7 +415,7 @@ describe("custom workspace visual publish review", () => {
     const publishedWorkspace = { ...workspace, status: "published" };
     let publishAttempts = 0;
     let builderStarted = false;
-    let streamCalls = 0;
+    let queueCalls = 0;
     const visualFrames = [
       { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
       { type: "complete", workspace: publishedWorkspace },
@@ -428,17 +446,18 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces/custom-app-1/files") {
         return Response.json({ files: [{ path: "index.html", content: "<main>Current app</main>", updatedAt: "2026-10-01T00:00:00.000Z" }] });
       }
-      if (path === "/api/assistant/ask/stream") {
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
         const { question } = JSON.parse(String(init?.body)) as { question: string };
         expect(question).toContain("Revise custom workspace draft custom-app-1");
         expect(question).toContain("five-round independent critique");
         expect(question).toContain("verify_custom_workspace_fixes");
-        streamCalls += 1;
+        queueCalls += 1;
         builderStarted = true;
-        return new Response([
-          `data: ${JSON.stringify({ activity: { tool: "critique_custom_workspace", detail: "critique round 1: 10 ranked flaws" } })}\n\n`,
-          `data: ${JSON.stringify({ done: true, answer: "All five rounds are verified." })}\n\n`,
-        ].join(""), { headers: { "Content-Type": "text/event-stream" } });
+        return Response.json({
+          run: builderRunFixture("review-run-1", "completed", question, {
+            activities: [{ tool: "critique_custom_workspace", detail: "critique round 1: 10 ranked flaws" }],
+          }),
+        }, { status: 201 });
       }
       if (path === "/api/custom-workspaces/custom-app-1/publish") {
         publishAttempts += 1;
@@ -457,7 +476,7 @@ describe("custom workspace visual publish review", () => {
 
     render(<CustomWorkspacesPage />);
     expect(await screen.findByTestId("publish-readiness")).toHaveTextContent("0/5 complete");
-    await waitFor(() => expect(streamCalls).toBe(5));
+    await waitFor(() => expect(queueCalls).toBe(1));
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(publishAttempts).toBe(0);
     expect(builderStarted).toBe(true);
@@ -537,7 +556,7 @@ describe("custom workspace visual publish review", () => {
     expect(screen.queryByText("Publish workspace")).not.toBeInTheDocument();
   });
 
-  it("builds through the streamed assistant tool loop and displays the saved file tree", async () => {
+  it("enqueues a server-owned build and displays its saved file tree and activities", async () => {
     const draft = {
       id: "new-workspace",
       title: "Parts tracker",
@@ -575,19 +594,20 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces/new-workspace/files") {
         return Response.json({ files: savedFiles });
       }
-      if (path === "/api/assistant/ask/stream") {
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
         const body = JSON.parse(String(init?.body));
         expect(body.question).toContain("Build a custom workspace app");
         expect(body.model).toBe("model-selected");
-        return new Response([
-          `data: ${JSON.stringify({ builderRunId: "generated-run" })}\n\n`,
-          `data: ${JSON.stringify({ toolCallStart: { tool: "create_custom_workspace", input: "{\"title\":\"Parts tracker\"}" } })}\n\n`,
-          `data: ${JSON.stringify({ activityIndex: 0, activity: { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" } })}\n\n`,
-          `data: ${JSON.stringify({ toolCallStart: { tool: "create_custom_workspace_file", input: "{\"path\":\"index.html\"}" } })}\n\n`,
-          `data: ${JSON.stringify({ activityIndex: 1, activity: { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." } })}\n\n`,
-          `data: ${JSON.stringify({ activityIndex: 2, activity: { tool: "assistant_progress", detail: "Reviewed the tool results and prepared the next action." } })}\n\n`,
-          `data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`,
-        ].join(""), { headers: { "Content-Type": "text/event-stream" } });
+        return Response.json({
+          run: builderRunFixture("generated-run", "completed", body.question, {
+            result: "Draft saved.",
+            activities: [
+              { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" },
+              { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." },
+              { tool: "assistant_progress", detail: "Reviewed the tool results and prepared the next action." },
+            ],
+          }),
+        }, { status: 201 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -685,8 +705,6 @@ describe("custom workspace visual publish review", () => {
   });
 
   it("collects a batch of agent questions and lets the coordinator inspect and remove an uploaded file", async () => {
-    let finishAnswer = () => {};
-    const answersSubmitted = new Promise<void>((resolve) => { finishAnswer = resolve; });
     let submittedAnswers: Record<string, unknown> | undefined;
     const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
     const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
@@ -705,7 +723,12 @@ describe("custom workspace visual publish review", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
-      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") {
+        return Response.json({ run: submittedAnswers ? builderRunFixture("question-run", "completed", "Build workspace", {
+          answers: submittedAnswers,
+          result: "Draft complete.",
+        }) : null });
+      }
       if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
       if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected", visionModel: "vision" });
       if (path === "/api/assistant/history") return Response.json({ items: [] });
@@ -713,20 +736,16 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
       if (path === "/api/assistant/questions/pending-question-1/answer") {
         submittedAnswers = JSON.parse(String(init?.body)).answers;
-        finishAnswer();
         return Response.json({ submitted: true });
       }
-      if (path === "/api/assistant/ask/stream") {
-        const stream = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ question: questions })}\n\n`));
-            void answersSubmitted.then(() => {
-              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, answer: "Draft complete." })}\n\n`));
-              controller.close();
-            });
-          },
-        });
-        return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        const { question } = JSON.parse(String(init.body));
+        return Response.json({
+          run: builderRunFixture("question-run", "waiting_for_answer", question, {
+            question: questions,
+            result: null,
+          }),
+        }, { status: 201 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -753,7 +772,7 @@ describe("custom workspace visual publish review", () => {
       fireEvent.change(screen.getByTestId("input-question-file-reference"), {
         target: { files: [new File(["not supported"], "reference.bin", { type: "application/octet-stream" })] },
       });
-      expect(await screen.findByRole("alert")).toHaveTextContent(/reference\.bin is not a supported attachment/);
+      expect(await screen.findAllByText(/reference\.bin is not a supported attachment/)).toHaveLength(2);
       expect(screen.getByRole("button", { name: "Submit answers" })).toBeDisabled();
       fireEvent.change(screen.getByTestId("input-question-file-reference"), {
         target: { files: [
@@ -798,11 +817,12 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/assistant/history") return Response.json({ items: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
-      if (path === "/api/assistant/ask/stream") {
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
         submittedModel = JSON.parse(String(init?.body)).model;
-        return new Response(`data: ${JSON.stringify({ done: true, answer: "Draft saved." })}\n\n`, {
-          headers: { "Content-Type": "text/event-stream" },
-        });
+        const { question } = JSON.parse(String(init.body));
+        return Response.json({
+          run: builderRunFixture("model-run", "completed", question, { result: "Draft saved." }),
+        }, { status: 201 });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -826,8 +846,6 @@ describe("custom workspace visual publish review", () => {
     };
     const savedPrompt = "Build a custom workspace app for the team. Requirements: Tryout day schedule.";
     let answer: Record<string, unknown> | null = null;
-    let recovered = false;
-    let recoveredPrompt = "";
     const interruptedRun = {
       id: "builder-run-1",
       status: "interrupted",
@@ -842,10 +860,8 @@ describe("custom workspace visual publish review", () => {
     };
     const completedRun = {
       ...interruptedRun,
-      id: "builder-run-2",
       status: "completed",
       question: null,
-      answers: answer ?? {},
       result: "The tryout schedule draft is ready for review.",
       error: null,
       updatedAt: "2026-10-20T10:02:00.000Z",
@@ -854,11 +870,7 @@ describe("custom workspace visual publish review", () => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [question] });
       if (path === "/api/assistant/custom-workspace-builder/runs/latest") {
-        return Response.json({ run: recovered ? { ...completedRun, answers: answer ?? {} } : {
-          ...interruptedRun,
-          question: answer ? null : question,
-          answers: answer ?? {},
-        } });
+        return Response.json({ run: answer ? { ...completedRun, answers: answer } : interruptedRun });
       }
       if (path === "/api/assistant/models") return Response.json({ items: [] });
       if (path === "/api/assistant/config") return Response.json({ textModel: "default" });
@@ -867,17 +879,7 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
       if (path === "/api/assistant/questions/persisted-question-1/answer") {
         answer = JSON.parse(String(init?.body)).answers;
-        return Response.json({ submitted: true, resumed: false, status: "interrupted" });
-      }
-      if (path === "/api/assistant/ask/stream") {
-        recovered = true;
-        recoveredPrompt = JSON.parse(String(init?.body)).question;
-        return new Response([
-          `data: ${JSON.stringify({ builderRunId: "builder-run-2" })}`,
-          `data: ${JSON.stringify({ done: true, answer: "The tryout schedule draft is ready for review." })}`,
-          "",
-          "",
-        ].join("\n"), { headers: { "Content-Type": "text/event-stream" } });
+        return Response.json({ submitted: true, resumed: true, status: "queued" });
       }
       throw new Error(`Unexpected request: ${path}`);
     });
@@ -894,14 +896,12 @@ describe("custom workspace visual publish review", () => {
     await waitFor(() => expect(answer).toEqual({
       purpose: { value: "Interview time slots and room assignments" },
     }));
-    expect(await screen.findByTestId("button-continue-builder")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("button-continue-builder"));
-
     expect(await screen.findByTestId("builder-run-result")).toHaveTextContent(
       "The tryout schedule draft is ready for review.",
     );
-    expect(recoveredPrompt).toContain("Interview time slots and room assignments");
+    expect(screen.queryByTestId("button-continue-builder")).not.toBeInTheDocument();
     expect(screen.getByTestId("builder-run-status")).toHaveTextContent("Complete");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/assistant/ask/stream", expect.anything());
 
     page.unmount();
     render(<CustomWorkspacesPage />);

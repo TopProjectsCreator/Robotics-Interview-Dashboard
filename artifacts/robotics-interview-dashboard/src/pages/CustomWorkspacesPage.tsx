@@ -300,16 +300,22 @@ export function CustomWorkspacesPage() {
     return () => { active = false; };
   }, [canManage]);
   useEffect(() => {
-    if (!canManage || !builderRun || !["running", "waiting_for_answer"].includes(builderRun.status)) return;
+    if (!canManage || !builderRun || !["queued", "running", "waiting_for_answer"].includes(builderRun.status)) return;
+    const runId = builderRun.id;
     let active = true;
     const refreshRun = async () => {
       try {
-        const { run } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
+        const { run } = await request<AssistantBuilderRunResponse>(
+          `/api/assistant/custom-workspace-builder/runs/${encodeURIComponent(runId)}`,
+        );
         if (!active || !run) return;
         const normalizedRun = normalizeBuilderRun(run);
         setBuilderRun(normalizedRun);
         if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         setAgentQuestion(normalizedRun?.question ?? null);
+        if (normalizedRun && ["completed", "failed", "interrupted"].includes(normalizedRun.status)) {
+          await refresh();
+        }
       } catch {}
     };
     const timer = window.setInterval(() => void refreshRun(), 2500);
@@ -466,109 +472,29 @@ export function CustomWorkspacesPage() {
   }, [active]);
 
   const runBuilderAgent = async (question: string, beforeIds: Set<string>): Promise<BuilderRun | null> => {
-    const headers = new Headers({ "Content-Type": "application/json" });
-    const token = getStoredAuthToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch("/api/assistant/ask/stream", {
+    const { run: queued } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs", {
       method: "POST",
-      credentials: "include",
-      headers,
       body: JSON.stringify({ question, ...(selectedModel ? { model: selectedModel } : {}) }),
     });
-    if (!response.ok || !response.body) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(typeof body.error === "string" ? body.error : "The builder agent could not start.");
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let done = false;
-    let streamRunId = "";
-    let activityFallbackIndex = 0;
-    const acceptEvent = (raw: string) => {
-      for (const line of raw.split("\n")) {
-        if (!line.startsWith("data:")) continue;
-        let event: Record<string, unknown>;
-        try { event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>; } catch { continue; }
-        if (typeof event.builderRunId === "string") {
-          streamRunId = event.builderRunId;
-          setBuilderRun((current) => current?.id === event.builderRunId ? current : {
-            id: event.builderRunId as string,
-            status: "running",
-            prompt: question,
-            question: null,
-            answers: {},
-            activities: [],
-            result: null,
-            error: null,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
-        }
-        if (event.toolCallStart && typeof event.toolCallStart === "object") {
-          const toolCall = event.toolCallStart as { tool?: unknown; input?: unknown };
-          const tool = typeof toolCall.tool === "string" ? toolCall.tool : "assistant tool";
-          setPublishAgentSteps((steps) => [...steps, {
-            id: `tool-start-${steps.length}-${tool}`,
-            label: tool.replaceAll("_", " "),
-            detail: "Running",
-            input: typeof toolCall.input === "string" ? toolCall.input : undefined,
-            status: "running",
-          }]);
-        }
-        if (event.activity && typeof event.activity === "object") {
-          const activity = event.activity as { tool?: unknown; detail?: unknown; input?: unknown; output?: unknown };
-          const tool = typeof activity.tool === "string" ? activity.tool : "Assistant tool";
-          const detail = typeof activity.detail === "string" ? activity.detail : "";
-          const incoming = {
-            id: streamRunId && Number.isInteger(event.activityIndex)
-              ? `run-${streamRunId}-${Number(event.activityIndex)}`
-              : `agent-${tool}-${activityFallbackIndex++}`,
-            label: builderActivityLabel({
-              tool,
-              detail,
-              input: typeof activity.input === "string" ? activity.input : undefined,
-              output: typeof activity.output === "string" ? activity.output : undefined,
-            } as BuilderRun["activities"][number]),
-            detail,
-            input: typeof activity.input === "string" ? activity.input : undefined,
-            output: typeof activity.output === "string" ? activity.output : undefined,
-            status: "done" as const,
-          };
-          setPublishAgentSteps((steps) => {
-            const pendingIndex = steps.findIndex((step) =>
-              step.status === "running" &&
-              step.id.startsWith("tool-start-") &&
-              step.label === tool.replaceAll("_", " "),
-            );
-            if (pendingIndex < 0) return mergeBuilderRunSteps(steps, [incoming]);
-            const next = [...steps];
-            next[pendingIndex] = { ...next[pendingIndex], ...incoming };
-            return next;
-          });
-        }
-        if (event.question && typeof event.question === "object") {
-          const question = event.question as AgentQuestion;
-          if (typeof question.id === "string" && Array.isArray(question.questions)) setAgentQuestion(question);
-        }
-        if (typeof event.error === "string") throw new Error(event.error);
-        if (event.done === true) done = true;
-      }
+    let normalizedRun = normalizeBuilderRun(queued);
+    if (!normalizedRun) throw new Error("The builder job was queued without a run record.");
+    const acceptRun = (run: BuilderRun) => {
+      normalizedRun = run;
+      setBuilderRun(run);
+      if (run.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(run)));
+      setAgentQuestion(run.question);
     };
-    while (true) {
-      const { value, done: ended } = await reader.read();
-      buffer += decoder.decode(value, { stream: !ended });
-      const frames = buffer.split("\n\n");
-      buffer = frames.pop() ?? "";
-      frames.forEach(acceptEvent);
-      if (ended) break;
+    acceptRun(normalizedRun);
+    while (["queued", "running"].includes(normalizedRun.status)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      const { run } = await request<AssistantBuilderRunResponse>(
+        `/api/assistant/custom-workspace-builder/runs/${encodeURIComponent(normalizedRun.id)}`,
+      );
+      const latestRun = normalizeBuilderRun(run);
+      if (!latestRun) throw new Error("The builder run is no longer available.");
+      acceptRun(latestRun);
     }
-    if (buffer.trim()) acceptEvent(buffer);
-    if (!done) throw new Error("The builder agent ended without completing its response.");
-    const { run } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
-    const normalizedRun = normalizeBuilderRun(run);
     setBuilderRun(normalizedRun);
-    if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
     const result = await request<{ workspaces: Workspace[] }>(API);
     setItems(result.workspaces);
     const created = result.workspaces.find((workspace) => !beforeIds.has(workspace.id));
@@ -591,58 +517,16 @@ export function CustomWorkspacesPage() {
     try {
       const beforeIds = new Set(items.map((item) => item.id));
       const capabilityText = capabilities.length ? capabilities.join(", ") : "none";
-      await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nOnly grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
+      const run = await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nOnly grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
       const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
       const draft = workspaces.find((workspace) => !beforeIds.has(workspace.id) && workspace.status === "draft");
-      if (draft) {
-        let verifiedRounds = 0;
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const { workspaces: latest } = await request<{ workspaces: Workspace[] }>(API);
-          const current = latest.find((workspace) => workspace.id === draft.id);
-          if (!current) throw new Error("The new draft could not be reloaded to verify its critique progress.");
-          const completed = Number(current.critiqueRounds ?? 0);
-          verifiedRounds = Number(current.verifiedCritiqueRounds ?? 0);
-          if (completed >= 5 && verifiedRounds >= 5) break;
-          const nextRound = Math.min(completed, verifiedRounds) + 1;
-          setPublishAgentSteps((steps) => [
-            ...steps.map((step) => step.status === "running" ? { ...step, status: "done" as const } : step),
-            {
-              id: `automatic-critique-${attempt + 1}`,
-              label: `Complete critique round ${nextRound} of 5`,
-              detail: "The builder continues automatically; no Publish action is needed to start reviews.",
-              status: "running",
-            },
-          ]);
-          let reviewRun: BuilderRun | null = null;
-          for (let retry = 0; retry < 3; retry += 1) {
-            try {
-              reviewRun = await runBuilderAgent(
-                critiqueContinuationPrompt(draft.id),
-                new Set(latest.map((workspace) => workspace.id)),
-              );
-              if (reviewRun?.status === "failed" || reviewRun?.status === "interrupted") {
-                throw new Error("The workspace builder stopped before completing this review round.");
-              }
-              break;
-            } catch (err) {
-              if (retry === 2) throw err;
-              await new Promise((resolve) => window.setTimeout(resolve, 1000 * 2 ** retry));
-            }
-          }
-          if (reviewRun?.status === "waiting_for_answer") {
-            throw new Error("The workspace agent needs your answer before it can finish the critique rounds. Answer its question to continue.");
-          }
-          if (reviewRun?.status === "failed" || reviewRun?.status === "interrupted") {
-            throw new Error("The workspace agent stopped before completing all critique rounds. The draft is saved; continue the builder to resume.");
-          }
-        }
-        const { workspaces: verified } = await request<{ workspaces: Workspace[] }>(API);
-        const finalDraft = verified.find((workspace) => workspace.id === draft.id);
-        if (Number(finalDraft?.critiqueRounds ?? 0) < 5 || Number(finalDraft?.verifiedCritiqueRounds ?? 0) < 5) {
-          throw new Error("The draft is saved, but the agent stopped before all five critique rounds were verified. Continue the builder to resume.");
-        }
+      if (run?.status === "waiting_for_answer") {
+        setError("The builder is waiting for your answer. It will continue on the server after you respond.");
+      } else if (run?.status === "failed" || run?.status === "interrupted") {
+        setError(run.error ?? "The builder stopped. The saved run is available to continue.");
+      } else {
+        setPrompt("");
       }
-      setPrompt("");
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Agent turn complete." } : step));
     } catch (err) {
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" as const } : step));
@@ -660,7 +544,11 @@ export function CustomWorkspacesPage() {
       const savedAnswers = Object.keys(builderRun.answers).length
         ? `\n\nCoordinator answers to the saved builder question (use these directly and do not ask the same questions again):\n${JSON.stringify(builderRun.answers)}`
         : "";
-      const recoveryPrompt = `${builderRun.prompt}\n\nContinue this existing custom workspace build from its saved draft files. Do not create a duplicate workspace if a draft for this request already exists.${savedAnswers}`;
+      const existingDraftId =
+        builderRun.prompt.match(/(?:revise|continue)\s+custom workspace draft\s+([^\s.]+)/i)?.[1] ??
+        builderRun.prompt.match(/existing draft id\s*[:=]\s*([A-Za-z0-9_-]+)/i)?.[1] ??
+        `builder-${builderRun.id}`;
+      const recoveryPrompt = `${builderRun.prompt}\n\nContinue this existing custom workspace build from its saved draft files. Existing draft ID: ${existingDraftId}. Do not create a duplicate workspace.${savedAnswers}`;
       await runBuilderAgent(recoveryPrompt, new Set(items.map((item) => item.id)));
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "done", detail: "Builder run complete." } : step));
     } catch (err) {
@@ -682,44 +570,20 @@ export function CustomWorkspacesPage() {
       status: "running",
     }]);
     try {
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
-        const current = workspaces.find((workspace) => workspace.id === workspaceId);
-        if (!current) throw new Error("This draft is no longer available to your account.");
-        const completed = Number(current.critiqueRounds ?? 0);
-        const verified = Number(current.verifiedCritiqueRounds ?? 0);
-        if (completed >= 5 && verified >= 5) break;
-        const nextRound = Math.min(completed, verified) + 1;
-        setPublishAgentSteps((steps) => [
-          ...steps.map((step) => step.status === "running" ? { ...step, status: "done" as const } : step),
-          {
-            id: `existing-critique-${attempt + 1}`,
-            label: `Complete review round ${nextRound} of 5`,
-            detail: "Continuing the selected draft; no new workspace will be created.",
-            status: "running",
-          },
-        ]);
-        const run = await runBuilderAgent(
-          critiqueContinuationPrompt(workspaceId),
-          new Set(workspaces.map((workspace) => workspace.id)),
-        );
-        if (run?.status === "waiting_for_answer") {
-          setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
-            ? { ...step, status: "done" as const, detail: "Waiting for your answer to continue." }
-            : step));
-          return;
-        }
-        if (run?.status === "failed" || run?.status === "interrupted") {
-          throw new Error("The review run stopped. The saved draft is unchanged and can be continued.");
-        }
-      }
-      const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
-      const finalDraft = workspaces.find((workspace) => workspace.id === workspaceId);
-      if (Number(finalDraft?.critiqueRounds ?? 0) < 5 || Number(finalDraft?.verifiedCritiqueRounds ?? 0) < 5) {
-        throw new Error("The draft is saved, but the review run stopped before all five rounds were verified. Start it again to continue.");
+      const run = await runBuilderAgent(
+        critiqueContinuationPrompt(workspaceId),
+        new Set(items.map((workspace) => workspace.id)),
+      );
+      if (run?.status === "failed" || run?.status === "interrupted") {
+        throw new Error(run.error ?? "The review run stopped. The saved draft is available to continue.");
       }
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
-        ? { ...step, status: "done" as const, detail: "All five review rounds are verified." }
+        ? {
+          ...step,
+          status: "done" as const,
+          detail: run?.status === "waiting_for_answer" ? "Waiting for your answer; the server will continue afterward." :
+            run?.status === "completed" ? "All review rounds are verified." : "Builder run saved on the server.",
+        }
         : step));
       await refresh();
     } catch (err) {
@@ -752,18 +616,9 @@ export function CustomWorkspacesPage() {
     setPublishAgentSteps([{ id: `auto-resume-${attempts + 1}`, label: "Resume workspace reviews", detail: "Continuing the saved draft automatically.", status: "running" }]);
     void (async () => {
       try {
-        for (let round = 0; round < 5; round += 1) {
-          const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
-          const latest = workspaces.find((workspace) => workspace.id === active.id);
-          if (!latest || (Number(latest.critiqueRounds ?? 0) >= 5 && Number(latest.verifiedCritiqueRounds ?? 0) >= 5)) break;
-          const resumed = await runBuilderAgent(
-            critiqueContinuationPrompt(active.id),
-            new Set(workspaces.map((workspace) => workspace.id)),
-          );
-          if (resumed?.status === "waiting_for_answer") return;
-          if (resumed?.status === "failed" || resumed?.status === "interrupted") {
-            throw new Error("The workspace builder stopped again. It will retry automatically.");
-          }
+        const resumed = await runBuilderAgent(critiqueContinuationPrompt(active.id), new Set(items.map((workspace) => workspace.id)));
+        if (resumed?.status === "failed" || resumed?.status === "interrupted") {
+          throw new Error(resumed.error ?? "The server could not continue the saved draft.");
         }
         await refresh();
       } catch (err) {
@@ -782,7 +637,7 @@ export function CustomWorkspacesPage() {
       !active ||
       active.status !== "draft" ||
       (Number(active.critiqueRounds ?? 0) >= 5 && Number(active.verifiedCritiqueRounds ?? 0) >= 5) ||
-      (builderRun && ["running", "waiting_for_answer"].includes(builderRun.status)) ||
+      (builderRun && ["queued", "running", "waiting_for_answer"].includes(builderRun.status)) ||
       (builderRun && ["failed", "interrupted"].includes(builderRun.status) && builderRun.prompt.includes(active.id)) ||
       autoStartedDraftReviews.current.has(active.id)
     ) return;
@@ -1043,6 +898,7 @@ export function CustomWorkspacesPage() {
           {builderRun && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--foreground))]" data-testid="builder-run-status">
             <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : builderRun.status === "interrupted" || builderRun.status === "failed" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
               {builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
+                builderRun.status === "queued" ? "Queued on server" :
                 builderRun.status === "running" ? "Building" :
                   builderRun.status === "completed" ? "Complete" :
                     builderRun.status === "interrupted" ? "Stopped — can continue" : "Could not finish — can continue"}
