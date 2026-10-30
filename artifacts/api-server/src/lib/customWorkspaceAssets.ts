@@ -1,13 +1,17 @@
 export type CustomWorkspaceAssetFile = { path: string; content: string };
 
-function safeSvgDataUrl(svg: string): string | null {
-  if (Buffer.byteLength(svg, "utf8") > 120_000) return null;
+function safeSvgDataUrl(svg: string, maxBytes = 120_000): string | null {
+  if (Buffer.byteLength(svg, "utf8") > maxBytes) return null;
   if (!/<svg\b/i.test(svg) || !/<\/svg\s*>/i.test(svg)) return null;
   if (/<\s*(?:script|foreignObject|iframe|object|embed)\b/i.test(svg)) return null;
   if (/\bon[a-z][\w:-]*\s*=/i.test(svg) || /@import\b/i.test(svg)) return null;
   if (/(?:href|xlink:href)\s*=\s*["']\s*(?!#)[^"']+/i.test(svg)) return null;
   if (/url\(\s*["']?\s*(?!#)/i.test(svg)) return null;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+export function customWorkspaceSvgDataUrl(svg: string, maxBytes = 20_000): string | null {
+  return safeSvgDataUrl(svg, maxBytes);
 }
 
 function localSvgDataUrl(reference: string, files: Map<string, string>): string | null {

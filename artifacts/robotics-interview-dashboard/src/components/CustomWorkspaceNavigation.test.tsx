@@ -9,6 +9,7 @@ const workspaces: AccessibleCustomWorkspace[] = [
     title: "Team planner",
     description: "Plan the event.",
     status: "published",
+    iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
   },
   {
     id: "draft-app",
@@ -26,6 +27,7 @@ describe("custom workspace navigation", () => {
     expect(card).toHaveAttribute("href", "/custom-workspaces/team-planner");
     expect(screen.getByTestId("text-custom-workspace-title-team-planner")).toHaveTextContent("Team planner");
     expect(screen.getByTestId("status-custom-workspace-card-team-planner")).toHaveTextContent("Custom app");
+    expect(screen.getByTestId("image-custom-workspace-icon-team-planner")).toHaveAttribute("src", workspaces[0].iconDataUrl);
   });
 
   it("shows server-returned apps in the sidebar and marks the active route", () => {
@@ -41,6 +43,7 @@ describe("custom workspace navigation", () => {
     const activeLink = screen.getByTestId("link-custom-workspace-draft-app");
     expect(activeLink).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("status-custom-workspace-nav-draft-app")).toHaveTextContent("Draft");
+    expect(screen.queryByTestId("image-custom-workspace-nav-icon-draft-app")).not.toBeInTheDocument();
     fireEvent.click(activeLink);
     expect(onNavigate).toHaveBeenCalledOnce();
   });

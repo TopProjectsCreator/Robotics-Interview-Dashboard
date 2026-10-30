@@ -14,6 +14,11 @@ export interface CustomWorkspace {
   title: string;
   description: string;
   html?: string;
+  /**
+     * @maxLength 65000
+     * @nullable
+     */
+  iconDataUrl?: string | null;
   capabilities: CustomWorkspaceCapabilitiesItem[];
   status: CustomWorkspaceStatus;
   accessMode: CustomWorkspaceAccessMode;

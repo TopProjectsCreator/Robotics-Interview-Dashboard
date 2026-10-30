@@ -19,6 +19,7 @@ describe("useAccessibleCustomWorkspaces", () => {
         title: "Pit scouting",
         description: "Collect observations.",
         status: "published",
+        iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
       }],
     }));
     vi.stubGlobal("fetch", fetchMock);
@@ -40,6 +41,7 @@ describe("useAccessibleCustomWorkspaces", () => {
       title: "Pit scouting",
       description: "Collect observations.",
       status: "published",
+      iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/custom-workspaces",

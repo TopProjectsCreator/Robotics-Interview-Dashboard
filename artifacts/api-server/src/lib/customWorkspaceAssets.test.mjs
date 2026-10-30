@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inlineLocalSvgAssets } from "./customWorkspaceAssets.ts";
+import { customWorkspaceSvgDataUrl, inlineLocalSvgAssets } from "./customWorkspaceAssets.ts";
+
+test("returns a safe, size-limited data URL for an agent-generated workspace icon", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h4v4H0z"/></svg>';
+  assert.equal(customWorkspaceSvgDataUrl(svg), `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  assert.equal(customWorkspaceSvgDataUrl('<svg><script>alert(1)</script></svg>'), null);
+  assert.equal(customWorkspaceSvgDataUrl(svg, 10), null);
+});
 
 test("inlines safe local SVGs referenced by HTML and CSS", () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h4v4H0z"/></svg>';

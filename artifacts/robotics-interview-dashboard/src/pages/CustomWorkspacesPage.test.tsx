@@ -311,6 +311,8 @@ describe("automatic custom workspace critiques", () => {
 
     await waitFor(() => expect(queueCalls).toBe(1));
     expect(queuedPrompt).toContain("Build a custom workspace app for the team");
+    expect(queuedPrompt).toContain("assets/icon.svg");
+    expect(queuedPrompt).toContain("20 KB");
     expect(queuedPrompt).toContain("five independently verified rounds");
     expect(queuedPrompt).toContain("without waiting for Publish");
     expect(queuedPrompt).toContain("critique or verification fails");
@@ -361,6 +363,7 @@ describe("automatic custom workspace critiques", () => {
     expect(reviewPrompt).toContain("Revise custom workspace draft custom-app-1");
     expect(reviewPrompt).toContain("do not wait for Publish");
     expect(reviewPrompt).toContain("verify_custom_workspace_fixes");
+    expect(reviewPrompt).toContain("assets/icon.svg");
     expect(reviewPrompt).not.toContain("Build a custom workspace app for the team");
     expect(await screen.findByRole("button", { name: "Publish" })).toBeInTheDocument();
     expect(screen.getAllByText("Gothic Cathedral 3D Chess")).toHaveLength(2);

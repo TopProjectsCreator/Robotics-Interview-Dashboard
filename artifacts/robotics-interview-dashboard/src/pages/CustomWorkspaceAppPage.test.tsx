@@ -31,6 +31,7 @@ describe("CustomWorkspaceAppPage", () => {
         description: "Collect observations at the event.",
         capabilities: ["data", "llm"],
         status: "published",
+        iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
         accessMode: "team",
         allowedInterviewerIds: [],
         html: '<html><head></head><body><img src="data:image/svg+xml;charset=utf-8,%3Csvg%3E"></body></html>',
@@ -52,6 +53,10 @@ describe("CustomWorkspaceAppPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Pit scouting" })).toBeInTheDocument();
+    expect(screen.getByTestId("image-custom-app-icon-custom-app-1")).toHaveAttribute(
+      "src",
+      "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
+    );
     const iframe = await waitFor(() => screen.getByTestId("iframe-custom-app-custom-app-1"));
     expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
     const srcDoc = iframe.getAttribute("srcdoc") ?? "";

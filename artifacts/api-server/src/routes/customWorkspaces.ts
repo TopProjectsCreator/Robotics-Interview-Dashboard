@@ -19,6 +19,7 @@ import { teamSqlCondition } from "../lib/teams";
 import { getAssistantModel } from "../lib/assistantModel";
 import { deleteCustomWorkspace } from "../lib/customWorkspaceDeletion";
 import { pushRealtimeHint } from "../lib/realtime";
+import { customWorkspaceSvgDataUrl } from "../lib/customWorkspaceAssets";
 
 /** Builder-management guard that also supports legacy admin accounts. */
 function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -319,6 +320,7 @@ type WorkspaceRow = {
   title: string;
   description: string;
   html: string;
+  iconSvg?: string | null;
   capabilities: string[];
   status: "draft" | "published";
   accessMode: "team" | "owner" | "selected";
@@ -328,6 +330,14 @@ type WorkspaceRow = {
   critiqueRounds: number;
   verifiedCritiqueRounds: number;
 };
+
+function workspaceResponse<T extends { iconSvg?: string | null }>(workspace: T) {
+  const { iconSvg, ...fields } = workspace;
+  return {
+    ...fields,
+    iconDataUrl: iconSvg ? customWorkspaceSvgDataUrl(iconSvg) : null,
+  };
+}
 
 function bodyObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -400,7 +410,12 @@ async function accessibleWorkspace(
             "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
             "created_at" as "createdAt", "critique_rounds" as "critiqueRounds",
             "verified_critique_rounds" as "verifiedCritiqueRounds",
-            "updated_at" as "updatedAt"
+            "updated_at" as "updatedAt",
+            (select icon_file."content" from "custom_workspace_files" icon_file
+              where icon_file."workspace_id" = "custom_workspaces"."id"
+                and icon_file."team_id" is not distinct from "custom_workspaces"."team_id"
+                and icon_file."path" = 'assets/icon.svg'
+              limit 1) as "iconSvg"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
         and (("status" = 'published' and (
@@ -449,7 +464,12 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
             "allowed_interviewer_ids" as "allowedInterviewerIds",
             "created_at" as "createdAt", "updated_at" as "updatedAt",
             "critique_rounds" as "critiqueRounds",
-            "verified_critique_rounds" as "verifiedCritiqueRounds"
+            "verified_critique_rounds" as "verifiedCritiqueRounds",
+            (select icon_file."content" from "custom_workspace_files" icon_file
+              where icon_file."workspace_id" = "custom_workspaces"."id"
+                and icon_file."team_id" is not distinct from "custom_workspaces"."team_id"
+                and icon_file."path" = 'assets/icon.svg'
+              limit 1) as "iconSvg"
        from "custom_workspaces"
       where ${teamSqlCondition('"team_id"', "$1")}
         and (("status" = 'published' and (
@@ -460,7 +480,7 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
       order by "updated_at" desc limit 100`,
     [teamId, accountId],
   );
-  res.json({ workspaces: result.rows });
+  res.json({ workspaces: result.rows.map(workspaceResponse) });
 });
 
 router.get("/custom-workspaces/team-members", requireCoordinator, async (req, res): Promise<void> => {
@@ -571,7 +591,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
 
 router.get("/custom-workspaces/:id", requireAdmin, async (req, res): Promise<void> => {
   const row = await accessibleWorkspace(req, res, String(req.params.id ?? ""), true);
-  if (row) res.json({ workspace: row });
+  if (row) res.json({ workspace: workspaceResponse(row) });
 });
 
 router.get("/custom-workspaces/:id/files", requireCoordinator, async (req, res): Promise<void> => {

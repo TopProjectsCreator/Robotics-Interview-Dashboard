@@ -5458,6 +5458,8 @@ export const SetPartsRobotAllocationResponse = zod.object({
 /**
  * @summary List custom workspaces available to the current team
  */
+export const listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax = 65000;
+
 export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin = 0;
 export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax = 5;
 
@@ -5472,6 +5474,7 @@ export const ListCustomWorkspacesResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5507,6 +5510,8 @@ export const GenerateCustomWorkspaceBody = zod.object({
   "capabilities": zod.array(zod.enum(['data', 'llm']))
 })
 
+export const generateCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
+
 export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5521,6 +5526,7 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(generateCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5540,6 +5546,8 @@ export const GetCustomWorkspaceParams = zod.object({
   "workspaceId": zod.coerce.string()
 })
 
+export const getCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
+
 export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5554,6 +5562,7 @@ export const GetCustomWorkspaceResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(getCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5583,6 +5592,8 @@ export const PublishCustomWorkspaceBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(publishCustomWorkspaceBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const publishCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
+
 export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5597,6 +5608,7 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(publishCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5626,6 +5638,8 @@ export const UpdateCustomWorkspaceAccessBody = zod.object({
   "allowedInterviewerIds": zod.array(zod.string().min(1)).max(updateCustomWorkspaceAccessBodyAllowedInterviewerIdsMax).optional().describe('Required for selected access; account IDs from the current team')
 })
 
+export const updateCustomWorkspaceAccessResponseWorkspaceIconDataUrlMax = 65000;
+
 export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin = 0;
 export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5640,6 +5654,7 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(updateCustomWorkspaceAccessResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5667,6 +5682,8 @@ export const ReviseCustomWorkspaceBody = zod.object({
   "prompt": zod.string().min(1).max(reviseCustomWorkspaceBodyPromptMax)
 })
 
+export const reviseCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
+
 export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5681,6 +5698,7 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(reviseCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5743,6 +5761,8 @@ export const RestoreCustomWorkspaceVersionParams = zod.object({
   "versionId": zod.coerce.string()
 })
 
+export const restoreCustomWorkspaceVersionResponseWorkspaceIconDataUrlMax = 65000;
+
 export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin = 0;
 export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5757,6 +5777,7 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(restoreCustomWorkspaceVersionResponseWorkspaceIconDataUrlMax).nullish(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),

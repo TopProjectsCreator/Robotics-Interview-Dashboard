@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CustomWorkspace } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 
-export type AccessibleCustomWorkspace = Pick<CustomWorkspace, "id" | "title" | "description" | "status">;
+export type AccessibleCustomWorkspace = Pick<CustomWorkspace, "id" | "title" | "description" | "status" | "iconDataUrl">;
 
 export function useAccessibleCustomWorkspaces(
   enabled: boolean,
@@ -48,6 +48,7 @@ export function useAccessibleCustomWorkspaces(
           title: workspace.title,
           description: workspace.description,
           status: workspace.status,
+          iconDataUrl: typeof workspace.iconDataUrl === "string" ? workspace.iconDataUrl : null,
         };
       });
     },

@@ -58,6 +58,7 @@ test("server prompts preserve saved answers and target the existing draft", () =
   assert.match(recovery, /"audience":"coaches"/);
   assert.match(continuation, /critique_custom_workspace/);
   assert.match(continuation, /verify_custom_workspace_fixes/);
+  assert.match(continuation, /assets\/icon\.svg/);
 });
 
 test("only custom workspace build and revision prompts enter the builder queue", () => {

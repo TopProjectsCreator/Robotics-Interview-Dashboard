@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useTheme } from "next-themes";
-import { ArrowLeft, LoaderCircle, Sparkles } from "lucide-react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 import { sandboxDocument } from "../lib/customWorkspaceRuntime";
@@ -127,9 +127,14 @@ export function CustomWorkspaceAppPage({ workspaceId }: { workspaceId: string })
     <section className="overflow-hidden rounded-3xl border border-[#dce5e5] bg-white text-[#182232] shadow-sm dark:border-[#2a3f52] dark:bg-[#15232d] dark:text-[#e8eff2]" data-testid={`custom-app-${workspace.id}`}>
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dce5e5] px-4 py-4 dark:border-[#2a3f52] sm:px-6">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e3f4f2] text-[#16869a] dark:bg-[#1d3a43] dark:text-[#73c9c0]">
-            <Sparkles size={19} aria-hidden="true" />
-          </span>
+          {workspace.iconDataUrl && (
+            <img
+              src={workspace.iconDataUrl}
+              alt=""
+              className="mt-0.5 h-10 w-10 shrink-0 object-contain"
+              data-testid={`image-custom-app-icon-${workspace.id}`}
+            />
+          )}
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl" data-testid={`text-custom-app-title-${workspace.id}`}>{workspace.title}</h1>
             {workspace.description && (
