@@ -8412,7 +8412,7 @@ components:
           description: Present when the saved policy needs an admin correction; items is empty until it is fixed.
     AssistantModelPolicy:
       type: object
-      required: [defaultModel, locked, listMode, modelIds, availableModelIds]
+      required: [defaultModel, locked, listMode, modelIds, availableModelIds, unavailableModelIds]
       properties:
         defaultModel:
           type: string
@@ -8428,6 +8428,11 @@ components:
             type: string
         availableModelIds:
           type: array
+          items:
+            type: string
+        unavailableModelIds:
+          type: array
+          description: Saved default or restriction IDs missing from the current provider catalog.
           items:
             type: string
         policyError:

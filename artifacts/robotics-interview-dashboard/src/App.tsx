@@ -7799,12 +7799,14 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
       enabled: assistantSessionReady,
       staleTime: 5 * 60 * 1000,
+      refetchInterval: assistantSettingsOpen ? 5 * 60 * 1000 : false,
     },
   });
   const assistantModelPolicy = useGetAssistantModelPolicy({
     query: {
       queryKey: [...getGetAssistantModelPolicyQueryKey(), assistantTeamScope],
       enabled: assistantSessionReady && canManageAssistantTools && assistantSettingsOpen,
+      refetchInterval: assistantSettingsOpen ? 5 * 60 * 1000 : false,
     },
   });
   const assistantModelPolicyHistory = useGetAssistantModelPolicyHistory({
@@ -8826,7 +8828,14 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               ? serverErrorMessage(assistantModelPolicyHistory.error, "Could not load policy history.")
               : ""}
             onSaveModelPolicy={(policy) => updateAssistantModelPolicy.mutate({ data: policy })}
-            onSettingsOpenChange={setAssistantSettingsOpen}
+            onSettingsOpenChange={(open) => {
+              setAssistantSettingsOpen(open);
+              if (open) {
+                void queryClient.invalidateQueries({
+                  queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
+                });
+              }
+            }}
             showRecurringTasks={!partsMode}
             canManageAssistantTools={canManageAssistantTools}
             thinkingLevel={thinkingLevel}

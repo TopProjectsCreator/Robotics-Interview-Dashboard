@@ -15,6 +15,8 @@ export interface AssistantModelPolicy {
   /** @maxItems 100 */
   modelIds: string[];
   availableModelIds: string[];
+  /** Saved default or restriction IDs missing from the current provider catalog. */
+  unavailableModelIds: string[];
   /** Present when the stored policy is invalid or references unavailable models. */
   policyError?: string;
 }

@@ -42,6 +42,8 @@ const catalog = [
   { id: VISION_MODEL, name: "Vision", isFree: true, architecture: { input_modalities: ["text", "image"] } },
   { id: SECOND_VISION_MODEL, name: "Vision fallback", isFree: true, input_modalities: ["text", "image"] },
 ];
+let providerCatalog = catalog;
+let providerCatalogFetches = 0;
 const db = {
   select() {
     return {
@@ -113,7 +115,12 @@ mock.module("../lib/workspaceAccess", {
 mock.module("@workspace/integrations-openai-ai-server", {
   namedExports: {
     openai: {
-      models: { list: async () => ({ data: catalog }) },
+      models: {
+        list: async () => {
+          providerCatalogFetches += 1;
+          return { data: providerCatalog };
+        },
+      },
     },
   },
 });
@@ -307,17 +314,65 @@ test("a stale saved default is reported without exposing any models as effective
     teamId: "stale-team",
     defaultModel: "provider/removed-model",
     locked: false,
-    listMode: null,
-    modelIds: [],
+    listMode: "allow",
+    modelIds: ["provider/removed-restriction"],
   });
   const result = await getAssistantModelPolicyWithCatalog("stale-team", true);
   assert.equal(result.policy.defaultModel, "provider/removed-model");
+  assert.deepEqual(result.policy.modelIds, ["provider/removed-restriction"]);
+  assert.deepEqual(result.unavailableModelIds, ["provider/removed-model", "provider/removed-restriction"]);
   assert.equal(result.effectiveModels.length, 0);
   assert.match(result.policyError, /no longer available/);
   await assert.rejects(
     resolveTeamAssistantModel("stale-team"),
     (error) => error instanceof AssistantModelPolicyError,
   );
+});
+
+test("a removed restricted model is surfaced without changing the saved policy", async () => {
+  const savedPolicy = {
+    teamId: "stale-restriction-team",
+    defaultModel: TEXT_MODEL,
+    locked: false,
+    listMode: "block",
+    modelIds: ["provider/removed-restriction"],
+  };
+  policies.set(savedPolicy.teamId, savedPolicy);
+
+  const result = await getAssistantModelPolicyWithCatalog(savedPolicy.teamId, true);
+  assert.deepEqual(result.unavailableModelIds, ["provider/removed-restriction"]);
+  assert.deepEqual(result.policy.modelIds, savedPolicy.modelIds);
+  assert.equal(result.effectiveModels.length, 0);
+  assert.deepEqual(policies.get(savedPolicy.teamId), savedPolicy);
+  await assert.rejects(
+    resolveTeamAssistantModel(savedPolicy.teamId),
+    (error) => error instanceof AssistantModelPolicyError,
+  );
+});
+
+test("a policy read refreshes the provider catalog before reporting missing IDs", async () => {
+  const teamId = "catalog-refresh-team";
+  policies.set(teamId, {
+    teamId,
+    defaultModel: TEXT_MODEL,
+    locked: false,
+    listMode: "block",
+    modelIds: [VISION_MODEL],
+  });
+  await getAssistantModelPolicyWithCatalog(teamId, true);
+  const fetchCountBeforeRefresh = providerCatalogFetches;
+  providerCatalog = catalog.filter((model) => model.id !== VISION_MODEL);
+
+  try {
+    const result = await getAssistantModelPolicyWithCatalog(teamId, true, true);
+    assert.ok(providerCatalogFetches > fetchCountBeforeRefresh);
+    assert.deepEqual(result.unavailableModelIds, [VISION_MODEL]);
+    assert.deepEqual(result.policy.modelIds, [VISION_MODEL]);
+    assert.equal(result.effectiveModels.length, 0);
+  } finally {
+    providerCatalog = catalog;
+    await getAssistantModelPolicyWithCatalog(teamId, true, true);
+  }
 });
 
 test("a malformed stored policy reports an error and fails closed", async () => {

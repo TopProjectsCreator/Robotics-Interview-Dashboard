@@ -76,6 +76,39 @@ describe("AssistantModelPicker", () => {
     });
   });
 
+  it("warns coordinators about unavailable policy IDs without replacing them", async () => {
+    const onSaveModelPolicy = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="current-model"
+        models={[{ id: "current-model" }]}
+        catalogModels={[{ id: "current-model", name: "Current model" }]}
+        modelPolicy={{
+          defaultModel: "provider/removed-default",
+          locked: false,
+          listMode: "allow",
+          modelIds: ["provider/removed-restriction"],
+          availableModelIds: [],
+          unavailableModelIds: ["provider/removed-default", "provider/removed-restriction"],
+        }}
+        loading={false}
+        error={false}
+        canManageAssistantPolicy
+        onChange={vi.fn()}
+        onSaveModelPolicy={onSaveModelPolicy}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const warning = await screen.findByTestId("assistant-policy-unavailable-models");
+    expect(warning).toHaveTextContent("provider/removed-default");
+    expect(warning).toHaveTextContent("provider/removed-restriction");
+    expect(warning).toHaveTextContent("No model has been substituted automatically.");
+    expect(screen.getByRole("option", { name: "provider/removed-default · unavailable" }))
+      .toBeDisabled();
+    expect(onSaveModelPolicy).not.toHaveBeenCalled();
+  });
+
   it("shows coordinator, timestamp, and before-and-after values in read-only policy history", async () => {
     renderWithQuery(
       <AssistantModelPicker

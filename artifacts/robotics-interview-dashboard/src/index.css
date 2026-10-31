@@ -211,6 +211,7 @@ button { cursor: pointer; }
 .assistant-model-policy-toggle { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; }
 .assistant-model-policy-note { font-size: 10px; line-height: 1.45; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .assistant-model-policy-error { border-radius: 8px; background: hsl(var(--destructive) / .1); padding: 7px; color: hsl(var(--destructive)); font-size: 11px; }
+.assistant-model-policy-warning { border: 1px solid color-mix(in srgb, var(--document-save-warning) 45%, hsl(var(--border))); border-radius: 8px; background: color-mix(in srgb, var(--document-save-warning) 12%, hsl(var(--card))); padding: 8px; color: hsl(var(--foreground)); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 .assistant-model-policy-history { margin: 8px 12px; padding: 10px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); display: grid; gap: 8px; }
 .assistant-model-policy-history-list { display: grid; gap: 8px; max-height: 210px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
 .assistant-model-policy-history-list li { display: grid; gap: 4px; overflow-wrap: anywhere; border-top: 1px solid hsl(var(--border)); padding-top: 7px; color: hsl(var(--muted-foreground)); font-size: 10px; line-height: 1.45; }

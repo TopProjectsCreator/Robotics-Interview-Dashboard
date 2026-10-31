@@ -34,6 +34,7 @@ export type AssistantModelPolicyView = {
   listMode: "allow" | "block" | null;
   modelIds: string[];
   availableModelIds: string[];
+  unavailableModelIds?: string[];
   policyError?: string;
 };
 
@@ -167,6 +168,13 @@ export function AssistantModelPicker({
         ? !policyIds.includes(option.id)
         : true,
   ), [catalogModels, policyIds, policyMode]);
+  const unavailablePolicyModels = useMemo(() => {
+    if (modelPolicy?.unavailableModelIds) return modelPolicy.unavailableModelIds;
+    if (!modelPolicy) return [];
+    const availableIds = new Set(catalogModels.map((option) => option.id));
+    return [...new Set([modelPolicy.defaultModel, ...modelPolicy.modelIds])]
+      .filter((modelId) => !availableIds.has(modelId));
+  }, [catalogModels, modelPolicy]);
   const describePolicy = (policy: AssistantModelPolicyHistoryEntryView["previousPolicy"]) => {
     const restriction = policy.listMode === null
       ? "No model list restrictions"
@@ -368,6 +376,9 @@ export function AssistantModelPicker({
                     disabled={!catalogModels.length}
                     data-testid="assistant-policy-default"
                   >
+                    {policyDefault && !catalogModels.some((option) => option.id === policyDefault) && (
+                      <option value={policyDefault} disabled>{policyDefault} · unavailable</option>
+                    )}
                     {catalogModels.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.name || option.id}{option.inputModalities?.includes("image") ? " · vision" : ""}
@@ -408,6 +419,13 @@ export function AssistantModelPicker({
                   Effective choices: {draftEffectiveModels.length}
                   {draftEffectiveModels.length > 0 && ` · ${draftEffectiveModels.slice(0, 4).map((option) => option.name || option.id).join(", ")}${draftEffectiveModels.length > 4 ? ", …" : ""}`}
                 </p>
+                {unavailablePolicyModels.length > 0 && (
+                  <p role="alert" className="assistant-model-policy-warning" data-testid="assistant-policy-unavailable-models">
+                    The saved policy references unavailable model IDs: {unavailablePolicyModels.join(", ")}.
+                    Select an available default if needed and remove or replace unavailable restriction IDs, then save the policy.
+                    No model has been substituted automatically.
+                  </p>
+                )}
                 {modelPolicyError && <p role="alert" className="assistant-model-policy-error">{modelPolicyError}</p>}
                 <button
                   type="button"

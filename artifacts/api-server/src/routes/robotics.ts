@@ -8936,10 +8936,12 @@ router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> =>
 
 router.get("/assistant/model-policy", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const { policy, effectiveModels, policyError } = await getAssistantModelPolicyWithCatalog(await requestTeamId(req), true);
+    const { policy, effectiveModels, policyError, unavailableModelIds } =
+      await getAssistantModelPolicyWithCatalog(await requestTeamId(req), true, true);
     res.json(GetAssistantModelPolicyResponse.parse({
       ...policy,
       availableModelIds: effectiveModels.map((model) => model.id),
+      unavailableModelIds,
       ...(policyError ? { policyError } : {}),
     }));
   } catch (error) {
@@ -8984,10 +8986,11 @@ router.put("/assistant/model-policy", requireCoordinator, async (req, res): Prom
       id: actorId,
       name: actor?.displayName ?? actorId,
     });
-    const { effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
+    const { effectiveModels, unavailableModelIds } = await getAssistantModelPolicyWithCatalog(teamId);
     res.json(UpdateAssistantModelPolicyResponse.parse({
       ...policy,
       availableModelIds: effectiveModels.map((model) => model.id),
+      unavailableModelIds,
     }));
   } catch (error) {
     req.log.warn({ err: error }, "Team assistant model policy was not saved");

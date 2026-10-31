@@ -53,7 +53,8 @@ export function configuredAssistantModel(): string {
   return process.env.AI_ASSISTANT_MODEL?.trim() || DEFAULT_ASSISTANT_MODEL;
 }
 
-export async function listAssistantProviderModels(): Promise<AssistantCatalogModel[]> {
+export async function listAssistantProviderModels(forceRefresh = false): Promise<AssistantCatalogModel[]> {
+  if (forceRefresh) cachedCatalog = undefined;
   if (cachedCatalog && cachedCatalog.expiresAt > Date.now()) return cachedCatalog.models;
   if (catalogRequest) return catalogRequest;
 
@@ -67,6 +68,15 @@ export async function listAssistantProviderModels(): Promise<AssistantCatalogMod
     catalogRequest = undefined;
   });
   return catalogRequest;
+}
+
+function unavailablePolicyModelIds(
+  policy: AssistantModelPolicy,
+  catalog: readonly AssistantCatalogModel[],
+): string[] {
+  const availableIds = new Set(catalog.map((model) => model.id));
+  return [...new Set([policy.defaultModel, ...policy.modelIds])]
+    .filter((modelId) => !availableIds.has(modelId));
 }
 
 export function resolveAssistantModel(
@@ -179,30 +189,35 @@ export async function getAssistantModelPolicyWithCatalog(teamId?: string): Promi
   policy: AssistantModelPolicy;
   catalog: AssistantCatalogModel[];
   effectiveModels: AssistantCatalogModel[];
+  unavailableModelIds: string[];
   policyError?: string;
 }>;
 export async function getAssistantModelPolicyWithCatalog(
   teamId: string,
   tolerateInvalidStoredPolicy: true,
+  forceCatalogRefresh?: boolean,
 ): Promise<{
   policy: AssistantModelPolicy;
   catalog: AssistantCatalogModel[];
   effectiveModels: AssistantCatalogModel[];
+  unavailableModelIds: string[];
   policyError?: string;
 }>;
 export async function getAssistantModelPolicyWithCatalog(
   teamId: string | undefined,
   tolerateInvalidStoredPolicy = false,
+  forceCatalogRefresh = false,
 ): Promise<{
   policy: AssistantModelPolicy;
   catalog: AssistantCatalogModel[];
   effectiveModels: AssistantCatalogModel[];
+  unavailableModelIds: string[];
   policyError?: string;
 }> {
   const activeTeamId = teamId ?? await defaultTeamId();
   let catalog: AssistantCatalogModel[];
   try {
-    catalog = await listAssistantProviderModels();
+    catalog = await listAssistantProviderModels(forceCatalogRefresh);
   } catch {
     throw new AssistantModelPolicyError("The model catalog is unavailable right now. Try again.", 503);
   }
@@ -222,16 +237,24 @@ export async function getAssistantModelPolicyWithCatalog(
       listMode: null,
       modelIds: [],
     };
-  if (storedPolicyInvalid) return { policy, catalog, effectiveModels: [], policyError };
+  if (storedPolicyInvalid) return { policy, catalog, effectiveModels: [], unavailableModelIds: [], policyError };
+  const unavailableModelIds = stored ? unavailablePolicyModelIds(policy, catalog) : [];
   try {
     validatePolicyAgainstCatalog(policy, catalog);
-    return { policy, catalog, effectiveModels: effectiveAssistantModels(policy, catalog), ...(policyError ? { policyError } : {}) };
+    return {
+      policy,
+      catalog,
+      effectiveModels: effectiveAssistantModels(policy, catalog),
+      unavailableModelIds,
+      ...(policyError ? { policyError } : {}),
+    };
   } catch (error) {
     if (!tolerateInvalidStoredPolicy) throw error;
     return {
       policy,
       catalog,
       effectiveModels: [],
+      unavailableModelIds,
       policyError: error instanceof Error ? error.message : "The team model policy is invalid.",
     };
   }

@@ -3514,6 +3514,7 @@ export const GetAssistantModelPolicyResponse = zod.object({
   "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
   "modelIds": zod.array(zod.string()).max(getAssistantModelPolicyResponseModelIdsMax),
   "availableModelIds": zod.array(zod.string()),
+  "unavailableModelIds": zod.array(zod.string()).describe('Saved default or restriction IDs missing from the current provider catalog.'),
   "policyError": zod.string().optional().describe('Present when the stored policy is invalid or references unavailable models.')
 })
 
@@ -3547,6 +3548,7 @@ export const UpdateAssistantModelPolicyResponse = zod.object({
   "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
   "modelIds": zod.array(zod.string()).max(updateAssistantModelPolicyResponseModelIdsMax),
   "availableModelIds": zod.array(zod.string()),
+  "unavailableModelIds": zod.array(zod.string()).describe('Saved default or restriction IDs missing from the current provider catalog.'),
   "policyError": zod.string().optional().describe('Present when the stored policy is invalid or references unavailable models.')
 })
 
