@@ -38,6 +38,7 @@ import type {
   AssistantInput,
   AssistantModelList,
   AssistantModelPolicy,
+  AssistantModelPolicyHistory,
   AssistantModelPolicyInput,
   AssistantPendingQuestionsResponse,
   AssistantPromptQueue,
@@ -9684,6 +9685,84 @@ export const useUpdateAssistantModelPolicy = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getUpdateAssistantModelPolicyMutationOptions(options));
     }
+
+export const getGetAssistantModelPolicyHistoryUrl = () => {
+
+
+
+
+  return `/api/assistant/model-policy/history`
+}
+
+/**
+ * Coordinator-only, read-only history scoped to the signed-in team.
+ * @summary Get the signed-in team's assistant model policy history
+ */
+export const getAssistantModelPolicyHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantModelPolicyHistory> => {
+
+  return customFetch<AssistantModelPolicyHistory>(getGetAssistantModelPolicyHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantModelPolicyHistoryQueryKey = () => {
+    return [
+    `/api/assistant/model-policy/history`
+    ] as const;
+    }
+
+
+export const getGetAssistantModelPolicyHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantModelPolicyHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>> = ({ signal }) => getAssistantModelPolicyHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantModelPolicyHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>>
+export type GetAssistantModelPolicyHistoryQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the signed-in team's assistant model policy history
+ */
+
+export function useGetAssistantModelPolicyHistory<TData = Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantModelPolicyHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantModelPolicyHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListDashboardChartsUrl = () => {
 

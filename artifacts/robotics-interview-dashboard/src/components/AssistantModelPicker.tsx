@@ -37,6 +37,15 @@ export type AssistantModelPolicyView = {
   policyError?: string;
 };
 
+export type AssistantModelPolicyHistoryEntryView = {
+  id: string;
+  coordinatorId: string;
+  coordinatorName: string;
+  previousPolicy: Omit<AssistantModelPolicyView, "availableModelIds" | "policyError">;
+  newPolicy: Omit<AssistantModelPolicyView, "availableModelIds" | "policyError">;
+  createdAt: string;
+};
+
 export type AssistantThinkingLevel = "auto" | "low" | "medium" | "high";
 export type CustomMcpConnectionItem = { id: string; endpointUrl: string };
 
@@ -53,6 +62,9 @@ type AssistantModelPickerProps = {
   modelPolicyLoading?: boolean;
   modelPolicyError?: string;
   modelPolicySaving?: boolean;
+  modelPolicyHistory?: AssistantModelPolicyHistoryEntryView[];
+  modelPolicyHistoryLoading?: boolean;
+  modelPolicyHistoryError?: string;
   onSaveModelPolicy?: (policy: Omit<AssistantModelPolicyView, "availableModelIds">) => void;
   onSettingsOpenChange?: (open: boolean) => void;
   showRecurringTasks?: boolean;
@@ -98,6 +110,9 @@ export function AssistantModelPicker({
   modelPolicyLoading = false,
   modelPolicyError = "",
   modelPolicySaving = false,
+  modelPolicyHistory = [],
+  modelPolicyHistoryLoading = false,
+  modelPolicyHistoryError = "",
   onSaveModelPolicy,
   onSettingsOpenChange,
   showRecurringTasks = false,
@@ -152,6 +167,12 @@ export function AssistantModelPicker({
         ? !policyIds.includes(option.id)
         : true,
   ), [catalogModels, policyIds, policyMode]);
+  const describePolicy = (policy: AssistantModelPolicyHistoryEntryView["previousPolicy"]) => {
+    const restriction = policy.listMode === null
+      ? "No model list restrictions"
+      : `${policy.listMode === "allow" ? "Allow only" : "Block"}: ${policy.modelIds.join(", ")}`;
+    return `Default: ${policy.defaultModel} · ${policy.locked ? "Locked" : "Unlocked"} · ${restriction}`;
+  };
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
@@ -403,6 +424,31 @@ export function AssistantModelPicker({
                   {modelPolicySaving ? "Saving…" : "Save team policy"}
                 </button>
               </>}
+            </section>}
+            {canManageAssistantPolicy && <section className="assistant-model-policy-history" aria-label="Team model policy history" data-testid="assistant-model-policy-history">
+              <div className="assistant-model-policy-heading">
+                <p className="assistant-onshape-setting-title">Policy change history</p>
+                <span className="assistant-model-policy-note">Read-only · latest 50</span>
+              </div>
+              {modelPolicyHistoryLoading
+                ? <p className="assistant-model-policy-note" role="status">Loading policy history…</p>
+                : modelPolicyHistoryError
+                  ? <p className="assistant-model-policy-error" role="alert">{modelPolicyHistoryError}</p>
+                  : modelPolicyHistory.length === 0
+                    ? <p className="assistant-model-policy-note">No policy changes recorded yet.</p>
+                    : <ol className="assistant-model-policy-history-list">
+                      {modelPolicyHistory.map((entry) => (
+                        <li key={entry.id} data-testid={`assistant-policy-history-item-${entry.id}`}>
+                          <div className="assistant-model-policy-history-meta">
+                            <strong>{entry.coordinatorName}</strong>
+                            <span title={`Coordinator ID: ${entry.coordinatorId}`}>{entry.coordinatorId}</span>
+                            <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
+                          </div>
+                          <p><strong>Before:</strong> {describePolicy(entry.previousPolicy)}</p>
+                          <p><strong>After:</strong> {describePolicy(entry.newPolicy)}</p>
+                        </li>
+                      ))}
+                    </ol>}
             </section>}
             {(onConnectOnshape || onDisconnectOnshape) && (
               <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">

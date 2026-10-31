@@ -3552,6 +3552,38 @@ export const UpdateAssistantModelPolicyResponse = zod.object({
 
 
 /**
+ * Coordinator-only, read-only history scoped to the signed-in team.
+ * @summary Get the signed-in team's assistant model policy history
+ */
+export const getAssistantModelPolicyHistoryResponseItemsItemPreviousPolicyModelIdsMax = 100;
+
+export const getAssistantModelPolicyHistoryResponseItemsItemNewPolicyModelIdsMax = 100;
+
+
+
+export const GetAssistantModelPolicyHistoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "coordinatorId": zod.string(),
+  "coordinatorName": zod.string(),
+  "previousPolicy": zod.object({
+  "defaultModel": zod.string(),
+  "locked": zod.boolean(),
+  "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
+  "modelIds": zod.array(zod.string()).max(getAssistantModelPolicyHistoryResponseItemsItemPreviousPolicyModelIdsMax)
+}),
+  "newPolicy": zod.object({
+  "defaultModel": zod.string(),
+  "locked": zod.boolean(),
+  "listMode": zod.union([zod.literal('allow'),zod.literal('block'),zod.literal(null)]).nullable(),
+  "modelIds": zod.array(zod.string()).max(getAssistantModelPolicyHistoryResponseItemsItemNewPolicyModelIdsMax)
+}),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
  * @summary List saved custom dashboard charts
  */
 export const ListDashboardChartsResponse = zod.object({

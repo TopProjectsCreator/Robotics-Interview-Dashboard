@@ -3130,6 +3130,39 @@ export interface AssistantModelPolicyInput {
   modelIds: string[];
 }
 
+/**
+ * @nullable
+ */
+export type AssistantModelPolicySnapshotListMode = typeof AssistantModelPolicySnapshotListMode[keyof typeof AssistantModelPolicySnapshotListMode] | null;
+
+
+export const AssistantModelPolicySnapshotListMode = {
+  allow: 'allow',
+  block: 'block',
+} as const;
+
+export interface AssistantModelPolicySnapshot {
+  defaultModel: string;
+  locked: boolean;
+  /** @nullable */
+  listMode: AssistantModelPolicySnapshotListMode;
+  /** @maxItems 100 */
+  modelIds: string[];
+}
+
+export interface AssistantModelPolicyHistoryItem {
+  id: string;
+  coordinatorId: string;
+  coordinatorName: string;
+  previousPolicy: AssistantModelPolicySnapshot;
+  newPolicy: AssistantModelPolicySnapshot;
+  createdAt: string;
+}
+
+export interface AssistantModelPolicyHistory {
+  items: AssistantModelPolicyHistoryItem[];
+}
+
 export type AssistantHistoryItemsItem = {
   id: string;
   question: string;

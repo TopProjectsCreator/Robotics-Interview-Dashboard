@@ -106,6 +106,7 @@ async function ensureSchema(): Promise<void> {
     "assistant_builder_runs",
     "assistant_skills",
     "assistant_model_policies",
+    "assistant_model_policy_history",
     "audit_logs",
     "broadcast_acks",
     "broadcasts",
@@ -344,6 +345,16 @@ async function ensureSchema(): Promise<void> {
        "model_ids" jsonb not null default '[]'::jsonb check (jsonb_typeof("model_ids") = 'array' and jsonb_array_length("model_ids") <= 100),
        "updated_at" timestamptz not null default now()
      )`,
+    `create table if not exists "assistant_model_policy_history" (
+       "id" text primary key,
+       "team_id" text not null,
+       "coordinator_id" text not null,
+       "coordinator_name" text not null,
+       "previous_policy" jsonb not null,
+       "new_policy" jsonb not null,
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "assistant_model_policy_history_team_created_idx" on "assistant_model_policy_history" ("team_id", "created_at" desc)`,
     // Invite-only chat channels. Admins (coordinators) create, rename, and
     // manage them; membership gates every read and write. Messages reuse
     // interview_chat_messages with conversation_scope='channel'.

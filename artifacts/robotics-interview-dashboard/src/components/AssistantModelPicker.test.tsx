@@ -76,6 +76,48 @@ describe("AssistantModelPicker", () => {
     });
   });
 
+  it("shows coordinator, timestamp, and before-and-after values in read-only policy history", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="vision-model"
+        models={[{ id: "vision-model" }]}
+        loading={false}
+        error={false}
+        canManageAssistantPolicy
+        modelPolicyHistory={[{
+          id: "change-1",
+          coordinatorId: "coordinator-1",
+          coordinatorName: "Avery Coordinator",
+          previousPolicy: {
+            defaultModel: "text-model",
+            locked: false,
+            listMode: null,
+            modelIds: [],
+          },
+          newPolicy: {
+            defaultModel: "vision-model",
+            locked: true,
+            listMode: "allow",
+            modelIds: ["vision-model"],
+          },
+          createdAt: "2026-10-30T12:30:00.000Z",
+        }]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const history = await screen.findByTestId("assistant-model-policy-history");
+    expect(history).toHaveTextContent("Avery Coordinator");
+    expect(history).toHaveTextContent("coordinator-1");
+    expect(history).toHaveTextContent("Before:");
+    expect(history).toHaveTextContent("Default: text-model · Unlocked");
+    expect(history).toHaveTextContent("After:");
+    expect(history).toHaveTextContent("Default: vision-model · Locked · Allow only: vision-model");
+    expect(history.querySelector("button")).toBeNull();
+    expect(history.querySelector("time")).toHaveAttribute("dateTime", "2026-10-30T12:30:00.000Z");
+  });
+
   it("does not expose admin policy controls to members and disables locked model selection", () => {
     renderWithQuery(
       <AssistantModelPicker
@@ -91,6 +133,7 @@ describe("AssistantModelPicker", () => {
     expect(screen.getByRole("combobox", { name: "Assistant model" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     expect(screen.queryByTestId("assistant-model-policy")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-model-policy-history")).not.toBeInTheDocument();
   });
 
   it("shows the provider catalog name for the selected MiniMax default", () => {

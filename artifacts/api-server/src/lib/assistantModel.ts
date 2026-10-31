@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { supportsAssistantModelImageInput } from "./partsVisionRouting";
 
@@ -239,6 +240,7 @@ export async function getAssistantModelPolicyWithCatalog(
 export async function saveAssistantModelPolicy(
   teamId: string,
   input: AssistantModelPolicyInput,
+  actor: { id: string; name: string },
 ): Promise<AssistantModelPolicy> {
   const policy = validatePolicyShape(input);
   let catalog: AssistantCatalogModel[];
@@ -248,26 +250,69 @@ export async function saveAssistantModelPolicy(
     throw new AssistantModelPolicyError("The model catalog is unavailable. The policy was not saved.", 503);
   }
   validatePolicyAgainstCatalog(policy, catalog);
-  const [{ assistantModelPoliciesTable, db }] = await Promise.all([
+  const [{ assistantModelPoliciesTable, assistantModelPolicyHistoryTable, db }, { desc, eq, sql }] = await Promise.all([
     import("@workspace/db"),
+    import("drizzle-orm"),
   ]);
-  await db.insert(assistantModelPoliciesTable).values({
-    teamId,
-    defaultModel: policy.defaultModel,
-    locked: policy.locked,
-    listMode: policy.listMode,
-    modelIds: policy.modelIds,
-  }).onConflictDoUpdate({
-    target: assistantModelPoliciesTable.teamId,
-    set: {
+  await db.transaction(async (tx) => {
+    // Serialize policy writes even before the team's first policy row exists.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${teamId}))`);
+    const [stored] = await tx.select().from(assistantModelPoliciesTable)
+      .where(eq(assistantModelPoliciesTable.teamId, teamId))
+      .limit(1)
+      .for("update");
+    const previousPolicy: AssistantModelPolicy = stored
+      ? {
+          defaultModel: stored.defaultModel,
+          locked: stored.locked,
+          listMode: stored.listMode as AssistantModelListMode,
+          modelIds: stored.modelIds,
+        }
+      : {
+          defaultModel: resolveAssistantModel(configuredAssistantModel(), catalog),
+          locked: false,
+          listMode: null,
+          modelIds: [],
+        };
+    await tx.insert(assistantModelPoliciesTable).values({
+      teamId,
       defaultModel: policy.defaultModel,
       locked: policy.locked,
       listMode: policy.listMode,
       modelIds: policy.modelIds,
-      updatedAt: new Date(),
-    },
+    }).onConflictDoUpdate({
+      target: assistantModelPoliciesTable.teamId,
+      set: {
+        defaultModel: policy.defaultModel,
+        locked: policy.locked,
+        listMode: policy.listMode,
+        modelIds: policy.modelIds,
+        updatedAt: new Date(),
+      },
+    });
+    if (JSON.stringify(previousPolicy) !== JSON.stringify(policy)) {
+      await tx.insert(assistantModelPolicyHistoryTable).values({
+        id: randomUUID(),
+        teamId,
+        coordinatorId: actor.id,
+        coordinatorName: actor.name,
+        previousPolicy,
+        newPolicy: policy,
+      });
+    }
   });
   return policy;
+}
+
+export async function listAssistantModelPolicyHistory(teamId: string, limit = 50) {
+  const [{ assistantModelPolicyHistoryTable, db }, { desc, eq }] = await Promise.all([
+    import("@workspace/db"),
+    import("drizzle-orm"),
+  ]);
+  return db.select().from(assistantModelPolicyHistoryTable)
+    .where(eq(assistantModelPolicyHistoryTable.teamId, teamId))
+    .orderBy(desc(assistantModelPolicyHistoryTable.createdAt))
+    .limit(limit);
 }
 
 export async function resolveTeamAssistantModel(

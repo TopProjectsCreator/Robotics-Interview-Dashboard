@@ -87,6 +87,28 @@ export const assistantModelPoliciesTable = pgTable("assistant_model_policies", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantModelPolicyHistoryTable = pgTable("assistant_model_policy_history", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  coordinatorId: text("coordinator_id").notNull(),
+  coordinatorName: text("coordinator_name").notNull(),
+  previousPolicy: jsonb("previous_policy").$type<{
+    defaultModel: string;
+    locked: boolean;
+    listMode: "allow" | "block" | null;
+    modelIds: string[];
+  }>().notNull(),
+  newPolicy: jsonb("new_policy").$type<{
+    defaultModel: string;
+    locked: boolean;
+    listMode: "allow" | "block" | null;
+    modelIds: string[];
+  }>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_model_policy_history_team_created_idx").on(table.teamId, table.createdAt),
+]);
+
 export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

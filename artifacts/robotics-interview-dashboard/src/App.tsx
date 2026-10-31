@@ -9,13 +9,13 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
    useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
-   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useUpdateAssistantModelPolicy,
+   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useGetAssistantModelPolicyHistory, useUpdateAssistantModelPolicy,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
@@ -7807,12 +7807,21 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       enabled: assistantSessionReady && canManageAssistantTools && assistantSettingsOpen,
     },
   });
+  const assistantModelPolicyHistory = useGetAssistantModelPolicyHistory({
+    query: {
+      queryKey: [...getGetAssistantModelPolicyHistoryQueryKey(), assistantTeamScope],
+      enabled: assistantSessionReady && canManageAssistantTools && assistantSettingsOpen,
+    },
+  });
   const updateAssistantModelPolicy = useUpdateAssistantModelPolicy({
     mutation: {
       onSuccess: (policy) => {
         queryClient.invalidateQueries({ queryKey: getListAssistantModelsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetAssistantConfigQueryKey() });
         queryClient.setQueryData([...getGetAssistantModelPolicyQueryKey(), assistantTeamScope], policy);
+        queryClient.invalidateQueries({
+          queryKey: [...getGetAssistantModelPolicyHistoryQueryKey(), assistantTeamScope],
+        });
         setSelectedModel(policy.defaultModel);
         try { window.localStorage.setItem("robotics-assistant-model", policy.defaultModel); } catch {}
       },
@@ -8811,6 +8820,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
                 ? serverErrorMessage(updateAssistantModelPolicy.error, "The team policy could not be saved.")
                 : "")}
             modelPolicySaving={updateAssistantModelPolicy.isPending}
+            modelPolicyHistory={assistantModelPolicyHistory.data?.items}
+            modelPolicyHistoryLoading={assistantModelPolicyHistory.isLoading}
+            modelPolicyHistoryError={assistantModelPolicyHistory.isError
+              ? serverErrorMessage(assistantModelPolicyHistory.error, "Could not load policy history.")
+              : ""}
             onSaveModelPolicy={(policy) => updateAssistantModelPolicy.mutate({ data: policy })}
             onSettingsOpenChange={setAssistantSettingsOpen}
             showRecurringTasks={!partsMode}

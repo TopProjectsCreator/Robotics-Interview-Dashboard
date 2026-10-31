@@ -327,6 +327,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Policy history is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/team-branding/logo:
     post:
       operationId: uploadTeamLogo
@@ -2610,6 +2616,25 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: The provider model catalog is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/model-policy/history:
+    get:
+      operationId: getAssistantModelPolicyHistory
+      tags: [assistant]
+      summary: Get the signed-in team's assistant model policy history
+      description: Coordinator-only, read-only history scoped to the signed-in team.
+      responses:
+        "200":
+          description: Recent team model policy changes, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantModelPolicyHistory"
+        "403":
+          description: Coordinator access required
           content:
             application/json:
               schema:
@@ -8429,6 +8454,47 @@ components:
             type: string
             minLength: 1
             maxLength: 255
+    AssistantModelPolicySnapshot:
+      type: object
+      required: [defaultModel, locked, listMode, modelIds]
+      properties:
+        defaultModel:
+          type: string
+        locked:
+          type: boolean
+        listMode:
+          type: ["string", "null"]
+          enum: [allow, block, null]
+        modelIds:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+    AssistantModelPolicyHistoryItem:
+      type: object
+      required: [id, coordinatorId, coordinatorName, previousPolicy, newPolicy, createdAt]
+      properties:
+        id:
+          type: string
+        coordinatorId:
+          type: string
+        coordinatorName:
+          type: string
+        previousPolicy:
+          $ref: "#/components/schemas/AssistantModelPolicySnapshot"
+        newPolicy:
+          $ref: "#/components/schemas/AssistantModelPolicySnapshot"
+        createdAt:
+          type: string
+          format: date-time
+    AssistantModelPolicyHistory:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantModelPolicyHistoryItem"
     AssistantHistory:
       type: object
       required: [items]

@@ -78,6 +78,7 @@ import {
   GenerateAssistantImageResponse,
   ListAssistantModelsResponse,
   GetAssistantModelPolicyResponse,
+  GetAssistantModelPolicyHistoryResponse,
   UpdateAssistantModelPolicyBody,
   UpdateAssistantModelPolicyResponse,
   GetAssistantConversationMessagesParams,
@@ -258,6 +259,7 @@ import {
   getAssistantModel,
   getAssistantModelPolicy,
   getAssistantModelPolicyWithCatalog,
+  listAssistantModelPolicyHistory,
   resolveTeamAssistantModel,
   saveAssistantModelPolicy,
 } from "../lib/assistantModel";
@@ -8948,6 +8950,19 @@ router.get("/assistant/model-policy", requireAdmin, async (req, res): Promise<vo
   }
 });
 
+router.get("/assistant/model-policy/history", requireCoordinator, async (req, res): Promise<void> => {
+  try {
+    const teamId = await requestTeamId(req);
+    const items = await listAssistantModelPolicyHistory(teamId);
+    res.json(GetAssistantModelPolicyHistoryResponse.parse({ items }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load team assistant model policy history");
+    res.status(503).json({
+      error: error instanceof Error ? error.message : "The model policy history is unavailable right now.",
+    });
+  }
+});
+
 router.put("/assistant/model-policy", requireCoordinator, async (req, res): Promise<void> => {
   const body = UpdateAssistantModelPolicyBody.safeParse(req.body);
   if (!body.success) {
@@ -8956,7 +8971,19 @@ router.put("/assistant/model-policy", requireCoordinator, async (req, res): Prom
   }
   try {
     const teamId = await requestTeamId(req);
-    const policy = await saveAssistantModelPolicy(teamId, body.data);
+    const actorId = authenticatedInterviewerId(req);
+    if (!actorId) {
+      res.status(403).json({ error: "Coordinator access required." });
+      return;
+    }
+    const [actor] = await db.select({ displayName: interviewerAccountsTable.displayName })
+      .from(interviewerAccountsTable)
+      .where(eq(interviewerAccountsTable.id, actorId))
+      .limit(1);
+    const policy = await saveAssistantModelPolicy(teamId, body.data, {
+      id: actorId,
+      name: actor?.displayName ?? actorId,
+    });
     const { effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
     res.json(UpdateAssistantModelPolicyResponse.parse({
       ...policy,

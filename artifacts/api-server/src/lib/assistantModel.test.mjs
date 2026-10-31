@@ -20,6 +20,8 @@ const TEXT_MODEL = "provider/text-model";
 const VISION_MODEL = "provider/vision-model";
 const SECOND_VISION_MODEL = "provider/vision-fallback";
 const policies = new Map();
+const policyHistory = [];
+const assistantModelPolicyHistoryTable = { teamId: "teamId", createdAt: "createdAt" };
 const accounts = new Map([
   ["member", { id: "member", role: "interviewer", passwordHash: "configured" }],
   ["coordinator", { id: "coordinator", role: "coordinator", passwordHash: "configured" }],
@@ -27,6 +29,13 @@ const accounts = new Map([
 const assistantModelPoliciesTable = { teamId: "teamId" };
 const interviewerAccountsTable = { id: "id", role: "role", passwordHash: "passwordHash", teamId: "teamId" };
 const revokedSessionsTable = { tokenHash: "tokenHash", expiresAt: "expiresAt" };
+const queryResult = (rows) => {
+  const result = Promise.resolve(rows);
+  result.limit = () => result;
+  result.for = () => result;
+  result.orderBy = () => result;
+  return result;
+};
 const catalog = [
   { id: DEFAULT_MODEL, name: "Default", isFree: true },
   { id: TEXT_MODEL, name: "Text", isFree: true },
@@ -41,29 +50,38 @@ const db = {
           where(condition) {
             const rows = table === assistantModelPoliciesTable
               ? (policies.has(condition.value) ? [policies.get(condition.value)] : [])
-              : table === revokedSessionsTable
-                ? []
-                : (accounts.has(condition.value) ? [accounts.get(condition.value)] : []);
-            const result = Promise.resolve(rows);
-            result.limit = async () => rows;
-            return result;
+              : table === assistantModelPolicyHistoryTable
+                ? policyHistory.filter((item) => item.teamId === condition.value).reverse()
+                : table === revokedSessionsTable
+                  ? []
+                  : (accounts.has(condition.value) ? [accounts.get(condition.value)] : []);
+            return queryResult(rows);
           },
         };
       },
     };
   },
-  insert() {
-    let nextRow;
+  insert(table) {
     return {
       values(row) {
-        nextRow = row;
+        if (table === assistantModelPolicyHistoryTable) {
+          policyHistory.push({ ...row, createdAt: new Date("2026-01-01T00:00:00.000Z") });
+          return Promise.resolve();
+        }
         return {
           async onConflictDoUpdate() {
-            policies.set(nextRow.teamId, nextRow);
+            policies.set(row.teamId, row);
           },
         };
       },
     };
+  },
+  async transaction(callback) {
+    return callback({
+      execute: async () => undefined,
+      select: this.select.bind(this),
+      insert: this.insert.bind(this),
+    });
   },
 };
 
@@ -71,6 +89,7 @@ mock.module("@workspace/db", {
   namedExports: {
     DEFAULT_TEAM_ID: "default",
     assistantModelPoliciesTable,
+    assistantModelPolicyHistoryTable,
     interviewerAccountsTable,
     revokedSessionsTable,
     runWithInstance: (_instance, callback) => callback(),
@@ -78,7 +97,12 @@ mock.module("@workspace/db", {
   },
 });
 mock.module("drizzle-orm", {
-  namedExports: { eq: (field, value) => ({ field, value }), lt: (field, value) => ({ field, value }) },
+  namedExports: {
+    eq: (field, value) => ({ field, value }),
+    lt: (field, value) => ({ field, value }),
+    desc: (field) => field,
+    sql: () => ({}),
+  },
 });
 mock.module("../lib/workspaceVisibility", {
   namedExports: { userCanSeeWorkspace: () => true },
@@ -99,6 +123,7 @@ const {
   DEFAULT_ASSISTANT_MODEL,
   effectiveAssistantModels,
   getAssistantModelPolicyWithCatalog,
+  listAssistantModelPolicyHistory,
   resolveTeamAssistantModel,
   saveAssistantModelPolicy,
 } = await import("./assistantModel.ts");
@@ -111,9 +136,13 @@ const policy = (overrides = {}) => ({
   modelIds: [],
   ...overrides,
 });
+const savePolicy = (teamId, input) => saveAssistantModelPolicy(teamId, input, {
+  id: "coordinator",
+  name: "Team Coordinator",
+});
 
 test("team policy persists across reads and remains isolated by team", async () => {
-  const saved = await saveAssistantModelPolicy("team-a", policy({
+  const saved = await savePolicy("team-a", policy({
     defaultModel: TEXT_MODEL,
     locked: true,
   }));
@@ -128,8 +157,27 @@ test("team policy persists across reads and remains isolated by team", async () 
   );
 });
 
+test("policy history captures coordinator, before-and-after values, and stays team-scoped", async () => {
+  const first = policy({ defaultModel: TEXT_MODEL, locked: true });
+  const changed = policy({ defaultModel: VISION_MODEL, listMode: "allow", modelIds: [VISION_MODEL] });
+  await savePolicy("history-team-a", first);
+  await savePolicy("history-team-a", changed);
+  await savePolicy("history-team-a", changed);
+  await savePolicy("history-team-b", policy({ defaultModel: TEXT_MODEL }));
+
+  const historyA = await listAssistantModelPolicyHistory("history-team-a");
+  assert.equal(historyA.length, 2);
+  assert.equal(historyA[0].coordinatorId, "coordinator");
+  assert.equal(historyA[0].coordinatorName, "Team Coordinator");
+  assert.deepEqual(historyA[0].previousPolicy, first);
+  assert.deepEqual(historyA[0].newPolicy, changed);
+  assert.equal(historyA[0].createdAt.toISOString(), "2026-01-01T00:00:00.000Z");
+  assert.equal(historyA[1].previousPolicy.defaultModel, DEFAULT_MODEL);
+  assert.deepEqual(await listAssistantModelPolicyHistory("history-team-b").then((items) => items.map(({ teamId }) => teamId)), ["history-team-b"]);
+});
+
 test("allow and block lists are exact and reject disallowed overrides", async () => {
-  await saveAssistantModelPolicy("allow-team", policy({
+  await savePolicy("allow-team", policy({
     defaultModel: TEXT_MODEL,
     listMode: "allow",
     modelIds: [TEXT_MODEL, VISION_MODEL],
@@ -142,7 +190,7 @@ test("allow and block lists are exact and reject disallowed overrides", async ()
     (error) => error instanceof AssistantModelPolicyError && error.status === 400,
   );
 
-  await saveAssistantModelPolicy("block-team", policy({
+  await savePolicy("block-team", policy({
     defaultModel: TEXT_MODEL,
     listMode: "block",
     modelIds: [VISION_MODEL],
@@ -158,7 +206,7 @@ test("allow and block lists are exact and reject disallowed overrides", async ()
 });
 
 test("a locked policy returns only its default and rejects model changes", async () => {
-  await saveAssistantModelPolicy("locked-team", policy({ defaultModel: TEXT_MODEL, locked: true }));
+  await savePolicy("locked-team", policy({ defaultModel: TEXT_MODEL, locked: true }));
   assert.equal(await resolveTeamAssistantModel("locked-team"), TEXT_MODEL);
   await assert.rejects(
     resolveTeamAssistantModel("locked-team", DEFAULT_MODEL),
@@ -168,11 +216,11 @@ test("a locked policy returns only its default and rejects model changes", async
 
 test("policy saves reject unavailable IDs, conflicts, and malformed lists", async () => {
   await assert.rejects(
-    saveAssistantModelPolicy("invalid-team", policy({ defaultModel: "missing/model" })),
+    savePolicy("invalid-team", policy({ defaultModel: "missing/model" })),
     (error) => error instanceof AssistantModelPolicyError && /no longer available/.test(error.message),
   );
   await assert.rejects(
-    saveAssistantModelPolicy("invalid-team", policy({
+    savePolicy("invalid-team", policy({
       defaultModel: TEXT_MODEL,
       listMode: "allow",
       modelIds: [VISION_MODEL],
@@ -180,7 +228,7 @@ test("policy saves reject unavailable IDs, conflicts, and malformed lists", asyn
     (error) => error instanceof AssistantModelPolicyError && /included in the allow list/.test(error.message),
   );
   await assert.rejects(
-    saveAssistantModelPolicy("invalid-team", policy({
+    savePolicy("invalid-team", policy({
       defaultModel: TEXT_MODEL,
       listMode: "block",
       modelIds: [TEXT_MODEL],
@@ -188,13 +236,13 @@ test("policy saves reject unavailable IDs, conflicts, and malformed lists", asyn
     (error) => error instanceof AssistantModelPolicyError && /cannot also appear/.test(error.message),
   );
   await assert.rejects(
-    saveAssistantModelPolicy("invalid-team", policy({ modelIds: [TEXT_MODEL, TEXT_MODEL] })),
+    savePolicy("invalid-team", policy({ modelIds: [TEXT_MODEL, TEXT_MODEL] })),
     (error) => error instanceof AssistantModelPolicyError && /invalid/.test(error.message),
   );
 });
 
 test("vision routing only selects permitted image-capable models", async () => {
-  await saveAssistantModelPolicy("vision-team", policy({
+  await savePolicy("vision-team", policy({
     defaultModel: TEXT_MODEL,
     listMode: "allow",
     modelIds: [TEXT_MODEL, VISION_MODEL, SECOND_VISION_MODEL],
@@ -213,11 +261,11 @@ test("vision routing only selects permitted image-capable models", async () => {
     [TEXT_MODEL],
   );
 
-  await saveAssistantModelPolicy("locked-text-team", policy({ defaultModel: TEXT_MODEL, locked: true }));
+  await savePolicy("locked-text-team", policy({ defaultModel: TEXT_MODEL, locked: true }));
   assert.equal(await resolveTeamAssistantModel("locked-text-team", VISION_MODEL, "image"), VISION_MODEL);
-  await saveAssistantModelPolicy("locked-vision-team", policy({ defaultModel: VISION_MODEL, locked: true }));
+  await savePolicy("locked-vision-team", policy({ defaultModel: VISION_MODEL, locked: true }));
   assert.equal(await resolveTeamAssistantModel("locked-vision-team", SECOND_VISION_MODEL, "image"), VISION_MODEL);
-  await saveAssistantModelPolicy("locked-text-restricted-team", policy({
+  await savePolicy("locked-text-restricted-team", policy({
     defaultModel: TEXT_MODEL,
     locked: true,
     listMode: "allow",
