@@ -9,7 +9,15 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { db, runWithInstance, DEFAULT_TEAM_ID, interviewerAccountsTable, interviewWhiteboardsTable } from "@workspace/db";
+import {
+  db,
+  runWithInstance,
+  currentInstance,
+  DEFAULT_TEAM_ID,
+  interviewerAccountsTable,
+  interviewWhiteboardsTable,
+  type DbInstance,
+} from "@workspace/db";
 import {
   applyDocumentAssistantContent,
   documentDocFromEnvelope,
@@ -40,6 +48,10 @@ type DocumentCollaborationClient = {
 type DocumentRoom = {
   id: string;
   teamId: string;
+  // DB instance this team's rows live on. Socket and timer callbacks fire
+  // outside the request context that pinned an instance, so every persist
+  // must re-pin to this instance (see schedulePersist below).
+  instance: DbInstance;
   doc: Y.Doc;
   awareness: Awareness;
   clients: Set<DocumentCollaborationClient>;
@@ -140,11 +152,26 @@ function schedulePersist(room: DocumentRoom): void {
     room.lastQueuedRevision = Math.max(room.lastQueuedRevision, revision);
     room.persistChain = room.persistChain.then(async () => {
       try {
-        await db.update(interviewWhiteboardsTable)
-          .set({ data, updatedAt: new Date() })
-          .where(and(eq(interviewWhiteboardsTable.id, room.id), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)));
+        // This timer callback runs outside the request's AsyncLocalStorage
+        // context, so `db` would resolve to primary even for teams that live
+        // on the secondary instance — the update would silently match 0 rows
+        // and clients would still be told "saved". Re-pin to the room's
+        // instance, and only report "saved" when a row was actually updated.
+        const updated = await runWithInstance(room.instance, () =>
+          db.update(interviewWhiteboardsTable)
+            .set({ data, updatedAt: new Date() })
+            .where(and(eq(interviewWhiteboardsTable.id, room.id), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
+            .returning({ id: interviewWhiteboardsTable.id }),
+        );
         if (room.revision === revision) {
-          for (const client of room.clients) sendJson(client.socket, { type: "saved" });
+          if (updated.length) {
+            for (const client of room.clients) sendJson(client.socket, { type: "saved" });
+          } else {
+            logger.error({ documentId: room.id, instance: room.instance }, "Collaborative document persist matched no rows");
+            for (const client of room.clients) {
+              sendJson(client.socket, { type: "error", message: "Document changes could not be saved." });
+            }
+          }
         }
       } catch (error) {
         logger.error({ err: error, documentId: room.id }, "Collaborative document persist failed");
@@ -179,6 +206,9 @@ function roomFor(
   const room: DocumentRoom = {
     id,
     teamId: teamId?.trim() ? teamId : DEFAULT_TEAM_ID,
+    // openDocumentRoom runs inside runWithInstance(identity.instance), so the
+    // instance captured here is the one this team's rows live on.
+    instance: currentInstance(),
     doc,
     awareness: new Awareness(doc),
     clients: new Set(),
@@ -434,10 +464,19 @@ async function openDocumentRoom(
     if (!title) return;
     room.title = title;
     const updatedAt = new Date();
-    void db.update(interviewWhiteboardsTable)
-      .set({ title, updatedAt })
-      .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
-      .then(() => {
+    // See schedulePersist: re-pin to the room's instance for socket-driven
+    // writes, and only report "saved" when a row was actually updated.
+    void runWithInstance(room.instance, () =>
+      db.update(interviewWhiteboardsTable)
+        .set({ title, updatedAt })
+        .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
+        .returning({ id: interviewWhiteboardsTable.id }),
+    )
+      .then((updated) => {
+        if (!updated.length) {
+          logger.error({ documentId, instance: room.instance }, "Collaborative document title update matched no rows");
+          return;
+        }
         // Room members get the title over their socket; everyone else only
         // sees it when their document list refetches, so hint the SSE relay.
         pushRealtimeHint("interview_whiteboards");
@@ -462,9 +501,17 @@ async function openDocumentRoom(
       room.flushTimer = undefined;
       rooms.delete(documentId);
       void room.persistChain
-        .then(() => db.update(interviewWhiteboardsTable)
-          .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
-          .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId))))
+        .then(() => runWithInstance(room.instance, () =>
+          db.update(interviewWhiteboardsTable)
+            .set({ data: documentEnvelope(room.doc), updatedAt: new Date() })
+            .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, room.teamId)))
+            .returning({ id: interviewWhiteboardsTable.id }),
+        ))
+        .then((updated) => {
+          if (!updated.length) {
+            logger.error({ documentId, instance: room.instance }, "Collaborative document final persist matched no rows");
+          }
+        })
         .catch((error) => logger.error({ err: error, documentId }, "Collaborative document final persist failed"))
         .finally(() => {
           room.awareness.destroy();

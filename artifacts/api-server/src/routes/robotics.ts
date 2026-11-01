@@ -171,6 +171,7 @@ import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { isAdminRole } from "../lib/roles";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter, teamSqlCondition } from "../lib/teams";
@@ -255,7 +256,12 @@ import {
 import { shouldForceCustomWorkspaceTool } from "../lib/customWorkspaceRouting";
 import { chatMiniToolMarkdown, parseChatMiniTool, type ChatMiniTool } from "../lib/chatMiniTool";
 import {
+  resolveShowSvg,
+  type ShowSvgState,
+} from "../lib/assistantSvg";
+import {
   AssistantModelPolicyError,
+  configuredAssistantModel,
   getAssistantModel,
   getAssistantModelPolicy,
   getAssistantModelPolicyWithCatalog,
@@ -1079,6 +1085,23 @@ const ASSISTANT_IMAGE_TOOL = {
   },
 };
 
+const ASSISTANT_SHOW_SVG_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "show_svg",
+    description: "Send a self-contained SVG diagram, chart, or illustration to the admin. Prefer this over writing inline <svg> markdown (inline markdown still works but skips the review step). The first call previews the SVG back to you with a review question and nothing reaches the admin; you then either approve it by calling show_svg again with the exact same svg and confirm=true (it is sent), or fix the markup and preview again.",
+    parameters: {
+      type: "object",
+      properties: {
+        svg: { type: "string", description: "Complete <svg>...</svg> markup, self-contained, about 60 lines max, no scripts, event handlers, <style>/<a> tags, or href/src references" },
+        confirm: { type: "boolean", description: "Omit on the preview call. Set true only to approve and send the exact SVG that was previewed back to you." },
+        title: { type: "string", maxLength: 80, description: "Optional short label for the diagram, shown in the activity feed" },
+      },
+      required: ["svg"],
+    },
+  },
+};
+
 const ASSISTANT_CHAT_MINI_TOOL = {
   type: "function" as const,
   function: {
@@ -1556,6 +1579,7 @@ const ASSISTANT_TOOLS = [
   ASSISTANT_SET_MODEL_TOOL,
   ASSISTANT_MCP_CONNECTION_REQUEST_TOOL,
   ASSISTANT_IMAGE_TOOL,
+  ASSISTANT_SHOW_SVG_TOOL,
   ASSISTANT_CHAT_MINI_TOOL,
   ASSISTANT_SEARCH_TOOL,
   ASSISTANT_PYTHON_TOOL,
@@ -1742,6 +1766,13 @@ type AssistantToolCall = {
 };
 
 /**
+ * Cross-round state for the show_svg tool. `previews` holds SVGs the model has
+ * already seen and been asked to confirm; `approved` holds the ones it then
+ * explicitly confirmed (and that should appear in the answer).
+ */
+type AssistantSvgState = ShowSvgState;
+
+/**
  * Free-tier routers sometimes send thinking models that put their output in
  * reasoning_content/reasoning with content left null. Prefer real content,
  * fall back to reasoning text rather than failing empty.
@@ -1811,6 +1842,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
     if (
       name !== "generate_image" &&
       name !== "create_chat_mini_tool" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -1858,6 +1890,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
     const name = (callMatch?.[1] ?? "").toLowerCase();
     if (
       name !== "generate_image" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -1933,6 +1966,7 @@ async function runAssistantTools(
   customMcpAccountId = "",
   customMcpBindings: Map<string, CustomMcpToolBinding> = new Map(),
   skillActionAllowlist?: Set<string>,
+  svgState: AssistantSvgState = { previews: new Set(), approved: [] },
   githubRepositoryBindings: Map<string, string> = new Map(),
   githubRepositoryAccessState: GitHubRepositoryAccessState = createGitHubRepositoryAccessState(),
   mcpOnly = false,
@@ -2008,6 +2042,7 @@ async function runAssistantTools(
     }
     if (
       name !== "generate_image" &&
+      name !== "show_svg" &&
       name !== "web_search" &&
       name !== "web_fetch" &&
       name !== "fetch_url" &&
@@ -2203,6 +2238,16 @@ async function runAssistantTools(
       imageMarkdowns.push(`![${imagePrompt}](${serveUrl})`);
       images.push({ prompt: imagePrompt, url: serveUrl, dataUrl });
       activities.push({ tool: "generate_image", detail: imagePrompt.slice(0, 120) });
+    } else if (name === "show_svg") {
+      const title = String(args.title ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      // Review gate: the first call previews the SVG back to the model and asks
+      // it to confirm; only a confirmed second call reaches the admin's answer.
+      const resolution = resolveShowSvg(svgState, args.svg, args.confirm === true, title);
+      toolMessages.push({ role: "tool", content: resolution.message, tool_call_id: call.id });
+      if (resolution.kind === "approved") {
+        activities.push({ tool: "show_svg", detail: title || "SVG diagram" });
+      }
     } else if (name === "python_exec" || name === "python") {
       const code = String(args.code ?? "").trim().slice(0, 4000);
       if (!code) continue;
@@ -3910,7 +3955,7 @@ async function accessibleChatChannelIds(teamId: string, viewer: ChannelViewer | 
     .from(chatChannelsTable)
     .where(teamFilter(chatChannelsTable.teamId, teamId))
     .orderBy(desc(chatChannelsTable.updatedAt));
-  if (viewer.role === "coordinator") return channels.map((channel) => channel.id);
+  if (isAdminRole(viewer.role)) return channels.map((channel) => channel.id);
   const memberships = await db.select({ channelId: chatChannelMembersTable.channelId })
     .from(chatChannelMembersTable)
     .where(and(eq(chatChannelMembersTable.memberId, viewer.id), teamFilter(chatChannelMembersTable.teamId, teamId)));
@@ -3946,7 +3991,7 @@ async function resolveChatConversation(
     const channel = await chatChannelById(channelId, teamId);
     if (!channel) return { error: "That channel was not found." };
     const viewer = options.viewer;
-    const isAdmin = viewer?.role === "coordinator";
+    const isAdmin = viewer ? isAdminRole(viewer.role) : false;
     const isInvited = viewer ? await isChatChannelMember(channelId, viewer.id) : false;
     if (!viewer || (!isAdmin && !isInvited)) {
       return { error: "You are not a member of that channel." };
@@ -4193,6 +4238,22 @@ function spreadsheetResponse(
   };
 }
 
+/**
+ * The generated OpenAPI Zod schemas model workbook sheets as plain
+ * `zod.object({ id, name })`: orval only emits `.passthrough()` for objects
+ * without declared properties, so the `additionalProperties: true` on sheet
+ * items in the spec (SpreadsheetData, lib/api-spec/openapi.yaml) is silently
+ * dropped and parsing strips every other fortune-sheet field — celldata,
+ * config, row/column sizing, etc. Persisting or returning the schema-parsed
+ * value destroyed spreadsheet contents on every save. Keep the generated
+ * schemas as the validation gate, but always take the `data` payload itself
+ * from the raw value (parseSpreadsheetData enforces structure and size
+ * limits) instead of the schema-stripped copy.
+ */
+function spreadsheetDataFromRaw(raw: unknown) {
+  return parseSpreadsheetData(raw);
+}
+
 async function whiteboardConversationForAccount(
   whiteboard: { conversationScope: string; conversationPeer: string | null },
   displayName: string,
@@ -4207,7 +4268,7 @@ async function whiteboardConversationForAccount(
     const team = teamId?.trim() ? teamId : undefined;
     const channel = team ? await chatChannelById(channelId, team) : undefined;
     if (!channel) return null;
-    if (viewer?.role === "coordinator") {
+    if (viewer && isAdminRole(viewer.role)) {
       return { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
     }
     const memberId = viewer?.id ? viewer.id : "";
@@ -4522,7 +4583,13 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
     conversationPeer: conversation.key,
   }).returning();
   pushRealtimeHint("interview_whiteboards", "INSERT");
-  res.status(201).json(CreateSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+  // See spreadsheetDataFromRaw: splice the workbook back into the response;
+  // CreateSpreadsheetResponse.parse strips the sheet fields. The inserted row
+  // stores exactly initialSpreadsheetData(), so the object round-trips.
+  res.status(201).json({
+    ...CreateSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)),
+    data: initialSpreadsheetData(),
+  });
 });
 
 router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
@@ -4547,11 +4614,14 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   const conversation = spreadsheet
     ? await whiteboardConversationForAccount(spreadsheet, account.displayName, channelViewerFor(account), teamId)
     : null;
-  if (!spreadsheet || !conversation || !parseSpreadsheetData(spreadsheet.data)) {
+  const storedData = spreadsheet ? spreadsheetDataFromRaw(spreadsheet.data) : null;
+  if (!spreadsheet || !conversation || !storedData) {
     res.status(404).json({ error: "Spreadsheet not found." });
     return;
   }
-  res.json(GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)));
+  // See spreadsheetDataFromRaw: GetSpreadsheetResponse.parse strips the
+  // workbook fields, so splice the structurally validated data back in.
+  res.json({ ...GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)), data: storedData });
 });
 
 router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res): Promise<void> => {
@@ -4570,7 +4640,12 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
     res.status(400).json({ error: "Spreadsheet title cannot be empty." });
     return;
   }
-  const requestedData = parsed.data.data === undefined ? null : parseSpreadsheetData(parsed.data.data);
+  // See spreadsheetDataFromRaw: source the payload from the raw request body,
+  // not parsed.data.data — the generated body schema strips the workbook
+  // fields, and persisting that would destroy the sheet contents on save.
+  const requestedData = parsed.data.data === undefined
+    ? null
+    : spreadsheetDataFromRaw((req.body as { data?: unknown } | undefined)?.data);
   if (parsed.data.data !== undefined && !requestedData) {
     res.status(400).json({ error: "Spreadsheet data must contain a valid workbook or legacy sheet." });
     return;
@@ -4610,7 +4685,7 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
       })
       .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .returning();
-    return { ok: true as const, spreadsheet: updated, conversation };
+    return { ok: true as const, spreadsheet: updated, conversation, data: nextData };
   });
 
   if (!result.ok) {
@@ -4618,7 +4693,12 @@ router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res
     return;
   }
   pushRealtimeHint("interview_whiteboards");
-  res.json(UpdateSpreadsheetResponse.parse(spreadsheetResponse(result.spreadsheet, result.conversation)));
+  // See spreadsheetDataFromRaw: splice the stored workbook back into the
+  // response; UpdateSpreadsheetResponse.parse strips it.
+  res.json({
+    ...UpdateSpreadsheetResponse.parse(spreadsheetResponse(result.spreadsheet, result.conversation)),
+    data: result.data,
+  });
 });
 
 const CUSTOM_EMOJI_MAX_BYTES = 512 * 1024;
@@ -5075,7 +5155,7 @@ function chatChannelResponse(
       }),
     // Admins see every channel but "youAreMember" stays honest about invites.
     youAreMember: memberRows.some((member) => member.memberId === viewer.id),
-    canManage: viewer.role === "coordinator",
+    canManage: isAdminRole(viewer.role),
     lastMessageAt: last?.lastMessageAt ?? null,
     lastMessageAuthor: last?.lastMessageAuthor ?? null,
     lastMessage: last?.lastMessage ?? null,
@@ -5857,7 +5937,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   }
   // The admin role is STORED as "coordinator" (the Settings UI just labels it
   // "Admin"). Comparing against the label literally is how this bypass broke.
-  const isAdmin = account.role === "coordinator";
+  const isAdmin = isAdminRole(account.role);
   if (!isAdmin) {
     if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only edit your own messages." });
@@ -5931,7 +6011,7 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     return;
   }
   // Stored admin role is "coordinator" — the UI label "Admin" is display-only.
-  if (account.role !== "coordinator") {
+  if (!isAdminRole(account.role)) {
     if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only delete your own messages." });
       return;
@@ -6156,7 +6236,7 @@ router.delete("/queue/chat/scheduled/:scheduledId", requireAdmin, async (req, re
     res.status(404).json({ error: "Scheduled message not found." });
     return;
   }
-  const canCancel = row.createdBy === accountId || account.role === "coordinator" || account.role === "admin";
+  const canCancel = row.createdBy === accountId || isAdminRole(account.role);
   if (!canCancel) {
     res.status(403).json({ error: "Only the scheduler or a coordinator can cancel this." });
     return;
@@ -6852,6 +6932,8 @@ async function generateAssistantAnswer(options: {
   // Files previewed during this answer. commit_import refuses paths that
   // were not previewed first, so blind commits are impossible.
   const previewedPaths = new Set<string>();
+  // SVGs the model has previewed and then explicitly confirmed via show_svg.
+  const svgState: AssistantSvgState = { previews: new Set(), approved: [] };
   const thread: AssistantThreadMessage[] = [...baseMessages];
   for (let round = 0; pendingCalls.length > 0; round += 1) {
     const executed = await runAssistantTools(pendingCalls, JSON.stringify(context), {
@@ -6873,6 +6955,7 @@ async function generateAssistantAnswer(options: {
       options.accountId ?? "",
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
@@ -6970,6 +7053,7 @@ async function generateAssistantAnswer(options: {
       "",
       new Map<string, CustomMcpToolBinding>(),
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       options.mcpOnly === true,
@@ -7038,11 +7122,13 @@ async function generateAssistantAnswer(options: {
     }
   }
   if (!answer.trim()) answer = "I could not produce an answer for that question.";
+  const svgBlocks = svgState.approved.filter((svg) => !answer.includes(svg)).join("\n\n");
   const miniToolBlocks = miniTools.map(chatMiniToolMarkdown).join("\n\n");
-  const answerLimit = Math.max(0, MAX_CHAT_AI_REPLY_CHARS - miniToolBlocks.length - 100);
+  const answerLimit = Math.max(0, MAX_CHAT_AI_REPLY_CHARS - miniToolBlocks.length - svgBlocks.length - 100);
   if (answer.length > answerLimit) {
     answer = `${answer.slice(0, Math.max(0, answerLimit - 50)).trimEnd()}\n\n…(answer shortened to fit chat history limits.)`;
   }
+  if (svgBlocks) answer = `${answer.trim()}\n\n${svgBlocks}`;
   if (miniToolBlocks) answer = `${answer.trim()}\n\n${miniToolBlocks}`;
   await saveAssistantAnswer(
     conversation.id,
@@ -8312,6 +8398,8 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     let answer = first.calls.length > 0 ? "" : first.text;
     const activities: AssistantActivity[] = [];
     const previewedPaths = new Set<string>();
+    // SVGs the model has previewed and then explicitly confirmed via show_svg.
+    const svgState: AssistantSvgState = { previews: new Set(), approved: [] };
     // Follow-up text accumulates across rounds so the saved answer matches
     // what streamed live (the client replaces streamed deltas with it).
     const appendAnswer = (current: string, addition: string): string => {
@@ -8347,6 +8435,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       account.id,
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
@@ -8474,6 +8563,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       account.id,
       customMcpBindings,
       skillTools,
+      svgState,
       githubRepositoryBindings,
       githubRepositoryAccessState,
       mcpOnly,
@@ -8553,6 +8643,11 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       }
     }
     if (!answer.trim()) answer = "I could not produce an answer for that question.";
+    const svgBlocks = svgState.approved.filter((svg) => !answer.includes(svg)).join("\n\n");
+    if (svgBlocks) {
+      answer = `${answer.trim()}\n\n${svgBlocks}`;
+      send({ delta: `\n\n${svgBlocks}` });
+    }
     if (builderRunId) {
       await db.update(assistantBuilderRunsTable).set({
         status: delegatedRun ? "running" : "completed",

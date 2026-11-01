@@ -67,7 +67,7 @@ export const ASSISTANT_TOOLKIT_INSTRUCTIONS = [
   "Call python_exec for calculations and data analysis over applicant records — an `applicants` list of dicts (name, grade, score, recommendation, experience, commitment, category, notes) for the applicants in view is preloaded, and print() is the output. It holds only the applicants in view, so use search_applicants when you need the full roster.",
   "Tables in markdown render as real tables, so use them for comparisons.",
   "You may call rename_conversation once the chat's topic is clear to give it a short descriptive title (max 8 words) — only when the current title is missing, generic, or no longer fits.",
-  "To show a custom diagram, chart, or illustration, emit inline <svg>...</svg> markup (it renders as an image) — keep it self-contained under ~60 lines with no scripts or external references.",
+  "To show a custom diagram, chart, or illustration, call show_svg with complete <svg>...</svg> markup instead of writing it inline — the tool shows the SVG back to you and asks whether you are sure it is good to send to the user, and nothing reaches the admin until you approve by calling show_svg again with the exact same svg and confirm=true. Writing inline <svg>...</svg> markdown still works but skips that review, so prefer show_svg. Keep SVGs self-contained under ~60 lines with no scripts or external references.",
 ].join("\n");
 
 /** The full system prompt for the coordinator/admin assistant. */

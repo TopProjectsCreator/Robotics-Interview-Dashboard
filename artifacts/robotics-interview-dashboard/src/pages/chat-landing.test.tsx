@@ -839,6 +839,36 @@ describe("public chat discovery", () => {
       .toContain("/api/auth/verify-event-passcode");
   });
 
+  it("retries a temporary team-account outage before showing the account list", async () => {
+    window.history.replaceState({}, "", "/auth");
+    let interviewerAttempts = 0;
+    const network = stubNetworkTransports(async (input) => {
+      const path = requestPath(input);
+      if (path === "/api/auth/session") return jsonResponse({ authenticated: false });
+      if (path === "/api/auth/verify-event-passcode") {
+        return jsonResponse({ message: "Team access code verified." });
+      }
+      if (path === "/api/auth/interviewers") {
+        interviewerAttempts += 1;
+        if (interviewerAttempts === 1) {
+          return errorResponse(503, "Service Unavailable", { error: "Service starting" });
+        }
+        return jsonResponse({ items: [{ id: "interviewer-a", displayName: "Interviewer A", hasPassword: true }] });
+      }
+      return jsonResponse({});
+    });
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByTestId("input-event-passcode"), { target: { value: "team-code" } });
+    fireEvent.click(screen.getByTestId("button-event-passcode"));
+
+    expect(await screen.findByTestId("button-choose-interviewer-interviewer-a", {}, { timeout: 6000 })).toBeInTheDocument();
+    expect(interviewerAttempts).toBe(2);
+    expect(network.fetchSpy.mock.calls.map(([input]) => requestPath(input)))
+      .toContain("/api/auth/interviewers");
+  });
+
   it.each([
     [
       "network",
