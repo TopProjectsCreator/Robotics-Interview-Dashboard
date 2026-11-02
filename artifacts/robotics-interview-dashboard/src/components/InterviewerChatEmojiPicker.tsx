@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import EmojiPicker, { Categories, EmojiStyle, Theme, type EmojiClickData } from "emoji-picker-react";
+import type { EmojiPickerFloatingPosition } from "@/lib/emojiPickerPosition";
 import { Check, SmilePlus, Upload, X } from "lucide-react";
 import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import {
@@ -20,6 +21,7 @@ type Props = {
   customEmojiLoadFailed?: boolean;
   onRetryCustomEmojis?: () => void;
   placement?: "above" | "below";
+  floatingPosition?: EmojiPickerFloatingPosition;
   onSelect: (value: string) => void;
 };
 
@@ -42,7 +44,7 @@ async function encodeBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoadFailed = false, onRetryCustomEmojis, placement = "above", onSelect }: Props) {
+export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoadFailed = false, onRetryCustomEmojis, placement = "above", floatingPosition, onSelect }: Props) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadEmoji = useUploadChatCustomEmoji();
@@ -106,13 +108,21 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
   // The picker opens upward from the composer. When the software keyboard is
   // open the visible area is much shorter, so cap the grid to what is left.
   const { height: viewportHeight } = useVisualViewport();
-  const pickerHeight = viewportHeight
-    ? Math.max(200, Math.min(340, Math.round(viewportHeight * 0.5)))
-    : 340;
+  const pickerHeight = floatingPosition
+    ? Math.max(120, Math.min(340, Math.round(floatingPosition.maxHeight - 56)))
+    : viewportHeight
+      ? Math.max(200, Math.min(340, Math.round(viewportHeight * 0.5)))
+      : 340;
 
   return (
     <div
-      className={`absolute ${placement === "below" ? "top-[calc(100%+10px)]" : "bottom-[calc(100%+10px)]"} right-0 z-40 max-h-[min(70dvh,420px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]`}
+      className={`${floatingPosition ? "fixed z-[100]" : `absolute ${placement === "below" ? "top-[calc(100%+10px)]" : "bottom-[calc(100%+10px)]"} right-0 z-40`} max-h-[min(70dvh,420px)] w-[min(360px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#172b38]`}
+      style={floatingPosition ? {
+        left: floatingPosition.left,
+        top: floatingPosition.top,
+        width: floatingPosition.width,
+        maxHeight: floatingPosition.maxHeight,
+      } : undefined}
       role="dialog"
       aria-label="Emoji picker"
       data-testid="emoji-picker"

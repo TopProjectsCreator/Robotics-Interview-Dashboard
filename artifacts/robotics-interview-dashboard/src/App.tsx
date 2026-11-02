@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import DOMPurify from "dompurify";
@@ -58,6 +59,7 @@ import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from
 import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
+import { getEmojiPickerFloatingPosition, type EmojiPickerFloatingPosition } from "./lib/emojiPickerPosition";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { readableBrandForeground } from "./lib/team-branding";
 import { useVisualViewport } from "./hooks/use-visual-viewport";
@@ -5131,9 +5133,18 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [channelNameDraft, setChannelNameDraft] = useState("");
   const [channelEmojiDraft, setChannelEmojiDraft] = useState("");
   const [channelEmojiPickerOpen, setChannelEmojiPickerOpen] = useState(false);
-  const [channelEmojiPickerPlacement, setChannelEmojiPickerPlacement] = useState<"above" | "below">("above");
+  const [channelEmojiPickerPosition, setChannelEmojiPickerPosition] = useState<EmojiPickerFloatingPosition | null>(null);
   const [channelMemberIdsDraft, setChannelMemberIdsDraft] = useState<string[]>([]);
   const [channelDialogError, setChannelDialogError] = useState("");
+  const getChannelEmojiPickerPosition = useCallback((anchor: DOMRect) => {
+    const viewport = window.visualViewport;
+    return getEmojiPickerFloatingPosition(anchor, {
+      width: viewport?.width ?? window.innerWidth,
+      height: viewport?.height ?? window.innerHeight,
+      offsetLeft: viewport?.offsetLeft ?? 0,
+      offsetTop: viewport?.offsetTop ?? 0,
+    });
+  }, []);
   const openCreateChannelDialog = () => {
     setChannelDialogId("");
     setChannelNameDraft("");
@@ -5174,17 +5185,30 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
-    const expectedHeight = Math.min(420, window.innerHeight * 0.7);
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const placement = spaceAbove >= expectedHeight + 12
-      ? "above"
-      : spaceBelow >= expectedHeight + 12 || spaceBelow >= spaceAbove
-        ? "below"
-        : "above";
-    setChannelEmojiPickerPlacement(placement);
+    setChannelEmojiPickerPosition(getChannelEmojiPickerPosition(rect));
     setChannelEmojiPickerOpen(true);
   };
+  useEffect(() => {
+    if (!channelEmojiPickerOpen) return;
+    const updatePosition = () => {
+      const trigger = document.getElementById("button-channel-emoji");
+      if (!trigger) {
+        setChannelEmojiPickerOpen(false);
+        return;
+      }
+      setChannelEmojiPickerPosition(getChannelEmojiPickerPosition(trigger.getBoundingClientRect()));
+    };
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    window.visualViewport?.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("scroll", updatePosition);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      window.visualViewport?.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [channelEmojiPickerOpen, getChannelEmojiPickerPosition]);
   const submitChannelDialog = async (event: React.FormEvent) => {
     event.preventDefault();
     const name = channelNameDraft.trim().replace(/\s+/g, " ");
@@ -6978,7 +7002,18 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                     <button id="button-channel-emoji" type="button" onClick={toggleChannelEmojiPicker} aria-expanded={channelEmojiPickerOpen} aria-label="Choose channel emoji" data-testid="button-channel-emoji" className="flex h-10 min-w-10 items-center justify-center rounded-lg border border-[#d5e0e0] bg-white px-3 text-xl text-[#183a4b] hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#e8eef2]">
                       {channelEmojiDraft ? (getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths) ? <AuthenticatedChatImage src={getTeamEmojiStorageUrl(channelEmojiDraft, customEmojiPaths)!} alt="" inline /> : channelEmojiDraft) : <UsersRound size={16} className="text-[#718189]" />}
                     </button>
-                    {channelEmojiPickerOpen && <InterviewerChatEmojiPicker dark={theme === "dark"} customEmojis={customEmojiItems} customEmojiLoadFailed={customEmojisQuery.isError} onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }} placement={channelEmojiPickerPlacement} onSelect={value => { setChannelEmojiDraft(value); setChannelEmojiPickerOpen(false); }} />}
+                    {channelEmojiPickerOpen && channelEmojiPickerPosition && typeof document !== "undefined" && createPortal(
+                      <InterviewerChatEmojiPicker
+                        dark={theme === "dark"}
+                        customEmojis={customEmojiItems}
+                        customEmojiLoadFailed={customEmojisQuery.isError}
+                        onRetryCustomEmojis={() => { void customEmojisQuery.refetch(); }}
+                        placement={channelEmojiPickerPosition.placement}
+                        floatingPosition={channelEmojiPickerPosition}
+                        onSelect={value => { setChannelEmojiDraft(value); setChannelEmojiPickerOpen(false); }}
+                      />,
+                      document.body,
+                    )}
                   </div>
                   <span className="min-w-0 flex-1 text-xs text-[#7c8c91] dark:text-[#9aadb5]">{channelEmojiDraft ? "Custom channel icon" : "Using the default people icon"}</span>
                   {channelEmojiDraft && <button type="button" onClick={() => { setChannelEmojiDraft(""); setChannelEmojiPickerOpen(false); }} className="rounded-md px-2 py-1 text-xs font-semibold text-[#52666e] hover:bg-[#edf4f3] dark:text-[#b9c9d1]" data-testid="button-clear-channel-emoji">Reset</button>}
