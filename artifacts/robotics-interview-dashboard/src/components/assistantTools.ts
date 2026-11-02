@@ -157,7 +157,11 @@ export const WRITE_TOOL_NAMES = new Set(
 );
 
 export const ASSISTANT_TOOLS_STORAGE_KEY = "robotics-assistant-disabled-tools";
-const DYNAMIC_TOOL_NAME_PATTERNS = [/^onshape_[a-zA-Z0-9_-]{1,55}$/, /^custom_mcp_[a-zA-Z0-9_-]{0,54}$/];
+const DYNAMIC_TOOL_NAME_PATTERNS = [
+  /^onshape_[a-zA-Z0-9_-]{1,55}$/,
+  /^custom_mcp_[a-zA-Z0-9_-]{0,54}$/,
+  /^cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31}$/,
+];
 
 export function isDynamicAssistantToolName(value: string): boolean {
   return DYNAMIC_TOOL_NAME_PATTERNS.some((pattern) => pattern.test(value));

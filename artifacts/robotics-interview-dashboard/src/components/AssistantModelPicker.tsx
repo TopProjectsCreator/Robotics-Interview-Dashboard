@@ -199,7 +199,10 @@ export function AssistantModelPicker({
   );
   const disabledCount = availableToolNames.filter((name) => disabledSet.has(name)).length;
   const enabledCount = availableToolNames.length - disabledCount;
-  const readOnlyDisabledTools = [...new Set([...WRITE_TOOL_NAMES, ...dynamicToolNames])];
+  const readOnlyDisabledTools = [...new Set([
+    ...WRITE_TOOL_NAMES,
+    ...dynamicTools.filter((tool) => tool.write && dynamicToolNames.includes(tool.name)).map((tool) => tool.name),
+  ])];
 
   const updateDisabled = (next: string[]) => {
     const normalized = normalizeDisabledTools(next);
@@ -591,7 +594,11 @@ export function AssistantModelPicker({
               </div>
               {customMcpError && <p className="assistant-onshape-setting-error" role="alert">{customMcpError}</p>}
             </section>
-            {canManageAssistantTools && <AssistantSkillManager expanded={skillsExpanded} onExpandedChange={setSkillsExpanded} />}
+            {canManageAssistantTools && <AssistantSkillManager
+              expanded={skillsExpanded}
+              onExpandedChange={setSkillsExpanded}
+              dynamicTools={dynamicTools}
+            />}
             {canManageAssistantTools && <div className="assistant-tools-groups" onClickCapture={collapseSkillsForToolInteraction}>
               {ASSISTANT_TOOL_GROUPS.map((group) => {
                 const names = group.tools.map((tool) => tool.name);
@@ -652,13 +659,13 @@ export function AssistantModelPicker({
                       aria-label="Connected service tools"
                     />
                     <label htmlFor="assistant-tools-group-dynamic" className="assistant-tools-group-label">
-                      Connected service tools
+                      Custom app and connected service tools
                       <span className="assistant-tools-group-count">
                         {dynamicToolNames.filter((name) => !disabledSet.has(name)).length}/{dynamicToolNames.length}
                       </span>
                     </label>
                   </div>
-                  <p className="assistant-tools-group-desc">Tools discovered from your connected Onshape and custom MCP services.</p>
+                  <p className="assistant-tools-group-desc">Tools from published custom apps and your connected Onshape or custom MCP services.</p>
                   <div className="assistant-tools-list">
                     {dynamicTools.filter((tool) => dynamicToolNames.includes(tool.name)).map((tool) => (
                       <label key={tool.name} className="assistant-tools-item" title={tool.hint}>

@@ -9,7 +9,7 @@ import {
   useUpdateAssistantSkill,
 } from "@workspace/api-client-react";
 import type { AssistantSkill } from "@workspace/api-client-react";
-import { ASSISTANT_TOOL_GROUPS } from "./assistantTools";
+import { ASSISTANT_TOOL_GROUPS, type AssistantToolItem } from "./assistantTools";
 
 type SkillDraft = {
   name: string;
@@ -40,13 +40,14 @@ function isPublicGitHubRepositoryUrl(value: string): boolean {
 type AssistantSkillManagerProps = {
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  dynamicTools?: AssistantToolItem[];
 };
 
 function messageFromError(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-export function AssistantSkillManager({ expanded: controlledExpanded, onExpandedChange }: AssistantSkillManagerProps = {}) {
+export function AssistantSkillManager({ expanded: controlledExpanded, onExpandedChange, dynamicTools = [] }: AssistantSkillManagerProps = {}) {
   const queryClient = useQueryClient();
   const skillsQuery = useListAssistantSkills();
   const createSkill = useCreateAssistantSkill();
@@ -66,6 +67,13 @@ export function AssistantSkillManager({ expanded: controlledExpanded, onExpanded
   const [saving, setSaving] = useState(false);
 
   const skills = skillsQuery.data?.items ?? [];
+  const availableActions = [
+    ...ACTIONS,
+    ...dynamicTools.filter((tool) => tool.name.startsWith("cw_")).map((tool) => ({
+      ...tool,
+      group: "Custom workspace actions",
+    })),
+  ];
   const beginCreate = () => {
     setFeedback(null);
     setEditingId("new");
@@ -210,7 +218,7 @@ export function AssistantSkillManager({ expanded: controlledExpanded, onExpanded
               <fieldset className="assistant-skill-action-picker">
                 <legend>Approved actions <span>{draft.actions.length} selected</span></legend>
                 <div className="assistant-skill-action-list">
-                  {ACTIONS.map((action) => {
+                  {availableActions.map((action) => {
                     const checked = draft.actions.includes(action.name);
                     return (
                       <label key={action.name} className="assistant-skill-action-option">

@@ -67,6 +67,7 @@ test("skill instructions are explicitly subordinate to system rules", () => {
 test("action validation accepts only distinct approved tool references", () => {
   const approved = new Set(["search_applicants", "get_applicant"]);
   assert.equal(hasOnlyApprovedSkillActions(["search_applicants"], approved), true);
+  assert.equal(hasOnlyApprovedSkillActions(["cw_0123456789abcdef_save_item"], approved), true);
   assert.equal(hasOnlyApprovedSkillActions(["shell_exec"], approved), false);
   assert.equal(hasOnlyApprovedSkillActions(["search_applicants", "search_applicants"], approved), false);
 });

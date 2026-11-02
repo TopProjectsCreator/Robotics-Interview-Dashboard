@@ -69,6 +69,7 @@ describe("custom workspace access settings", () => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
       if (path === "/api/custom-workspaces/team-members") {
         return Response.json({ members: [{ id: "ada-id", displayName: "Ada" }, { id: "ben-id", displayName: "Ben" }] });
       }
@@ -134,6 +135,60 @@ describe("custom workspace access settings", () => {
   });
 });
 
+describe("custom workspace assistant actions", () => {
+  it("creates a named action disabled, then enables it from the action list", async () => {
+    const savedBodies: Record<string, unknown>[][] = [];
+    let tools: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [workspace] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") {
+        if (init?.method === "PUT") {
+          tools = JSON.parse(String(init.body)).tools;
+          savedBodies.push(structuredClone(tools));
+        }
+        return Response.json({ tools, status: "published", hasDataCapability: true });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByTestId("workspace-assistant-tools")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/No named actions yet\./)).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("Action name"), { target: { value: "lookup_item" } });
+    fireEvent.change(screen.getByLabelText("Operation"), { target: { value: "get" } });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Read one item by its exact record ID." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add action" }));
+
+    await waitFor(() => expect(savedBodies).toHaveLength(1));
+    expect(savedBodies[0][0]).toMatchObject({
+      name: "lookup_item",
+      description: "Read one item by its exact record ID.",
+      enabled: false,
+      intent: "read",
+      operation: "get",
+      recordIdArgument: "recordId",
+    });
+    const enableAction = await screen.findByRole("checkbox", { name: "Enable lookup_item" });
+    expect(enableAction).not.toBeChecked();
+    fireEvent.click(enableAction);
+    await waitFor(() => expect(savedBodies).toHaveLength(2));
+    expect(savedBodies[1][0].enabled).toBe(true);
+  });
+});
+
 describe("custom workspace deletion", () => {
   const setup = (deleteFailure = false) => {
     let deleted = false;
@@ -147,6 +202,7 @@ describe("custom workspace deletion", () => {
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: deleted ? [] : [workspace] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1" && init?.method === "DELETE") {
         if (deleteFailure) return Response.json({ error: "Could not delete the workspace. It has not been removed." }, { status: 500 });
@@ -675,6 +731,7 @@ describe("custom workspace visual publish review", () => {
       if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
       if (path === "/api/custom-workspaces") return Response.json({ workspaces: [draft] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1/publish") {

@@ -238,6 +238,12 @@ import {
   type AssistantQuestion,
 } from "../lib/assistantWorkspaceTools";
 import {
+  CUSTOM_WORKSPACE_TOOL_NAME_PATTERN,
+  listAssistantCustomWorkspaceTools,
+  runAssistantCustomWorkspaceTool,
+  type AssistantCustomWorkspaceTool,
+} from "../lib/assistantCustomWorkspaceTools";
+import {
   CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS,
   CUSTOM_WORKSPACE_BUILDER_MAX_CONTINUATIONS,
   CUSTOM_WORKSPACE_BUILDER_PAUSE_REQUESTED,
@@ -1799,7 +1805,9 @@ async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkill
     .where(and(eq(assistantSkillsTable.enabled, true), teamFilter(assistantSkillsTable.teamId, teamId)));
   return rows.map((row) => ({
     ...row,
-    actions: row.actions.filter((action) => APPROVED_ASSISTANT_SKILL_ACTIONS.has(action)),
+    actions: row.actions.filter((action) =>
+      APPROVED_ASSISTANT_SKILL_ACTIONS.has(action) || CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(action),
+    ),
   }));
 }
 
@@ -1810,6 +1818,7 @@ function assistantToolsForRequest(
   customMcpTools: CustomMcpTool[] = [],
   enableMcpConnectionRequest = false,
   enableQuestionTool = false,
+  workspaceTools: AssistantCustomWorkspaceTool[] = [],
 ) {
   const enabled = filterDisabledAssistantTools(ASSISTANT_TOOLS, disabled);
   return [
@@ -1820,6 +1829,7 @@ function assistantToolsForRequest(
     ),
     ...filterDisabledAssistantTools(onshapeTools, disabled) as unknown as typeof ASSISTANT_TOOLS,
     ...filterDisabledAssistantTools(customMcpTools, disabled) as unknown as typeof ASSISTANT_TOOLS,
+    ...filterDisabledAssistantTools(workspaceTools, disabled) as unknown as typeof ASSISTANT_TOOLS,
   ];
 }
 
@@ -1871,7 +1881,7 @@ function buildAssistantBaseMessages(options: {
     systemMessages.push({ role: "system", content: assistantSystemPrompt() });
     systemMessages.push({
       role: "system",
-      content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_VISUAL_ASSET_INSTRUCTIONS}\n\n${ASSISTANT_WORKSPACE_AGENT_CAPABILITIES}\n\nFor each critique round, use the separate verify_custom_workspace_fixes agent after applying required fixes. It must independently inspect the saved files. Unresolved findings block the next round; retry fixes and verification until all required findings pass. Do not report completion until round 5 is verified.`,
+      content: `${ASSISTANT_ARTIFACT_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_INSTRUCTIONS}\n\n${ASSISTANT_CUSTOM_WORKSPACE_VISUAL_ASSET_INSTRUCTIONS}\n\n${ASSISTANT_WORKSPACE_AGENT_CAPABILITIES}\n\nFor a custom workspace builder draft with data access, suggest a small set of useful named actions using suggest_custom_workspace_tools after inspecting the app behavior. Suggestions must use the server-mediated workspace data operations, remain disabled for coordinator review, and never execute generated code or grant access.\n\nFor each critique round, use the separate verify_custom_workspace_fixes agent after applying required fixes. It must independently inspect the saved files. Unresolved findings block the next round; retry fixes and verification until all required findings pass. Do not report completion until round 5 is verified.`,
     });
     systemMessages.push({ role: "system", content: assistantModelSelectionInstructions(options.modelIds, options.modelLocked) });
     if (options.hasChatContext) {
@@ -2045,6 +2055,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
        && !ASSISTANT_PARTS_TOOL_NAMES.has(name)
        && !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name)
        && !ASSISTANT_WORKSPACE_TOOL_NAMES.has(name)
+        && !CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(name)
     )
       continue;
     const args: Record<string, unknown> = {};
@@ -2093,6 +2104,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
        && !ASSISTANT_PARTS_TOOL_NAMES.has(name)
        && !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name)
        && !ASSISTANT_WORKSPACE_TOOL_NAMES.has(name)
+        && !CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(name)
     )
       continue;
     const args: Record<string, unknown> = {};
@@ -2248,7 +2260,8 @@ async function runAssistantTools(
        !customMcpBindings.has(name ?? "") &&
       !ASSISTANT_PARTS_TOOL_NAMES.has(name ?? "") &&
       !ASSISTANT_ARTIFACT_TOOL_NAMES.has(name ?? "") &&
-      !ASSISTANT_WORKSPACE_TOOL_NAMES.has(name ?? "")
+       !ASSISTANT_WORKSPACE_TOOL_NAMES.has(name ?? "") &&
+       !CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(name ?? "")
     )
       continue;
     if (name && isAssistantToolDisabled(name, disabledTools)) {
@@ -3003,6 +3016,26 @@ async function runAssistantTools(
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({ role: "tool", content: result.content, tool_call_id: call.id });
       if (result.activity) activities.push(result.activity as AssistantActivity);
+    } else if (name && CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(name)) {
+      let result: Awaited<ReturnType<typeof runAssistantCustomWorkspaceTool>>;
+      try {
+        result = await runAssistantCustomWorkspaceTool(name, args, {
+          accountId: onshapeAccountId,
+          teamId: team,
+        });
+      } catch {
+        result = {
+          content: "The workspace action could not be completed. No successful result was confirmed.",
+          detail: "workspace action execution failed",
+        };
+      }
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      toolMessages.push({
+        role: "tool",
+        content: result?.content ?? "This workspace action is no longer available.",
+        tool_call_id: call.id,
+      });
+      activities.push({ tool: name, detail: result?.detail ?? "workspace action unavailable" });
     } else if (ASSISTANT_WORKSPACE_TOOL_NAMES.has(name ?? "")) {
       if (name === "send_team_chat_message" || name === "create_team_chat_channel") {
         onScheduledSideEffect?.();
@@ -6908,6 +6941,7 @@ async function generateAssistantAnswer(options: {
   let onshapeBindings = new Map<string, OnshapeToolBinding>();
   let customMcpTools: CustomMcpTool[] = [];
   let customMcpBindings = new Map<string, CustomMcpToolBinding>();
+  let customWorkspaceTools: AssistantCustomWorkspaceTool[] = [];
   if (options.accountId) {
     try {
       ({ tools: onshapeTools, bindings: onshapeBindings } = await listOnshapeMcpTools(options.accountId, teamId));
@@ -6919,6 +6953,13 @@ async function generateAssistantAnswer(options: {
       retainLegacyCustomMcpDisables(disabledTools, customMcpBindings);
     } catch (error) {
       log.warn({ err: error }, "Custom MCP tools unavailable");
+    }
+    if (!options.mcpOnly) {
+      try {
+        customWorkspaceTools = await listAssistantCustomWorkspaceTools(options.accountId, teamId);
+      } catch (error) {
+        log.warn({ err: error }, "Custom workspace assistant tools unavailable");
+      }
     }
   }
   let activeTools = options.mcpOnly
@@ -6932,7 +6973,10 @@ async function generateAssistantAnswer(options: {
     ]
     : [
     ...restrictAssistantToolsToSkills(
-      assistantToolsForRequest(disabledTools, onshapeTools, options.chatContext !== undefined, customMcpTools),
+      assistantToolsForRequest(
+        disabledTools, onshapeTools, options.chatContext !== undefined, customMcpTools,
+        false, false, customWorkspaceTools,
+      ),
       applicableSkills,
     ),
     ...(!disabledTools.has(ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME)
@@ -8352,6 +8396,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   let onshapeBindings = new Map<string, OnshapeToolBinding>();
   let customMcpTools: CustomMcpTool[] = [];
   let customMcpBindings = new Map<string, CustomMcpToolBinding>();
+  let customWorkspaceTools: AssistantCustomWorkspaceTool[] = [];
   try {
     ({ tools: onshapeTools, bindings: onshapeBindings } = await listOnshapeMcpTools(account.id, teamId));
   } catch (error) {
@@ -8367,6 +8412,13 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       return;
     }
   }
+  if (!mcpOnly) {
+    try {
+      customWorkspaceTools = await listAssistantCustomWorkspaceTools(account.id, teamId);
+    } catch (error) {
+      req.log.warn({ err: error }, "Custom workspace assistant tools unavailable");
+    }
+  }
   const activeTools = mcpOnly
     ? [
       ...filterDisabledAssistantTools(onshapeTools, disabledTools),
@@ -8380,7 +8432,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     ...restrictAssistantToolsToSkills(
       assistantToolsForRequest(
         disabledTools, onshapeTools, false, customMcpTools, mcpConnectionRequestEnabled,
-        !mcpOnly && /custom workspace/i.test(parsed.data.question),
+        !mcpOnly && /custom workspace/i.test(parsed.data.question), customWorkspaceTools,
       ),
       applicableSkills,
     ),
@@ -9204,7 +9256,8 @@ router.get("/assistant/tools", requireAdmin, async (req, res): Promise<void> => 
   const teamId = await requestTeamId(req);
   let onshapeTools: OnshapeMcpTool[] = [];
   let customMcpTools: CustomMcpTool[] = [];
-  const errors: { onshape?: boolean; customMcp?: boolean } = {};
+  let customWorkspaceTools: AssistantCustomWorkspaceTool[] = [];
+  const errors: { onshape?: boolean; customMcp?: boolean; customWorkspaces?: boolean } = {};
   try {
     ({ tools: onshapeTools } = await listOnshapeMcpTools(accountId, teamId));
   } catch (error) {
@@ -9219,10 +9272,17 @@ router.get("/assistant/tools", requireAdmin, async (req, res): Promise<void> => 
     errors.customMcp = true;
     req.log.warn({ err: error }, "Custom MCP assistant tool catalog unavailable");
   }
+  try {
+    customWorkspaceTools = await listAssistantCustomWorkspaceTools(accountId, teamId);
+  } catch (error) {
+    errors.customWorkspaces = true;
+    req.log.warn({ err: error }, "Custom workspace assistant tool catalog unavailable");
+  }
   res.json({
-    tools: [...onshapeTools, ...customMcpTools].map((tool) => ({
+    tools: [...onshapeTools, ...customMcpTools, ...customWorkspaceTools].map((tool) => ({
       name: tool.function.name,
       description: tool.function.description,
+      write: tool.function.description.startsWith("[Changes data]"),
     })),
     errors,
   });

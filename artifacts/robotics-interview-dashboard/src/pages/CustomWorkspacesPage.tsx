@@ -24,6 +24,23 @@ type VersionPreview = Version & { html: string; capabilities: Capability[]; sour
 type WorkspaceFile = { path: string; content: string; updatedAt: string };
 type AccessMode = Workspace["accessMode"];
 type TeamMember = { id: string; displayName: string };
+type WorkspaceToolOperation = "list" | "get" | "create" | "update" | "delete";
+type WorkspaceAssistantTool = {
+  id?: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  intent: "read" | "write";
+  inputSchema: {
+    type: "object";
+    properties: Record<string, { type: "string" | "number" | "integer" | "boolean"; description?: string; enum?: string[]; minimum?: number; maximum?: number; minLength?: number; maxLength?: number }>;
+    required: string[];
+    additionalProperties: false;
+  };
+  operation: WorkspaceToolOperation;
+  recordIdArgument?: string;
+  fields?: Record<string, string>;
+};
 type BuilderModel = { id: string; name?: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
 type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; status: "running" | "done" | "failed" };
@@ -187,6 +204,224 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The request failed.");
   return body as T;
+}
+
+function emptyWorkspaceToolSchema(operation: WorkspaceToolOperation): WorkspaceAssistantTool["inputSchema"] {
+  if (operation === "get" || operation === "delete") {
+    return {
+      type: "object",
+      properties: { recordId: { type: "string", description: "Exact workspace record ID", maxLength: 64 } },
+      required: ["recordId"],
+      additionalProperties: false,
+    };
+  }
+  if (operation === "create") {
+    return {
+      type: "object",
+      properties: { value: { type: "string", description: "Value to save", maxLength: 500 } },
+      required: ["value"],
+      additionalProperties: false,
+    };
+  }
+  if (operation === "update") {
+    return {
+      type: "object",
+      properties: {
+        recordId: { type: "string", description: "Exact workspace record ID", maxLength: 64 },
+        value: { type: "string", description: "Updated value", maxLength: 500 },
+      },
+      required: ["recordId", "value"],
+      additionalProperties: false,
+    };
+  }
+  return { type: "object", properties: {}, required: [], additionalProperties: false };
+}
+
+function WorkspaceAssistantToolsEditor({ workspaceId, hasDataCapability }: { workspaceId: string; hasDataCapability: boolean }) {
+  const [tools, setTools] = useState<WorkspaceAssistantTool[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [operation, setOperation] = useState<WorkspaceToolOperation>("list");
+  const [schemaText, setSchemaText] = useState(JSON.stringify(emptyWorkspaceToolSchema("list"), null, 2));
+  const [recordIdArgument, setRecordIdArgument] = useState("recordId");
+  const [fieldsText, setFieldsText] = useState("{}");
+
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setError("");
+    void request<{ tools: WorkspaceAssistantTool[] }>(`/api/custom-workspaces/${encodeURIComponent(workspaceId)}/assistant-tools`)
+      .then((result) => { if (current) setTools(result.tools); })
+      .catch((err) => { if (current) setError(err instanceof Error ? err.message : "Could not load workspace assistant actions."); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [workspaceId]);
+
+  const resetEditor = () => {
+    setEditingId("");
+    setName("");
+    setDescription("");
+    setOperation("list");
+    setSchemaText(JSON.stringify(emptyWorkspaceToolSchema("list"), null, 2));
+    setRecordIdArgument("recordId");
+    setFieldsText("{}");
+  };
+
+  const editTool = (tool: WorkspaceAssistantTool) => {
+    setEditingId(tool.id ?? "");
+    setName(tool.name);
+    setDescription(tool.description);
+    setOperation(tool.operation);
+    setSchemaText(JSON.stringify(tool.inputSchema, null, 2));
+    setRecordIdArgument(tool.recordIdArgument ?? "recordId");
+    setFieldsText(JSON.stringify(tool.fields ?? {}, null, 2));
+    setError("");
+    setNotice("");
+  };
+
+  const changeOperation = (next: WorkspaceToolOperation) => {
+    setOperation(next);
+    setSchemaText(JSON.stringify(emptyWorkspaceToolSchema(next), null, 2));
+    setRecordIdArgument("recordId");
+    setFieldsText(next === "create"
+      ? JSON.stringify({ value: "value" }, null, 2)
+      : next === "update"
+        ? JSON.stringify({ value: "value" }, null, 2)
+        : "{}");
+  };
+
+  const persist = async (nextTools: WorkspaceAssistantTool[]) => {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await request<{ tools: WorkspaceAssistantTool[] }>(
+        `/api/custom-workspaces/${encodeURIComponent(workspaceId)}/assistant-tools`,
+        { method: "PUT", body: JSON.stringify({ tools: nextTools }) },
+      );
+      setTools(result.tools);
+      setNotice("Assistant actions saved. Enabled actions appear in /assistant after settings refresh.");
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save workspace assistant actions.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEditor = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    let inputSchema: WorkspaceAssistantTool["inputSchema"];
+    let fields: Record<string, string>;
+    try {
+      inputSchema = JSON.parse(schemaText) as WorkspaceAssistantTool["inputSchema"];
+      fields = JSON.parse(fieldsText) as Record<string, string>;
+    } catch {
+      setError("Input schema and field mapping must be valid JSON.");
+      return;
+    }
+    const write = operation === "create" || operation === "update" || operation === "delete";
+    const declaration: WorkspaceAssistantTool = {
+      ...(editingId ? { id: editingId } : {}),
+      name: name.trim(),
+      description: description.trim(),
+      enabled: tools.find((item) => item.id === editingId)?.enabled ?? false,
+      intent: write ? "write" : "read",
+      inputSchema,
+      operation,
+      ...(["get", "update", "delete"].includes(operation) ? { recordIdArgument: recordIdArgument.trim() } : {}),
+      ...(["create", "update"].includes(operation) ? { fields } : {}),
+    };
+    const nextTools = editingId
+      ? tools.map((item) => item.id === editingId ? declaration : item)
+      : [...tools, declaration];
+    if (await persist(nextTools)) resetEditor();
+  };
+
+  return <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace assistant actions" data-testid="workspace-assistant-tools">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Assistant actions</h3>
+        <p className="mt-1 max-w-3xl text-xs text-[hsl(var(--muted-foreground))]">
+          These actions use only this app’s saved records. Reads cannot change data; create, update, and delete actions are marked as writes. Actions start disabled until you enable and save them.
+        </p>
+      </div>
+      {editingId && <button type="button" onClick={resetEditor} className="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--foreground))]">New action</button>}
+    </div>
+    {!hasDataCapability && <p role="status" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Enable this workspace’s data capability before adding assistant actions.</p>}
+    {loading ? <p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]" role="status">Loading actions…</p> :
+      <div className="mt-3 space-y-2">
+        {tools.length === 0
+          ? <p className="text-xs text-[hsl(var(--muted-foreground))]">No named actions yet. Standard record read and write tools are available to this app’s authorized users in assistant settings.</p>
+          : tools.map((tool) => <div key={tool.id ?? tool.name} className="flex flex-wrap items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3">
+            <label className="flex items-center gap-2 text-xs font-medium text-[hsl(var(--foreground))]">
+              <input
+                type="checkbox"
+                checked={tool.enabled}
+                disabled={!hasDataCapability || saving}
+                onChange={(event) => void persist(tools.map((item) => item.id === tool.id ? { ...item, enabled: event.target.checked } : item))}
+                aria-label={`Enable ${tool.name}`}
+              />
+              <span>{tool.name}</span>
+            </label>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tool.intent === "write" ? "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-teal-100 text-teal-900 dark:bg-teal-950/50 dark:text-teal-200"}`}>
+              {tool.intent === "write" ? "Changes data" : "Read-only"}
+            </span>
+            <span className="min-w-0 flex-1 text-xs text-[hsl(var(--muted-foreground))]">{tool.description}</span>
+            <button type="button" onClick={() => editTool(tool)} className="rounded border border-[hsl(var(--border))] px-2 py-1 text-xs font-medium text-[hsl(var(--foreground))]">Edit</button>
+            <button type="button" disabled={saving} onClick={() => void persist(tools.filter((item) => item.id !== tool.id))} className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-800 disabled:opacity-50 dark:border-red-800 dark:text-red-200">Remove</button>
+          </div>)}
+        {tools.length > 0 && <button type="button" disabled={saving || !hasDataCapability} onClick={() => void persist(tools)} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+          {saving ? "Saving…" : "Save enabled actions"}
+        </button>}
+      </div>}
+    {hasDataCapability && <form onSubmit={(event) => void saveEditor(event)} className="mt-4 grid gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 md:grid-cols-2" aria-label={editingId ? "Edit workspace assistant action" : "Create workspace assistant action"}>
+      <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))]">
+        Action name
+        <input value={name} onChange={(event) => setName(event.target.value)} maxLength={32} pattern="[a-z][a-z0-9_]{0,31}" placeholder="find_open_items" required className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-2 font-mono text-base md:text-xs text-[hsl(var(--foreground))]" />
+      </label>
+      <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))]">
+        Operation
+        <select value={operation} onChange={(event) => changeOperation(event.target.value as WorkspaceToolOperation)} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-2 text-sm text-[hsl(var(--foreground))]">
+          <option value="list">Read a list</option><option value="get">Read one record</option><option value="create">Create a record</option><option value="update">Update one record</option><option value="delete">Delete one record</option>
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))] md:col-span-2">
+        Description
+        <textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={240} rows={2} required placeholder="What does this action do, and when should the assistant use it?" className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-xs text-[hsl(var(--foreground))]" />
+      </label>
+      <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))] md:col-span-2">
+        Validated input fields · JSON schema
+        <textarea value={schemaText} onChange={(event) => setSchemaText(event.target.value)} rows={8} spellCheck={false} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 font-mono text-[11px] text-[hsl(var(--foreground))]" />
+        <span className="font-normal text-[hsl(var(--muted-foreground))]">Use a JSON object with primitive string, number, integer, or boolean fields. Each field can set a description, enum, and bounds. Nested schemas and extra fields are rejected.</span>
+      </label>
+      {["get", "update", "delete"].includes(operation) && <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))]">
+        Record ID input field
+        <input value={recordIdArgument} onChange={(event) => setRecordIdArgument(event.target.value)} maxLength={40} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-2 font-mono text-xs text-[hsl(var(--foreground))]" />
+      </label>}
+      {["create", "update"].includes(operation) && <label className="grid gap-1 text-xs font-medium text-[hsl(var(--foreground))]">
+        Map input field names to record fields · JSON
+        <textarea value={fieldsText} onChange={(event) => setFieldsText(event.target.value)} rows={3} spellCheck={false} className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 font-mono text-[11px] text-[hsl(var(--foreground))]" />
+      </label>}
+      <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+        <span className="rounded-full bg-[hsl(var(--muted))] px-2.5 py-1 text-[10px] font-semibold text-[hsl(var(--foreground))]">
+          {["create", "update", "delete"].includes(operation) ? "Write action" : "Read-only action"}
+        </span>
+        <button type="submit" disabled={saving || !hasDataCapability} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+          {saving ? "Saving…" : editingId ? "Save action details" : "Add action"}
+        </button>
+      </div>
+    </form>}
+    {notice && <p role="status" className="mt-2 text-xs text-emerald-800 dark:text-emerald-200">{notice}</p>}
+    {error && <p role="alert" className="mt-2 text-xs text-red-800 dark:text-red-200">{error}</p>}
+  </section>;
 }
 
 function builderActivityLabel(activity: BuilderRun["activities"][number]): string {
@@ -1012,6 +1247,11 @@ export function CustomWorkspacesPage() {
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-[hsl(var(--foreground))]">{builderRun.result}</p>
           </div>}
         </section>}
+        {active && canManage && <WorkspaceAssistantToolsEditor
+          key={active.id}
+          workspaceId={active.id}
+          hasDataCapability={active.capabilities.includes("data")}
+        />}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
           {currentPreviewVersion && <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Showing files from the selected saved version.</p>}

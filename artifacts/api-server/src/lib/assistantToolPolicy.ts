@@ -1,6 +1,7 @@
 const DYNAMIC_ASSISTANT_TOOL_PATTERNS = [
   /^onshape_[a-zA-Z0-9_-]{1,55}$/,
   /^custom_mcp_[a-zA-Z0-9_-]{0,54}$/,
+  /^cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31}$/,
 ];
 
 export function parseDisabledAssistantTools(value: unknown, knownTools: ReadonlySet<string>): Set<string> {

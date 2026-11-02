@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import { applyCodeFileContent } from "./codeCollaboration";
+import {
+  validateWorkspaceToolDeclarations,
+  type WorkspaceToolDeclaration,
+} from "./assistantCustomWorkspaceTools";
 import { pushRealtimeHint } from "./realtime";
 import { teamSqlCondition } from "./teams";
 import { accountById } from "./interviewerAccounts";
@@ -64,8 +68,8 @@ async function snapshotCustomWorkspaceBeforeFileChange(
   accountId: string,
   message: string,
 ): Promise<void> {
-  const workspace = await pool.query<{ html: string; capabilities: string[] }>(
-    `select "html", "capabilities" from "custom_workspaces"
+  const workspace = await pool.query<{ html: string; capabilities: string[]; assistantTools: WorkspaceToolDeclaration[] }>(
+    `select "html", "capabilities", "assistant_tools" as "assistantTools" from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
       limit 1`,
     [workspaceId, teamId],
@@ -81,9 +85,9 @@ async function snapshotCustomWorkspaceBeforeFileChange(
   const sourceFiles = files.rows.length ? files.rows : [{ path: "index.html", content: current.html }];
   await pool.query(
     `insert into "custom_workspace_versions"
-      ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "created_by", "message")
-     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
-    [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), JSON.stringify(sourceFiles), accountId, message],
+      ("id", "team_id", "workspace_id", "html", "capabilities", "source_files", "assistant_tools", "created_by", "message")
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)`,
+    [randomUUID(), teamId, workspaceId, current.html, JSON.stringify(current.capabilities), JSON.stringify(sourceFiles), JSON.stringify(current.assistantTools ?? []), accountId, message],
   );
 }
 
@@ -243,6 +247,43 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
       confirmationCode: { type: "string", minLength: 12, maxLength: 12 },
     },
     ["workspaceId"],
+  ),
+  tool(
+    "suggest_custom_workspace_tools",
+    "During a custom workspace builder run, suggest server-validated assistant data actions for its current draft. Suggestions are always saved disabled for coordinator review; they never grant access or execute generated code.",
+    {
+      workspaceId: { type: "string", minLength: 1, maxLength: 128 },
+      tools: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 32 },
+            description: { type: "string", minLength: 1, maxLength: 240 },
+            intent: { type: "string", enum: ["read", "write"] },
+            operation: { type: "string", enum: ["list", "get", "create", "update", "delete"] },
+            inputSchema: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["object"] },
+                properties: { type: "object", additionalProperties: true },
+                required: { type: "array", items: { type: "string" }, maxItems: 12 },
+                additionalProperties: { type: "boolean", enum: [false] },
+              },
+              required: ["type", "properties", "required", "additionalProperties"],
+              additionalProperties: false,
+            },
+            recordIdArgument: { type: "string", maxLength: 40 },
+            fields: { type: "object", additionalProperties: { type: "string", maxLength: 64 } },
+          },
+          required: ["name", "description", "intent", "operation", "inputSchema"],
+          additionalProperties: false,
+        },
+      },
+    },
+    ["workspaceId", "tools"],
   ),
   tool(
     "create_custom_workspace",
@@ -495,7 +536,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "ask_user" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "ask_user" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
     const account = await chatAccountInTeam(context);
     if (account?.role !== "coordinator") {
       return { content: "Only coordinators in this team can manage custom workspaces.", detail: "access denied" };
@@ -1059,6 +1100,73 @@ export async function runAssistantWorkspaceTool(
       content: JSON.stringify(workspaces.rows),
       detail: `listed ${workspaces.rowCount ?? 0} custom workspaces for this team`,
     };
+  }
+
+  if (name === "suggest_custom_workspace_tools") {
+    const account = await chatAccountInTeam(context);
+    const workspaceId = textArg(args, "workspaceId", 128);
+    if (account?.role !== "coordinator" || !context.builderRunId ||
+      !context.builderWorkspaceId || context.builderWorkspaceId !== workspaceId) {
+      return {
+        content: "Only the active coordinator builder run can suggest actions for its own workspace draft.",
+        detail: "workspace assistant tool suggestion denied",
+      };
+    }
+    const result = await pool.query<{
+      title: string;
+      status: string;
+      capabilities: string[];
+      createdBy: string;
+      html: string;
+      assistantTools: unknown;
+    }>(
+      `select "title", "status", "capabilities", "created_by" as "createdBy",
+              "html", "assistant_tools" as "assistantTools"
+         from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        limit 1`,
+      [workspaceId, context.teamId],
+    );
+    const workspace = result.rows[0];
+    if (!workspace || workspace.status !== "draft" || workspace.createdBy !== context.accountId ||
+      !workspace.capabilities.includes("data")) {
+      return { content: "The builder can suggest actions only for its own draft with the data capability. Nothing was saved.", detail: "workspace draft unavailable for tool suggestions" };
+    }
+    try {
+      const existing = validateWorkspaceToolDeclarations(workspace.assistantTools ?? []);
+      const suggested = Array.isArray(args.tools) ? args.tools.map((item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? { ...(item as Record<string, unknown>), enabled: false }
+          : item,
+      ) : [];
+      const declarations = validateWorkspaceToolDeclarations([...existing, ...suggested], existing);
+      await snapshotCustomWorkspaceBeforeFileChange(
+        workspaceId,
+        context.teamId,
+        context.accountId,
+        "Before assistant action suggestions",
+      );
+      const saved = await pool.query(
+        `update "custom_workspaces" set "assistant_tools" = $3::jsonb, "updated_at" = now()
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+            and "status" = 'draft' and "created_by" = $4
+          returning "id"`,
+        [workspaceId, context.teamId, JSON.stringify(declarations), context.accountId],
+      );
+      if (!saved.rowCount) {
+        return { content: "The workspace draft changed before suggestions could be saved. No action was enabled.", detail: "workspace draft changed during suggestions" };
+      }
+      pushRealtimeHint("custom_workspaces", "UPDATE");
+      return {
+        content: JSON.stringify({ savedDisabled: suggested.length, actions: suggested.map((item) => (item as Record<string, unknown>).name) }),
+        detail: `saved ${suggested.length} disabled action suggestions for ${workspace.title}`,
+      };
+    } catch (error) {
+      return {
+        content: `The action suggestions were rejected: ${error instanceof Error ? error.message : "invalid action definitions"}`,
+        detail: "workspace assistant tool suggestions rejected",
+      };
+    }
   }
 
   if (name === "delete_custom_workspace") {

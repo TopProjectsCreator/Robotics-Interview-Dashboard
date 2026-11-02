@@ -220,6 +220,11 @@ async function createHarness(t) {
         assert.equal(values[Number(placeholder.slice(1)) - 1], teamId);
       };
 
+      if (statement.startsWith("select") && statement.includes('from "assistant_builder_runs"')) {
+        ensureTeamScope('"team_id"', "$1", values[0]);
+        return { rows: [], rowCount: 0 };
+      }
+
       if (statement.startsWith('delete from "custom_workspaces"')) {
         const [id, teamId] = values;
         ensureTeamScope('"team_id"', "$2", teamId);
@@ -365,6 +370,14 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("update \"custom_workspaces\"")) {
+        if (statement.includes('set "assistant_tools"')) {
+          const [id, teamId, toolsJson] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
+          if (!row) return { rows: [], rowCount: 0 };
+          row.assistantTools = JSON.parse(toolsJson);
+          return { rows: [{ id, assistantTools: row.assistantTools }], rowCount: 1 };
+        }
         if (statement.includes('set "critique_rounds" = 0')) {
           const [id, teamId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -496,8 +509,11 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspace_versions"')) {
-        const [id, teamId, workspaceId, html, capabilities, sourceFiles, createdBy] = values;
-        const message = values[7] ?? (
+        const hasAssistantTools = statement.includes('"assistant_tools"');
+        const [id, teamId, workspaceId, html, capabilities, sourceFiles] = values;
+        const assistantTools = hasAssistantTools ? JSON.parse(values[6]) : [];
+        const createdBy = values[hasAssistantTools ? 7 : 6];
+        const message = values[hasAssistantTools ? 8 : 7] ?? (
           statement.includes("'Initial AI draft'")
             ? "Initial AI draft"
             : statement.includes("Before automatic app icon generation")
@@ -511,6 +527,7 @@ async function createHarness(t) {
           html,
           capabilities: JSON.parse(capabilities),
           sourceFiles: JSON.parse(sourceFiles),
+          assistantTools,
           createdBy,
           message,
           createdAt: "2026-01-03T00:00:00.000Z",
@@ -886,6 +903,67 @@ test("workspace deletion is coordinator-only, team-scoped, and cascades app data
   assert.ok(harness.workspaces.some((workspace) => workspace.id === "workspace-b"));
   assert.ok(harness.records.some((record) => record.workspaceId === "workspace-b"));
   assert.equal((await harness.request("admin-a", "GET", "/custom-workspaces/workspace-a")).status, 404);
+});
+
+test("coordinators can save, review, and version assistant actions for team data workspaces", async (t) => {
+  const harness = await createHarness(t);
+  const action = {
+    name: "lookup_item",
+    description: "Read one item by its exact record ID.",
+    enabled: true,
+    intent: "read",
+    operation: "get",
+    inputSchema: {
+      type: "object",
+      properties: { recordId: { type: "string", maxLength: 64 } },
+      required: ["recordId"],
+      additionalProperties: false,
+    },
+    recordIdArgument: "recordId",
+  };
+
+  assert.equal((await harness.request("admin-a", "PUT", "/custom-workspaces/workspace-a/assistant-tools", { tools: [action] })).status, 403);
+  assert.equal((await harness.request("coordinator-b", "PUT", "/custom-workspaces/workspace-a/assistant-tools", { tools: [action] })).status, 404);
+
+  const saved = await harness.request(
+    "coordinator-a",
+    "PUT",
+    "/custom-workspaces/workspace-a/assistant-tools",
+    { tools: [action] },
+  );
+  assert.equal(saved.status, 200);
+  const savedTools = (await saved.json()).tools;
+  assert.equal(savedTools[0].enabled, true);
+  assert.deepEqual(harness.workspaces.find((workspace) => workspace.id === "workspace-a").assistantTools, savedTools);
+  assert.deepEqual(harness.versions.at(-1).assistantTools, []);
+  assert.equal(harness.versions.at(-1).message, "Before assistant action changes");
+
+  const reviewed = await harness.request(
+    "coordinator-a",
+    "GET",
+    "/custom-workspaces/workspace-a/assistant-tools",
+  );
+  assert.equal(reviewed.status, 200);
+  assert.deepEqual((await reviewed.json()).tools, savedTools);
+
+  const versionCount = harness.versions.length;
+  const invalid = await harness.request(
+    "coordinator-a",
+    "PUT",
+    "/custom-workspaces/workspace-a/assistant-tools",
+    { tools: [{ ...action, intent: "write" }] },
+  );
+  assert.equal(invalid.status, 400);
+  assert.equal(harness.versions.length, versionCount);
+  assert.deepEqual(harness.workspaces.find((workspace) => workspace.id === "workspace-a").assistantTools, savedTools);
+
+  const noData = await harness.request(
+    "coordinator-a",
+    "PUT",
+    "/custom-workspaces/workspace-a-no-data/assistant-tools",
+    { tools: [action] },
+  );
+  assert.equal(noData.status, 400);
 });
 
 test("assistant workspace list and deletion require coordinator-scoped exact confirmation", async (t) => {

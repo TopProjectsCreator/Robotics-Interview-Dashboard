@@ -21,19 +21,22 @@ const {
   parseDisabledAssistantTools,
 } = await import("./assistantToolPolicy.ts");
 
-test("disabled selections retain only supported static and dynamically named MCP tools", () => {
+test("disabled selections retain only supported static, service, and workspace tools", () => {
   const knownTools = new Set(["generate_image", "search_applicants"]);
   const disabled = parseDisabledAssistantTools([
     "generate_image",
     "onshape_getDocument",
     "custom_mcp_write_file",
+    "cw_0123456789abcdef_save_item",
     "not_a_tool",
     "custom_mcp_bad tool",
+    "cw_invalid_save_item",
     null,
   ], knownTools);
 
   assert.deepEqual([...disabled].sort(), [
     "custom_mcp_write_file",
+    "cw_0123456789abcdef_save_item",
     "generate_image",
     "onshape_getDocument",
   ]);
@@ -44,7 +47,7 @@ test("disabled static and dynamic tools are filtered from the model catalog", ()
   assert.deepEqual(filterDisabledAssistantTools([imageTool], new Set()), [imageTool]);
 
   const disabled = parseDisabledAssistantTools(
-    ["generate_image", "onshape_updateDocument", "custom_mcp_write_file"],
+    ["generate_image", "onshape_updateDocument", "custom_mcp_write_file", "cw_0123456789abcdef_save_item"],
     new Set(["generate_image"]),
   );
   const tools = [
@@ -52,6 +55,7 @@ test("disabled static and dynamic tools are filtered from the model catalog", ()
     { function: { name: "search_applicants" } },
     { function: { name: "onshape_updateDocument" } },
     { function: { name: "custom_mcp_write_file" } },
+    { function: { name: "cw_0123456789abcdef_save_item" } },
   ];
 
   assert.deepEqual(
@@ -59,6 +63,7 @@ test("disabled static and dynamic tools are filtered from the model catalog", ()
     ["search_applicants"],
   );
   assert.equal(isAssistantToolDisabled("custom_mcp_write_file", disabled), true);
+  assert.equal(isAssistantToolDisabled("cw_0123456789abcdef_save_item", disabled), true);
   assert.equal(isAssistantToolDisabled("search_applicants", disabled), false);
 });
 

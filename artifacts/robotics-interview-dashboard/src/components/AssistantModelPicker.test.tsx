@@ -432,6 +432,34 @@ describe("AssistantModelPicker", () => {
     expect(onDisabledToolsChange.mock.lastCall?.[0]).toContain("custom_mcp_write_file");
   });
 
+  it("lets users disable published custom workspace actions in assistant settings", async () => {
+    window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
+    const onDisabledToolsChange = vi.fn();
+    const readTool = "cw_0123456789abcdef_lookup_item";
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        disabledTools={[]}
+        onDisabledToolsChange={onDisabledToolsChange}
+        dynamicTools={[
+          { name: readTool, label: "Team planner: lookup_item", hint: "Read-only · Team planner", write: false },
+          { name: "cw_0123456789abcdef_save_item", label: "Team planner: save_item", hint: "Changes data · Team planner", write: true },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByTestId("assistant-dynamic-tools")).toBeInTheDocument();
+    expect(screen.getByText("Read-only · Team planner")).toBeInTheDocument();
+    expect(screen.getByText("Changes data · Team planner")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Team planner: lookup_item tool" }));
+    expect(onDisabledToolsChange).toHaveBeenCalledWith([readTool]);
+  });
+
   it("persists a disabled dynamic MCP tool so subsequent assistant requests can carry it", async () => {
     window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
     renderWithQuery(

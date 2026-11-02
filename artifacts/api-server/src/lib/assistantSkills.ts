@@ -7,6 +7,7 @@ export type AssistantSkillForRuntime = {
 };
 
 const ASSISTANT_SKILL_REPOSITORY_LIMIT = 3;
+const CUSTOM_WORKSPACE_SKILL_ACTION = /^cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31}$/;
 
 const STOP_WORDS = new Set([
   "about", "after", "also", "and", "are", "assistant", "for", "from", "help",
@@ -56,7 +57,9 @@ export function assistantSkillRepositoryBindings(skills: AssistantSkillForRuntim
 }
 
 export function hasOnlyApprovedSkillActions(actions: string[], approved: Set<string>): boolean {
-  return new Set(actions).size === actions.length && actions.every((action) => approved.has(action));
+  return new Set(actions).size === actions.length && actions.every((action) =>
+    approved.has(action) || CUSTOM_WORKSPACE_SKILL_ACTION.test(action),
+  );
 }
 
 export function assistantSkillInstructions(skills: AssistantSkillForRuntime[]): string {

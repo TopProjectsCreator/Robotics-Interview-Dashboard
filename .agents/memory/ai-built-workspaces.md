@@ -50,3 +50,9 @@ Custom workspace builds reuse the coordinator's existing /assistant MCP connecti
 **Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help, and clarified that subagents must be able to edit.
 
 **How to apply:** Keep MCP calls scoped to the signed-in coordinator and team, preserve confirmation before connecting a new MCP, and give each subagent only the assigned draft's file tools plus a bounded objective.
+
+Assistant-visible workspace actions must be saved, version-aware declarations mapped only to existing server-mediated workspace data operations. Builder suggestions are review-only and stay disabled until a coordinator enables them; never execute generated workspace JavaScript to implement assistant actions.
+
+**Why:** The user requires custom workspace tools to remain scoped to existing data capabilities, without generated-code execution or silent capability grants.
+
+**How to apply:** Recheck the signed-in account, team, published status, workspace access, data capability, tool settings, and applicable skill allowlist when dispatching each call.

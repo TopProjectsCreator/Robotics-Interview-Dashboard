@@ -254,6 +254,7 @@ async function ensureSchema(): Promise<void> {
         "critique_rounds" integer not null default 0 check ("critique_rounds" between 0 and 5),
         "verified_critique_rounds" integer not null default 0 check ("verified_critique_rounds" between 0 and 5),
         "critique_findings" jsonb not null default '{}'::jsonb,
+       "assistant_tools" jsonb not null default '[]'::jsonb,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
@@ -262,6 +263,7 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_workspaces" add column if not exists "critique_rounds" integer not null default 0`,
     `alter table "custom_workspaces" add column if not exists "verified_critique_rounds" integer not null default 0`,
     `alter table "custom_workspaces" add column if not exists "critique_findings" jsonb not null default '{}'::jsonb`,
+    `alter table "custom_workspaces" add column if not exists "assistant_tools" jsonb not null default '[]'::jsonb`,
     `do $custom_access$
        begin
          if not exists (
@@ -284,11 +286,13 @@ async function ensureSchema(): Promise<void> {
        "html" text not null check (octet_length("html") <= 120000),
        "capabilities" jsonb not null default '[]'::jsonb,
        "source_files" jsonb not null default '[]'::jsonb,
+       "assistant_tools" jsonb not null default '[]'::jsonb,
        "created_by" text not null,
        "message" text not null default '',
        "created_at" timestamptz not null default now()
      )`,
     `alter table "custom_workspace_versions" add column if not exists "source_files" jsonb not null default '[]'::jsonb`,
+    `alter table "custom_workspace_versions" add column if not exists "assistant_tools" jsonb not null default '[]'::jsonb`,
     `create index if not exists "custom_workspace_versions_workspace_idx" on "custom_workspace_versions" ("workspace_id", "created_at" desc)`,
     `create table if not exists "custom_workspace_files" (
        "id" text primary key,

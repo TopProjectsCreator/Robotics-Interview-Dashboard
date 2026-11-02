@@ -7767,13 +7767,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
       const result = await response.json() as {
-        tools?: { name?: unknown; description?: unknown }[];
-        errors?: { onshape?: boolean; customMcp?: boolean };
+        tools?: { name?: unknown; description?: unknown; write?: unknown }[];
+        errors?: { onshape?: boolean; customMcp?: boolean; customWorkspaces?: boolean };
       };
       if (!response.ok) throw new Error("Could not load connected assistant tools.");
       if (assistantIdentityRef.current !== requestIdentity) return;
-      const tools = (result.tools ?? []).filter((tool): tool is { name: string; description?: unknown } =>
-        typeof tool.name === "string" && /^(?:onshape_[a-zA-Z0-9_-]{1,55}|custom_mcp_[a-zA-Z0-9_-]{0,54})$/.test(tool.name),
+      const tools = (result.tools ?? []).filter((tool): tool is { name: string; description?: unknown; write?: unknown } =>
+        typeof tool.name === "string" && /^(?:onshape_[a-zA-Z0-9_-]{1,55}|custom_mcp_[a-zA-Z0-9_-]{0,54}|cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31})$/.test(tool.name),
       );
       const customToolNames = tools
         .map((tool) => tool.name)
@@ -7796,24 +7796,29 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         return normalized;
       });
       setDynamicAssistantTools(tools.map((tool) => {
-        const service = tool.name.startsWith("onshape_") ? "Onshape" : "Custom MCP";
+        const service = tool.name.startsWith("onshape_") ? "Onshape"
+          : tool.name.startsWith("cw_") ? "Custom app"
+            : "Custom MCP";
         const operation = tool.name
           .replace(/^onshape_/, "")
+          .replace(/^cw_[a-f0-9]{16}_/, "")
           .replace(/^custom_mcp_[a-f0-9]{32}_/, "")
           .replace(/^custom_mcp_/, "")
           .replace(/[_-]+/g, " ");
         const title = operation.replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tool";
-        const description = typeof tool.description === "string" ? tool.description.trim().slice(0, 180) : "";
+        const description = typeof tool.description === "string"
+          ? tool.description.trim().replace(/^\[(?:Changes data|Read-only)\]\s*/, "").slice(0, 180)
+          : "";
         return {
           name: tool.name,
           label: `${service}: ${title}`,
           hint: description || `${service} MCP tool; treated as write-capable.`,
-          write: true,
+          write: tool.name.startsWith("cw_") ? tool.write === true : true,
         };
       }));
       setDynamicAssistantToolsError(
-        result.errors?.onshape || result.errors?.customMcp
-          ? "Some connected MCP tools could not be loaded. Reopen settings to retry."
+        result.errors?.onshape || result.errors?.customMcp || result.errors?.customWorkspaces
+          ? "Some custom app or connected service tools could not be loaded. Reopen settings to retry."
           : "",
       );
     } catch {
@@ -8873,6 +8878,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onSettingsOpenChange={(open) => {
               setAssistantSettingsOpen(open);
               if (open) {
+                void refreshAssistantToolCatalog();
                 void queryClient.invalidateQueries({
                   queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
                 });
