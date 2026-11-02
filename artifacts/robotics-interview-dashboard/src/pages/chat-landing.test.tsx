@@ -1130,8 +1130,11 @@ describe("public chat discovery", () => {
     window.localStorage.setItem("robotics-workspace-settings", JSON.stringify({ realtime: true, autoRefresh: false }));
     let authenticated = true;
     let rejectPrivateRequest = false;
-    const network = stubNetworkTransports(async (input) => {
+    const sentMessages: string[] = [];
+    const editedMessages: string[] = [];
+    const network = stubNetworkTransports(async (input, init) => {
       const path = requestPath(input);
+      const method = init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET");
       if (path === "/api/auth/session") return jsonResponse(authenticated ? signedInSession : { authenticated: false });
       if (path === "/api/auth/verify-event-passcode") {
         return jsonResponse({ message: "Team access code verified." });
@@ -1144,9 +1147,44 @@ describe("public chat discovery", () => {
         rejectPrivateRequest = false;
         return jsonResponse({ ...signedInSession, token: "restored-session-token" });
       }
-      if (path === "/api/queue/chat" && rejectPrivateRequest) {
+      if (path === "/api/queue/chat/rejected-request-chat" && method === "PATCH") {
+        const bodyText = typeof init?.body === "string"
+          ? init.body
+          : input instanceof Request
+            ? await input.clone().text()
+            : "{}";
+        const body = JSON.parse(bodyText) as { message: string };
+        editedMessages.push(body.message);
+        return jsonResponse({
+          id: "rejected-request-chat",
+          author: "Test Interviewer",
+          message: body.message,
+          scope: "shared",
+          peer: null,
+          createdAt: new Date(0).toISOString(),
+          editedAt: new Date().toISOString(),
+        });
+      }
+      if (path === "/api/queue/chat" && rejectPrivateRequest && method !== "POST") {
         authenticated = false;
         return unauthorizedResponse();
+      }
+      if (path === "/api/queue/chat" && method === "POST") {
+        const bodyText = typeof init?.body === "string"
+          ? init.body
+          : input instanceof Request
+            ? await input.clone().text()
+            : "{}";
+        const body = JSON.parse(bodyText) as { message: string };
+        sentMessages.push(body.message);
+        return jsonResponse({
+          id: "sent-long-chat",
+          author: "Test Interviewer",
+          message: body.message,
+          scope: "shared",
+          peer: null,
+          createdAt: new Date().toISOString(),
+        });
       }
       if (path === "/api/queue/chat") {
         return jsonResponse({
@@ -1178,6 +1216,13 @@ describe("public chat discovery", () => {
 
     await waitFor(() => expect(document.getElementById("chat-message-rejected-request-chat")?.textContent).toContain(chatCanary));
     await waitFor(() => expect(network.eventSourceConstructor).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByTestId("button-edit-rejected-request-chat"));
+    const editInput = screen.getByRole("textbox", { name: "Edit message" });
+    expect(editInput).toHaveProperty("maxLength", 4000);
+    const maxLengthEdit = "e".repeat(4000);
+    fireEvent.change(editInput, { target: { value: maxLengthEdit } });
+    fireEvent.click(screen.getByTestId("button-save-chat-edit-rejected-request-chat"));
+    await waitFor(() => expect(editedMessages).toEqual([maxLengthEdit]));
 
     rejectPrivateRequest = true;
     await act(async () => {
@@ -1203,19 +1248,23 @@ describe("public chat discovery", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/chat"));
     const restoredComposer = await screen.findByTestId("input-interviewer-chat");
+    expect(restoredComposer).toHaveProperty("maxLength", 4000);
     expect(restoredComposer).toHaveValue("Please compare the two robot designs.");
 
     fireEvent.change(restoredComposer, { target: { value: "" } });
     await waitFor(() => expect(loadChatDraft(draftKey)).toBe(""));
 
-    fireEvent.change(restoredComposer, { target: { value: "Send this note after signing in." } });
-    await waitFor(() => expect(loadChatDraft(draftKey)).toBe("Send this note after signing in."));
+    fireEvent.change(restoredComposer, { target: { value: "x".repeat(4001) } });
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+    expect(await screen.findByTestId("chat-error")).toHaveTextContent("Message is too long");
+    expect(sentMessages).toHaveLength(0);
+
+    const maxLengthMessage = "x".repeat(4000);
+    fireEvent.change(restoredComposer, { target: { value: maxLengthMessage } });
+    await waitFor(() => expect(loadChatDraft(draftKey)).toBe(maxLengthMessage));
     fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
     await waitFor(() => {
-      expect(network.fetchSpy.mock.calls.some(([input, init]) => (
-        requestPath(input) === "/api/queue/chat" &&
-        (init?.method?.toUpperCase() ?? (input instanceof Request ? input.method.toUpperCase() : "GET")) === "POST"
-      ))).toBe(true);
+      expect(sentMessages).toEqual([maxLengthMessage]);
       expect(loadChatDraft(draftKey)).toBe("");
     });
     expect(screen.getByTestId("input-interviewer-chat")).toHaveValue("");

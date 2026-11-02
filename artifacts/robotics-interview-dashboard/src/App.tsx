@@ -2126,8 +2126,8 @@ function isValidObjectId(value: string): boolean {
   const withoutInstance = value.startsWith("secondary/") ? value.slice("secondary/".length) : value;
   return withoutInstance.length > 0 && !withoutInstance.includes("/");
 }
-/** Chat message cap, in characters. Kept in step with the server. */
-const CHAT_MESSAGE_MAX_CHARS = 2000;
+/** Maximum chat message length, in characters. Kept in step with the server. */
+const CHAT_MESSAGE_MAX_CHARS = 4000;
 
 /** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
 const SCHEDULED_CHAT_MAX_FUTURE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -6405,7 +6405,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       setChatError("A message cannot be empty.");
       return;
     }
-    if (nextMessage.length > 1000) {
+    if (nextMessage.length > CHAT_MESSAGE_MAX_CHARS) {
       setChatError("Message is too long — shorten the text.");
       return;
     }
@@ -6665,7 +6665,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
           {formatChatDateTime(item.createdAt)}
         </time>
       </div>
-        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm text-[#7c8c91] dark:text-[#a8bbc2]"><span className="mr-2 inline-flex rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>This message was deleted. <time dateTime={item.deletedAt}>Deleted {formatChatDateTime(item.deletedAt)}</time></p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={1000} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
+        {item.deletedAt ? <p data-testid={`chat-message-deleted-${item.id}`} className="mt-2 text-sm text-[#7c8c91] dark:text-[#a8bbc2]"><span className="mr-2 inline-flex rounded-full bg-[#fbe4e2] px-2 py-0.5 text-[10px] font-semibold text-[#9f3b33] dark:bg-[#4a2627] dark:text-[#ffaaa2]">Deleted</span>This message was deleted. <time dateTime={item.deletedAt}>Deleted {formatChatDateTime(item.deletedAt)}</time></p> : editing ? <div className="mt-2 rounded-xl border border-[#b9dddd] bg-[#f7faf9] p-2.5" data-testid={`chat-edit-${item.id}`}><textarea autoFocus value={editDraft} onChange={event => setEditDraft(event.target.value)} maxLength={CHAT_MESSAGE_MAX_CHARS} rows={3} aria-label="Edit message" className="w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-2.5 text-base md:text-sm text-[#183a4b] outline-none focus:border-[#16869a]" /><div className="mt-2 flex justify-end gap-2"><button type="button" onClick={cancelEdit} disabled={updateChatMessage.isPending} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#52666e]">Cancel</button><button type="button" onClick={() => saveEdit(item)} disabled={updateChatMessage.isPending || !editDraft.trim()} data-testid={`button-save-chat-edit-${item.id}`} className="rounded-lg bg-[#16869a] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{updateChatMessage.isPending ? "Saving…" : "Save"}</button></div></div> : (() => {
           const sharedDocument = parseDocumentChatMessage(item.message);
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
            const sharedBoard = parseBoardChatMessage(item.message);
@@ -6891,6 +6891,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    aria-expanded={mentionOpen}
                    aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : undefined}
                    data-testid="input-interviewer-chat"
+                   maxLength={CHAT_MESSAGE_MAX_CHARS}
                    rows={1}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
                    placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}

@@ -2115,7 +2115,7 @@ export const UpdateChatMessageParams = zod.object({
   "messageId": zod.coerce.string()
 })
 
-export const updateChatMessageBodyMessageMax = 1000;
+export const updateChatMessageBodyMessageMax = 4000;
 
 
 

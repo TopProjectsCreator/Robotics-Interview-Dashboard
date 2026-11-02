@@ -9,7 +9,7 @@
 export interface ChatMessageUpdateInput {
   /**
      * @minLength 1
-     * @maxLength 1000
+     * @maxLength 4000
      */
   message: string;
 }

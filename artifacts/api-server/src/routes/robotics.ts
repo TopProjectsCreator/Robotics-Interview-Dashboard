@@ -5523,8 +5523,8 @@ router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> =>
   res.json(MarkInterviewChatReadResponse.parse({ recorded: created.length }));
 });
 
-/** Chat message cap, in characters. Doubled from 1000. */
-const CHAT_MESSAGE_MAX_CHARS = 2000;
+/** Maximum length for a human-authored chat message, in characters. */
+const CHAT_MESSAGE_MAX_CHARS = 4000;
 
 const SLOWMODE_MAX_SECONDS = 600;
 
