@@ -17,6 +17,8 @@ export * from './askCustomWorkspaceLlm200';
 export * from './assistantActivity';
 export * from './assistantBuilderRun';
 export * from './assistantBuilderRunAnswers';
+export * from './assistantBuilderRunControlInput';
+export * from './assistantBuilderRunControlInputAction';
 export * from './assistantBuilderRunQuestion';
 export * from './assistantBuilderRunQuestionQuestionsItem';
 export * from './assistantBuilderRunResponse';

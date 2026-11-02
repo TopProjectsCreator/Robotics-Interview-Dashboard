@@ -13,6 +13,7 @@ import {
   QueueAssistantPromptBody,
   QueueAssistantPromptResponse,
   QueueCustomWorkspaceBuilderRunBody,
+  AssistantBuilderRunControlInput,
   GetAssistantBuilderRunParams,
   GetAssistantBuilderRunResponse,
   StopAssistantPromptParams,
@@ -239,15 +240,20 @@ import {
 import {
   CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS,
   CUSTOM_WORKSPACE_BUILDER_MAX_CONTINUATIONS,
+  activeAssistantPromptControllers,
+  activeBuilderRuns,
   assistantRequestPayload,
   customWorkspaceBuilderAttempt,
+  customWorkspaceBuilderControlStatus,
   customWorkspaceBuilderContinuation,
   customWorkspaceBuilderRequestPayload,
   customWorkspaceBuilderRunId,
+  customWorkspaceBuilderRunTargetsWorkspace,
   customWorkspaceCritiqueContinuationPrompt,
   customWorkspaceDraftIdFromPrompt,
   customWorkspaceRecoveryPrompt,
   isCustomWorkspaceBuilderPrompt,
+  waitForAssistantBuilderWorkToSettle,
 } from "../lib/assistantBuilderJobs";
 import {
   AssistantQuestionAttachmentError,
@@ -316,8 +322,6 @@ const pendingAssistantQuestions = new Map<string, {
   answerPoll?: ReturnType<typeof setInterval>;
   builderRunId?: string;
 }>();
-const activeBuilderRuns = new Set<string>();
-const activeAssistantPromptControllers = new Map<string, AbortController>();
 let assistantPromptDispatcherStarted = false;
 const BUILDER_RUN_HEARTBEAT_MS = 10_000;
 const BUILDER_RUN_STALE_MS = 90_000;
@@ -404,6 +408,18 @@ async function enqueueCustomWorkspaceBuilderPrompt(input: {
   });
   const updatedAt = new Date(Date.now() + (input.delayMs ?? 0));
   const write = () => db.transaction(async (tx) => {
+    const [builderRun] = await tx.select({ status: assistantBuilderRunsTable.status })
+      .from(assistantBuilderRunsTable)
+      .where(and(
+        eq(assistantBuilderRunsTable.id, input.builderRunId),
+        eq(assistantBuilderRunsTable.teamId, input.teamId),
+        eq(assistantBuilderRunsTable.coordinatorId, input.accountId),
+      ))
+      .for("update")
+      .limit(1);
+    if (!builderRun || !["queued", "running", "completed", "failed", "interrupted"].includes(builderRun.status)) {
+      return false;
+    }
     await tx.insert(assistantPromptRunsTable).values({
       id: promptRunId,
       teamId: input.teamId,
@@ -426,13 +442,17 @@ async function enqueueCustomWorkspaceBuilderPrompt(input: {
       eq(assistantBuilderRunsTable.id, input.builderRunId),
       eq(assistantBuilderRunsTable.teamId, input.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, input.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "completed", "failed", "interrupted"]),
     ));
+    return true;
   });
+  let queued = false;
   if (input.instance) {
-    await runWithInstance(input.instance, write);
+    queued = await runWithInstance(input.instance, write);
   } else {
-    await write();
+    queued = await write();
   }
+  if (!queued) return;
 }
 
 const ASSISTANT_PROMPT_STALE_MS = 60_000;
@@ -527,6 +547,7 @@ async function setAssistantPromptRunFailure(runId: string, instance: DbInstance,
         eq(assistantBuilderRunsTable.id, builderRunId),
         eq(assistantBuilderRunsTable.teamId, run.teamId),
         eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+        inArray(assistantBuilderRunsTable.status, ["queued", "running", "waiting_for_answer", "failed", "interrupted"]),
       ));
     }
   });
@@ -541,6 +562,14 @@ async function retryCustomWorkspaceBuilderPrompt(run: {
 }, message: string): Promise<void> {
   const builderRunId = customWorkspaceBuilderRunId(run.payload);
   if (!builderRunId) return;
+  const [builderRun] = await runWithInstance(run.instance, () => db.select({
+    status: assistantBuilderRunsTable.status,
+  }).from(assistantBuilderRunsTable).where(and(
+    eq(assistantBuilderRunsTable.id, builderRunId),
+    eq(assistantBuilderRunsTable.teamId, run.teamId),
+    eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+  )).limit(1));
+  if (!builderRun || !["queued", "running", "failed", "interrupted"].includes(builderRun.status)) return;
   const attempt = customWorkspaceBuilderAttempt(run.payload);
   if (attempt + 1 >= CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS) {
     await runWithInstance(run.instance, () => db.update(assistantBuilderRunsTable).set({
@@ -551,6 +580,7 @@ async function retryCustomWorkspaceBuilderPrompt(run: {
       eq(assistantBuilderRunsTable.id, builderRunId),
       eq(assistantBuilderRunsTable.teamId, run.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "failed", "interrupted"]),
     )));
     return;
   }
@@ -578,6 +608,14 @@ async function continueCustomWorkspaceBuilder(run: {
   payload: Record<string, unknown>;
   instance: DbInstance;
 }, builderRunId: string): Promise<void> {
+  const [builderRun] = await runWithInstance(run.instance, () => db.select({
+    status: assistantBuilderRunsTable.status,
+  }).from(assistantBuilderRunsTable).where(and(
+    eq(assistantBuilderRunsTable.id, builderRunId),
+    eq(assistantBuilderRunsTable.teamId, run.teamId),
+    eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+  )).limit(1));
+  if (!builderRun || !["queued", "running", "completed", "interrupted"].includes(builderRun.status)) return;
   const question = typeof run.payload.question === "string" ? run.payload.question : "";
   const workspaceId = customWorkspaceDraftIdFromPrompt(question, builderRunId);
   let workspace: {
@@ -611,6 +649,7 @@ async function continueCustomWorkspaceBuilder(run: {
       eq(assistantBuilderRunsTable.id, builderRunId),
       eq(assistantBuilderRunsTable.teamId, run.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "completed", "interrupted"]),
     )));
     return;
   }
@@ -624,6 +663,7 @@ async function continueCustomWorkspaceBuilder(run: {
       eq(assistantBuilderRunsTable.id, builderRunId),
       eq(assistantBuilderRunsTable.teamId, run.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "completed", "interrupted"]),
     )));
     return;
   }
@@ -641,6 +681,7 @@ async function continueCustomWorkspaceBuilder(run: {
       eq(assistantBuilderRunsTable.id, builderRunId),
       eq(assistantBuilderRunsTable.teamId, run.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "completed", "interrupted"]),
     )));
     return;
   }
@@ -655,6 +696,7 @@ async function continueCustomWorkspaceBuilder(run: {
       eq(assistantBuilderRunsTable.id, builderRunId),
       eq(assistantBuilderRunsTable.teamId, run.teamId),
       eq(assistantBuilderRunsTable.coordinatorId, run.accountId),
+      inArray(assistantBuilderRunsTable.status, ["queued", "running", "completed", "interrupted"]),
     )));
     return;
   }
@@ -7654,6 +7696,84 @@ router.get("/assistant/custom-workspace-builder/runs/:runId", requireCoordinator
     return;
   }
   res.json(GetAssistantBuilderRunResponse.parse({ run: assistantBuilderRunResponse(run) }));
+});
+
+router.post("/assistant/custom-workspace-builder/runs/:runId", requireCoordinator, async (req, res): Promise<void> => {
+  const params = GetAssistantBuilderRunParams.safeParse(req.params);
+  const body = AssistantBuilderRunControlInput.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: params.success ? body.error.message : params.error.message });
+    return;
+  }
+  const accountId = authenticatedInterviewerId(req);
+  const teamId = await requestTeamId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const allowedStatuses = body.data.action === "pause"
+    ? ["queued", "running"]
+    : ["queued", "running", "waiting_for_answer"];
+  const controlled = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(assistantBuilderRunsTable).where(and(
+      eq(assistantBuilderRunsTable.id, params.data.runId),
+      eq(assistantBuilderRunsTable.teamId, teamId),
+      eq(assistantBuilderRunsTable.coordinatorId, accountId),
+    )).for("update").limit(1);
+    if (!current) return { kind: "not_found" as const };
+    if (!allowedStatuses.includes(current.status)) return { kind: "not_active" as const };
+
+    const promptRuns = await tx.select({
+      id: assistantPromptRunsTable.id,
+      payload: assistantPromptRunsTable.payload,
+    }).from(assistantPromptRunsTable).where(and(
+      eq(assistantPromptRunsTable.teamId, teamId),
+      eq(assistantPromptRunsTable.conversationId, current.conversationId),
+      inArray(assistantPromptRunsTable.status, ["queued", "running"]),
+    ));
+    const matchingPromptIds = promptRuns
+      .filter((promptRun) => customWorkspaceBuilderRunId(promptRun.payload) === current.id)
+      .map((promptRun) => promptRun.id);
+    if (matchingPromptIds.length > 0) {
+      await tx.update(assistantPromptRunsTable).set({
+        status: "cancelled",
+        cancelRequested: true,
+        error: body.data.action === "pause" ? "Paused by the coordinator." : "Stopped by the coordinator.",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(assistantPromptRunsTable.teamId, teamId),
+        inArray(assistantPromptRunsTable.id, matchingPromptIds),
+        inArray(assistantPromptRunsTable.status, ["queued", "running"]),
+      ));
+    }
+    const status = customWorkspaceBuilderControlStatus(body.data.action);
+    const [run] = await tx.update(assistantBuilderRunsTable).set({
+      status,
+      ...(body.data.action === "stop" ? { questionId: null, questions: null } : {}),
+      error: body.data.action === "pause"
+        ? "Paused by the coordinator. Continue the builder when you're ready."
+        : "Stopped by the coordinator. Saved workspace files were kept.",
+      updatedAt: new Date(),
+    }).where(and(
+      eq(assistantBuilderRunsTable.id, current.id),
+      eq(assistantBuilderRunsTable.teamId, teamId),
+      eq(assistantBuilderRunsTable.coordinatorId, accountId),
+      inArray(assistantBuilderRunsTable.status, allowedStatuses),
+    )).returning();
+    return run ? { kind: "controlled" as const, run, promptIds: matchingPromptIds } : { kind: "not_active" as const };
+  });
+  if (controlled.kind === "not_found") {
+    res.status(404).json({ error: "Builder run not found" });
+    return;
+  }
+  if (controlled.kind === "not_active") {
+    res.status(409).json({ error: "This builder run is no longer active." });
+    return;
+  }
+  for (const promptId of controlled.promptIds) activeAssistantPromptControllers.get(promptId)?.abort();
+  res.json(GetAssistantBuilderRunResponse.parse({
+    run: assistantBuilderRunResponse(controlled.run),
+  }));
 });
 
 router.get("/assistant/questions/pending", requireCoordinator, async (req, res): Promise<void> => {

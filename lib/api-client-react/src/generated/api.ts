@@ -28,6 +28,7 @@ import type {
   ApplicantSearchAiResponse,
   ApplicantUpdate,
   AskCustomWorkspaceLlm200,
+  AssistantBuilderRunControlInput,
   AssistantBuilderRunResponse,
   AssistantConfig,
   AssistantConversation,
@@ -8716,6 +8717,78 @@ export const useQueueCustomWorkspaceBuilderRun = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getQueueCustomWorkspaceBuilderRunMutationOptions(options));
+    }
+
+export const getControlAssistantBuilderRunUrl = (runId: string,) => {
+
+
+
+
+  return `/api/assistant/custom-workspace-builder/runs/${runId}`
+}
+
+/**
+ * @summary Pause or stop a custom workspace builder run
+ */
+export const controlAssistantBuilderRun = async (runId: string,
+    assistantBuilderRunControlInput: AssistantBuilderRunControlInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantBuilderRunResponse> => {
+
+  return customFetch<AssistantBuilderRunResponse>(getControlAssistantBuilderRunUrl(runId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantBuilderRunControlInput)
+  }
+);}
+
+
+
+
+
+export const getControlAssistantBuilderRunMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof controlAssistantBuilderRun>>, TError,{runId: string;data: BodyType<AssistantBuilderRunControlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof controlAssistantBuilderRun>>, TError,{runId: string;data: BodyType<AssistantBuilderRunControlInput>}, TContext> => {
+
+const mutationKey = ['controlAssistantBuilderRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof controlAssistantBuilderRun>>, {runId: string;data: BodyType<AssistantBuilderRunControlInput>}> = (props) => {
+          const {runId,data} = props ?? {};
+
+          return  controlAssistantBuilderRun(runId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ControlAssistantBuilderRunMutationResult = NonNullable<Awaited<ReturnType<typeof controlAssistantBuilderRun>>>
+    export type ControlAssistantBuilderRunMutationBody = BodyType<AssistantBuilderRunControlInput>
+    export type ControlAssistantBuilderRunMutationError = ErrorType<void>
+
+    /**
+ * @summary Pause or stop a custom workspace builder run
+ */
+export const useControlAssistantBuilderRun = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof controlAssistantBuilderRun>>, TError,{runId: string;data: BodyType<AssistantBuilderRunControlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof controlAssistantBuilderRun>>,
+        TError,
+        {runId: string;data: BodyType<AssistantBuilderRunControlInput>},
+        TContext
+      > => {
+      return useMutation(getControlAssistantBuilderRunMutationOptions(options));
     }
 
 export const getGetAssistantBuilderRunUrl = (runId: string,) => {

@@ -2344,6 +2344,29 @@ paths:
         required: true
         schema:
           type: string
+    post:
+      operationId: controlAssistantBuilderRun
+      tags: [assistant]
+      summary: Pause or stop a custom workspace builder run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantBuilderRunControlInput"
+      responses:
+        "200":
+          description: Builder run controlled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantBuilderRunResponse"
+        "400":
+          description: Invalid builder control action
+        "404":
+          description: Builder run not found
+        "409":
+          description: Builder run is not currently available to control
     get:
       operationId: getAssistantBuilderRun
       tags: [assistant]
@@ -8153,7 +8176,7 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, running, waiting_for_answer, completed, failed, interrupted]
+          enum: [queued, running, waiting_for_answer, completed, failed, interrupted, paused, cancelled]
         prompt:
           type: string
         question:
@@ -8192,6 +8215,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/AssistantBuilderRun"
             - type: "null"
+    AssistantBuilderRunControlInput:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [pause, stop]
     AssistantSkill:
       type: object
       required: [id, name, description, instructions, actions, enabled, githubRepositoryUrl, createdAt, updatedAt]

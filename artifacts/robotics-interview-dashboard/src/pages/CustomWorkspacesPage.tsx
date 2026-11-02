@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, Code2, LoaderCircle, Plus, Rocket, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Code2, LoaderCircle, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
@@ -232,6 +232,9 @@ export function CustomWorkspacesPage() {
   const [items, setItems] = useState<Workspace[]>([]);
   const [selected, setSelected] = useState<Workspace | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
+  const [confirmStopBuilder, setConfirmStopBuilder] = useState(false);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+  const [builderControlBusy, setBuilderControlBusy] = useState<"pause" | "stop" | null>(null);
   const [prompt, setPrompt] = useState("");
   const [builderModels, setBuilderModels] = useState<BuilderModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
@@ -290,7 +293,7 @@ export function CustomWorkspacesPage() {
         setBuilderRunLoaded(true);
         if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         if (normalizedRun?.question) setAgentQuestion(normalizedRun.question);
-        else if (normalizedRun?.status === "completed" || normalizedRun?.status === "interrupted" || normalizedRun?.status === "failed") {
+        else if (normalizedRun?.status === "completed" || normalizedRun?.status === "interrupted" || normalizedRun?.status === "failed" || normalizedRun?.status === "paused" || normalizedRun?.status === "cancelled") {
           setAgentQuestion(null);
         }
       })
@@ -314,7 +317,7 @@ export function CustomWorkspacesPage() {
         setBuilderRun(normalizedRun);
         if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
         setAgentQuestion(normalizedRun?.question ?? null);
-        if (normalizedRun && ["completed", "failed", "interrupted"].includes(normalizedRun.status)) {
+        if (normalizedRun && ["completed", "failed", "interrupted", "paused", "cancelled"].includes(normalizedRun.status)) {
           await refresh();
         }
       } catch {}
@@ -325,6 +328,14 @@ export function CustomWorkspacesPage() {
       window.clearInterval(timer);
     };
   }, [canManage, builderRun?.id, builderRun?.status]);
+  const refreshedBuilderDrafts = useRef(new Set<string>());
+  useEffect(() => {
+    if (!builderRun || !["queued", "running", "waiting_for_answer"].includes(builderRun.status)) return;
+    if (!builderRun.activities.some((activity) => activity.tool === "create_custom_workspace")) return;
+    if (refreshedBuilderDrafts.current.has(builderRun.id)) return;
+    refreshedBuilderDrafts.current.add(builderRun.id);
+    void refresh().catch(() => {});
+  }, [builderRun?.id, builderRun?.status, builderRun?.activities.length]);
   useEffect(() => {
     if (!canManage) return;
     void request<{ items: { id: string; question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")

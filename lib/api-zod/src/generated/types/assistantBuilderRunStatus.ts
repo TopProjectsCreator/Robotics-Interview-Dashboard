@@ -16,4 +16,6 @@ export const AssistantBuilderRunStatus = {
   completed: 'completed',
   failed: 'failed',
   interrupted: 'interrupted',
+  paused: 'paused',
+  cancelled: 'cancelled',
 } as const;

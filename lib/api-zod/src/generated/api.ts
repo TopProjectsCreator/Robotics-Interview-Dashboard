@@ -3201,7 +3201,42 @@ export const QueueCustomWorkspaceBuilderRunBody = zod.object({
 export const QueueCustomWorkspaceBuilderRunResponse = zod.object({
   "run": zod.union([zod.object({
   "id": zod.string(),
-  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted', 'paused', 'cancelled']),
+  "prompt": zod.string(),
+  "question": zod.object({
+  "id": zod.string(),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown()))
+}).nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()),
+  "activities": zod.array(zod.object({
+  "tool": zod.string(),
+  "detail": zod.string(),
+  "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
+  "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Pause or stop a custom workspace builder run
+ */
+export const ControlAssistantBuilderRunParams = zod.object({
+  "runId": zod.coerce.string()
+})
+
+export const ControlAssistantBuilderRunBody = zod.object({
+  "action": zod.enum(['pause', 'stop'])
+})
+
+export const ControlAssistantBuilderRunResponse = zod.object({
+  "run": zod.union([zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted', 'paused', 'cancelled']),
   "prompt": zod.string(),
   "question": zod.object({
   "id": zod.string(),
@@ -3232,7 +3267,7 @@ export const GetAssistantBuilderRunParams = zod.object({
 export const GetAssistantBuilderRunResponse = zod.object({
   "run": zod.union([zod.object({
   "id": zod.string(),
-  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted', 'paused', 'cancelled']),
   "prompt": zod.string(),
   "question": zod.object({
   "id": zod.string(),
@@ -3259,7 +3294,7 @@ export const GetAssistantBuilderRunResponse = zod.object({
 export const GetLatestAssistantBuilderRunResponse = zod.object({
   "run": zod.union([zod.object({
   "id": zod.string(),
-  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted']),
+  "status": zod.enum(['queued', 'running', 'waiting_for_answer', 'completed', 'failed', 'interrupted', 'paused', 'cancelled']),
   "prompt": zod.string(),
   "question": zod.object({
   "id": zod.string(),

@@ -4,9 +4,40 @@ export const CUSTOM_WORKSPACE_BUILDER_CONTINUATION_KEY = "__customWorkspaceBuild
 export const CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS = 3;
 export const CUSTOM_WORKSPACE_BUILDER_MAX_CONTINUATIONS = 8;
 
+export const activeBuilderRuns = new Set<string>();
+export const activeAssistantPromptControllers = new Map<string, AbortController>();
+
 export function customWorkspaceBuilderRunId(payload: Record<string, unknown>): string | undefined {
   const value = payload[CUSTOM_WORKSPACE_BUILDER_RUN_KEY];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export function customWorkspaceBuilderRunTargetsWorkspace(
+  run: { id: string; prompt: string },
+  workspaceId: string,
+): boolean {
+  return customWorkspaceDraftId(run.id) === workspaceId ||
+    customWorkspaceDraftIdFromPrompt(run.prompt, run.id) === workspaceId;
+}
+
+export function customWorkspaceBuilderControlStatus(action: "pause" | "stop"): "paused" | "cancelled" {
+  return action === "pause" ? "paused" : "cancelled";
+}
+
+export async function waitForAssistantBuilderWorkToSettle(
+  builderRunIds: string[],
+  promptRunIds: string[],
+  timeoutMs = 120_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (
+    builderRunIds.some((id) => activeBuilderRuns.has(id)) ||
+    promptRunIds.some((id) => activeAssistantPromptControllers.has(id))
+  ) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return true;
 }
 
 export function customWorkspaceBuilderAttempt(payload: Record<string, unknown>): number {

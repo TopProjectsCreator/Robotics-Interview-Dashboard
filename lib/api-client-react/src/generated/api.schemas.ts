@@ -2897,6 +2897,8 @@ export const AssistantBuilderRunStatus = {
   completed: 'completed',
   failed: 'failed',
   interrupted: 'interrupted',
+  paused: 'paused',
+  cancelled: 'cancelled',
 } as const;
 
 export type AssistantBuilderRunQuestionQuestionsItem = { [key: string]: unknown };
@@ -2929,6 +2931,18 @@ export interface AssistantBuilderRun {
 
 export interface AssistantBuilderRunResponse {
   run: AssistantBuilderRun | null;
+}
+
+export type AssistantBuilderRunControlInputAction = typeof AssistantBuilderRunControlInputAction[keyof typeof AssistantBuilderRunControlInputAction];
+
+
+export const AssistantBuilderRunControlInputAction = {
+  pause: 'pause',
+  stop: 'stop',
+} as const;
+
+export interface AssistantBuilderRunControlInput {
+  action: AssistantBuilderRunControlInputAction;
 }
 
 export interface AssistantSkill {

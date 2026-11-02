@@ -20,6 +20,12 @@ import { getAssistantModel } from "../lib/assistantModel";
 import { deleteCustomWorkspace } from "../lib/customWorkspaceDeletion";
 import { pushRealtimeHint } from "../lib/realtime";
 import { customWorkspaceSvgDataUrl } from "../lib/customWorkspaceAssets";
+import {
+  activeAssistantPromptControllers,
+  customWorkspaceBuilderRunId,
+  customWorkspaceBuilderRunTargetsWorkspace,
+  waitForAssistantBuilderWorkToSettle,
+} from "../lib/assistantBuilderJobs";
 
 /** Builder-management guard that also supports legacy admin accounts. */
 function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -680,6 +686,67 @@ router.delete("/custom-workspaces/:id", requireCoordinator, async (req, res): Pr
   const workspaceId = String(req.params.id ?? "");
   const teamId = await requestTeamId(req);
   try {
+    const current = await pool.query<{ id: string; title: string }>(
+      `select "id", "title" from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        limit 1`,
+      [workspaceId, teamId],
+    );
+    if (!current.rows[0]) {
+      res.status(404).json({ error: "Workspace not found." });
+      return;
+    }
+
+    const builderRuns = await pool.query<{ id: string; prompt: string }>(
+      `select "id", "prompt" from "assistant_builder_runs"
+        where ${teamSqlCondition('"team_id"', "$1")} and "status" <> 'cancelled'`,
+      [teamId],
+    );
+    const targetedBuilderRunIds = builderRuns.rows
+      .filter((run) => customWorkspaceBuilderRunTargetsWorkspace(run, workspaceId))
+      .map((run) => run.id);
+    let promptRunIds: string[] = [];
+    if (targetedBuilderRunIds.length > 0) {
+      await pool.query(
+        `update "assistant_builder_runs"
+            set "status" = 'cancelled', "question_id" = null, "questions" = null,
+                "error" = 'The workspace was deleted by a coordinator.', "updated_at" = now()
+          where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}
+            and "status" <> 'cancelled'`,
+        [targetedBuilderRunIds, teamId],
+      );
+      const promptRuns = await pool.query<{ id: string; payload: Record<string, unknown> }>(
+        `select "id", "payload" from "assistant_prompt_runs"
+          where ${teamSqlCondition('"team_id"', "$1")} and "status" in ('queued', 'running')`,
+        [teamId],
+      );
+      const runIdSet = new Set(targetedBuilderRunIds);
+      promptRunIds = promptRuns.rows
+        .filter((run) => {
+          const builderRunId = customWorkspaceBuilderRunId(run.payload);
+          return builderRunId !== undefined && runIdSet.has(builderRunId);
+        })
+        .map((run) => run.id);
+      if (promptRunIds.length > 0) {
+        await pool.query(
+          `update "assistant_prompt_runs"
+              set "status" = 'cancelled', "cancel_requested" = true,
+                  "error" = 'The workspace was deleted by a coordinator.', "updated_at" = now()
+            where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}
+              and "status" in ('queued', 'running')`,
+          [promptRunIds, teamId],
+        );
+        for (const promptRunId of promptRunIds) activeAssistantPromptControllers.get(promptRunId)?.abort();
+      }
+      const settled = await waitForAssistantBuilderWorkToSettle(targetedBuilderRunIds, promptRunIds);
+      if (!settled) {
+        res.status(503).json({
+          error: "The workspace was not deleted because its active builder did not stop safely. Try again.",
+        });
+        return;
+      }
+    }
+
     const deleted = await deleteCustomWorkspace(
       (statement, values) => pool.query<{ id: string; title: string }>(statement, values),
       teamSqlCondition,
