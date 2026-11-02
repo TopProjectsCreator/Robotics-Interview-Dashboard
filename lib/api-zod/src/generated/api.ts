@@ -4057,6 +4057,26 @@ export const UpdatePartsVendorBlockResponse = zod.object({
 
 
 /**
+ * @summary Read the signed-in team's supplier pricing preference
+ */
+export const GetPartsPricingPreferenceResponse = zod.object({
+  "useFtcPricing": zod.boolean().describe('When enabled, Parts estimates use published goBILDA FTC team prices where available.')
+})
+
+
+/**
+ * @summary Update the signed-in team's supplier pricing preference
+ */
+export const UpdatePartsPricingPreferenceBody = zod.object({
+  "useFtcPricing": zod.boolean()
+})
+
+export const UpdatePartsPricingPreferenceResponse = zod.object({
+  "useFtcPricing": zod.boolean().describe('When enabled, Parts estimates use published goBILDA FTC team prices where available.')
+})
+
+
+/**
  * @summary List saved catalog items and inventory allocations
  */
 export const listPartsCatalogQueryLimitDefault = 100;
@@ -4076,6 +4096,13 @@ export const ListPartsCatalogQueryParams = zod.object({
   "offset": zod.coerce.number().int().min(listPartsCatalogQueryOffsetMin).default(listPartsCatalogQueryOffsetDefault)
 })
 
+export const listPartsCatalogResponseItemsItemSupplierPriceMin = 0;
+export const listPartsCatalogResponseItemsItemSupplierPriceMax = 99999999.99;
+
+export const listPartsCatalogResponseItemsItemFtcTeamPriceMin = 0;
+export const listPartsCatalogResponseItemsItemFtcTeamPriceMax = 99999999.99;
+
+export const listPartsCatalogResponseItemsItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const listPartsCatalogResponseItemsItemStorageLocationMax = 120;
 
 export const listPartsCatalogResponseItemsItemInventoryNotesMax = 2000;
@@ -4105,6 +4132,9 @@ export const ListPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(listPartsCatalogResponseItemsItemSupplierPriceMin).max(listPartsCatalogResponseItemsItemSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(listPartsCatalogResponseItemsItemFtcTeamPriceMin).max(listPartsCatalogResponseItemsItemFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(listPartsCatalogResponseItemsItemSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(listPartsCatalogResponseItemsItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(listPartsCatalogResponseItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(listPartsCatalogResponseItemsItemUnitCostMin).max(listPartsCatalogResponseItemsItemUnitCostMax).nullish(),
@@ -4144,6 +4174,13 @@ export const CreatePartsCatalogItemBody = zod.object({
   "quantityOwned": zod.number().int().min(createPartsCatalogItemBodyQuantityOwnedMin).default(createPartsCatalogItemBodyQuantityOwnedDefault)
 })
 
+export const createPartsCatalogItemResponseSupplierPriceMin = 0;
+export const createPartsCatalogItemResponseSupplierPriceMax = 99999999.99;
+
+export const createPartsCatalogItemResponseFtcTeamPriceMin = 0;
+export const createPartsCatalogItemResponseFtcTeamPriceMax = 99999999.99;
+
+export const createPartsCatalogItemResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const createPartsCatalogItemResponseStorageLocationMax = 120;
 
 export const createPartsCatalogItemResponseInventoryNotesMax = 2000;
@@ -4172,6 +4209,9 @@ export const CreatePartsCatalogItemResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(createPartsCatalogItemResponseSupplierPriceMin).max(createPartsCatalogItemResponseSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(createPartsCatalogItemResponseFtcTeamPriceMin).max(createPartsCatalogItemResponseFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(createPartsCatalogItemResponseSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(createPartsCatalogItemResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(createPartsCatalogItemResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(createPartsCatalogItemResponseUnitCostMin).max(createPartsCatalogItemResponseUnitCostMax).nullish(),
@@ -4248,7 +4288,15 @@ export const SearchPartsCatalogQueryParams = zod.object({
 })
 
 export const searchPartsCatalogResponseResultsItemPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,4})?$');
+export const searchPartsCatalogResponseResultsItemFtcTeamPriceRegExp = new RegExp('^\\d{1,9}(\\.\\d{1,2})?$');
 export const searchPartsCatalogResponseResultsItemCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const searchPartsCatalogResponseCatalogItemsItemSupplierPriceMin = 0;
+export const searchPartsCatalogResponseCatalogItemsItemSupplierPriceMax = 99999999.99;
+
+export const searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMin = 0;
+export const searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMax = 99999999.99;
+
+export const searchPartsCatalogResponseCatalogItemsItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const searchPartsCatalogResponseCatalogItemsItemStorageLocationMax = 120;
 
 export const searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax = 2000;
@@ -4278,6 +4326,7 @@ export const SearchPartsCatalogResponse = zod.object({
   "sku": zod.string().nullable(),
   "imageUrl": zod.string().url().nullable(),
   "price": zod.string().regex(searchPartsCatalogResponseResultsItemPriceRegExp).nullable(),
+  "ftcTeamPrice": zod.string().regex(searchPartsCatalogResponseResultsItemFtcTeamPriceRegExp).nullable(),
   "currency": zod.string().regex(searchPartsCatalogResponseResultsItemCurrencyRegExp).nullable(),
   "priceIsStartingAt": zod.boolean(),
   "inStock": zod.boolean().describe('Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals.')
@@ -4292,6 +4341,9 @@ export const SearchPartsCatalogResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(searchPartsCatalogResponseCatalogItemsItemSupplierPriceMin).max(searchPartsCatalogResponseCatalogItemsItemSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMin).max(searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(searchPartsCatalogResponseCatalogItemsItemSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(searchPartsCatalogResponseCatalogItemsItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(searchPartsCatalogResponseCatalogItemsItemUnitCostMin).max(searchPartsCatalogResponseCatalogItemsItemUnitCostMax).nullish(),
@@ -4413,6 +4465,13 @@ export const UpdatePartsCatalogStockBody = zod.object({
   "quantityOwned": zod.number().int().min(updatePartsCatalogStockBodyQuantityOwnedMin)
 })
 
+export const updatePartsCatalogStockResponseSupplierPriceMin = 0;
+export const updatePartsCatalogStockResponseSupplierPriceMax = 99999999.99;
+
+export const updatePartsCatalogStockResponseFtcTeamPriceMin = 0;
+export const updatePartsCatalogStockResponseFtcTeamPriceMax = 99999999.99;
+
+export const updatePartsCatalogStockResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const updatePartsCatalogStockResponseStorageLocationMax = 120;
 
 export const updatePartsCatalogStockResponseInventoryNotesMax = 2000;
@@ -4441,6 +4500,9 @@ export const UpdatePartsCatalogStockResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(updatePartsCatalogStockResponseSupplierPriceMin).max(updatePartsCatalogStockResponseSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(updatePartsCatalogStockResponseFtcTeamPriceMin).max(updatePartsCatalogStockResponseFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(updatePartsCatalogStockResponseSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(updatePartsCatalogStockResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogStockResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogStockResponseUnitCostMin).max(updatePartsCatalogStockResponseUnitCostMax).nullish(),
@@ -4470,6 +4532,13 @@ export const GetPartsCatalogDetailsParams = zod.object({
   "partId": zod.coerce.string().min(1).max(getPartsCatalogDetailsPathPartIdMax)
 })
 
+export const getPartsCatalogDetailsResponseItemSupplierPriceMin = 0;
+export const getPartsCatalogDetailsResponseItemSupplierPriceMax = 99999999.99;
+
+export const getPartsCatalogDetailsResponseItemFtcTeamPriceMin = 0;
+export const getPartsCatalogDetailsResponseItemFtcTeamPriceMax = 99999999.99;
+
+export const getPartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const getPartsCatalogDetailsResponseItemStorageLocationMax = 120;
 
 export const getPartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
@@ -4505,6 +4574,9 @@ export const GetPartsCatalogDetailsResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(getPartsCatalogDetailsResponseItemSupplierPriceMin).max(getPartsCatalogDetailsResponseItemSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(getPartsCatalogDetailsResponseItemFtcTeamPriceMin).max(getPartsCatalogDetailsResponseItemFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(getPartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(getPartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(getPartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(getPartsCatalogDetailsResponseItemUnitCostMin).max(getPartsCatalogDetailsResponseItemUnitCostMax).nullish(),
@@ -4568,6 +4640,13 @@ export const UpdatePartsCatalogDetailsBody = zod.object({
   "inventoryNotes": zod.string().max(updatePartsCatalogDetailsBodyInventoryNotesMax).nullish()
 })
 
+export const updatePartsCatalogDetailsResponseItemSupplierPriceMin = 0;
+export const updatePartsCatalogDetailsResponseItemSupplierPriceMax = 99999999.99;
+
+export const updatePartsCatalogDetailsResponseItemFtcTeamPriceMin = 0;
+export const updatePartsCatalogDetailsResponseItemFtcTeamPriceMax = 99999999.99;
+
+export const updatePartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const updatePartsCatalogDetailsResponseItemStorageLocationMax = 120;
 
 export const updatePartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
@@ -4603,6 +4682,9 @@ export const UpdatePartsCatalogDetailsResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(updatePartsCatalogDetailsResponseItemSupplierPriceMin).max(updatePartsCatalogDetailsResponseItemSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(updatePartsCatalogDetailsResponseItemFtcTeamPriceMin).max(updatePartsCatalogDetailsResponseItemFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(updatePartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(updatePartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogDetailsResponseItemUnitCostMin).max(updatePartsCatalogDetailsResponseItemUnitCostMax).nullish(),
@@ -4860,6 +4942,13 @@ export const UpdatePartsCatalogCostBody = zod.object({
   "costCurrency": zod.string().regex(updatePartsCatalogCostBodyCostCurrencyRegExp).nullable()
 })
 
+export const updatePartsCatalogCostResponseSupplierPriceMin = 0;
+export const updatePartsCatalogCostResponseSupplierPriceMax = 99999999.99;
+
+export const updatePartsCatalogCostResponseFtcTeamPriceMin = 0;
+export const updatePartsCatalogCostResponseFtcTeamPriceMax = 99999999.99;
+
+export const updatePartsCatalogCostResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
 export const updatePartsCatalogCostResponseStorageLocationMax = 120;
 
 export const updatePartsCatalogCostResponseInventoryNotesMax = 2000;
@@ -4888,6 +4977,9 @@ export const UpdatePartsCatalogCostResponse = zod.object({
   "description": zod.string().nullable(),
   "productUrl": zod.string().url().nullable(),
   "imageUrl": zod.string().url().nullable(),
+  "supplierPrice": zod.number().min(updatePartsCatalogCostResponseSupplierPriceMin).max(updatePartsCatalogCostResponseSupplierPriceMax).nullable(),
+  "ftcTeamPrice": zod.number().min(updatePartsCatalogCostResponseFtcTeamPriceMin).max(updatePartsCatalogCostResponseFtcTeamPriceMax).nullable(),
+  "supplierPriceCurrency": zod.string().regex(updatePartsCatalogCostResponseSupplierPriceCurrencyRegExp).nullable(),
   "storageLocation": zod.string().max(updatePartsCatalogCostResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogCostResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogCostResponseUnitCostMin).max(updatePartsCatalogCostResponseUnitCostMax).nullish(),

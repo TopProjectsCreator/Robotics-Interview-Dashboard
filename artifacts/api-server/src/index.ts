@@ -143,6 +143,7 @@ async function ensureSchema(): Promise<void> {
     "custom_mcp_oauth_states",
     "page_visits",
     "parts_catalog_items",
+    "parts_team_settings",
     "parts_catalog_sync_state",
     "parts_catalog_crawl_skips",
     "parts_catalog_crawl_state",
@@ -388,6 +389,23 @@ async function ensureSchema(): Promise<void> {
      )`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `alter table "parts_catalog_items" add column if not exists "supplier_price" numeric(10,2)`,
+    `alter table "parts_catalog_items" add column if not exists "ftc_team_price" numeric(10,2)`,
+    `alter table "parts_catalog_items" add column if not exists "supplier_price_currency" text`,
+    `do $parts_supplier_prices$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_catalog_supplier_prices_valid' and conrelid = 'parts_catalog_items'::regclass) then
+         alter table "parts_catalog_items" add constraint "parts_catalog_supplier_prices_valid"
+           check (("supplier_price" is null and "ftc_team_price" is null and "supplier_price_currency" is null)
+             or (("supplier_price" is null or ("supplier_price" >= 0 and "supplier_price" <= 99999999.99))
+               and ("ftc_team_price" is null or ("ftc_team_price" >= 0 and "ftc_team_price" <= 99999999.99))
+               and "supplier_price_currency" ~ '^[A-Z]{3}$'));
+       end if;
+     end $parts_supplier_prices$`,
+    `create table if not exists "parts_team_settings" (
+       "team_id" text primary key,
+       "use_ftc_pricing" boolean not null default false,
+       "updated_at" timestamptz not null default now()
+     )`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
     `alter table "parts_catalog_items" add column if not exists "unit_cost" numeric(10,2)`,
     `alter table "parts_catalog_items" add column if not exists "cost_currency" text`,

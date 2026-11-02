@@ -31,6 +31,7 @@ test("extracts product details only when supplier markup includes image and pric
       sku: "COLLAR-8",
       imageUrl: "https://cdn.example.com/collar.jpg",
       price: "4.50",
+      ftcTeamPrice: null,
       currency: "USD",
       priceIsStartingAt: false,
       inStock: true,
@@ -81,6 +82,7 @@ test("keeps verified product pages when the supplier does not publish price, ima
       sku: "BRACKET-ACT-1",
       imageUrl: null,
       price: null,
+      ftcTeamPrice: null,
       currency: null,
       priceIsStartingAt: false,
       inStock: true,
@@ -105,6 +107,7 @@ test("keeps official product search candidates when supplier pages block metadat
       sku: null,
       imageUrl: null,
       price: null,
+      ftcTeamPrice: null,
       currency: null,
       priceIsStartingAt: false,
       inStock: true,
@@ -158,6 +161,7 @@ test("rejects collection pages with product cards and marks unavailable offers o
       sku: "COLLAR-8",
       imageUrl: "https://cdn.example.com/collar.jpg",
       price: "4.50",
+      ftcTeamPrice: null,
       currency: "USD",
       priceIsStartingAt: false,
       inStock: false,
@@ -182,6 +186,7 @@ test("supports supplier product price metadata and marks variant ranges as start
     "Motor Mount",
   );
   assert.equal(result?.price, "12.00");
+  assert.equal(result?.ftcTeamPrice, null);
   assert.equal(result?.priceIsStartingAt, true);
 });
 
@@ -228,4 +233,39 @@ test("uses a later valid HTTPS product image and a structured price specificatio
   assert.equal(result?.imageUrl, "https://cdn.example.com/collar-large.jpg");
   assert.equal(result?.price, "5.25");
   assert.equal(result?.currency, "USD");
+});
+
+test("goBILDA product metadata keeps varying published FTC amounts without deriving discounts", () => {
+  for (const [regular, ftc] of [["24.99", "17.49"], ["19.95", "13.25"]]) {
+    const product = {
+      ...JSON.parse(productJsonLd),
+      offers: { "@type": "Offer", price: regular, priceCurrency: "USD" },
+    };
+    const html = `<meta property="og:type" content="product"><script type="application/ld+json">${JSON.stringify(product)}</script><div>FTC Team Price: $${ftc}</div>`;
+    const result = extractProductPageMetadata(
+      html,
+      "https://www.gobilda.com/example-part/",
+      "8 mm Shaft Collar",
+    );
+    assert.equal(result?.price, regular);
+    assert.equal(result?.ftcTeamPrice, ftc);
+  }
+});
+
+test("goBILDA pages without an FTC price retain regular pricing and other suppliers stay unchanged", () => {
+  const html = `<meta property="og:type" content="product"><script type="application/ld+json">${productJsonLd}</script>`;
+  const goBilda = extractProductPageMetadata(
+    html,
+    "https://www.gobilda.com/example-part/",
+    "8 mm Shaft Collar",
+  );
+  assert.equal(goBilda?.price, "4.50");
+  assert.equal(goBilda?.ftcTeamPrice, null);
+
+  const otherSupplier = extractProductPageMetadata(
+    `${html}<p>FTC Team Price: $3.25</p>`,
+    "https://shop.example.com/products/collar",
+    "8 mm Shaft Collar",
+  );
+  assert.equal(otherSupplier?.ftcTeamPrice, null);
 });

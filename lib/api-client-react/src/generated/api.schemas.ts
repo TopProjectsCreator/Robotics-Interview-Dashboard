@@ -301,6 +301,23 @@ export interface PartsCatalogItem {
   /** @nullable */
   imageUrl: string | null;
   /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  supplierPrice: number | null;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  ftcTeamPrice: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  supplierPriceCurrency: string | null;
+  /**
      * @maxLength 120
      * @nullable
      */
@@ -378,12 +395,26 @@ export interface PartsCatalogSearchResult {
   price: string | null;
   /**
      * @nullable
+     * @pattern ^\d{1,9}(\.\d{1,2})?$
+     */
+  ftcTeamPrice: string | null;
+  /**
+     * @nullable
      * @pattern ^[A-Z]{3}$
      */
   currency: string | null;
   priceIsStartingAt: boolean;
   /** Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals. */
   inStock: boolean;
+}
+
+export interface PartsPricingPreference {
+  /** When enabled, Parts estimates use published goBILDA FTC team prices where available. */
+  useFtcPricing: boolean;
+}
+
+export interface PartsPricingPreferenceUpdateInput {
+  useFtcPricing: boolean;
 }
 
 /**

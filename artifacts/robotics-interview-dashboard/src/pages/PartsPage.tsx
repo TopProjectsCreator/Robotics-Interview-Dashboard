@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   getGetPartsDashboardQueryKey,
+  getGetPartsPricingPreferenceQueryKey,
   getGetPartsVendorBlocksQueryKey,
   getGetSessionQueryKey,
   getListPartsCatalogQueryKey,
@@ -30,11 +31,13 @@ import {
   useCreatePartsCatalogItem,
   useCreatePartsRobot,
   useGetPartsDashboard,
+  useGetPartsPricingPreference,
   useGetSession,
   useListPartsCatalog,
   useSetPartsRobotAllocation,
   useUpdatePartsCatalogStock,
   useUpdatePartsVendorBlock,
+  useUpdatePartsPricingPreference,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
   type PartsCatalogSearchStreamEvent,
@@ -61,11 +64,11 @@ import {
 
 type PageTab = "stockroom" | "find" | "builds";
 type Notice = { kind: "success" | "error"; text: string };
-type PricedPartsCatalogSearchResult = Omit<PartsCatalogSearchResult, "price" | "currency"> & {
-  price: string;
+type DraftProduct = Omit<PartsCatalogSearchResult, "currency"> & {
   currency: string;
+  ftcTeamPrice: string | null;
 };
-type PartsOrderLine = { product: PricedPartsCatalogSearchResult; quantity: number };
+type PartsOrderLine = { product: DraftProduct; quantity: number };
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
 const PARTS_REFRESH_INTERVAL_MS = 5_000;
@@ -115,7 +118,7 @@ function readPartsOrderDraft(): PartsOrderLine[] {
   try {
     const saved: unknown = JSON.parse(window.localStorage.getItem(PARTS_ORDER_DRAFT_KEY) ?? "[]");
     if (!Array.isArray(saved)) return [];
-    return saved.filter((line): line is PartsOrderLine =>
+    const lines = saved.filter((line): line is PartsOrderLine =>
       typeof line === "object" &&
       line !== null &&
       typeof line.quantity === "number" &&
@@ -125,13 +128,24 @@ function readPartsOrderDraft(): PartsOrderLine[] {
       line.product !== null &&
       typeof line.product.url === "string" &&
       typeof line.product.title === "string" &&
-      typeof line.product.price === "string" &&
-      Number.isFinite(Number(line.product.price)) &&
-      Number(line.product.price) >= 0 &&
+      (line.product.price === null ||
+        (typeof line.product.price === "string" &&
+          Number.isFinite(Number(line.product.price)) &&
+          Number(line.product.price) >= 0)) &&
+      (line.product.ftcTeamPrice === undefined ||
+        line.product.ftcTeamPrice === null ||
+        (typeof line.product.ftcTeamPrice === "string" &&
+          Number.isFinite(Number(line.product.ftcTeamPrice)) &&
+          Number(line.product.ftcTeamPrice) >= 0)) &&
+      (line.product.price !== null || typeof line.product.ftcTeamPrice === "string") &&
       typeof line.product.currency === "string" &&
       /^[A-Z]{3}$/.test(line.product.currency) &&
       (line.product.imageUrl === null || typeof line.product.imageUrl === "string"),
     );
+    return lines.map((line) => ({
+      ...line,
+      product: { ...line.product, ftcTeamPrice: line.product.ftcTeamPrice ?? null },
+    }));
   } catch {
     return [];
   }
@@ -147,6 +161,18 @@ function formatMoney(amount: number, currency: string): string {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+function selectedPrice(
+  vendorKey: string,
+  regularPrice: string | number | null,
+  ftcTeamPrice: string | number | null | undefined,
+  useFtcPricing: boolean,
+): { amount: string | number | null; isFtc: boolean } {
+  if (vendorKey === "gobilda" && useFtcPricing && ftcTeamPrice !== null && ftcTeamPrice !== undefined) {
+    return { amount: ftcTeamPrice, isFtc: true };
+  }
+  return { amount: regularPrice, isFtc: false };
 }
 
 type GroupedSearchResult = {
@@ -170,9 +196,13 @@ function searchResultGroupKey(result: PartsCatalogSearchResult): string {
   return `title:${normalizeGroupText(result.title)}`;
 }
 
-function searchResultPriceValue(result: PartsCatalogSearchResult): number {
-  if (result.price === null) return Number.POSITIVE_INFINITY;
-  const value = Number(result.price);
+function searchResultPriceValue(
+  result: PartsCatalogSearchResult,
+  useFtcPricing: boolean,
+): number {
+  const selected = selectedPrice(result.vendorKey, result.price, result.ftcTeamPrice, useFtcPricing);
+  if (selected.amount === null) return Number.POSITIVE_INFINITY;
+  const value = Number(selected.amount);
   return Number.isFinite(value) && value >= 0 ? value : Number.POSITIVE_INFINITY;
 }
 
@@ -192,14 +222,21 @@ function isOfferInStock(result: PartsCatalogSearchResult): boolean {
   return (result as { inStock?: boolean }).inStock ?? true;
 }
 
-function pickDefaultOffer(offers: PartsCatalogSearchResult[]): PartsCatalogSearchResult {
+function pickDefaultOffer(
+  offers: PartsCatalogSearchResult[],
+  useFtcPricing: boolean,
+): PartsCatalogSearchResult {
   const sorted = [...offers].sort(
-    (left, right) => searchResultPriceValue(left) - searchResultPriceValue(right),
+    (left, right) =>
+      searchResultPriceValue(left, useFtcPricing) - searchResultPriceValue(right, useFtcPricing),
   );
   return sorted.find((offer) => isOfferInStock(offer)) ?? sorted[0];
 }
 
-function groupSearchResults(results: PartsCatalogSearchResult[]): GroupedSearchResult[] {
+function groupSearchResults(
+  results: PartsCatalogSearchResult[],
+  useFtcPricing: boolean,
+): GroupedSearchResult[] {
   const groups = new Map<string, PartsCatalogSearchResult[]>();
   for (const result of results) {
     const key = searchResultGroupKey(result);
@@ -208,9 +245,10 @@ function groupSearchResults(results: PartsCatalogSearchResult[]): GroupedSearchR
     else groups.set(key, [result]);
   }
   return [...groups.entries()].map(([key, offers]) => {
-    const defaultOffer = pickDefaultOffer(offers);
+    const defaultOffer = pickDefaultOffer(offers, useFtcPricing);
     const sortedOffers = [...offers].sort(
-      (left, right) => searchResultPriceValue(left) - searchResultPriceValue(right),
+      (left, right) =>
+        searchResultPriceValue(left, useFtcPricing) - searchResultPriceValue(right, useFtcPricing),
     );
     return {
       key,
@@ -282,7 +320,20 @@ function PartImage({ src, alt, className }: { src: string; alt: string; classNam
   );
 }
 
-function CatalogSearchCard({ item }: { item: PartsCatalogItem }) {
+function CatalogSearchCard({
+  item,
+  useFtcPricing,
+}: {
+  item: PartsCatalogItem;
+  useFtcPricing: boolean;
+}) {
+  const displayPrice = selectedPrice(
+    item.vendorKey,
+    item.supplierPrice,
+    item.ftcTeamPrice,
+    useFtcPricing,
+  );
+  const currency = item.supplierPriceCurrency;
   return (
     <Card className="border-border bg-card" data-testid={`card-catalog-search-result-${item.id}`}>
       <CardContent className="flex h-full flex-col gap-3 p-4">
@@ -307,6 +358,22 @@ function CatalogSearchCard({ item }: { item: PartsCatalogItem }) {
               Team stock: {formatQuantity(item.quantityAvailable)} available
             </span>
           </div>
+          {displayPrice.amount !== null && currency && (
+            <p className="mt-3 text-sm font-semibold tabular-nums text-foreground">
+              {displayPrice.isFtc ? "FTC team price" : "Regular price"}:{" "}
+              {formatMoney(Number(displayPrice.amount), currency)}
+              {displayPrice.isFtc && item.supplierPrice !== null && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  Regular {formatMoney(item.supplierPrice, currency)}
+                </span>
+              )}
+              {useFtcPricing && !displayPrice.isFtc && item.vendorKey === "gobilda" && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  FTC price unavailable
+                </span>
+              )}
+            </p>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             Price and current supplier availability are not included in this saved item.
           </p>
@@ -504,6 +571,7 @@ function DraftOrderTray({
   orderDraft,
   draftQuantities,
   orderTotalsByCurrency,
+  useFtcPricing,
   isOpen,
   onToggle,
   onClear,
@@ -512,6 +580,7 @@ function DraftOrderTray({
   orderDraft: PartsOrderLine[];
   draftQuantities: number;
   orderTotalsByCurrency: Record<string, number>;
+  useFtcPricing: boolean;
   isOpen: boolean;
   onToggle: () => void;
   onClear: () => void;
@@ -558,13 +627,21 @@ function DraftOrderTray({
             ) : (
               <>
                 <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                  {orderDraft.map(({ product, quantity }) => (
+                  {orderDraft.map(({ product, quantity }) => {
+                    const price = selectedPrice(
+                      product.vendorKey,
+                      product.price,
+                      product.ftcTeamPrice,
+                      useFtcPricing,
+                    );
+                    const amount = price.amount === null ? null : Number(price.amount);
+                    return (
                     <article key={product.url} className="flex items-center gap-2 rounded-lg border border-border bg-background p-2">
                       <PartImage src={product.imageUrl ?? ""} alt="" className="size-12 shrink-0 rounded-md border border-border bg-muted object-contain" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
-                        <p className="text-xs text-muted-foreground">{product.vendorName} · {product.priceIsStartingAt ? "From " : ""}{formatMoney(Number(product.price), product.currency)}</p>
-                        <p className="text-sm font-semibold tabular-nums text-foreground">{formatMoney(Number(product.price) * quantity, product.currency)}</p>
+                        <p className="text-xs text-muted-foreground">{product.vendorName} · {price.isFtc ? "FTC team price" : "Regular price"} · {product.priceIsStartingAt ? "From " : ""}{amount !== null ? formatMoney(amount, product.currency) : "Price unavailable"}</p>
+                        <p className="text-sm font-semibold tabular-nums text-foreground">{amount !== null ? formatMoney(amount * quantity, product.currency) : "Subtotal unavailable"}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Decrease quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, quantity - 1)}>
@@ -576,7 +653,8 @@ function DraftOrderTray({
                         </Button>
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="border-t border-border pt-3">
                   <p className="text-xs text-muted-foreground">{Object.keys(orderTotalsByCurrency).length > 1 ? "Subtotal by supplier currency" : "Estimated subtotal"}</p>
@@ -601,11 +679,24 @@ export default function PartsPage() {
   const sessionQuery = useGetSession({
     query: { queryKey: getGetSessionQueryKey() },
   });
+  const activeTeamId = sessionQuery.data?.teamId ?? "default";
+  const pricingPreferenceQueryKey = [
+    ...getGetPartsPricingPreferenceQueryKey(),
+    activeTeamId,
+  ];
   const dashboardQuery = useGetPartsDashboard({
     query: {
       queryKey: getGetPartsDashboardQueryKey(),
       refetchInterval: PARTS_REFRESH_INTERVAL_MS,
       refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const pricingPreferenceQuery = useGetPartsPricingPreference({
+    query: {
+      queryKey: pricingPreferenceQueryKey,
+      enabled: Boolean(sessionQuery.data?.teamId),
+      refetchOnMount: "always",
       refetchOnWindowFocus: true,
     },
   });
@@ -686,10 +777,12 @@ export default function PartsPage() {
   const stockMutation = useUpdatePartsCatalogStock();
   const allocationMutation = useSetPartsRobotAllocation();
   const vendorBlockMutation = useUpdatePartsVendorBlock();
+  const pricingPreferenceMutation = useUpdatePartsPricingPreference();
   const vendors = dashboardQuery.data?.vendors ?? [];
   const canManageVendors =
     sessionQuery.data?.role === "admin" || sessionQuery.data?.role === "coordinator";
   const availableVendors = vendors.filter((vendor) => !vendor.blocked);
+  const useFtcPricing = pricingPreferenceQuery.data?.useFtcPricing ?? false;
   const robots = dashboardQuery.data?.robots ?? [];
   const catalogItems = catalogQuery.data?.items ?? [];
   const currentlyAdded = new Set(
@@ -700,7 +793,14 @@ export default function PartsPage() {
   const draftQuantities = orderDraft.reduce((total, line) => total + line.quantity, 0);
   const orderTotalsByCurrency = orderDraft.reduce<Record<string, number>>((totals, line) => {
     const currency = line.product.currency;
-    const unitPrice = Number(line.product.price);
+    const selected = selectedPrice(
+      line.product.vendorKey,
+      line.product.price,
+      line.product.ftcTeamPrice,
+      useFtcPricing,
+    );
+    if (selected.amount === null) return totals;
+    const unitPrice = Number(selected.amount);
     if (!Number.isFinite(unitPrice) || unitPrice < 0 || !/^[A-Z]{3}$/.test(currency)) return totals;
     const total = (totals[currency] ?? 0) + unitPrice * line.quantity;
     if (Number.isFinite(total)) totals[currency] = total;
@@ -753,6 +853,25 @@ export default function PartsPage() {
       });
     } finally {
       setVendorBlockBusyKey(null);
+    }
+  };
+
+  const updateFtcPricing = async (enabled: boolean) => {
+    setNotice(null);
+    try {
+      const saved = await pricingPreferenceMutation.mutateAsync({
+        data: { useFtcPricing: enabled },
+      });
+      queryClient.setQueryData(pricingPreferenceQueryKey, saved);
+      setNotice({
+        kind: "success",
+        text: `goBILDA FTC team pricing ${enabled ? "enabled" : "disabled"} for this team.`,
+      });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(error, "Unable to save the team pricing preference."),
+      });
     }
   };
 
@@ -860,18 +979,20 @@ export default function PartsPage() {
   };
 
   const addSearchResultToDraft = (product: PartsCatalogSearchResult) => {
-    if (product.price === null || product.currency === null) {
+    const selected = selectedPrice(
+      product.vendorKey,
+      product.price,
+      product.ftcTeamPrice,
+      useFtcPricing,
+    );
+    if (selected.amount === null || product.currency === null) {
       setNotice({
         kind: "error",
         text: `${product.title} has no verified price, so it cannot be added to the estimated order draft.`,
       });
       return;
     }
-    const pricedProduct: PricedPartsCatalogSearchResult = {
-      ...product,
-      price: product.price,
-      currency: product.currency,
-    };
+    const pricedProduct: DraftProduct = { ...product, currency: product.currency };
     setOrderDraft((previous) => {
       const existing = previous.find((line) => line.product.url === pricedProduct.url);
       return existing
@@ -1031,7 +1152,7 @@ export default function PartsPage() {
   const isMutating =
     stockMutation.isPending ||
     allocationMutation.isPending;
-  const liveResultGroups = groupSearchResults(searchResults);
+  const liveResultGroups = groupSearchResults(searchResults, useFtcPricing);
   const catalogSearchItems = savedCatalogSearchQuery.data?.items ?? [];
   const additionalCatalogSearchItems = catalogSearchItems.filter(
     (item) => !catalogItemHasLiveResult(item, searchResults),
@@ -1178,6 +1299,37 @@ export default function PartsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
+                      <input
+                        id="parts-ftc-pricing"
+                        type="checkbox"
+                        checked={useFtcPricing}
+                        onChange={(event) => void updateFtcPricing(event.target.checked)}
+                        disabled={
+                          pricingPreferenceQuery.isLoading ||
+                          pricingPreferenceQuery.isError ||
+                          pricingPreferenceMutation.isPending
+                        }
+                        className="mt-1 size-4 shrink-0 accent-primary"
+                        aria-describedby="parts-ftc-pricing-help"
+                      />
+                      <div className="min-w-0">
+                        <label htmlFor="parts-ftc-pricing" className="cursor-pointer text-sm font-medium text-foreground">
+                          Use goBILDA FTC team prices
+                        </label>
+                        <p id="parts-ftc-pricing-help" className="mt-1 text-xs text-muted-foreground">
+                          Supplier results and draft estimates use the published FTC price when available; otherwise they use regular pricing. Saved costs and quote history do not change.
+                        </p>
+                        {pricingPreferenceQuery.isLoading && (
+                          <p role="status" className="mt-1 text-xs text-muted-foreground">Loading team pricing setting…</p>
+                        )}
+                        {pricingPreferenceQuery.isError && (
+                          <p role="alert" className="mt-1 text-xs text-destructive">
+                            The team pricing setting could not be loaded. Reload Parts before changing pricing.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                     <form onSubmit={runSearch} className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto_auto]">
                       <label className="text-sm font-medium">
                         Part, SKU, or material
@@ -1428,9 +1580,15 @@ export default function PartsPage() {
                     const alreadyAdded = orderDraft.some((line) => line.product.url === result.url);
                     const resultSaveKey = normalizedProductUrl(result.url) ?? result.url;
                     const saveState = saveFeedback[resultSaveKey];
+                    const displayPrice = selectedPrice(
+                      result.vendorKey,
+                      result.price,
+                      result.ftcTeamPrice,
+                      useFtcPricing,
+                    );
                     const alreadyInInventory =
                       currentlyAdded.has(resultSaveKey) || saveState?.status === "success";
-                    const canAddToDraft = result.price !== null && result.currency !== null;
+                    const canAddToDraft = displayPrice.amount !== null && result.currency !== null;
                     const otherOffers = group.offers.filter((offer) => offer.url !== result.url);
                     return (
                       <Card key={`live-${group.key}`} className="border-border bg-card">
@@ -1468,11 +1626,26 @@ export default function PartsPage() {
                               {canAddToDraft && result.currency
                                 ? <>
                                     {result.priceIsStartingAt ? "From " : ""}
-                                    {formatMoney(Number(result.price), result.currency)}
+                                    {formatMoney(Number(displayPrice.amount), result.currency)}
                                     <span className="ml-1 text-xs font-normal text-muted-foreground">{result.currency}</span>
                                   </>
                                 : "Price not published"}
                             </p>
+                            {canAddToDraft && (
+                              <p className="text-xs text-muted-foreground">
+                                {displayPrice.isFtc ? "FTC team price" : "Regular price"}
+                                {result.vendorKey === "gobilda" && result.ftcTeamPrice !== null && result.price !== null && (
+                                  <span className="ml-2">
+                                    {displayPrice.isFtc
+                                      ? `Regular ${formatMoney(Number(result.price), result.currency!)}`
+                                      : `FTC team price ${formatMoney(Number(result.ftcTeamPrice), result.currency!)}`}
+                                  </span>
+                                )}
+                                {useFtcPricing && result.vendorKey === "gobilda" && !displayPrice.isFtc && result.ftcTeamPrice === null && (
+                                  <span className="ml-2">FTC team price unavailable; regular price used</span>
+                                )}
+                              </p>
+                            )}
                           </div>
                           <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
                             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -1536,7 +1709,7 @@ export default function PartsPage() {
                     );
                   })}
                   {additionalCatalogSearchItems.map((item) => (
-                    <CatalogSearchCard key={`catalog-${item.id}`} item={item} />
+                    <CatalogSearchCard key={`catalog-${item.id}`} item={item} useFtcPricing={useFtcPricing} />
                   ))}
                 </div>
 
@@ -1597,6 +1770,7 @@ export default function PartsPage() {
                     orderDraft={orderDraft}
                     draftQuantities={draftQuantities}
                     orderTotalsByCurrency={orderTotalsByCurrency}
+                    useFtcPricing={useFtcPricing}
                     isOpen={partsOrderOpen}
                     onToggle={() => setPartsOrderOpen((open) => !open)}
                     onClear={() => setOrderDraft([])}

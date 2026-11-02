@@ -23,6 +23,11 @@ export interface PartsCatalogSearchResult {
   price: string | null;
   /**
      * @nullable
+     * @pattern ^\d{1,9}(\.\d{1,2})?$
+     */
+  ftcTeamPrice: string | null;
+  /**
+     * @nullable
      * @pattern ^[A-Z]{3}$
      */
   currency: string | null;

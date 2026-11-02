@@ -303,6 +303,8 @@ export * from './partsImageIdentificationInputContentType';
 export * from './partsImageIdentificationUncertainty';
 export * from './partsPriceSnapshot';
 export * from './partsPriceSnapshotInput';
+export * from './partsPricingPreference';
+export * from './partsPricingPreferenceUpdateInput';
 export * from './partsRobot';
 export * from './partsRobotAllocation';
 export * from './partsRobotAllocationInput';

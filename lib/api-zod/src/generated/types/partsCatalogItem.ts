@@ -23,6 +23,23 @@ export interface PartsCatalogItem {
   /** @nullable */
   imageUrl: string | null;
   /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  supplierPrice: number | null;
+  /**
+     * @minimum 0
+     * @maximum 99999999.99
+     * @nullable
+     */
+  ftcTeamPrice: number | null;
+  /**
+     * @nullable
+     * @pattern ^[A-Z]{3}$
+     */
+  supplierPriceCurrency: string | null;
+  /**
      * @maxLength 120
      * @nullable
      */

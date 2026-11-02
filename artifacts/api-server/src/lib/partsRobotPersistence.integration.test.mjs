@@ -47,6 +47,7 @@ test(
 
     const suffix = randomUUID().replaceAll("-", "");
     const interviewerId = `parts-cost-check-${suffix}`;
+    const teamId = `parts-cost-check-team-${suffix}`;
     const robotId = `parts-cost-check-robot-${suffix}`;
     const partId = `parts-cost-check-part-${suffix}`;
     const sourceUrl = `https://www.andymark.com/products/${partId}`;
@@ -61,9 +62,9 @@ test(
 
       await pool.query(
         `insert into "interviewer_accounts"
-           ("id", "display_name", "normalized_name", "password_hash")
-         values ($1, $2, $3, $4)`,
-        [interviewerId, "Parts persistence integration", interviewerId, "configured"],
+           ("id", "display_name", "normalized_name", "password_hash", "team_id")
+         values ($1, $2, $3, $4, $5)`,
+        [interviewerId, "Parts persistence integration", interviewerId, "configured", teamId],
       );
       await pool.query(
         `insert into "parts_robots" ("id", "name") values ($1, $2)`,
@@ -102,6 +103,17 @@ test(
         );
         return responseBody;
       };
+
+      const savedPricingPreference = await request("/parts/pricing", {
+        method: "PUT",
+        body: { useFtcPricing: true },
+      });
+      assert.deepEqual(savedPricingPreference, { useFtcPricing: true });
+      assert.deepEqual(
+        await request("/parts/pricing"),
+        { useFtcPricing: true },
+        "a fresh request must reload the committed team preference",
+      );
 
       const unauthorized = await fetch(
         `${baseUrl}/parts/robots/${robotId}/details`,
@@ -183,6 +195,7 @@ test(
       }
       await pool.query(`delete from "parts_robots" where "id" = $1`, [robotId]);
       await pool.query(`delete from "parts_catalog_items" where "id" = $1`, [partId]);
+      await pool.query(`delete from "parts_team_settings" where "team_id" = $1`, [teamId]);
       await pool.query(`delete from "interviewer_accounts" where "id" = $1`, [interviewerId]);
       await pool.end();
     }

@@ -1,9 +1,12 @@
+import { parsePublishedFtcTeamPrice } from "./partsPricing.ts";
+
 export type ProductPageMetadata = {
   title: string;
   description: string;
   sku: string | null;
   imageUrl: string | null;
   price: string | null;
+  ftcTeamPrice: string | null;
   currency: string | null;
   priceIsStartingAt: boolean;
   inStock: boolean;
@@ -299,6 +302,9 @@ export function extractProductPageMetadata(
     sku,
     imageUrl,
     price: price?.price ?? null,
+    ftcTeamPrice: /(^|\.)gobilda\.com$/i.test(parsedPage.hostname)
+      ? parsePublishedFtcTeamPrice(html)
+      : null,
     currency: price?.currency ?? null,
     priceIsStartingAt: price?.priceIsStartingAt ?? false,
     inStock: price?.inStock ?? true,
@@ -331,6 +337,7 @@ export function fallbackProductSearchMetadata(
     sku: null,
     imageUrl: null,
     price: null,
+    ftcTeamPrice: null,
     currency: null,
     priceIsStartingAt: false,
     inStock: true,

@@ -86,10 +86,27 @@ test("product JSON-LD yields every catalog field including stock state", () => {
   assert.equal(product.name, "Worm Gear Set (24:1 Ratio, 6mm D-Bore Worm)");
   assert.equal(product.sku, "3204-0001-0001");
   assert.equal(product.price, "24.99");
+  assert.equal(product.ftcTeamPrice, null);
   assert.equal(product.currency, "USD");
   assert.equal(product.inStock, false, "OutOfStock must not read as in stock");
   assert.ok(product.imageUrl.startsWith("https://"));
   assert.ok(product.description.length > 0);
+});
+
+test("goBILDA sitemap crawl retains an explicitly published FTC price independently", () => {
+  const html = PRODUCT_HTML.replace(
+    "</body>",
+    '<div class="ftc-price">FTC Team Price: $17.49</div></body>',
+  );
+  const product = parseSchemaOrgProduct(html, true);
+  assert.equal(product.price, "24.99");
+  assert.equal(product.ftcTeamPrice, "17.49");
+});
+
+test("sitemap crawl leaves FTC price unset when the page publishes only regular price", () => {
+  const product = parseSchemaOrgProduct(PRODUCT_HTML, true);
+  assert.equal(product.price, "24.99");
+  assert.equal(product.ftcTeamPrice, null);
 });
 
 test("in-stock availability reads as in stock", () => {

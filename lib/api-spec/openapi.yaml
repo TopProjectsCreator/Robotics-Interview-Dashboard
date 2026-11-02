@@ -3007,6 +3007,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /parts/pricing:
+    get:
+      operationId: getPartsPricingPreference
+      tags: [parts]
+      summary: Read the signed-in team's supplier pricing preference
+      responses:
+        "200":
+          description: Current team's goBILDA FTC pricing preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsPricingPreference"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updatePartsPricingPreference
+      tags: [parts]
+      summary: Update the signed-in team's supplier pricing preference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsPricingPreferenceUpdateInput"
+      responses:
+        "200":
+          description: Saved team pricing preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsPricingPreference"
+        "400":
+          description: Invalid pricing preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog:
     get:
       operationId: listPartsCatalog
@@ -5025,7 +5072,7 @@ components:
           minimum: 0
     PartsCatalogItem:
       type: object
-      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, storageLocation, inventoryNotes, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
+      required: [id, vendorKey, vendorName, name, sku, category, description, productUrl, imageUrl, supplierPrice, ftcTeamPrice, supplierPriceCurrency, storageLocation, inventoryNotes, quantityOwned, quantityAssigned, quantityAvailable, allocations, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -5047,6 +5094,17 @@ components:
         imageUrl:
           type: [string, "null"]
           format: uri
+        supplierPrice:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 99999999.99
+        ftcTeamPrice:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 99999999.99
+        supplierPriceCurrency:
+          type: [string, "null"]
+          pattern: "^[A-Z]{3}$"
         storageLocation:
           type: [string, "null"]
           maxLength: 120
@@ -5133,7 +5191,7 @@ components:
             maxLength: 120
     PartsCatalogSearchResult:
       type: object
-      required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, currency, priceIsStartingAt, inStock]
+      required: [vendorKey, vendorName, title, url, description, sku, imageUrl, price, ftcTeamPrice, currency, priceIsStartingAt, inStock]
       properties:
         vendorKey:
           type: string
@@ -5154,6 +5212,9 @@ components:
         price:
           type: [string, "null"]
           pattern: '^\d{1,9}(\.\d{1,4})?$'
+        ftcTeamPrice:
+          type: [string, "null"]
+          pattern: '^\d{1,9}(\.\d{1,2})?$'
         currency:
           type: [string, "null"]
           pattern: '^[A-Z]{3}$'
@@ -5162,6 +5223,20 @@ components:
         inStock:
           type: boolean
           description: Whether the supplier page indicates the item is purchasable. True when availability is unknown or signals in-stock; false for explicit out-of-stock signals.
+    PartsPricingPreference:
+      type: object
+      required: [useFtcPricing]
+      properties:
+        useFtcPricing:
+          type: boolean
+          description: When enabled, Parts estimates use published goBILDA FTC team prices where available.
+    PartsPricingPreferenceUpdateInput:
+      type: object
+      required: [useFtcPricing]
+      additionalProperties: false
+      properties:
+        useFtcPricing:
+          type: boolean
     PartsCatalogSearch:
       type: object
       required: [query, results, catalogItems, catalogTotal, catalogOffset, catalogLimit, liveSearchStatus]

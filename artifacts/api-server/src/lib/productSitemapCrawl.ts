@@ -1,3 +1,5 @@
+import { parsePublishedFtcTeamPrice } from "./partsPricing.ts";
+
 /**
  * Sitemap-driven product crawling for suppliers that publish no machine-readable
  * product feed.
@@ -90,6 +92,7 @@ export type CrawledProduct = {
   productUrl: string;
   imageUrl: string | null;
   price: string | null;
+  ftcTeamPrice: string | null;
   currency: string | null;
   inStock: boolean;
 };
@@ -163,7 +166,10 @@ function availabilityIsInStock(value: unknown): boolean {
  * SKU, stock, image, and description all arrive in one parse instead of being
  * scraped out of presentation markup that changes with the theme.
  */
-export function parseSchemaOrgProduct(html: string): CrawledProduct | null {
+export function parseSchemaOrgProduct(
+  html: string,
+  includeFtcTeamPrice = false,
+): CrawledProduct | null {
   for (const match of html.matchAll(
     /<script\b[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi,
   )) {
@@ -201,6 +207,7 @@ export function parseSchemaOrgProduct(html: string): CrawledProduct | null {
         productUrl,
         imageUrl: image && image.startsWith("https://") ? image : null,
         price,
+        ftcTeamPrice: includeFtcTeamPrice ? parsePublishedFtcTeamPrice(html) : null,
         currency: price && currency && /^[A-Z]{3}$/.test(currency) ? currency : null,
         inStock: availabilityIsInStock(offer.availability),
       };
@@ -263,5 +270,5 @@ export async function fetchProductPage(
     throw new Error("Product URL is outside the supplier website.");
   }
   const html = await fetchText(productUrl, "text/html", 30_000);
-  return parseSchemaOrgProduct(html);
+  return parseSchemaOrgProduct(html, domain === "gobilda.com");
 }

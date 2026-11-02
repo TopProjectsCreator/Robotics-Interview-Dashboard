@@ -26,6 +26,9 @@ export const partsCatalogItemsTable = pgTable(
     description: text("description"),
     productUrl: text("product_url"),
     imageUrl: text("image_url"),
+    supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
+    ftcTeamPrice: numeric("ftc_team_price", { precision: 10, scale: 2 }),
+    supplierPriceCurrency: text("supplier_price_currency"),
     unitCost: numeric("unit_cost", { precision: 10, scale: 2 }),
     costCurrency: text("cost_currency"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -45,7 +48,23 @@ export const partsCatalogItemsTable = pgTable(
           and ${table.costCurrency} is not null
           and ${table.costCurrency} ~ '^[A-Z]{3}$')`,
     ),
+    validSupplierPrices: check(
+      "parts_catalog_supplier_prices_valid",
+      sql`(("supplier_price" is null and "ftc_team_price" is null and "supplier_price_currency" is null)
+        or (("supplier_price" is null or ("supplier_price" >= 0 and "supplier_price" <= 99999999.99))
+          and ("ftc_team_price" is null or ("ftc_team_price" >= 0 and "ftc_team_price" <= 99999999.99))
+          and "supplier_price_currency" ~ '^[A-Z]{3}$'))`,
+    ),
   }),
+);
+
+export const partsTeamSettingsTable = pgTable(
+  "parts_team_settings",
+  {
+    teamId: text("team_id").primaryKey(),
+    useFtcPricing: boolean("use_ftc_pricing").default(false).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
 );
 
 export const partsSupplierSyncStatesTable = pgTable(

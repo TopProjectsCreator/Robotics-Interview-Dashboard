@@ -10,6 +10,7 @@ import {
   CreatePartsRobotBody,
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
+  GetPartsPricingPreferenceResponse,
   GetPartsCatalogDetailsParams,
   GetPartsCatalogDetailsResponse,
   GetPartsRobotDetailsParams,
@@ -40,6 +41,8 @@ import {
   UpdatePartsRobotPreviewBody,
   UpdatePartsRobotPreviewParams,
   UpdatePartsRobotPreviewResponse,
+  UpdatePartsPricingPreferenceBody,
+  UpdatePartsPricingPreferenceResponse,
   DeletePartsRobotPreviewParams,
   DeletePartsRobotPreviewResponse,
   type AssistantActivity,
@@ -95,6 +98,10 @@ import {
   moneyFromDatabase,
   summarizeSavedCosts,
 } from "../lib/partsCosting";
+import {
+  readFtcPricingPreference,
+  saveFtcPricingPreference,
+} from "../lib/partsPricing";
 import { partsPreviewKind } from "../lib/partsRobotPreview";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
@@ -501,6 +508,14 @@ function mapCatalogRow(row: Record<string, unknown>) {
     description: (row.description as string | null) ?? null,
     productUrl: (row.productUrl as string | null) ?? null,
     imageUrl: (row.imageUrl as string | null) ?? null,
+    supplierPrice: moneyFromDatabase(row.supplierPrice),
+    ftcTeamPrice: moneyFromDatabase(row.ftcTeamPrice),
+    supplierPriceCurrency:
+      row.supplierPriceCurrency !== null &&
+      row.supplierPriceCurrency !== undefined &&
+      isValidCurrencyCode(row.supplierPriceCurrency)
+        ? row.supplierPriceCurrency
+        : null,
     storageLocation: (row.storageLocation as string | null) ?? null,
     inventoryNotes: (row.inventoryNotes as string | null) ?? null,
     unitCost: costCurrency ? unitCost : null,
@@ -536,7 +551,11 @@ async function queryCatalogRows(
   const result = await pool.query(
     `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
-             c."image_url" as "imageUrl", i."storage_location" as "storageLocation",
+              c."image_url" as "imageUrl",
+              c."supplier_price" as "supplierPrice",
+              c."ftc_team_price" as "ftcTeamPrice",
+              c."supplier_price_currency" as "supplierPriceCurrency",
+              i."storage_location" as "storageLocation",
              i."inventory_notes" as "inventoryNotes", i."unit_cost" as "unitCost",
              i."cost_currency" as "costCurrency", c."created_at" as "createdAt",
             c."updated_at" as "updatedAt",
@@ -759,6 +778,7 @@ type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   sku: string | null;
   imageUrl: string | null;
   price: string | null;
+  ftcTeamPrice: string | null;
   currency: string | null;
   priceIsStartingAt: boolean;
   inStock: boolean;
@@ -798,6 +818,7 @@ function fallbackOfficialProductResult(
     sku: null,
     imageUrl: null,
     price: null,
+    ftcTeamPrice: null,
     currency: null,
     priceIsStartingAt: false,
     inStock: true,
@@ -1202,6 +1223,7 @@ async function enrichOfficialProductPage(
       sku: metadata.sku,
       imageUrl: metadata.imageUrl,
       price: metadata.price,
+      ftcTeamPrice: metadata.ftcTeamPrice,
       currency: metadata.currency,
       priceIsStartingAt: metadata.priceIsStartingAt,
       inStock: metadata.inStock,
@@ -1606,6 +1628,9 @@ type CatalogFeedRecord = {
   description: string | null;
   productUrl: string | null;
   imageUrl: string | null;
+  supplierPrice?: string | null;
+  ftcTeamPrice?: string | null;
+  supplierPriceCurrency?: string | null;
 };
 
 type CatalogFeedSyncVendor = {
@@ -2004,6 +2029,9 @@ async function crawlSitemapSlice(
           description: record.description,
           productUrl: record.productUrl,
           imageUrl: record.imageUrl,
+          supplierPrice: null,
+          ftcTeamPrice: null,
+          supplierPriceCurrency: null,
         });
         // Registered as known so the diff below asks only for what the seed missed.
         if (record.productUrl) known.add(record.productUrl);
@@ -2035,6 +2063,9 @@ async function crawlSitemapSlice(
           description: product.description,
           productUrl,
           imageUrl: product.imageUrl,
+          supplierPrice: product.price,
+          ftcTeamPrice: product.ftcTeamPrice,
+          supplierPriceCurrency: product.currency,
         });
       } else {
         // A page with no product JSON-LD is a settled answer rather than a
@@ -2246,7 +2277,7 @@ async function collectPublicVendorCatalog(
   };
 }
 
-async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
+export async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
   if (records.length === 0) return { created: 0, updated: 0 };
   return withTransaction(async (client) => {
     let created = 0;
@@ -2256,7 +2287,7 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
       const batch = records.slice(start, start + batchSize);
       const values: unknown[] = [];
       const rows = batch.map((record, index) => {
-        const offset = index * 10;
+        const offset = index * 13;
         values.push(
           randomUUID(),
           record.vendorKey,
@@ -2267,13 +2298,16 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
           record.description,
           record.productUrl,
           record.imageUrl,
+          record.supplierPrice ?? null,
+          record.ftcTeamPrice ?? null,
+          record.supplierPriceCurrency ?? null,
           false,
         );
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13})`;
       });
       const saved = await client.query(
         `insert into "parts_catalog_items"
-           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "is_manual")
+           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "supplier_price", "ftc_team_price", "supplier_price_currency", "is_manual")
          values ${rows.join(", ")}
           on conflict ("vendor_key", "external_key")
             where "team_id" is null and "is_manual" = false
@@ -2283,7 +2317,10 @@ async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
            "category" = coalesce(excluded."category", "parts_catalog_items"."category"),
            "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
            "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
-           "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+            "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
+            "supplier_price" = excluded."supplier_price",
+            "ftc_team_price" = excluded."ftc_team_price",
+            "supplier_price_currency" = excluded."supplier_price_currency",
            "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
            "updated_at" = now()
          returning "id", (xmax = 0) as "created"`,
@@ -2344,6 +2381,40 @@ router.put(
     }
   },
 );
+
+router.get("/parts/pricing", requireAdmin, async (req, res): Promise<void> => {
+  try {
+    const teamId = await requestTeamId(req);
+    const useFtcPricing = await readFtcPricingPreference(
+      (statement, values) => pool.query(statement, values),
+      teamId,
+    );
+    res.json(GetPartsPricingPreferenceResponse.parse({ useFtcPricing }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts pricing preference load failed");
+    res.status(500).json({ error: "Unable to load team pricing settings." });
+  }
+});
+
+router.put("/parts/pricing", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = UpdatePartsPricingPreferenceBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Choose whether to use goBILDA FTC team prices." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const useFtcPricing = await saveFtcPricingPreference(
+      (statement, values) => pool.query(statement, values),
+      teamId,
+      parsed.data.useFtcPricing,
+    );
+    res.json(UpdatePartsPricingPreferenceResponse.parse({ useFtcPricing }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts pricing preference update failed");
+    res.status(500).json({ error: "Unable to save team pricing settings." });
+  }
+});
 
 router.get("/parts/dashboard", requireAdmin, async (req, res): Promise<void> => {
   try {

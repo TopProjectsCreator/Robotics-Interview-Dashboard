@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   teamInventory: new Map<string, Array<Record<string, unknown>>>(),
   teamRobots: new Map<string, Array<Record<string, unknown>>>(),
   blockedVendors: new Map<string, Set<string>>(),
+  teamFtcPricing: new Map<string, boolean>(),
   blockVendor: vi.fn(),
+  saveFtcPricing: vi.fn(),
   createRobot: vi.fn(),
   setAllocation: vi.fn(),
   syncCatalogs: vi.fn(),
@@ -55,11 +57,35 @@ vi.mock("@workspace/api-client-react", async () => {
     consumePartsCatalogSearchStream: mocks.consumeSearch,
     getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
     getGetPartsVendorBlocksQueryKey: () => ["/parts/vendors/blocks"],
+    getGetPartsPricingPreferenceQueryKey: () => ["/parts/pricing"],
     getGetSessionQueryKey: () => ["/auth/session"],
     getGetPartsCatalogDetailsQueryKey: (partId: string) => ["/parts/catalog/details", partId],
     getListPartsCatalogQueryKey: () => ["/parts/catalog"],
     useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
-    useGetSession: () => ({ data: { role: mocks.role } }),
+    useGetSession: () => ({ data: { role: mocks.role, teamId: getTeamId() } }),
+    useGetPartsPricingPreference: (options?: {
+      query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
+    }) => {
+      const teamId = getTeamId();
+      return useQuery({
+        queryKey: options?.query?.queryKey ?? ["/parts/pricing"],
+        queryFn: async () => ({
+          useFtcPricing: mocks.teamFtcPricing.get(teamId) ?? false,
+        }),
+        ...options?.query,
+      });
+    },
+    useUpdatePartsPricingPreference: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ data }: { data: { useFtcPricing: boolean } }) => {
+          await mocks.saveFtcPricing({ teamId, data });
+          mocks.teamFtcPricing.set(teamId, data.useFtcPricing);
+          return { useFtcPricing: data.useFtcPricing };
+        },
+        isPending: false,
+      };
+    },
     useUpdatePartsVendorBlock: () => {
       const teamId = getTeamId();
       return {
@@ -294,6 +320,7 @@ const earlyProduct = {
   sku: "EARLY-1",
   imageUrl: null,
   price: null,
+  ftcTeamPrice: null,
   currency: null,
   priceIsStartingAt: false,
   inStock: true,
@@ -387,6 +414,7 @@ describe("progressive Parts search", () => {
     mocks.teamRobots.set("team-a", []);
     mocks.teamRobots.set("team-b", []);
     mocks.blockedVendors.clear();
+    mocks.teamFtcPricing.clear();
     mocks.role = "coordinator";
     mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
@@ -400,6 +428,7 @@ describe("progressive Parts search", () => {
     });
     window.localStorage.removeItem("robotics-parts-order-draft-v1");
     mocks.blockVendor.mockResolvedValue({});
+    mocks.saveFtcPricing.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
       name: "Camera suggested bracket",
@@ -409,6 +438,81 @@ describe("progressive Parts search", () => {
       uncertainty: "medium",
       uncertaintyReason: "The exact bracket version is unclear.",
     });
+  });
+
+  it("persists the FTC pricing choice per team across Parts page reloads", async () => {
+    const teamA = await renderPartsPage("team-a");
+    const toggleA = await screen.findByRole("checkbox", { name: "Use goBILDA FTC team prices" });
+    expect(toggleA).not.toBeChecked();
+    fireEvent.click(toggleA);
+    await waitFor(() => expect(mocks.teamFtcPricing.get("team-a")).toBe(true));
+    expect(mocks.saveFtcPricing).toHaveBeenCalledWith({
+      teamId: "team-a",
+      data: { useFtcPricing: true },
+    });
+    teamA.unmount();
+
+    const teamB = await renderPartsPage("team-b");
+    expect(await screen.findByRole("checkbox", { name: "Use goBILDA FTC team prices" }))
+      .not.toBeChecked();
+    teamB.unmount();
+
+    const reloadedTeamA = await renderPartsPage("team-a");
+    expect(await screen.findByRole("checkbox", { name: "Use goBILDA FTC team prices" }))
+      .toBeChecked();
+  });
+
+  it("uses published FTC prices in supplier results and draft estimates with regular-price fallback", async () => {
+    mocks.teamFtcPricing.set("team-a", true);
+    const eligibleProduct = {
+      ...earlyProduct,
+      vendorKey: "gobilda",
+      vendorName: "goBILDA",
+      title: "FTC eligible wheel",
+      sku: "FTC-WHEEL-1",
+      url: "https://www.gobilda.com/ftc-wheel/",
+      price: "24.99",
+      ftcTeamPrice: "17.49",
+      currency: "USD",
+    };
+    const regularOnlyProduct = {
+      ...eligibleProduct,
+      title: "Regular price bracket",
+      sku: "REGULAR-BRACKET-1",
+      url: "https://www.gobilda.com/regular-bracket/",
+      price: "12.49",
+      ftcTeamPrice: null,
+    };
+    mocks.consumeSearch.mockImplementation(async (_params, onEvent) => {
+      await onEvent({ type: "result", result: eligibleProduct });
+      await onEvent({ type: "result", result: regularOnlyProduct });
+      await onEvent({
+        type: "complete",
+        status: "available",
+        providerCount: 19,
+        failedProviderCount: 0,
+        resultCount: 2,
+      });
+    });
+
+    const page = await renderPartsPage();
+    startSearch("wheel bracket");
+    expect(await screen.findByText("FTC eligible wheel")).toBeInTheDocument();
+    expect(page.container).toHaveTextContent("$17.49");
+    expect(page.container).toHaveTextContent("Regular $24.99");
+    expect(page.container).toHaveTextContent("FTC team price unavailable; regular price used");
+
+    const addButtons = await screen.findAllByRole("button", { name: "Add to draft" });
+    fireEvent.click(addButtons[0]);
+    fireEvent.click(addButtons[1]);
+
+    const orderDetails = within(page.container).getByTestId("details-parts-order");
+    const orderSummary = orderDetails.querySelector("summary");
+    if (!orderSummary) throw new Error("The draft-order disclosure trigger was not found.");
+    if (!orderDetails.hasAttribute("open")) fireEvent.click(orderSummary);
+    await waitFor(() => expect(orderDetails).toHaveTextContent("$29.98"));
+    expect(orderDetails).toHaveTextContent("FTC team price");
+    expect(orderDetails).toHaveTextContent("Regular price");
   });
 
   it("shows approximate crawl time only for incomplete supplier pagination", async () => {

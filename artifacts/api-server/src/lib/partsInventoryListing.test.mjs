@@ -230,8 +230,25 @@ function mapCatalogRow(item, teamId) {
 
 test("Parts inventory lists tracked supplier stock with team-scoped totals and filters", async (t) => {
   const catalogQueries = [];
+  const pricingPreferences = new Map();
+  const feedRefreshState = {
+    supplierPrice: "22.99",
+    ftcTeamPrice: null,
+    supplierPriceCurrency: "USD",
+    unitCost: 4.25,
+    priceSnapshots: [{ id: "quote-history-1", unitPrice: 8.75 }],
+  };
+  const feedUpsertStatements = [];
   const pool = {
     async query(statement, values = []) {
+      if (statement.includes('from "parts_team_settings"')) {
+        const value = pricingPreferences.get(values[0]);
+        return { rows: value === undefined ? [] : [{ useFtcPricing: value }], rowCount: value === undefined ? 0 : 1 };
+      }
+      if (statement.includes('insert into "parts_team_settings"')) {
+        pricingPreferences.set(values[0], values[1]);
+        return { rows: [{ useFtcPricing: values[1] }], rowCount: 1 };
+      }
       if (statement.includes('from "parts_vendor_blocks"')) {
         return { rows: [], rowCount: 0 };
       }
@@ -290,6 +307,24 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
       }
       throw new Error(`Unexpected inventory listing query: ${statement}`);
     },
+    async connect() {
+      return {
+        async query(statement, values = []) {
+          if (statement === "BEGIN" || statement === "COMMIT" || statement === "ROLLBACK") {
+            return { rows: [], rowCount: 0 };
+          }
+          if (statement.includes('insert into "parts_catalog_items"')) {
+            feedUpsertStatements.push(statement);
+            feedRefreshState.supplierPrice = values[9];
+            feedRefreshState.ftcTeamPrice = values[10];
+            feedRefreshState.supplierPriceCurrency = values[11];
+            return { rows: [{ created: false }], rowCount: 1 };
+          }
+          throw new Error(`Unexpected feed refresh query: ${statement}`);
+        },
+        release() {},
+      };
+    },
   };
 
   mock.module("@workspace/db", {
@@ -320,11 +355,12 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   });
   t.after(() => mock.restoreAll());
 
-  const [{ default: express }, { default: partsRouter }] = await Promise.all([
+  const [{ default: express }, { default: partsRouter, saveCatalogFeedRecords }] = await Promise.all([
     import("express"),
     import(`../routes/parts.ts?inventory-listing=${Date.now()}`),
   ]);
   const app = express();
+  app.use(express.json());
   app.use((req, _res, next) => {
     req.log = { error() {}, warn() {} };
     next();
@@ -444,6 +480,41 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
     teamBCatalog.items.find(({ id }) => id === "shared-zero-count").quantityOwned,
     0,
   );
+  assert.deepEqual(await get("/parts/pricing", "team-a"), { useFtcPricing: false });
+  const preferenceUpdate = await fetch(`${baseUrl}/parts/pricing`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", "x-team-id": "team-a" },
+    body: JSON.stringify({ useFtcPricing: true }),
+  });
+  assert.equal(preferenceUpdate.status, 200);
+  assert.deepEqual(await preferenceUpdate.json(), { useFtcPricing: true });
+  assert.deepEqual(await get("/parts/pricing", "team-a"), { useFtcPricing: true });
+  assert.deepEqual(await get("/parts/pricing", "team-b"), { useFtcPricing: false });
+  assert.deepEqual(pricingPreferences, new Map([["team-a", true]]));
+  assert.deepEqual(
+    await saveCatalogFeedRecords([{
+      vendorKey: "gobilda",
+      externalKey: "worm-gear-1",
+      name: "Worm gear set",
+      sku: "3204-0001-0001",
+      category: null,
+      description: "Worm gear set",
+      productUrl: "https://www.gobilda.com/worm-gear-set/",
+      imageUrl: null,
+      supplierPrice: "24.99",
+      ftcTeamPrice: "17.49",
+      supplierPriceCurrency: "USD",
+    }]),
+    { created: 0, updated: 1 },
+  );
+  assert.equal(feedRefreshState.supplierPrice, "24.99");
+  assert.equal(feedRefreshState.ftcTeamPrice, "17.49");
+  assert.equal(feedRefreshState.unitCost, 4.25);
+  assert.deepEqual(feedRefreshState.priceSnapshots, [
+    { id: "quote-history-1", unitPrice: 8.75 },
+  ]);
+  assert.equal(feedUpsertStatements.length, 1);
+  assert.doesNotMatch(feedUpsertStatements[0], /"unit_cost"|parts_price_snapshots/);
   assert.ok(
     catalogQueries
       .filter(({ statement }) => statement.includes("json_agg("))

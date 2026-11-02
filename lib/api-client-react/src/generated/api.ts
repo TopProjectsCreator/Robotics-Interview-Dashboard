@@ -197,6 +197,8 @@ import type {
   PartsImageIdentificationInput,
   PartsPriceSnapshot,
   PartsPriceSnapshotInput,
+  PartsPricingPreference,
+  PartsPricingPreferenceUpdateInput,
   PartsRobot,
   PartsRobotAllocation,
   PartsRobotAllocationInput,
@@ -11397,6 +11399,154 @@ export const useUpdatePartsVendorBlock = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUpdatePartsVendorBlockMutationOptions(options));
+    }
+
+export const getGetPartsPricingPreferenceUrl = () => {
+
+
+
+
+  return `/api/parts/pricing`
+}
+
+/**
+ * @summary Read the signed-in team's supplier pricing preference
+ */
+export const getPartsPricingPreference = async ( options?: Parameters<typeof customFetch>[1]): Promise<PartsPricingPreference> => {
+
+  return customFetch<PartsPricingPreference>(getGetPartsPricingPreferenceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPartsPricingPreferenceQueryKey = () => {
+    return [
+    `/api/parts/pricing`
+    ] as const;
+    }
+
+
+export const getGetPartsPricingPreferenceQueryOptions = <TData = Awaited<ReturnType<typeof getPartsPricingPreference>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsPricingPreference>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPartsPricingPreferenceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPartsPricingPreference>>> = ({ signal }) => getPartsPricingPreference({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPartsPricingPreference>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPartsPricingPreferenceQueryResult = NonNullable<Awaited<ReturnType<typeof getPartsPricingPreference>>>
+export type GetPartsPricingPreferenceQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read the signed-in team's supplier pricing preference
+ */
+
+export function useGetPartsPricingPreference<TData = Awaited<ReturnType<typeof getPartsPricingPreference>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsPricingPreference>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPartsPricingPreferenceQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePartsPricingPreferenceUrl = () => {
+
+
+
+
+  return `/api/parts/pricing`
+}
+
+/**
+ * @summary Update the signed-in team's supplier pricing preference
+ */
+export const updatePartsPricingPreference = async (partsPricingPreferenceUpdateInput: PartsPricingPreferenceUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsPricingPreference> => {
+
+  return customFetch<PartsPricingPreference>(getUpdatePartsPricingPreferenceUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsPricingPreferenceUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartsPricingPreferenceMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsPricingPreference>>, TError,{data: BodyType<PartsPricingPreferenceUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartsPricingPreference>>, TError,{data: BodyType<PartsPricingPreferenceUpdateInput>}, TContext> => {
+
+const mutationKey = ['updatePartsPricingPreference'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsPricingPreference>>, {data: BodyType<PartsPricingPreferenceUpdateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePartsPricingPreference(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartsPricingPreferenceMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsPricingPreference>>>
+    export type UpdatePartsPricingPreferenceMutationBody = BodyType<PartsPricingPreferenceUpdateInput>
+    export type UpdatePartsPricingPreferenceMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the signed-in team's supplier pricing preference
+ */
+export const useUpdatePartsPricingPreference = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsPricingPreference>>, TError,{data: BodyType<PartsPricingPreferenceUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartsPricingPreference>>,
+        TError,
+        {data: BodyType<PartsPricingPreferenceUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePartsPricingPreferenceMutationOptions(options));
     }
 
 export const getListPartsCatalogUrl = (params?: ListPartsCatalogParams,) => {
