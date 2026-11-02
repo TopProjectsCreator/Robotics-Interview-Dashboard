@@ -197,6 +197,138 @@ describe("custom workspace deletion", () => {
   });
 });
 
+describe("custom workspace builder controls", () => {
+  const respondToManagerLoad = (path: string) => {
+    if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+    if (path === "/api/assistant/models") return Response.json({ items: [] });
+    if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+    if (path === "/api/assistant/history") return Response.json({ items: [] });
+    if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+    if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+    if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+    return null;
+  };
+
+  it("pauses a run and lets the coordinator continue from its saved draft", async () => {
+    const queuedPrompts: string[] = [];
+    let run = builderRunFixture(
+      "run-1",
+      "running",
+      "Build a custom workspace app for the team. Requirements: tryout schedule",
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const shared = respondToManagerLoad(path);
+      if (shared) return shared;
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run });
+      if (path === "/api/assistant/custom-workspace-builder/runs/run-1" && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ action: "pause" });
+        run = builderRunFixture("run-1", "paused", run.prompt, {
+          error: "Paused by the coordinator. Continue the builder when you're ready.",
+        });
+        return Response.json({ run });
+      }
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { question: string };
+        queuedPrompts.push(body.question);
+        return Response.json({ run: builderRunFixture("run-2", "completed", body.question) }, { status: 201 });
+      }
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByTestId("builder-run-status")).toHaveTextContent("Building");
+    fireEvent.click(screen.getByTestId("button-pause-builder"));
+
+    expect(await screen.findByTestId("builder-run-status")).toHaveTextContent("Paused — can continue");
+    fireEvent.click(screen.getByTestId("button-continue-builder"));
+    await waitFor(() => expect(queuedPrompts).toHaveLength(1));
+    expect(queuedPrompts[0]).toContain("Existing draft ID: builder-run-1");
+    expect(await screen.findByTestId("builder-run-status")).toHaveTextContent("Complete");
+  });
+
+  it("requires confirmation before stopping and does not offer the stopped run as resumable", async () => {
+    let run = builderRunFixture(
+      "run-stop",
+      "running",
+      "Build a custom workspace app for the team. Requirements: tryout schedule",
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const shared = respondToManagerLoad(path);
+      if (shared) return shared;
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run });
+      if (path === "/api/assistant/custom-workspace-builder/runs/run-stop" && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ action: "stop" });
+        run = builderRunFixture("run-stop", "cancelled", run.prompt, {
+          error: "Stopped by the coordinator. Saved workspace files were kept.",
+        });
+        return Response.json({ run });
+      }
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    await screen.findByTestId("builder-run-status");
+    fireEvent.click(screen.getByTestId("button-stop-builder"));
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("cannot be continued as the same run");
+    fireEvent.click(screen.getByTestId("button-confirm-stop-builder"));
+
+    expect(await screen.findByTestId("builder-run-status")).toHaveTextContent("Stopped — saved files kept");
+    expect(screen.queryByTestId("button-continue-builder")).not.toBeInTheDocument();
+  });
+
+  it("keeps workspace deletion available while a revision is running", async () => {
+    let deleted = false;
+    let runStatus = "running";
+    const draft = { ...workspace, status: "draft", critiqueRounds: 2, verifiedCritiqueRounds: 1 };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const shared = respondToManagerLoad(path);
+      if (shared) return shared;
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { question: string };
+        return Response.json({ run: builderRunFixture("revision-run", runStatus, body.question) }, { status: 201 });
+      }
+      if (path === "/api/assistant/custom-workspace-builder/runs/revision-run") {
+        return Response.json({ run: builderRunFixture("revision-run", runStatus, "Revise custom workspace draft custom-app-1.") });
+      }
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: deleted ? [] : [draft] });
+      if (path === "/api/custom-workspaces/custom-app-1" && init?.method === "DELETE") {
+        deleted = true;
+        runStatus = "cancelled";
+        return Response.json({ deleted: true, workspace: { id: draft.id, title: draft.title } });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = render(<CustomWorkspacesPage />);
+    expect(await screen.findByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Revise this draft"), { target: { value: "Update the schedule view" } });
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    await screen.findByText("Building");
+
+    expect(screen.getByTestId("button-delete-workspace")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("button-delete-workspace"));
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("Its active builder will be stopped first");
+    fireEvent.click(screen.getByTestId("button-confirm-delete-workspace"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/custom-workspaces/custom-app-1",
+      expect.objectContaining({ method: "DELETE" }),
+    ));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Team planner" })).not.toBeInTheDocument());
+    await new Promise((resolve) => window.setTimeout(resolve, 2600));
+    page.unmount();
+  }, 10000);
+});
+
 describe("custom workspace version history", () => {
   it("previews and restores a saved version of a published app", async () => {
     const restoreRequests: string[] = [];

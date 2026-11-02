@@ -728,17 +728,39 @@ router.delete("/custom-workspaces/:id", requireCoordinator, async (req, res): Pr
         })
         .map((run) => run.id);
       if (promptRunIds.length > 0) {
-        await pool.query(
+      await pool.query(
           `update "assistant_prompt_runs"
-              set "status" = 'cancelled', "cancel_requested" = true,
+            set "status" = 'cancelled', "cancel_requested" = true,
                   "error" = 'The workspace was deleted by a coordinator.', "updated_at" = now()
             where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}
-              and "status" in ('queued', 'running')`,
+              and "status" = 'queued'`,
+          [promptRunIds, teamId],
+        );
+        await pool.query(
+          `update "assistant_prompt_runs"
+              set "cancel_requested" = true,
+                  "error" = 'The workspace was deleted by a coordinator.', "updated_at" = now()
+            where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}
+              and "status" = 'running'`,
           [promptRunIds, teamId],
         );
         for (const promptRunId of promptRunIds) activeAssistantPromptControllers.get(promptRunId)?.abort();
       }
-      const settled = await waitForAssistantBuilderWorkToSettle(targetedBuilderRunIds, promptRunIds);
+      const settled = await waitForAssistantBuilderWorkToSettle(
+        targetedBuilderRunIds,
+        promptRunIds,
+        120_000,
+        async () => {
+          const activePrompts = await pool.query<{ id: string }>(
+            `select "id" from "assistant_prompt_runs"
+              where "id" = any($1::text[]) and ${teamSqlCondition('"team_id"', "$2")}
+                and "status" = 'running'
+              limit 1`,
+            [promptRunIds, teamId],
+          );
+          return activePrompts.rows.length === 0;
+        },
+      );
       if (!settled) {
         res.status(503).json({
           error: "The workspace was not deleted because its active builder did not stop safely. Try again.",

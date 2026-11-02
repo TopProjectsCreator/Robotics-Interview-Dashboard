@@ -225,6 +225,13 @@ function normalizeBuilderRun(run: AssistantBuilderRunResponse["run"]): BuilderRu
   return run ? { ...run, question: run.question as AgentQuestion | null } : null;
 }
 
+function builderRunTargetsWorkspace(run: BuilderRun | null, workspaceId: string): boolean {
+  if (!run) return false;
+  const directId = run.prompt.match(/(?:revise|continue)\s+custom workspace draft\s+([^\s.]+)/i)?.[1];
+  const explicitId = run.prompt.match(/existing draft id\s*[:=]\s*([A-Za-z0-9_-]+)/i)?.[1];
+  return (directId ?? explicitId ?? `builder-${run.id}`) === workspaceId;
+}
+
 export function CustomWorkspacesPage() {
   const { resolvedTheme } = useTheme();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
@@ -316,7 +323,7 @@ export function CustomWorkspacesPage() {
         const normalizedRun = normalizeBuilderRun(run);
         setBuilderRun(normalizedRun);
         if (normalizedRun?.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(normalizedRun)));
-        setAgentQuestion(normalizedRun?.question ?? null);
+        setAgentQuestion(normalizedRun?.status === "waiting_for_answer" ? normalizedRun.question : null);
         if (normalizedRun && ["completed", "failed", "interrupted", "paused", "cancelled"].includes(normalizedRun.status)) {
           await refresh();
         }
@@ -498,7 +505,7 @@ export function CustomWorkspacesPage() {
       normalizedRun = run;
       setBuilderRun(run);
       if (run.activities.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, builderRunSteps(run)));
-      setAgentQuestion(run.question);
+      setAgentQuestion(run.status === "waiting_for_answer" ? run.question : null);
     };
     acceptRun(normalizedRun);
     while (["queued", "running"].includes(normalizedRun.status)) {
@@ -538,7 +545,7 @@ export function CustomWorkspacesPage() {
       const draft = workspaces.find((workspace) => !beforeIds.has(workspace.id) && workspace.status === "draft");
       if (run?.status === "waiting_for_answer") {
         setError("The builder is waiting for your answer. It will continue on the server after you respond.");
-      } else if (run?.status === "failed" || run?.status === "interrupted") {
+      } else if (run?.status === "failed" || run?.status === "interrupted" || run?.status === "paused") {
         setError(run.error ?? "The builder stopped. The saved run is available to continue.");
       } else {
         setPrompt("");
@@ -552,7 +559,7 @@ export function CustomWorkspacesPage() {
     }
   };
   const continueInterruptedBuilder = async () => {
-    if (!builderRun || !canManage) return;
+    if (!builderRun || !canManage || !["paused", "failed", "interrupted"].includes(builderRun.status)) return;
     setBusy(true);
     setError("");
     setPublishAgentSteps([{ id: "recover", label: "Continue builder", detail: "Starting a new server run from the saved request, answers, and draft files.", status: "running" }]);
@@ -572,6 +579,30 @@ export function CustomWorkspacesPage() {
       setError(err instanceof Error ? err.message : "Could not continue the builder.");
     } finally {
       setBusy(false);
+    }
+  };
+  const controlBuilder = async (action: "pause" | "stop") => {
+    if (!builderRun || !canManage) return;
+    setBuilderControlBusy(action);
+    setError("");
+    try {
+      const { run } = await request<AssistantBuilderRunResponse>(
+        `/api/assistant/custom-workspace-builder/runs/${encodeURIComponent(builderRun.id)}`,
+        { method: "POST", body: JSON.stringify({ action }) },
+      );
+      const normalized = normalizeBuilderRun(run);
+      if (normalized) {
+        setBuilderRun(normalized);
+        setAgentQuestion(null);
+      }
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
+        ? { ...step, status: "done", detail: action === "pause" ? "Paused. Continue manually when ready." : "Stopped. Saved workspace files were kept." }
+        : step));
+      setConfirmStopBuilder(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Could not ${action} the builder.`);
+    } finally {
+      setBuilderControlBusy(null);
     }
   };
   const startExistingDraftReviews = async () => {
@@ -654,7 +685,7 @@ export function CustomWorkspacesPage() {
       active.status !== "draft" ||
       (Number(active.critiqueRounds ?? 0) >= 5 && Number(active.verifiedCritiqueRounds ?? 0) >= 5) ||
       (builderRun && ["queued", "running", "waiting_for_answer"].includes(builderRun.status)) ||
-      (builderRun && ["failed", "interrupted"].includes(builderRun.status) && builderRun.prompt.includes(active.id)) ||
+      (builderRun && ["failed", "interrupted", "paused", "cancelled"].includes(builderRun.status) && builderRunTargetsWorkspace(builderRun, active.id)) ||
       autoStartedDraftReviews.current.has(active.id)
     ) return;
 
@@ -714,7 +745,7 @@ export function CustomWorkspacesPage() {
   const deleteWorkspace = async () => {
     if (!deleteTarget) return;
     const target = deleteTarget;
-    setBusy(true);
+    setDeletingWorkspace(true);
     setError("");
     try {
       const result = await request<{ deleted: boolean }>(`${API}/${encodeURIComponent(target.id)}`, {
@@ -739,7 +770,7 @@ export function CustomWorkspacesPage() {
       setDeleteTarget(null);
       setError(err instanceof Error ? err.message : "Could not delete the workspace. It remains intact.");
     } finally {
-      setBusy(false);
+      setDeletingWorkspace(false);
     }
   };
   const revise = async () => {
@@ -896,7 +927,7 @@ export function CustomWorkspacesPage() {
               type="button"
               aria-label={`Delete ${active.title}`}
               data-testid="button-delete-workspace"
-              disabled={busy}
+              disabled={deletingWorkspace}
               onClick={() => setDeleteTarget(active)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-950/40"
             >
@@ -913,14 +944,37 @@ export function CustomWorkspacesPage() {
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
           <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Review progress and tool calls are shown here. Private internal reasoning is not displayed. Publishing is available after all five review rounds are independently verified.</p>
           {builderRun && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[hsl(var(--foreground))]" data-testid="builder-run-status">
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : builderRun.status === "interrupted" || builderRun.status === "failed" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
-              {builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${builderRun.status === "completed" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : ["interrupted", "failed", "paused", "cancelled"].includes(builderRun.status) ? "bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" : "bg-[hsl(var(--muted))]"}`}>
+              {builderRun.error?.startsWith("Pause requested by the coordinator") ? "Pausing" :
+                builderRun.status === "waiting_for_answer" ? "Waiting for your answer" :
                 builderRun.status === "queued" ? "Queued on server" :
                 builderRun.status === "running" ? "Building" :
                   builderRun.status === "completed" ? "Complete" :
-                    builderRun.status === "interrupted" ? "Stopped — can continue" : "Could not finish — can continue"}
+                    builderRun.status === "paused" ? "Paused — can continue" :
+                      builderRun.status === "cancelled" ? "Stopped — saved files kept" :
+                        builderRun.status === "interrupted" ? "Stopped — can continue" : "Could not finish — can continue"}
             </span>
             <span className="text-[#60757c] dark:text-[#b3c3cb]">Last updated {new Date(builderRun.updatedAt).toLocaleString()}</span>
+          </div>}
+          {builderRun && canManage && <div className="mt-3 flex flex-wrap gap-2">
+            {["queued", "running"].includes(builderRun.status) && !builderRun.error?.startsWith("Pause requested by the coordinator") && <button
+              type="button"
+              disabled={builderControlBusy !== null || deletingWorkspace}
+              onClick={() => void controlBuilder("pause")}
+              className="inline-flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] disabled:opacity-50"
+              data-testid="button-pause-builder"
+            >
+              {builderControlBusy === "pause" ? <LoaderCircle size={14} className="animate-spin" /> : <Pause size={14} />} Pause
+            </button>}
+            {["queued", "running", "waiting_for_answer"].includes(builderRun.status) && <button
+              type="button"
+              disabled={builderControlBusy !== null || deletingWorkspace}
+              onClick={() => setConfirmStopBuilder(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 disabled:opacity-50 dark:border-red-800 dark:text-red-200"
+              data-testid="button-stop-builder"
+            >
+              <Square size={13} /> Stop
+            </button>}
           </div>}
           {builderRun?.error && <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">{builderRun.error}</p>}
           <ol className="mt-2 space-y-2">
@@ -935,7 +989,7 @@ export function CustomWorkspacesPage() {
               </span>
             </li>)}
           </ol>
-          {agentQuestion && <AgentQuestionCard question={agentQuestion} onSubmit={async (answers) => {
+          {agentQuestion && !["paused", "cancelled"].includes(builderRun?.status ?? "") && <AgentQuestionCard question={agentQuestion} onSubmit={async (answers) => {
             await request(`/api/assistant/questions/${encodeURIComponent(agentQuestion.id)}/answer`, {
               method: "POST",
               body: JSON.stringify({ answers }),
@@ -944,9 +998,9 @@ export function CustomWorkspacesPage() {
             const latest = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs/latest");
             setBuilderRun(normalizeBuilderRun(latest.run));
           }} />}
-          {(builderRun?.status === "interrupted" || builderRun?.status === "failed") && !builderRun.question && <button
+          {(builderRun?.status === "paused" || builderRun?.status === "interrupted" || builderRun?.status === "failed") && !builderRun.question && <button
             type="button"
-            disabled={busy}
+            disabled={busy || deletingWorkspace || builderControlBusy !== null}
             onClick={() => void continueInterruptedBuilder()}
             className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             data-testid="button-continue-builder"
@@ -1018,18 +1072,19 @@ export function CustomWorkspacesPage() {
         </div>}
       </section>
     </div>
-    <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !busy) setDeleteTarget(null); }}>
+    <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deletingWorkspace) setDeleteTarget(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
           <AlertDialogDescription>
             This permanently deletes this custom workspace, including its saved versions, source files, and workspace data. This cannot be undone.
+            {deleteTarget && builderRunTargetsWorkspace(builderRun, deleteTarget.id) && ["queued", "running", "waiting_for_answer"].includes(builderRun?.status ?? "") && " Its active builder will be stopped first. If the server cannot confirm it has stopped safely, the workspace will remain."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={deletingWorkspace}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            disabled={busy || !deleteTarget}
+            disabled={deletingWorkspace || !deleteTarget}
             onClick={(event) => {
               event.preventDefault();
               void deleteWorkspace();
@@ -1037,7 +1092,31 @@ export function CustomWorkspacesPage() {
             className="bg-red-700 text-white hover:bg-red-800"
             data-testid="button-confirm-delete-workspace"
           >
-            {busy ? "Deleting…" : "Delete workspace"}
+            {deletingWorkspace ? "Stopping builder and deleting…" : "Delete workspace"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={confirmStopBuilder} onOpenChange={(open) => { if (!builderControlBusy) setConfirmStopBuilder(open); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Stop this builder run?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The run will end and cannot be continued as the same run. Any workspace files already saved will be kept.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={builderControlBusy !== null}>Keep running</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={builderControlBusy !== null}
+            onClick={(event) => {
+              event.preventDefault();
+              void controlBuilder("stop");
+            }}
+            className="bg-red-700 text-white hover:bg-red-800"
+            data-testid="button-confirm-stop-builder"
+          >
+            {builderControlBusy === "stop" ? "Stopping…" : "Stop builder"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -11,7 +11,9 @@ import {
   customWorkspaceDraftId,
   customWorkspaceDraftIdFromPrompt,
   customWorkspaceRecoveryPrompt,
+  customWorkspaceBuilderControlStatus,
   isCustomWorkspaceBuilderPrompt,
+  waitForAssistantBuilderWorkToSettle,
 } from "./assistantBuilderJobs.ts";
 
 const routePath = fileURLToPath(new URL("../routes/robotics.ts", import.meta.url));
@@ -67,6 +69,24 @@ test("only custom workspace build and revision prompts enter the builder queue",
   assert.equal(isCustomWorkspaceBuilderPrompt("Summarize our chat"), false);
 });
 
+test("pause and stop resolve to durable final builder states", () => {
+  assert.equal(customWorkspaceBuilderControlStatus("pause"), "paused");
+  assert.equal(customWorkspaceBuilderControlStatus("stop"), "cancelled");
+});
+
+test("builder deletion waits for worker-owned prompts to settle", async () => {
+  let remoteSettled = false;
+  let checks = 0;
+  const wait = waitForAssistantBuilderWorkToSettle([], [], 1_000, async () => {
+    checks += 1;
+    if (checks > 1) remoteSettled = true;
+    return remoteSettled;
+  });
+
+  assert.equal(await wait, true);
+  assert.ok(checks >= 2);
+});
+
 test("builder jobs are persisted before the API delegates execution", async () => {
   const source = await readFile(routePath, "utf8");
   assert.ok(source.includes('router.post("/assistant/custom-workspace-builder/runs"'));
@@ -75,6 +95,22 @@ test("builder jobs are persisted before the API delegates execution", async () =
   assert.ok(source.includes('"x-assistant-builder-run-id": builderRunId'));
   assert.ok(source.includes("delegatedRun ? requestedBuilderRunId : randomUUID()"));
   assert.ok(source.includes("customWorkspaceBuilderRunId(delegatedRun.payload) !== requestedBuilderRunId"));
+});
+
+test("builder controls and stale recovery cannot restore paused or cancelled runs", async () => {
+  const source = await readFile(routePath, "utf8");
+  const deletionSource = await readFile(fileURLToPath(new URL("../routes/customWorkspaces.ts", import.meta.url)), "utf8");
+  assert.ok(source.includes('router.post("/assistant/custom-workspace-builder/runs/:runId"'));
+  assert.ok(source.includes('inArray(assistantBuilderRunsTable.status, ["queued", "running", "waiting_for_answer"])'));
+  assert.ok(source.includes('["queued", "running", "failed", "interrupted"].includes(lockedBuilderRun.status)'));
+  assert.ok(source.includes("builderRun.error === CUSTOM_WORKSPACE_BUILDER_PAUSE_REQUESTED"));
+  assert.ok(source.includes("promptRun.cancelRequested"));
+  assert.ok(source.includes('status: "paused"'));
+  assert.ok(source.includes('status: "cancelled"'));
+  assert.ok(source.includes('eq(assistantBuilderRunsTable.status, "waiting_for_answer")'));
+  assert.ok(deletionSource.includes("return activePrompts.rows.length === 0"));
+  assert.ok(deletionSource.includes('and "status" = \'running\''));
+  assert.ok(deletionSource.includes('set "cancel_requested" = true'));
 });
 
 test("builder recovery requeues from the saved draft and saved coordinator answers", async () => {

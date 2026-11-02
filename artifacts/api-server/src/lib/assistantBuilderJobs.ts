@@ -3,6 +3,8 @@ export const CUSTOM_WORKSPACE_BUILDER_ATTEMPT_KEY = "__customWorkspaceBuilderAtt
 export const CUSTOM_WORKSPACE_BUILDER_CONTINUATION_KEY = "__customWorkspaceBuilderContinuation";
 export const CUSTOM_WORKSPACE_BUILDER_MAX_ATTEMPTS = 3;
 export const CUSTOM_WORKSPACE_BUILDER_MAX_CONTINUATIONS = 8;
+export const CUSTOM_WORKSPACE_BUILDER_PAUSE_REQUESTED =
+  "Pause requested by the coordinator while current work stops.";
 
 export const activeBuilderRuns = new Set<string>();
 export const activeAssistantPromptControllers = new Map<string, AbortController>();
@@ -28,16 +30,17 @@ export async function waitForAssistantBuilderWorkToSettle(
   builderRunIds: string[],
   promptRunIds: string[],
   timeoutMs = 120_000,
+  isRemoteWorkSettled: () => Promise<boolean> = async () => true,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (
-    builderRunIds.some((id) => activeBuilderRuns.has(id)) ||
-    promptRunIds.some((id) => activeAssistantPromptControllers.has(id))
-  ) {
+  while (true) {
+    const localWorkSettled =
+      !builderRunIds.some((id) => activeBuilderRuns.has(id)) &&
+      !promptRunIds.some((id) => activeAssistantPromptControllers.has(id));
+    if (localWorkSettled && await isRemoteWorkSettled()) return true;
     if (Date.now() >= deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  return true;
 }
 
 export function customWorkspaceBuilderAttempt(payload: Record<string, unknown>): number {
