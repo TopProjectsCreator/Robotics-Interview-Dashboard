@@ -39,4 +39,4 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         with:
-          model: openrouter/thinkingmachines/inkling-small:free
+          model: thinkingmachines/inkling-small:free
