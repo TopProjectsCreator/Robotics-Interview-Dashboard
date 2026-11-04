@@ -13,4 +13,9 @@ export interface PasskeyCredential {
   /** @nullable */
   lastUsedAt?: string | null;
   transports?: string[];
+  /**
+     * URL (origin) the passkey was created on; null when unknown (credential predates origin tracking)
+     * @nullable
+     */
+  origin?: string | null;
 }

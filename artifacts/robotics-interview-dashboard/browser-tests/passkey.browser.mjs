@@ -116,6 +116,7 @@ async function mockApi(route, origin) {
       createdAt: credential.createdAt,
       lastUsedAt: credential.lastUsedAt,
       transports: credential.transports,
+      origin: credential.origin ?? null,
     }));
     await fulfill(route, jsonResponse({ items }));
     return;
@@ -158,6 +159,7 @@ async function mockApi(route, origin) {
     assert.equal(verification.verified, true, "The browser's attestation must verify");
     assert.ok(verification.registrationInfo, "Registration verification should return credential data");
     const stored = verification.registrationInfo.credential;
+    const registrationOrigin = JSON.parse(Buffer.from(body.response.clientDataJSON, "base64url").toString("utf8")).origin;
     const credential = {
       id: stored.id,
       publicKey: stored.publicKey,
@@ -166,6 +168,7 @@ async function mockApi(route, origin) {
       label: typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 60) : "Passkey",
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
+      origin: registrationOrigin,
     };
     registeredCredentials.set(credential.id, credential);
     await fulfill(route, {
@@ -177,6 +180,7 @@ async function mockApi(route, origin) {
         createdAt: credential.createdAt,
         lastUsedAt: null,
         transports: credential.transports,
+        origin: credential.origin,
       }),
     });
     return;
@@ -187,8 +191,10 @@ async function mockApi(route, origin) {
       await fulfill(route, jsonError(401, "The event passcode is incorrect."));
       return;
     }
+    const storedOrigins = [...new Set([...registeredCredentials.values()].map(credential => credential.origin).filter(Boolean))];
+    const authOrigin = storedOrigins.length === 1 ? storedOrigins[0] : origin;
     const options = await generateAuthenticationOptions({
-      rpID: new URL(origin).hostname,
+      rpID: new URL(authOrigin).hostname,
       allowCredentials: [...registeredCredentials.values()].map(credential => ({
         id: credential.id,
         transports: credential.transports,
@@ -214,11 +220,12 @@ async function mockApi(route, origin) {
     const credentialId = body?.response?.id;
     const stored = registeredCredentials.get(credentialId);
     assert.ok(stored, "Assertion must reference a registered credential");
+    const acceptedOrigins = [...new Set([origin, stored.origin].filter(Boolean))];
     const verification = await verifyAuthenticationResponse({
       response: body.response,
       expectedChallenge: authenticationChallenge,
-      expectedOrigin: origin,
-      expectedRPID: new URL(origin).hostname,
+      expectedOrigin: acceptedOrigins,
+      expectedRPID: acceptedOrigins.map(candidate => new URL(candidate).hostname),
       requireUserVerification: false,
       credential: {
         id: stored.id,
@@ -347,6 +354,7 @@ try {
   await page.getByTestId("passkey-success").waitFor();
   assert.match(await page.getByTestId("passkey-success").innerText(), /Chromium test passkey added/i);
   assert.equal(registeredCredentials.size, 1);
+  assert.equal([...registeredCredentials.values()][0].origin, serverUrl, "Registration must store the URL the passkey was made on");
   await assert.doesNotReject(async () => cdp.send("WebAuthn.getCredentials", { authenticatorId }));
 
   // Leave Settings and use the product's team-code + account + passkey flow.
