@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { readFileSync } from "node:fs";
+import { readFileSync } from "fs";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -701,7 +701,7 @@ describe("public chat discovery", () => {
         });
       }
       if (path === "/api/queue/chat") return jsonResponse({ scope: "shared", peer: null, items: [] });
-      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: [] });
+      if (path === "/api/queue") return jsonResponse({ items: [], interviewerLabels: ["Return Interviewer", "Jordan"] });
       if (path === "/api/queue/custom-emojis" || path === "/api/whiteboards") return jsonResponse({ items: [] });
       if (path === "/api/broadcasts/mine") return jsonResponse({ items: [] });
       if (path === "/api/applicants") return jsonResponse({ items: [], total: 0 });
@@ -727,7 +727,14 @@ describe("public chat discovery", () => {
     fireEvent.click(screen.getByTestId("button-personal-password"));
 
     await waitFor(() => expect(window.location.pathname).toBe("/chat"));
-    expect(await screen.findByRole("heading", { name: "Team chat" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Team channel" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Team chat" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Signed in as Test Interviewer");
+    const conversationPicker = screen.getByRole("combobox", { name: "Conversation" });
+    expect(conversationPicker).toHaveValue("team");
+    expect(await screen.findByRole("option", { name: "To Jordan" })).toBeInTheDocument();
+    fireEvent.change(conversationPicker, { target: { value: "direct:Jordan" } });
+    expect(await screen.findByRole("heading", { name: "Direct message · Jordan" })).toBeInTheDocument();
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("return-interviewer-token");
   });
 
