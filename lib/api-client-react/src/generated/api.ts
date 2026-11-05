@@ -14976,6 +14976,7 @@ export const getListCustomWorkspacesUrl = () => {
 }
 
 /**
+ * Coordinators and admins also receive the saved initial request. It is omitted for other roles and from public workspace details.
  * @summary List custom workspaces available to the current team
  */
 export const listCustomWorkspaces = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceList> => {

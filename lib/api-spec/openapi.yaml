@@ -4304,6 +4304,7 @@ paths:
       operationId: listCustomWorkspaces
       tags: [customWorkspaces]
       summary: List custom workspaces available to the current team
+      description: Coordinators and admins also receive the saved initial request. It is omitted for other roles and from public workspace details.
       responses:
         "200":
           description: Custom workspaces
@@ -9258,7 +9259,15 @@ components:
         workspaces:
           type: array
           items:
-            $ref: "#/components/schemas/CustomWorkspace"
+            $ref: "#/components/schemas/CustomWorkspaceManagementItem"
+    CustomWorkspaceManagementItem:
+      allOf:
+        - $ref: "#/components/schemas/CustomWorkspace"
+        - type: object
+          properties:
+            prompt:
+              type: ["string", "null"]
+              description: Saved initial request; returned only to coordinators and admins by the workspace list endpoint.
     CustomWorkspaceTeamMember:
       type: object
       required: [id, displayName]

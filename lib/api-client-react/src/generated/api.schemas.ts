@@ -3660,8 +3660,16 @@ export interface CustomWorkspaceEnvelope {
   workspace: CustomWorkspace;
 }
 
+export type CustomWorkspaceManagementItem = CustomWorkspace & ({
+  /**
+     * Saved initial request; returned only to coordinators and admins by the workspace list endpoint.
+     * @nullable
+     */
+  prompt?: string | null;
+});
+
 export interface CustomWorkspaceList {
-  workspaces: CustomWorkspace[];
+  workspaces: CustomWorkspaceManagementItem[];
 }
 
 export interface CustomWorkspaceTeamMember {

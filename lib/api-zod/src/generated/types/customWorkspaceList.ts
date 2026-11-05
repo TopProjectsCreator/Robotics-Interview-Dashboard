@@ -5,8 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { CustomWorkspace } from './customWorkspace';
+import type { CustomWorkspaceManagementItem } from './customWorkspaceManagementItem';
 
 export interface CustomWorkspaceList {
-  workspaces: CustomWorkspace[];
+  workspaces: CustomWorkspaceManagementItem[];
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
+import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceManagementItem, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 import {
   AlertDialog,
@@ -18,7 +18,7 @@ import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 
 type Capability = CustomWorkspace["capabilities"][number];
-type Workspace = CustomWorkspace & {
+type Workspace = CustomWorkspaceManagementItem & {
   critiqueRounds?: number;
   verifiedCritiqueRounds?: number;
   upgradeTargetId?: string | null;
@@ -1261,6 +1261,18 @@ export function CustomWorkspacesPage() {
           {active?.status === "published" && canManage && (active.tabs ?? []).length === 0 && <button type="button" disabled={busy} onClick={() => void upgradeSidebarTabs()} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] disabled:opacity-50" data-testid="button-upgrade-workspace-tabs">Prepare sidebar tab review</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
+        {active && canManage && <section
+          className="border-b border-[hsl(var(--border))] p-4"
+          aria-labelledby="workspace-initial-request-heading"
+          data-testid="workspace-initial-request"
+        >
+          <h3 id="workspace-initial-request-heading" className="text-sm font-semibold text-[hsl(var(--foreground))]">Initial request</h3>
+          <p className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-sm leading-relaxed text-[hsl(var(--muted-foreground))]">
+            {typeof active.prompt === "string" && active.prompt.trim()
+              ? active.prompt
+              : "No initial request was saved for this workspace."}
+          </p>
+        </section>}
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Builder agent activity</h3>
           <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Review progress and tool calls are shown here. Private internal reasoning is not displayed. Publishing is available after all five review rounds are independently verified.</p>

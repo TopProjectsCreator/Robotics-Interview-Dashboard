@@ -70,10 +70,12 @@ describe("custom workspace access settings", () => {
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
       if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
       if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
+      if (path === "/api/custom-workspaces/custom-app-2/assistant-tools") return Response.json({ tools: [] });
       if (path === "/api/custom-workspaces/team-members") {
         return Response.json({ members: [{ id: "ada-id", displayName: "Ada" }, { id: "ben-id", displayName: "Ben" }] });
       }
       if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [] });
+      if (path === "/api/custom-workspaces/custom-app-2/files") return Response.json({ files: [] });
       if (path === "/api/custom-workspaces/custom-app-1/versions") {
         return Response.json({ versions: [{
           id: "version-1",
@@ -82,6 +84,7 @@ describe("custom workspace access settings", () => {
           createdAt: "2026-10-02T00:00:00.000Z",
         }] });
       }
+      if (path === "/api/custom-workspaces/custom-app-2/versions") return Response.json({ versions: [] });
       if (path === "/api/custom-workspaces/custom-app-1/access") {
         savedBodies.push(JSON.parse(String(init?.body)));
         return Response.json({
@@ -96,7 +99,13 @@ describe("custom workspace access settings", () => {
         return Response.json({
           workspaces: [{
             ...workspace,
+            prompt: "Build a team planner.\nShow the schedule by week.",
             ...(savedBodies.length ? { accessMode: "selected", allowedInterviewerIds: ["ben-id"] } : {}),
+          }, {
+            ...workspace,
+            id: "custom-app-2",
+            title: "Tryout tracker",
+            prompt: "Track tryout matches.\nSummarize scores by round.",
           }],
         });
       }
@@ -107,6 +116,11 @@ describe("custom workspace access settings", () => {
     render(<CustomWorkspacesPage />);
 
     expect(await screen.findByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+    const initialRequest = await screen.findByTestId("workspace-initial-request");
+    expect(initialRequest.querySelector("h3")).toHaveTextContent("Initial request");
+    expect(initialRequest.querySelector("p")?.textContent)
+      .toBe("Build a team planner.\nShow the schedule by week.");
+    expect(initialRequest.querySelector("p")).toHaveClass("whitespace-pre-wrap");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Who can use this app?" })).toHaveValue("team"));
     fireEvent.change(screen.getByRole("combobox", { name: "Who can use this app?" }), {
       target: { value: "selected" },
@@ -132,6 +146,11 @@ describe("custom workspace access settings", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/access", expect.objectContaining({
       method: "PATCH",
     }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Tryout tracker/ }));
+    expect(await screen.findByRole("heading", { name: "Tryout tracker" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-initial-request").querySelector("p")?.textContent)
+      .toBe("Track tryout matches.\nSummarize scores by round.");
   });
 });
 
@@ -327,6 +346,8 @@ describe("custom workspace deletion", () => {
     const fetchMock = setup();
     render(<CustomWorkspacesPage />);
     expect(await screen.findByRole("heading", { name: "Team planner" })).toBeInTheDocument();
+    expect(await screen.findByTestId("workspace-initial-request"))
+      .toHaveTextContent("No initial request was saved for this workspace.");
 
     fireEvent.click(screen.getByTestId("button-delete-workspace"));
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();

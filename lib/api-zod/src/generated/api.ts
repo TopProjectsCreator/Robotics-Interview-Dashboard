@@ -5710,23 +5710,24 @@ export const SetPartsRobotAllocationResponse = zod.object({
 
 
 /**
+ * Coordinators and admins also receive the saved initial request. It is omitted for other roles and from public workspace details.
  * @summary List custom workspaces available to the current team
  */
-export const listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax = 65000;
+export const listCustomWorkspacesResponseWorkspacesItemOneIconDataUrlMax = 65000;
 
-export const listCustomWorkspacesResponseWorkspacesItemTabsItemIdMax = 40;
+export const listCustomWorkspacesResponseWorkspacesItemOneTabsItemIdMax = 40;
 
 
-export const listCustomWorkspacesResponseWorkspacesItemTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
-export const listCustomWorkspacesResponseWorkspacesItemTabsItemLabelMax = 40;
+export const listCustomWorkspacesResponseWorkspacesItemOneTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const listCustomWorkspacesResponseWorkspacesItemOneTabsItemLabelMax = 40;
 
-export const listCustomWorkspacesResponseWorkspacesItemTabsMax = 12;
+export const listCustomWorkspacesResponseWorkspacesItemOneTabsMax = 12;
 
-export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin = 0;
-export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax = 5;
+export const listCustomWorkspacesResponseWorkspacesItemOneCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemOneCritiqueRoundsMax = 5;
 
-export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin = 0;
-export const listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax = 5;
+export const listCustomWorkspacesResponseWorkspacesItemOneVerifiedCritiqueRoundsMin = 0;
+export const listCustomWorkspacesResponseWorkspacesItemOneVerifiedCritiqueRoundsMax = 5;
 
 
 
@@ -5736,21 +5737,23 @@ export const ListCustomWorkspacesResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "html": zod.string().optional(),
-  "iconDataUrl": zod.string().max(listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax).nullish(),
+  "iconDataUrl": zod.string().max(listCustomWorkspacesResponseWorkspacesItemOneIconDataUrlMax).nullish(),
   "tabs": zod.array(zod.object({
-  "id": zod.string().max(listCustomWorkspacesResponseWorkspacesItemTabsItemIdMax).regex(listCustomWorkspacesResponseWorkspacesItemTabsItemIdRegExp),
-  "label": zod.string().min(1).max(listCustomWorkspacesResponseWorkspacesItemTabsItemLabelMax)
-})).max(listCustomWorkspacesResponseWorkspacesItemTabsMax).optional(),
+  "id": zod.string().max(listCustomWorkspacesResponseWorkspacesItemOneTabsItemIdMax).regex(listCustomWorkspacesResponseWorkspacesItemOneTabsItemIdRegExp),
+  "label": zod.string().min(1).max(listCustomWorkspacesResponseWorkspacesItemOneTabsItemLabelMax)
+})).max(listCustomWorkspacesResponseWorkspacesItemOneTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
   "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
-  "critiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax),
+  "critiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemOneCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemOneCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemOneVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemOneVerifiedCritiqueRoundsMax),
   "upgradeTargetId": zod.string().nullish()
-}))
+}).and(zod.object({
+  "prompt": zod.string().nullish().describe('Saved initial request; returned only to coordinators and admins by the workspace list endpoint.')
+})))
 })
 
 

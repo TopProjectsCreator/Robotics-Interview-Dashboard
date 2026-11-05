@@ -198,6 +198,7 @@ export * from './customWorkspaceGenerationInput';
 export * from './customWorkspaceGenerationInputCapabilitiesItem';
 export * from './customWorkspaceList';
 export * from './customWorkspaceLlmInput';
+export * from './customWorkspaceManagementItem';
 export * from './customWorkspaceRecordEnvelope';
 export * from './customWorkspaceRevisionInput';
 export * from './customWorkspaceStatus';

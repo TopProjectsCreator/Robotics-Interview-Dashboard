@@ -385,8 +385,9 @@ const automaticWorkspaceIconRetryAfter = new Map<string, number>();
 const MAX_AUTOMATIC_WORKSPACE_ICON_JOBS = 2;
 let activeAutomaticWorkspaceIconJobs = 0;
 
-function workspaceResponse<T extends { iconSvg?: string | null; tabsJson?: unknown }>(workspace: T) {
+function workspaceResponse<T extends { iconSvg?: string | null; tabsJson?: unknown; prompt?: string | null }>(workspace: T) {
   const { iconSvg, tabsJson, ...fields } = workspace;
+  delete fields.prompt;
   return {
     ...fields,
     tabs: parseCustomWorkspaceTabs(tabsJson),
@@ -686,8 +687,10 @@ async function workspaceForVersionHistory(
 router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  const canViewInitialRequest = account?.role === "coordinator" || account?.role === "admin";
   const result = await pool.query(
-    `select "id", "title", "description", "capabilities", "status", "access_mode" as "accessMode",
+    `select "id", "title", "description", "prompt", "capabilities", "status", "access_mode" as "accessMode",
             "allowed_interviewer_ids" as "allowedInterviewerIds",
             "created_at" as "createdAt", "updated_at" as "updatedAt",
             "critique_rounds" as "critiqueRounds",
@@ -719,7 +722,13 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
       (typeof workspace.iconSvg === "string" && !customWorkspaceSvgDataUrl(workspace.iconSvg))
     ) queueAutomaticWorkspaceIcon(workspace.id, teamId, req.log);
   }
-  res.json({ workspaces: result.rows.map(workspaceResponse) });
+  const workspaces = result.rows.map((workspace) => {
+    const response = workspaceResponse(workspace);
+    return canViewInitialRequest
+      ? { ...response, prompt: typeof workspace.prompt === "string" ? workspace.prompt : null }
+      : response;
+  });
+  res.json({ workspaces });
 });
 
 router.get("/custom-workspaces/team-members", requireCoordinator, async (req, res): Promise<void> => {

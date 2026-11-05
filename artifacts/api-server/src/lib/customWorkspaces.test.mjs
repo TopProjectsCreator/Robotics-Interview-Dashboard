@@ -38,6 +38,7 @@ const WORKSPACE_SEEDS = [
     teamId: "team-a",
     title: "Team A app",
     description: "",
+    prompt: "Build a Team A tool.\nKeep the request private.",
     html: "<main>Team A</main>",
     capabilities: ["data", "llm"],
     status: "published",
@@ -110,6 +111,7 @@ const WORKSPACE_SEEDS = [
     teamId: "team-b",
     title: "Team B app",
     description: "",
+    prompt: "Build a Team B tool.\nShow team-specific inventory.",
     html: "<main>Team B</main>",
     capabilities: ["data", "llm"],
     status: "published",
@@ -341,6 +343,7 @@ async function createHarness(t) {
         if (statement.includes('order by "updated_at" desc limit 100')) {
           const teamId = values[0];
           const accountId = values[1];
+          assert.ok(statement.includes('"prompt"'), "the workspace list should select the saved initial request");
           ensureTeamScope('"team_id"', "$1", teamId);
           const rows = workspaces.filter((workspace) =>
             workspace.teamId === teamId &&
@@ -892,19 +895,22 @@ test("workspace lists, reads, and coordinator changes stay within the caller's t
   assert.equal(listResponse.status, 200);
   const listed = await listResponse.json();
   assert.deepEqual(listed.workspaces.map((workspace) => workspace.id), ["workspace-b"]);
+  assert.equal(listed.workspaces[0].prompt, "Build a Team B tool.\nShow team-specific inventory.");
+  assert.ok(!JSON.stringify(listed).includes("Team A tool"), "the list remains scoped to the caller's team");
 
   const memberListResponse = await harness.request("member-a", "GET", "/custom-workspaces");
   assert.equal(memberListResponse.status, 200);
-  const memberWorkspaceIds = (await memberListResponse.json()).workspaces.map((workspace) => workspace.id);
+  const memberList = await memberListResponse.json();
+  const memberWorkspaceIds = memberList.workspaces.map((workspace) => workspace.id);
+  assert.ok(memberList.workspaces.every((workspace) => !Object.hasOwn(workspace, "prompt")));
   assert.ok(memberWorkspaceIds.includes("workspace-a"));
   assert.ok(memberWorkspaceIds.includes("workspace-a-selected"));
   assert.ok(!memberWorkspaceIds.includes("workspace-a-owner"));
   assert.ok(!memberWorkspaceIds.includes("workspace-a-draft"));
   assert.ok(!memberWorkspaceIds.includes("workspace-b"));
-  assert.equal(
-    (await harness.request("member-a", "GET", "/custom-workspaces/workspace-a")).status,
-    200,
-  );
+  const publicWorkspaceResponse = await harness.request("member-a", "GET", "/custom-workspaces/workspace-a");
+  assert.equal(publicWorkspaceResponse.status, 200);
+  assert.ok(!Object.hasOwn((await publicWorkspaceResponse.json()).workspace, "prompt"));
 
   const otherTeamRead = await harness.request("admin-b", "GET", "/custom-workspaces/workspace-a");
   assert.equal(otherTeamRead.status, 404);
@@ -1335,7 +1341,10 @@ test("selected access is enforced for the app, records, and LLM", async (t) => {
   );
 
   const creatorList = await harness.request("coordinator-a", "GET", "/custom-workspaces");
-  assert.ok((await creatorList.json()).workspaces.some((workspace) => workspace.id === "workspace-a-selected"));
+  const creatorWorkspaces = (await creatorList.json()).workspaces;
+  assert.ok(creatorWorkspaces.some((workspace) => workspace.id === "workspace-a-selected"));
+  assert.ok(creatorWorkspaces.find((workspace) => workspace.id === "workspace-a").prompt.includes("Keep the request private."));
+  assert.equal(creatorWorkspaces.find((workspace) => workspace.id === "workspace-a-draft").prompt, null);
   const creatorApp = await harness.request("coordinator-a", "GET", "/custom-workspaces/workspace-a-selected");
   assert.equal(creatorApp.status, 404, "the creator does not bypass an explicit selected-member allowlist");
 });
