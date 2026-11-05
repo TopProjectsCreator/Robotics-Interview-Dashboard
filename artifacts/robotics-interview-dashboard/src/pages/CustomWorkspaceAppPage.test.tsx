@@ -34,7 +34,7 @@ describe("CustomWorkspaceAppPage", () => {
         iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
         accessMode: "team",
         allowedInterviewerIds: [],
-        html: '<html><head></head><body><img src="data:image/svg+xml;charset=utf-8,%3Csvg%3E"></body></html>',
+        html: '<html><head></head><body><img src="data:image/svg+xml;charset=utf-8,%3Csvg%3E"><section data-workspace-tab="intake">Intake view</section><section data-workspace-tab="reports">Reports view</section></body></html>',
         tabs: [{ id: "intake", label: "Intake" }, { id: "reports", label: "Reports" }],
         critiqueRounds: 5,
         verifiedCritiqueRounds: 5,
@@ -64,6 +64,8 @@ describe("CustomWorkspaceAppPage", () => {
     expect(srcDoc).toContain('<html class="dark">');
     expect(srcDoc).toContain("connect-src 'none'");
     expect(srcDoc).toContain("workspaceAPI");
+    expect(srcDoc).toContain('data-workspace-tab="intake"');
+    expect(srcDoc).toContain('data-workspace-tab="reports"');
     const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
     fireEvent.load(iframe);
     expect(postMessage).toHaveBeenCalledWith({ channel: "workspace-tab", id: "reports" }, "*");

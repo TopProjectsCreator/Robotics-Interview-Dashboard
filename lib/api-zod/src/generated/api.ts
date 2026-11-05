@@ -5748,7 +5748,8 @@ export const ListCustomWorkspacesResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMin).max(listCustomWorkspacesResponseWorkspacesItemVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 }))
 })
 
@@ -5812,7 +5813,8 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(generateCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 
@@ -5860,7 +5862,8 @@ export const GetCustomWorkspaceResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(getCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 
@@ -5918,7 +5921,57 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(publishCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
+})
+})
+
+
+/**
+ * @summary Prepare a coordinator-reviewed sidebar-tab upgrade draft
+ */
+export const CreateCustomWorkspaceTabUpgradeParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceIconDataUrlMax = 65000;
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemLabelMax = 40;
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceTabsMax = 12;
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceCritiqueRoundsMin = 0;
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceCritiqueRoundsMax = 5;
+
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceVerifiedCritiqueRoundsMin = 0;
+export const createCustomWorkspaceTabUpgradeResponseWorkspaceVerifiedCritiqueRoundsMax = 5;
+
+
+
+export const CreateCustomWorkspaceTabUpgradeResponse = zod.object({
+  "workspace": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "html": zod.string().optional(),
+  "iconDataUrl": zod.string().max(createCustomWorkspaceTabUpgradeResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemIdMax).regex(createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(createCustomWorkspaceTabUpgradeResponseWorkspaceTabsItemLabelMax)
+})).max(createCustomWorkspaceTabUpgradeResponseWorkspaceTabsMax).optional(),
+  "capabilities": zod.array(zod.enum(['data', 'llm'])),
+  "status": zod.enum(['draft', 'published']),
+  "accessMode": zod.enum(['team', 'owner', 'selected']),
+  "allowedInterviewerIds": zod.array(zod.string()).describe('Interviewer account IDs allowed when accessMode is selected'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "critiqueRounds": zod.number().int().min(createCustomWorkspaceTabUpgradeResponseWorkspaceCritiqueRoundsMin).max(createCustomWorkspaceTabUpgradeResponseWorkspaceCritiqueRoundsMax),
+  "verifiedCritiqueRounds": zod.number().int().min(createCustomWorkspaceTabUpgradeResponseWorkspaceVerifiedCritiqueRoundsMin).max(createCustomWorkspaceTabUpgradeResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 
@@ -5976,7 +6029,8 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMin).max(updateCustomWorkspaceAccessResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 
@@ -6032,7 +6086,8 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMin).max(reviseCustomWorkspaceResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 
@@ -6123,7 +6178,8 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "critiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax),
-  "verifiedCritiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax)
+  "verifiedCritiqueRounds": zod.number().int().min(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMin).max(restoreCustomWorkspaceVersionResponseWorkspaceVerifiedCritiqueRoundsMax),
+  "upgradeTargetId": zod.string().nullish()
 })
 })
 

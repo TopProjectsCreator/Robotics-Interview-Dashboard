@@ -1102,3 +1102,71 @@ describe("custom workspace visual publish review", () => {
     );
   });
 });
+
+describe("legacy custom workspace tab upgrades", () => {
+  it("keeps the live app unchanged while a coordinator reviews its tab-upgrade draft", async () => {
+    const published = { ...workspace, tabs: [] };
+    let reviewDraft: typeof workspace & { upgradeTargetId?: string | null; tabs?: { id: string; label: string }[] } | null = null;
+    let queuedPrompt = "";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") {
+        return Response.json({
+          workspaces: reviewDraft
+            ? [reviewDraft, published]
+            : [published],
+        });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/files") {
+        return Response.json({ files: [{ path: "index.html", content: "<main>Published source</main>", updatedAt: published.updatedAt }] });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-app-review/files") {
+        return Response.json({ files: [{ path: "index.html", content: "<main>Review source</main>", updatedAt: published.updatedAt }] });
+      }
+      if (path === "/api/custom-app-review/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/upgrade-tabs" && init?.method === "POST") {
+        reviewDraft = {
+          ...published,
+          id: "custom-app-review",
+          title: "Team planner · Tab upgrade review",
+          status: "draft",
+          tabs: [],
+          upgradeTargetId: published.id,
+          critiqueRounds: 0,
+          verifiedCritiqueRounds: 0,
+        };
+        return Response.json({ workspace: reviewDraft }, { status: 201 });
+      }
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        queuedPrompt = JSON.parse(String(init.body)).question;
+        reviewDraft = {
+          ...reviewDraft!,
+          critiqueRounds: 5,
+          verifiedCritiqueRounds: 5,
+        };
+        return Response.json({ run: builderRunFixture("tab-upgrade-review-run", "completed", queuedPrompt) }, { status: 201 });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.click(await screen.findByTestId("button-upgrade-workspace-tabs"));
+
+    await waitFor(() => expect(queuedPrompt).toContain("Revise custom workspace draft custom-app-review"));
+    expect(queuedPrompt).toContain("workspace.tabs.json");
+    expect(queuedPrompt).toContain("data-workspace-tab");
+    expect(queuedPrompt).toContain("five sequential critique rounds");
+    expect(published.status).toBe("published");
+    expect(published.tabs).toEqual([]);
+    expect(await screen.findByText(/the published app remains unchanged until you publish/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Publish" })).toBeInTheDocument();
+  });
+});

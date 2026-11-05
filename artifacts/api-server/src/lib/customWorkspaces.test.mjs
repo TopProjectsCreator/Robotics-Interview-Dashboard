@@ -239,6 +239,19 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("select") && statement.includes('from "custom_workspaces"')) {
+        if (statement.includes('"upgrade_target_id" = $1')) {
+          const [targetId, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.upgradeTargetId === targetId && workspace.teamId === teamId && workspace.status === "draft",
+          );
+          return { rows: row ? [{
+            ...row,
+            upgradeTargetId: row.upgradeTargetId,
+            critiqueRounds: row.critiqueRounds ?? 0,
+            verifiedCritiqueRounds: row.verifiedCritiqueRounds ?? 0,
+          }] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes('order by lower("title"), "id"')) {
           const [teamId] = values;
           ensureTeamScope('"team_id"', "$1", teamId);
@@ -298,7 +311,11 @@ async function createHarness(t) {
           const row = workspaces.find((workspace) =>
             workspace.id === id && workspace.teamId === teamId && ["draft", "published"].includes(workspace.status),
           );
-          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+          return { rows: row ? [{
+            ...row,
+            upgradeTargetId: row.upgradeTargetId ?? null,
+            upgradeSourceHash: row.upgradeSourceHash ?? null,
+          }] : [], rowCount: row ? 1 : 0 };
         }
         if (statement.includes('order by "updated_at" desc limit 100')) {
           const teamId = values[0];
@@ -486,7 +503,14 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith('insert into "custom_workspaces"')) {
-        const [id, teamId, title, description, prompt, html, capabilities, createdBy] = values;
+        const isUpgradeDraft = statement.includes('"upgrade_target_id"');
+        const [id, teamId, title, description, prompt, html, capabilities] = values;
+        const accessMode = isUpgradeDraft ? values[7] : "team";
+        const allowedIds = isUpgradeDraft ? values[8] : "[]";
+        const createdBy = isUpgradeDraft ? values[9] : values[7];
+        const assistantTools = isUpgradeDraft ? values[10] : "[]";
+        const upgradeTargetId = isUpgradeDraft ? values[11] : null;
+        const upgradeSourceHash = isUpgradeDraft ? values[12] : null;
         const row = {
           id,
           teamId,
@@ -496,16 +520,23 @@ async function createHarness(t) {
           html,
           capabilities: JSON.parse(capabilities),
           status: "draft",
-          accessMode: "team",
-          allowedInterviewerIds: [],
+          accessMode: isUpgradeDraft ? accessMode : "team",
+          allowedInterviewerIds: isUpgradeDraft ? JSON.parse(allowedIds) : [],
           critiqueRounds: 0,
           verifiedCritiqueRounds: 0,
           critiqueFindings: {},
           createdBy,
+          assistantTools: isUpgradeDraft ? JSON.parse(assistantTools) : [],
+          upgradeTargetId: isUpgradeDraft ? upgradeTargetId : null,
+          upgradeSourceHash: isUpgradeDraft ? upgradeSourceHash : null,
         };
         workspaces.push(row);
         savedWorkspaceFiles.set(id, [{ path: "index.html", content: html }]);
-        return { rows: [row], rowCount: 1 };
+        return { rows: [{
+          ...row,
+          createdAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }], rowCount: 1 };
       }
 
       if (statement.startsWith('insert into "custom_workspace_versions"')) {
@@ -514,6 +545,13 @@ async function createHarness(t) {
         const assistantTools = hasAssistantTools ? JSON.parse(values[6]) : [];
         const createdBy = values[hasAssistantTools ? 7 : 6];
         const message = values[hasAssistantTools ? 8 : 7] ?? (
+          statement.includes("'Before sidebar tab upgrade review'")
+            ? "Before sidebar tab upgrade review"
+            : statement.includes("'Before sidebar tabs upgrade publish'")
+              ? "Before sidebar tabs upgrade publish"
+              : statement.includes("'Published sidebar tabs upgrade'")
+                ? "Published sidebar tabs upgrade"
+                :
           statement.includes("'Initial AI draft'")
             ? "Initial AI draft"
             : statement.includes("Before automatic app icon generation")
@@ -872,6 +910,113 @@ test("workspace lists, reads, and coordinator changes stay within the caller's t
 
   const creatorOnlyRead = await harness.request("admin-a-other", "GET", "/custom-workspaces/workspace-a-owner");
   assert.equal(creatorOnlyRead.status, 404);
+});
+
+test("tab upgrades use a reviewed draft and preserve the published app's data, access, and history", async (t) => {
+  const harness = await createHarness(t);
+  const source = harness.workspaces.find((workspace) => workspace.id === "workspace-a-selected");
+  source.html = "<main><section id=\"overview\">Overview</section><section id=\"reports\">Reports</section></main>";
+  source.accessMode = "selected";
+  source.allowedInterviewerIds = ["admin-a", "member-a"];
+  harness.savedWorkspaceFiles.set(source.id, [
+    { path: "index.html", content: source.html },
+    { path: "app.js", content: "window.originalBehavior = true;" },
+  ]);
+  const originalRecord = structuredClone(harness.records.find((record) => record.workspaceId === source.id));
+  const originalVersionCount = harness.versions.filter((version) => version.workspaceId === source.id).length;
+
+  const preparedResponse = await harness.request("coordinator-a", "POST", `/custom-workspaces/${source.id}/upgrade-tabs`, {});
+  assert.equal(preparedResponse.status, 201);
+  const { workspace: draft } = await preparedResponse.json();
+  assert.equal(draft.status, "draft");
+  assert.equal(draft.upgradeTargetId, source.id);
+  assert.equal(source.status, "published");
+  assert.equal(source.html, "<main><section id=\"overview\">Overview</section><section id=\"reports\">Reports</section></main>");
+  assert.deepEqual(harness.records.find((record) => record.workspaceId === source.id), originalRecord);
+  assert.equal(draft.accessMode, "selected");
+  assert.deepEqual(draft.allowedInterviewerIds, ["admin-a", "member-a"]);
+
+  const repeated = await harness.request("coordinator-a", "POST", `/custom-workspaces/${source.id}/upgrade-tabs`, {});
+  assert.equal(repeated.status, 200);
+  assert.equal((await repeated.json()).workspace.id, draft.id);
+  const reviewedHtml = "<main><section data-workspace-tab=\"overview\">Overview</section><section data-workspace-tab=\"reports\">Reports</section></main>";
+  harness.savedWorkspaceFiles.set(draft.id, [
+    { path: "index.html", content: reviewedHtml },
+    { path: "app.js", content: "window.originalBehavior = true;" },
+    { path: "workspace.tabs.json", content: JSON.stringify({ tabs: [
+      { id: "overview", label: "Overview" },
+      { id: "reports", label: "Reports" },
+    ] }) },
+  ]);
+  const reviewDraft = harness.workspaces.find((workspace) => workspace.id === draft.id);
+  reviewDraft.critiqueRounds = 5;
+  reviewDraft.verifiedCritiqueRounds = 5;
+
+  const publishResponse = await harness.request("coordinator-a", "POST", `/custom-workspaces/${draft.id}/publish`, {
+    accessMode: "invalid",
+    allowedInterviewerIds: ["not-a-current-member"],
+  });
+  assert.equal(publishResponse.status, 200);
+  const { workspace: published } = await publishResponse.json();
+  assert.equal(published.id, source.id);
+  assert.deepEqual(published.tabs, [
+    { id: "overview", label: "Overview" },
+    { id: "reports", label: "Reports" },
+  ]);
+  assert.equal(source.status, "published");
+  assert.deepEqual(harness.records.find((record) => record.workspaceId === source.id), originalRecord);
+  assert.equal(source.accessMode, "selected");
+  assert.deepEqual(source.allowedInterviewerIds, ["admin-a", "member-a"]);
+  assert.equal(source.html, reviewedHtml);
+  assert.ok(harness.savedWorkspaceFiles.get(source.id).some((file) => file.path === "workspace.tabs.json"));
+  assert.ok(harness.savedWorkspaceFiles.get(source.id).some((file) => file.path === "app.js"));
+  assert.equal(harness.workspaces.some((workspace) => workspace.id === draft.id), false);
+  const targetVersions = harness.versions.filter((version) => version.workspaceId === source.id);
+  assert.equal(targetVersions.length, originalVersionCount + 2);
+  assert.ok(targetVersions.some((version) => version.message === "Before sidebar tabs upgrade publish"));
+  assert.ok(targetVersions.some((version) => version.message === "Published sidebar tabs upgrade"));
+});
+
+test("tab upgrades reject unauthorized users and stale or invalid review drafts", async (t) => {
+  const harness = await createHarness(t);
+  const source = harness.workspaces.find((workspace) => workspace.id === "workspace-a");
+  source.html = "<main><section id=\"one\">One</section><section id=\"two\">Two</section></main>";
+  harness.savedWorkspaceFiles.set(source.id, [{ path: "index.html", content: source.html }]);
+  assert.equal((await harness.request("member-a", "POST", `/custom-workspaces/${source.id}/upgrade-tabs`, {})).status, 403);
+
+  const prepared = await harness.request("coordinator-a", "POST", `/custom-workspaces/${source.id}/upgrade-tabs`, {});
+  assert.equal(prepared.status, 201);
+  const { workspace: draft } = await prepared.json();
+  const reviewDraft = harness.workspaces.find((workspace) => workspace.id === draft.id);
+  reviewDraft.critiqueRounds = 5;
+  reviewDraft.verifiedCritiqueRounds = 5;
+  harness.savedWorkspaceFiles.set(draft.id, [
+    { path: "index.html", content: "<main>Missing tab sections</main>" },
+    { path: "workspace.tabs.json", content: JSON.stringify({ tabs: [
+      { id: "one", label: "One" },
+      { id: "two", label: "Two" },
+    ] }) },
+  ]);
+  const invalidReview = await harness.request("coordinator-a", "POST", `/custom-workspaces/${draft.id}/publish`, {
+    accessMode: "team",
+  });
+  assert.equal(invalidReview.status, 409);
+  assert.equal(source.html, "<main><section id=\"one\">One</section><section id=\"two\">Two</section></main>");
+  assert.ok(harness.workspaces.some((workspace) => workspace.id === draft.id));
+
+  harness.savedWorkspaceFiles.set(draft.id, [
+    { path: "index.html", content: "<main><section data-workspace-tab=\"one\">One</section><section data-workspace-tab=\"two\">Two</section></main>" },
+    { path: "workspace.tabs.json", content: JSON.stringify({ tabs: [
+      { id: "one", label: "One" },
+      { id: "two", label: "Two" },
+    ] }) },
+  ]);
+  source.html = "<main>Changed while draft was under review</main>";
+  const staleReview = await harness.request("coordinator-a", "POST", `/custom-workspaces/${draft.id}/publish`, {
+    accessMode: "team",
+  });
+  assert.equal(staleReview.status, 409);
+  assert.equal(source.html, "<main>Changed while draft was under review</main>");
 });
 
 test("workspace deletion is coordinator-only, team-scoped, and cascades app data", async (t) => {

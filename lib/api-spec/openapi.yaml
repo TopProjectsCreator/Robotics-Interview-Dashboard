@@ -4419,6 +4419,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/upgrade-tabs:
+    post:
+      operationId: createCustomWorkspaceTabUpgrade
+      tags: [customWorkspaces]
+      summary: Prepare a coordinator-reviewed sidebar-tab upgrade draft
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Prepared tab-upgrade draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "200":
+          description: Existing tab-upgrade draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceEnvelope"
+        "404":
+          description: Published workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Workspace already has a sidebar tab manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /custom-workspaces/{workspaceId}/access:
     patch:
       operationId: updateCustomWorkspaceAccess
@@ -9127,6 +9169,8 @@ components:
           type: integer
           minimum: 0
           maximum: 5
+        upgradeTargetId:
+          type: ["string", "null"]
     CustomWorkspaceEnvelope:
       type: object
       required: [workspace]

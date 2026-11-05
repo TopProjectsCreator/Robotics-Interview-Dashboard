@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -96,6 +96,23 @@ function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | nul
       const js = files.get(src.replace(/^\.\//, ""));
       return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
     });
+}
+
+function workspaceSourceHash(html: string, sourceFiles: WorkspaceSourceFile[]): string {
+  const stableFiles = [...sourceFiles].sort((left, right) => left.path.localeCompare(right.path));
+  return createHash("sha256").update(JSON.stringify({ html, sourceFiles: stableFiles })).digest("hex");
+}
+
+function hasMatchingWorkspaceTabSections(
+  sourceFiles: WorkspaceSourceFile[],
+  tabs: { id: string; label: string }[],
+): boolean {
+  const html = sourceFiles.find((file) => file.path === "index.html")?.content ?? "";
+  const ids = [...html.matchAll(/\bdata-workspace-tab\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi)]
+    .map((match) => match[1] ?? match[2] ?? match[3]);
+  return ids.length === tabs.length &&
+    new Set(ids).size === tabs.length &&
+    tabs.every((tab) => ids.filter((id) => id === tab.id).length === 1);
 }
 
 function visualSandboxDocument(html: string, darkMode: boolean): string {
@@ -613,7 +630,8 @@ async function accessibleWorkspace(
                where tabs_file."workspace_id" = "custom_workspaces"."id"
                  and tabs_file."team_id" is not distinct from "custom_workspaces"."team_id"
                  and tabs_file."path" = 'workspace.tabs.json'
-               limit 1) as "tabsJson"
+               limit 1) as "tabsJson",
+            "upgrade_target_id" as "upgradeTargetId"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
         and (("status" = 'published' and (
@@ -672,7 +690,8 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
                where tabs_file."workspace_id" = "custom_workspaces"."id"
                  and tabs_file."team_id" is not distinct from "custom_workspaces"."team_id"
                  and tabs_file."path" = 'workspace.tabs.json'
-               limit 1) as "tabsJson"
+               limit 1) as "tabsJson",
+            "upgrade_target_id" as "upgradeTargetId"
        from "custom_workspaces"
       where ${teamSqlCondition('"team_id"', "$1")}
         and (("status" = 'published' and (
@@ -915,6 +934,162 @@ router.get("/custom-workspaces/:id/files", requireCoordinator, async (req, res):
     [workspaceId, teamId],
   );
   res.json({ files: files.rows });
+});
+
+router.post("/custom-workspaces/:id/upgrade-tabs", requireCoordinator, async (req, res): Promise<void> => {
+  const workspaceId = String(req.params.id ?? "");
+  const teamId = await requestTeamId(req);
+  const accountId = authenticatedInterviewerId(req) ?? "";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const sourceResult = await client.query<{
+      id: string;
+      title: string;
+      description: string;
+      html: string;
+      prompt: string;
+      capabilities: string[];
+      assistantTools: WorkspaceToolDeclaration[];
+      accessMode: "team" | "owner" | "selected";
+      allowedInterviewerIds: string[];
+      status: "draft" | "published";
+    }>(
+      `select "id", "title", "description", "html", "prompt", "capabilities",
+              "assistant_tools" as "assistantTools",
+              "access_mode" as "accessMode",
+              "allowed_interviewer_ids" as "allowedInterviewerIds", "status"
+         from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'published'
+        limit 1 for update`,
+      [workspaceId, teamId],
+    );
+    const source = sourceResult.rows[0];
+    if (!source) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Published workspace not found." });
+      return;
+    }
+
+    const currentFiles = await client.query<WorkspaceSourceFile>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path"`,
+      [workspaceId, teamId],
+    );
+    const sourceFiles = currentFiles.rows.length
+      ? currentFiles.rows
+      : [{ path: "index.html", content: source.html }];
+    if (!sourceFiles.some((file) => file.path === "index.html")) {
+      sourceFiles.push({ path: "index.html", content: source.html });
+    }
+    if (sourceFiles.some((file) => file.path === "workspace.tabs.json")) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "This workspace already has a sidebar tab manifest." });
+      return;
+    }
+
+    const existingDraft = await client.query<{
+      id: string;
+      title: string;
+      description: string;
+      html: string;
+      capabilities: string[];
+      status: "draft";
+      accessMode: "team" | "owner" | "selected";
+      allowedInterviewerIds: string[];
+      createdAt: Date | string;
+      updatedAt: Date | string;
+      critiqueRounds: number;
+      verifiedCritiqueRounds: number;
+      upgradeTargetId: string;
+      iconSvg?: string | null;
+      tabsJson?: unknown;
+    }>(
+      `select "id", "title", "description", "html", "capabilities", "status",
+              "access_mode" as "accessMode",
+              "allowed_interviewer_ids" as "allowedInterviewerIds",
+              "created_at" as "createdAt", "updated_at" as "updatedAt",
+              "critique_rounds" as "critiqueRounds",
+              "verified_critique_rounds" as "verifiedCritiqueRounds",
+              "upgrade_target_id" as "upgradeTargetId"
+         from "custom_workspaces"
+        where "upgrade_target_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and "status" = 'draft'
+        limit 1`,
+      [workspaceId, teamId],
+    );
+    if (existingDraft.rows[0]) {
+      await client.query("COMMIT");
+      res.json({ workspace: workspaceResponse(existingDraft.rows[0]) });
+      return;
+    }
+
+    const draftId = randomUUID();
+    const draftTitle = clipped(`${source.title} · Tab upgrade review`, 120);
+    const prompt = `Sidebar tab upgrade review for published workspace ${workspaceId}.`;
+    const sourceHash = workspaceSourceHash(source.html, sourceFiles);
+    const inserted = await client.query(
+      `insert into "custom_workspaces"
+        ("id", "team_id", "title", "description", "prompt", "html", "capabilities", "status",
+         "access_mode", "allowed_interviewer_ids", "created_by", "assistant_tools",
+         "upgrade_target_id", "upgrade_source_hash")
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'draft', $8, $9::jsonb, $10, $11::jsonb, $12, $13)
+       returning "id", "title", "description", "html", "capabilities", "status",
+                 "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
+                 "created_at" as "createdAt", "updated_at" as "updatedAt",
+                 "critique_rounds" as "critiqueRounds",
+                 "verified_critique_rounds" as "verifiedCritiqueRounds",
+                 "upgrade_target_id" as "upgradeTargetId"`,
+      [
+        draftId,
+        teamId,
+        draftTitle,
+        source.description,
+        prompt,
+        source.html,
+        JSON.stringify(source.capabilities),
+        source.accessMode,
+        JSON.stringify(source.allowedInterviewerIds ?? []),
+        accountId,
+        JSON.stringify(source.assistantTools ?? []),
+        workspaceId,
+        sourceHash,
+      ],
+    );
+    await client.query(
+      `insert into "custom_workspace_versions"
+        ("id", "team_id", "workspace_id", "html", "capabilities", "source_files",
+         "assistant_tools", "created_by", "message")
+       values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, 'Before sidebar tab upgrade review')`,
+      [
+        randomUUID(),
+        teamId,
+        draftId,
+        source.html,
+        JSON.stringify(source.capabilities),
+        JSON.stringify(sourceFiles),
+        JSON.stringify(source.assistantTools ?? []),
+        accountId,
+      ],
+    );
+    for (const file of sourceFiles) {
+      await client.query(
+        `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+         values ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), teamId, draftId, file.path, file.content, accountId],
+      );
+    }
+    await client.query("COMMIT");
+    pushRealtimeHint("custom_workspaces", "INSERT");
+    res.status(201).json({ workspace: workspaceResponse(inserted.rows[0]) });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    req.log.error({ err: error, workspaceId }, "Custom workspace tab-upgrade draft creation failed");
+    res.status(500).json({ error: "Could not prepare this workspace for tab review." });
+  } finally {
+    client.release();
+  }
 });
 
 router.get("/custom-workspaces/:id/versions", requireCoordinator, async (req, res): Promise<void> => {
@@ -1171,15 +1346,18 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     res.status(429).json({ error: "Workspace publishing is temporarily rate limited." });
     return;
   }
-  const accessSettings = await saveableAccessSettings(req.body, teamId);
-  if (!accessSettings) {
-    res.status(400).json({ error: "Choose a valid access mode and current team members." });
-    return;
-  }
-  const currentResult = await pool.query<WorkspaceRow & { prompt: string; critique_rounds: number; verified_critique_rounds: number }>(
+  const currentResult = await pool.query<WorkspaceRow & {
+    prompt: string;
+    critique_rounds: number;
+    verified_critique_rounds: number;
+    upgradeTargetId: string | null;
+    upgradeSourceHash: string | null;
+  }>(
     `select "id", "title", "description", "html", "capabilities", "status", "prompt",
             "critique_rounds", "verified_critique_rounds",
-            "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds"
+            "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
+            "upgrade_target_id" as "upgradeTargetId",
+            "upgrade_source_hash" as "upgradeSourceHash"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'draft'
       limit 1`,
@@ -1188,6 +1366,13 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
   const current = currentResult.rows[0];
   if (!current) {
     res.status(404).json({ error: "Workspace not found." });
+    return;
+  }
+  const accessSettings = current.upgradeTargetId
+    ? null
+    : await saveableAccessSettings(req.body, teamId);
+  if (!current.upgradeTargetId && !accessSettings) {
+    res.status(400).json({ error: "Choose a valid access mode and current team members." });
     return;
   }
   if (Number(current.critique_rounds) < 5 || Number(current.verified_critique_rounds) < 5) {
@@ -1201,12 +1386,17 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
   try {
     await client.query("BEGIN");
     const locked = await client.query<{
+      id: string;
       status: string;
       critiqueRounds: number;
       verifiedCritiqueRounds: number;
+      upgradeTargetId: string | null;
+      upgradeSourceHash: string | null;
     }>(
-      `select "status", "critique_rounds" as "critiqueRounds",
-              "verified_critique_rounds" as "verifiedCritiqueRounds"
+      `select "id", "status", "critique_rounds" as "critiqueRounds",
+              "verified_critique_rounds" as "verifiedCritiqueRounds",
+              "upgrade_target_id" as "upgradeTargetId",
+              "upgrade_source_hash" as "upgradeSourceHash"
          from "custom_workspaces"
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
         limit 1 for update`,
@@ -1221,6 +1411,123 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     if (Number(draft.critiqueRounds) < 5 || Number(draft.verifiedCritiqueRounds) < 5) {
       await client.query("ROLLBACK");
       res.status(409).json({ error: "Complete and independently verify all five critique rounds before publishing this workspace." });
+      return;
+    }
+    if (draft.upgradeTargetId) {
+      const targetResult = await client.query<WorkspaceRow & {
+        assistantTools: WorkspaceToolDeclaration[];
+      }>(
+        `select "id", "title", "description", "html", "capabilities", "status",
+                "assistant_tools" as "assistantTools",
+                "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
+                "created_at" as "createdAt", "updated_at" as "updatedAt"
+           from "custom_workspaces"
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'published'
+          limit 1 for update`,
+        [draft.upgradeTargetId, teamId],
+      );
+      const target = targetResult.rows[0];
+      if (!target) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "The published workspace for this tab review no longer exists." });
+        return;
+      }
+      const targetFilesResult = await client.query<WorkspaceSourceFile>(
+        `select "path", "content" from "custom_workspace_files"
+          where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          order by "path"`,
+        [target.id, teamId],
+      );
+      const targetFiles = targetFilesResult.rows.length
+        ? targetFilesResult.rows
+        : [{ path: "index.html", content: target.html }];
+      if (!targetFiles.some((file) => file.path === "index.html")) {
+        targetFiles.push({ path: "index.html", content: target.html });
+      }
+      if (!draft.upgradeSourceHash || workspaceSourceHash(target.html, targetFiles) !== draft.upgradeSourceHash) {
+        await client.query("ROLLBACK");
+        res.status(409).json({ error: "The published app changed during review. Delete this stale review draft, then prepare a new tab upgrade to avoid overwriting the newer source." });
+        return;
+      }
+      const reviewedFilesResult = await client.query<WorkspaceSourceFile>(
+        `select "path", "content" from "custom_workspace_files"
+          where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          order by "path"`,
+        [draft.id, teamId],
+      );
+      const reviewedFiles = reviewedFilesResult.rows;
+      const tabsFile = reviewedFiles.find((file) => file.path === "workspace.tabs.json");
+      const reviewedTabs = parseCustomWorkspaceTabs(tabsFile?.content);
+      const reviewedHtml = compileWorkspaceFiles(reviewedFiles);
+      if (
+        !reviewedHtml ||
+        Buffer.byteLength(reviewedHtml, "utf8") > MAX_HTML_BYTES ||
+        reviewedTabs.length < 2 ||
+        !hasMatchingWorkspaceTabSections(reviewedFiles, reviewedTabs)
+      ) {
+        await client.query("ROLLBACK");
+        res.status(409).json({ error: "The reviewed source must include a valid tab manifest and one matching view section per tab." });
+        return;
+      }
+      const accountId = authenticatedInterviewerId(req) ?? "";
+      const assistantTools = target.assistantTools ?? [];
+      await client.query(
+        `insert into "custom_workspace_versions"
+          ("id", "team_id", "workspace_id", "html", "capabilities", "source_files",
+           "assistant_tools", "created_by", "message")
+         values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, 'Before sidebar tabs upgrade publish')`,
+        [
+          randomUUID(), teamId, target.id, target.html, JSON.stringify(target.capabilities),
+          JSON.stringify(targetFiles), JSON.stringify(target.assistantTools ?? []), accountId,
+        ],
+      );
+      await client.query(
+        `insert into "custom_workspace_versions"
+          ("id", "team_id", "workspace_id", "html", "capabilities", "source_files",
+           "assistant_tools", "created_by", "message")
+         values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, 'Published sidebar tabs upgrade')`,
+        [
+          randomUUID(), teamId, target.id, reviewedHtml, JSON.stringify(target.capabilities),
+          JSON.stringify(reviewedFiles), JSON.stringify(assistantTools), accountId,
+        ],
+      );
+      await client.query(
+        `update "custom_workspaces" set "html" = $3, "updated_at" = now()
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "status" = 'published'`,
+        [target.id, teamId, reviewedHtml],
+      );
+      await client.query(
+        `delete from "custom_workspace_files"
+          where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [target.id, teamId],
+      );
+      for (const file of reviewedFiles) {
+        await client.query(
+          `insert into "custom_workspace_files" ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+           values ($1, $2, $3, $4, $5, $6)`,
+          [randomUUID(), teamId, target.id, file.path, file.content, accountId],
+        );
+      }
+      await client.query(
+        `delete from "custom_workspaces" where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+        [draft.id, teamId],
+      );
+      await client.query("COMMIT");
+      pushRealtimeHint("custom_workspaces", "UPDATE");
+      res.json({
+        workspace: workspaceResponse({
+          ...target,
+          html: reviewedHtml,
+          tabsJson: tabsFile?.content ?? "",
+          iconSvg: reviewedFiles.find((file) => file.path === "assets/icon.svg")?.content ?? null,
+          upgradeTargetId: null,
+        }),
+      });
+      return;
+    }
+    if (!accessSettings) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "Choose a valid access mode and current team members." });
       return;
     }
     const result = await client.query(

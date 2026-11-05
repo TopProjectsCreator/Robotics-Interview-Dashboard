@@ -18,7 +18,11 @@ import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 
 type Capability = CustomWorkspace["capabilities"][number];
-type Workspace = CustomWorkspace & { critiqueRounds?: number; verifiedCritiqueRounds?: number };
+type Workspace = CustomWorkspace & {
+  critiqueRounds?: number;
+  verifiedCritiqueRounds?: number;
+  upgradeTargetId?: string | null;
+};
 type Version = CustomWorkspaceVersion;
 type VersionPreview = Version & { html: string; capabilities: Capability[]; sourceFiles: WorkspaceSourceFile[] };
 type WorkspaceFile = { path: string; content: string; updatedAt: string };
@@ -951,9 +955,9 @@ export function CustomWorkspacesPage() {
         method: "POST",
         body: JSON.stringify({ accessMode, allowedInterviewerIds }),
       });
-      setSelected(result.workspace);
       setPublishAgentSteps([{ id: "published", label: "Publish workspace", detail: "Published.", status: "done" }]);
       await refresh();
+      setSelected(result.workspace);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish the workspace.");
     } finally {
@@ -1020,6 +1024,45 @@ export function CustomWorkspacesPage() {
     } catch (err) {
       setPublishAgentSteps((steps) => steps.map((step) => step.status === "running" ? { ...step, status: "failed" } : step));
       setError(err instanceof Error ? err.message : "Could not revise the workspace.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const upgradeSidebarTabs = async () => {
+    if (!active || active.status !== "published" || !canManage) return;
+    const sourceWorkspace = active;
+    const beforeIds = new Set(items.map((workspace) => workspace.id));
+    setBusy(true);
+    setError("");
+    setPublishAgentSteps([{
+      id: "prepare-tab-upgrade",
+      label: "Prepare sidebar tab review",
+      detail: "The published app remains live while its source is reviewed.",
+      status: "running",
+    }]);
+    try {
+      const { workspace: draft } = await request<{ workspace: Workspace }>(
+        `${API}/${encodeURIComponent(sourceWorkspace.id)}/upgrade-tabs`,
+        { method: "POST", body: "{}" },
+      );
+      setSelected(draft);
+      setItems((current) => current.some((item) => item.id === draft.id)
+        ? current.map((item) => item.id === draft.id ? draft : item)
+        : [draft, ...current]);
+      const beforeUpgradeRunIds = new Set(beforeIds);
+      beforeUpgradeRunIds.delete(draft.id);
+      await runBuilderAgent(
+        `Revise custom workspace draft ${draft.id}. Use list_custom_workspace_files and read_custom_workspace_file to inspect the copied source before editing. Convert the existing app's distinct views into host sidebar subtabs. Write workspace.tabs.json as {"tabs":[{"id":"intake","label":"Intake"},{"id":"reports","label":"Reports"}]}; use 2–12 tabs with unique lowercase kebab-case IDs and labels up to 40 characters. Add exactly one matching data-workspace-tab="id" attribute to each existing view root in index.html. Preserve the existing app's behavior, records, capabilities, and assets; do not add duplicate in-app global navigation or invent views. If the source has fewer than two distinct views, make no source changes and tell the coordinator that the single-view app does not need this upgrade. Otherwise prepare the tabbed source as a coordinator-reviewed draft only. Begin the required five sequential critique rounds immediately after saving the changed source; verify eligible fixes between rounds and do not publish.`,
+        beforeUpgradeRunIds,
+      );
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
+        ? { ...step, status: "done", detail: "The tab-upgrade draft is ready for coordinator review." }
+        : step));
+    } catch (err) {
+      setPublishAgentSteps((steps) => steps.map((step) => step.status === "running"
+        ? { ...step, status: "failed" }
+        : step));
+      setError(err instanceof Error ? err.message : "Could not prepare the tab-upgrade draft.");
     } finally {
       setBusy(false);
     }
@@ -1146,7 +1189,7 @@ export function CustomWorkspacesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[hsl(var(--border))] p-4">
           <div className="min-w-0">
             <h2 className="truncate font-semibold text-[hsl(var(--foreground))]">{active?.title ?? "Preview"}</h2>
-            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{currentPreviewVersion ? `Previewing saved version · ${currentPreviewVersion.message}` : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
+            <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{currentPreviewVersion ? `Previewing saved version · ${currentPreviewVersion.message}` : active?.upgradeTargetId ? "Sidebar tab upgrade draft · the published app remains unchanged until you publish." : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
           </div>
           {active && canManage && <div className="flex flex-wrap items-end gap-2">
             <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
@@ -1173,6 +1216,7 @@ export function CustomWorkspacesPage() {
           {active && canManage && active.status === "draft" && (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) && <span className="text-xs text-[#60757c] dark:text-[#b3c3cb]" data-testid="publish-readiness">
             Builder reviews: {Number(active.critiqueRounds ?? 0)}/5 complete, {Number(active.verifiedCritiqueRounds ?? 0)}/5 verified
           </span>}
+          {active?.status === "published" && canManage && (active.tabs ?? []).length === 0 && <button type="button" disabled={busy} onClick={() => void upgradeSidebarTabs()} className="rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] disabled:opacity-50" data-testid="button-upgrade-workspace-tabs">Prepare sidebar tab review</button>}
           {active?.status === "published" && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><Check size={13} /> Live</span>}
         </div>
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">

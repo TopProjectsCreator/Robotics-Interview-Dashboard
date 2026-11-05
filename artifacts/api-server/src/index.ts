@@ -255,6 +255,8 @@ async function ensureSchema(): Promise<void> {
         "verified_critique_rounds" integer not null default 0 check ("verified_critique_rounds" between 0 and 5),
         "critique_findings" jsonb not null default '{}'::jsonb,
        "assistant_tools" jsonb not null default '[]'::jsonb,
+       "upgrade_target_id" text,
+       "upgrade_source_hash" text,
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
@@ -264,6 +266,24 @@ async function ensureSchema(): Promise<void> {
     `alter table "custom_workspaces" add column if not exists "verified_critique_rounds" integer not null default 0`,
     `alter table "custom_workspaces" add column if not exists "critique_findings" jsonb not null default '{}'::jsonb`,
     `alter table "custom_workspaces" add column if not exists "assistant_tools" jsonb not null default '[]'::jsonb`,
+    `alter table "custom_workspaces" add column if not exists "upgrade_target_id" text`,
+    `alter table "custom_workspaces" add column if not exists "upgrade_source_hash" text`,
+    `do $custom_workspace_upgrade_fk$
+       begin
+         if not exists (
+           select 1 from pg_constraint
+            where conrelid = '"custom_workspaces"'::regclass
+              and conname = 'custom_workspaces_upgrade_target_fk'
+         ) then
+           alter table "custom_workspaces"
+             add constraint "custom_workspaces_upgrade_target_fk"
+             foreign key ("upgrade_target_id") references "custom_workspaces"("id") on delete cascade;
+         end if;
+       end;
+     $custom_workspace_upgrade_fk$`,
+    `create unique index if not exists "custom_workspaces_upgrade_target_draft_idx"
+       on "custom_workspaces" ("upgrade_target_id")
+       where "upgrade_target_id" is not null and "status" = 'draft'`,
     `do $custom_access$
        begin
          if not exists (

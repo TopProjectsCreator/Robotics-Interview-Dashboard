@@ -3631,6 +3631,8 @@ export interface CustomWorkspace {
      * @maximum 5
      */
   verifiedCritiqueRounds: number;
+  /** @nullable */
+  upgradeTargetId?: string | null;
 }
 
 export interface CustomWorkspaceEnvelope {

@@ -15339,6 +15339,77 @@ export const usePublishCustomWorkspace = <TError = ErrorType<ErrorResponse>,
       return useMutation(getPublishCustomWorkspaceMutationOptions(options));
     }
 
+export const getCreateCustomWorkspaceTabUpgradeUrl = (workspaceId: string,) => {
+
+
+
+
+  return `/api/custom-workspaces/${workspaceId}/upgrade-tabs`
+}
+
+/**
+ * @summary Prepare a coordinator-reviewed sidebar-tab upgrade draft
+ */
+export const createCustomWorkspaceTabUpgrade = async (workspaceId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceEnvelope> => {
+
+  return customFetch<CustomWorkspaceEnvelope>(getCreateCustomWorkspaceTabUpgradeUrl(workspaceId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateCustomWorkspaceTabUpgradeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>, TError,{workspaceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>, TError,{workspaceId: string}, TContext> => {
+
+const mutationKey = ['createCustomWorkspaceTabUpgrade'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>, {workspaceId: string}> = (props) => {
+          const {workspaceId} = props ?? {};
+
+          return  createCustomWorkspaceTabUpgrade(workspaceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCustomWorkspaceTabUpgradeMutationResult = NonNullable<Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>>
+
+    export type CreateCustomWorkspaceTabUpgradeMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Prepare a coordinator-reviewed sidebar-tab upgrade draft
+ */
+export const useCreateCustomWorkspaceTabUpgrade = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>, TError,{workspaceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCustomWorkspaceTabUpgrade>>,
+        TError,
+        {workspaceId: string},
+        TContext
+      > => {
+      return useMutation(getCreateCustomWorkspaceTabUpgradeMutationOptions(options));
+    }
+
 export const getUpdateCustomWorkspaceAccessUrl = (workspaceId: string,) => {
 
 
