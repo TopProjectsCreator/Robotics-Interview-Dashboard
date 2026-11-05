@@ -967,51 +967,76 @@ setupDocumentCollaboration(server);
 setupWhiteboardCollaboration(server);
 setupCodeCollaboration(server);
 
+function startBackgroundWork(): void {
+  void syncPartsCatalogsIfDue().catch((err) => {
+    logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
+  });
+  const catalogRefreshCheck = setInterval(() => {
+    void syncPartsCatalogsIfDue().catch((err) => {
+      logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
+    });
+  }, 60 * 60 * 1000);
+  catalogRefreshCheck.unref();
+  // Chunked uploads that nothing points at any more (a tab closed
+  // mid-upload, an attachment that was removed) keep their parts in
+  // storage forever otherwise, and a single abandoned CAD model can be
+  // hundreds of megabytes.
+  void sweepOrphanChunkUploads().catch((err) => {
+    logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+  });
+  const chunkSweepCheck = setInterval(() => {
+    void sweepOrphanChunkUploads().catch((err) => {
+      logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+    });
+  }, 60 * 60 * 1000);
+  chunkSweepCheck.unref();
+  // Server-side scheduled chat delivery: posts due messages even when no
+  // browser is open.
+  startScheduledChatDispatcher();
+  startAssistantScheduledTaskDispatcher();
+  // Persisted assistant prompts continue independently of the browser tab.
+  startAssistantPromptDispatcher();
+  // Team inbox settings are team-scoped and polled from both database
+  // instances. Migrate the default team's legacy environment settings first.
+  void startMailboxPoller();
+  // Pick up CAD preview conversions that a restart interrupted.
+  void resumeStalePreviewJobs();
+  // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
+  // The scheduled sync above only runs once a day, which is far too slow to
+  // seed a 2,387-product catalog, so this loop owns the long first pass and
+  // then settles into a cheap "anything new?" check.
+  startSitemapCatalogCrawler();
+}
+
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
-  ensureSchema()
-    .then(() => {
-      void syncPartsCatalogsIfDue().catch((err) => {
-        logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
+  // Background dispatchers are per-tick error-tolerant, so they can run
+  // before the schema check. A primary DB outage must not take the HTTP
+  // server down (Render health checks stay green, the frontend still
+  // serves, and secondary teams keep working).
+  startBackgroundWork();
+  // Never exit on schema failure: that crash-loops the service into 502s
+  // until the DB comes back. Log, keep serving, and retry in the
+  // background until the migration eventually succeeds.
+  let schemaRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  const attemptSchema = (): void => {
+    ensureSchema()
+      .then(() => {
+        if (schemaRetryTimer) {
+          clearTimeout(schemaRetryTimer);
+          schemaRetryTimer = undefined;
+        }
+      })
+      .catch((err) => {
+        logger.warn({ err }, "Schema migration failed; retrying in background, HTTP server stays up");
+        if (!schemaRetryTimer) {
+          schemaRetryTimer = setTimeout(() => {
+            schemaRetryTimer = undefined;
+            attemptSchema();
+          }, 60_000);
+          schemaRetryTimer.unref();
+        }
       });
-      const catalogRefreshCheck = setInterval(() => {
-        void syncPartsCatalogsIfDue().catch((err) => {
-          logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
-        });
-      }, 60 * 60 * 1000);
-      catalogRefreshCheck.unref();
-      // Chunked uploads that nothing points at any more (a tab closed
-      // mid-upload, an attachment that was removed) keep their parts in
-      // storage forever otherwise, and a single abandoned CAD model can be
-      // hundreds of megabytes.
-      void sweepOrphanChunkUploads().catch((err) => {
-        logger.error({ err }, "Unable to sweep orphaned chunked uploads");
-      });
-      const chunkSweepCheck = setInterval(() => {
-        void sweepOrphanChunkUploads().catch((err) => {
-          logger.error({ err }, "Unable to sweep orphaned chunked uploads");
-        });
-      }, 60 * 60 * 1000);
-      chunkSweepCheck.unref();
-      // Server-side scheduled chat delivery: posts due messages even when no
-      // browser is open.
-      startScheduledChatDispatcher();
-      startAssistantScheduledTaskDispatcher();
-      // Persisted assistant prompts continue independently of the browser tab.
-      startAssistantPromptDispatcher();
-      // Team inbox settings are team-scoped and polled from both database
-      // instances. Migrate the default team's legacy environment settings first.
-      void startMailboxPoller();
-      // Pick up CAD preview conversions that a restart interrupted.
-      void resumeStalePreviewJobs();
-      // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
-      // The scheduled sync above only runs once a day, which is far too slow to
-      // seed a 2,387-product catalog, so this loop owns the long first pass and
-      // then settles into a cheap "anything new?" check.
-      startSitemapCatalogCrawler();
-    })
-    .catch((err) => {
-      logger.error({ err }, "Schema migration failed; exiting");
-      process.exit(1);
-    });
+  };
+  attemptSchema();
 });
