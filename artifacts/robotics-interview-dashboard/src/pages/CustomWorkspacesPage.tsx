@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, Code2, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Code2, Copy, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
@@ -16,6 +16,7 @@ import {
 } from "../components/ui/alert-dialog";
 import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
+import { notify } from "../lib/dialogs";
 
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace & {
@@ -520,6 +521,9 @@ export function CustomWorkspacesPage() {
     item.status === "draft" &&
     (Number(item.critiqueRounds ?? 0) < 5 || Number(item.verifiedCritiqueRounds ?? 0) < 5),
   ) ?? items[0] ?? null, [items, selected]);
+  const initialRequest = typeof active?.prompt === "string" && active.prompt.trim()
+    ? active.prompt
+    : null;
   const filteredWorkspaces = useMemo(() => {
     const query = workspaceSearch.trim().toLocaleLowerCase();
     if (!query) return items;
@@ -1184,6 +1188,18 @@ export function CustomWorkspacesPage() {
   const previewHtml = currentPreviewVersion
     ? compileWorkspaceSourceFiles(currentPreviewVersion.sourceFiles) || currentPreviewVersion.html
     : compileWorkspaceSourceFiles(currentSourceFiles) || active?.html || "";
+  const copyInitialRequest = async () => {
+    if (!initialRequest) return;
+    try {
+      await navigator.clipboard.writeText(initialRequest);
+      notify({ title: "Initial request copied", description: "The saved request is ready to paste." });
+    } catch {
+      notify({
+        title: "Could not copy initial request",
+        description: "Your browser blocked clipboard access. Allow clipboard access, or select and copy the text manually.",
+      });
+    }
+  };
 
   return <main className="mx-auto w-full max-w-7xl p-4 md:p-8">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -1286,11 +1302,20 @@ export function CustomWorkspacesPage() {
           aria-labelledby="workspace-initial-request-heading"
           data-testid="workspace-initial-request"
         >
-          <h3 id="workspace-initial-request-heading" className="text-sm font-semibold text-[hsl(var(--foreground))]">Initial request</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="workspace-initial-request-heading" className="text-sm font-semibold text-[hsl(var(--foreground))]">Initial request</h3>
+            {initialRequest && <button
+              type="button"
+              aria-label="Copy initial request"
+              data-testid="button-copy-initial-request"
+              onClick={() => void copyInitialRequest()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--foreground))] transition hover:bg-[hsl(var(--muted))]"
+            >
+              <Copy size={14} /> Copy request
+            </button>}
+          </div>
           <p className="mt-2 whitespace-pre-wrap break-words rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-sm leading-relaxed text-[hsl(var(--muted-foreground))]">
-            {typeof active.prompt === "string" && active.prompt.trim()
-              ? active.prompt
-              : "No initial request was saved for this workspace."}
+            {initialRequest ?? "No initial request was saved for this workspace."}
           </p>
         </section>}
         {(publishAgentSteps.length > 0 || agentQuestion || builderRun) && <section className="border-b border-[hsl(var(--border))] p-4" aria-live="polite" data-testid="publish-agent-activity">

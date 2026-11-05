@@ -6,6 +6,7 @@ import { CustomWorkspacesPage } from "./CustomWorkspacesPage";
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getStoredAuthToken: vi.fn(() => "test-session-token"),
+  notify: vi.fn(),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -14,6 +15,9 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 vi.mock("../authSession", () => ({
   getStoredAuthToken: mocks.getStoredAuthToken,
+}));
+vi.mock("../lib/dialogs", () => ({
+  notify: mocks.notify,
 }));
 
 const workspace = {
@@ -52,7 +56,10 @@ function builderRunFixture(
   };
 }
 
+let originalClipboardDescriptor: PropertyDescriptor | undefined;
+
 beforeEach(() => {
+  originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
   vi.clearAllMocks();
   window.localStorage.removeItem("robotics-assistant-model");
   mocks.getSession.mockReturnValue({ data: { role: "coordinator" } });
@@ -60,6 +67,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  if (originalClipboardDescriptor) {
+    Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
 });
 
 describe("custom workspace access settings", () => {
@@ -121,6 +133,23 @@ describe("custom workspace access settings", () => {
     expect(initialRequest.querySelector("p")?.textContent)
       .toBe("Build a team planner.\nShow the schedule by week.");
     expect(initialRequest.querySelector("p")).toHaveClass("whitespace-pre-wrap");
+    const clipboardWrite = vi.fn()
+      .mockRejectedValueOnce(new Error("Clipboard permission denied"))
+      .mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWrite },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Copy initial request" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith(
+      "Build a team planner.\nShow the schedule by week.",
+    ));
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith({
+      title: "Could not copy initial request",
+      description: "Your browser blocked clipboard access. Allow clipboard access, or select and copy the text manually.",
+    }));
+    expect(initialRequest.querySelector("p")?.textContent)
+      .toBe("Build a team planner.\nShow the schedule by week.");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Who can use this app?" })).toHaveValue("team"));
     fireEvent.change(screen.getByRole("combobox", { name: "Who can use this app?" }), {
       target: { value: "selected" },
@@ -151,6 +180,14 @@ describe("custom workspace access settings", () => {
     expect(await screen.findByRole("heading", { name: "Tryout tracker" })).toBeInTheDocument();
     expect(screen.getByTestId("workspace-initial-request").querySelector("p")?.textContent)
       .toBe("Track tryout matches.\nSummarize scores by round.");
+    fireEvent.click(screen.getByRole("button", { name: "Copy initial request" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenLastCalledWith(
+      "Track tryout matches.\nSummarize scores by round.",
+    ));
+    expect(mocks.notify).toHaveBeenCalledWith({
+      title: "Initial request copied",
+      description: "The saved request is ready to paste.",
+    });
   });
 });
 
@@ -215,6 +252,7 @@ describe("custom workspace search", () => {
     expect(await screen.findByRole("heading", { name: "Tryout tracker" })).toBeInTheDocument();
     expect(screen.getByTestId("workspace-initial-request"))
       .toHaveTextContent("No initial request was saved for this workspace.");
+    expect(screen.queryByRole("button", { name: "Copy initial request" })).not.toBeInTheDocument();
   });
 });
 
