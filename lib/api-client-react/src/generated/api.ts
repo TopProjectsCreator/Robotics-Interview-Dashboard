@@ -131,6 +131,8 @@ import type {
   CustomWorkspaceLlmInput,
   CustomWorkspaceRecordEnvelope,
   CustomWorkspaceRevisionInput,
+  CustomWorkspaceTabsResponse,
+  CustomWorkspaceTabsUpdate,
   CustomWorkspaceTeamMemberList,
   CustomWorkspaceVersionEnvelope,
   CustomWorkspaceVersionList,
@@ -15408,6 +15410,78 @@ export const useCreateCustomWorkspaceTabUpgrade = <TError = ErrorType<ErrorRespo
         TContext
       > => {
       return useMutation(getCreateCustomWorkspaceTabUpgradeMutationOptions(options));
+    }
+
+export const getUpdateCustomWorkspaceTabsUrl = (workspaceId: string,) => {
+
+
+
+
+  return `/api/custom-workspaces/${workspaceId}/tabs`
+}
+
+/**
+ * @summary Update sidebar tab labels and order for a custom workspace
+ */
+export const updateCustomWorkspaceTabs = async (workspaceId: string,
+    customWorkspaceTabsUpdate: CustomWorkspaceTabsUpdate, options?: Parameters<typeof customFetch>[1]): Promise<CustomWorkspaceTabsResponse> => {
+
+  return customFetch<CustomWorkspaceTabsResponse>(getUpdateCustomWorkspaceTabsUrl(workspaceId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customWorkspaceTabsUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateCustomWorkspaceTabsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>, TError,{workspaceId: string;data: BodyType<CustomWorkspaceTabsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>, TError,{workspaceId: string;data: BodyType<CustomWorkspaceTabsUpdate>}, TContext> => {
+
+const mutationKey = ['updateCustomWorkspaceTabs'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>, {workspaceId: string;data: BodyType<CustomWorkspaceTabsUpdate>}> = (props) => {
+          const {workspaceId,data} = props ?? {};
+
+          return  updateCustomWorkspaceTabs(workspaceId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCustomWorkspaceTabsMutationResult = NonNullable<Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>>
+    export type UpdateCustomWorkspaceTabsMutationBody = BodyType<CustomWorkspaceTabsUpdate>
+    export type UpdateCustomWorkspaceTabsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update sidebar tab labels and order for a custom workspace
+ */
+export const useUpdateCustomWorkspaceTabs = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>, TError,{workspaceId: string;data: BodyType<CustomWorkspaceTabsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCustomWorkspaceTabs>>,
+        TError,
+        {workspaceId: string;data: BodyType<CustomWorkspaceTabsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCustomWorkspaceTabsMutationOptions(options));
     }
 
 export const getUpdateCustomWorkspaceAccessUrl = (workspaceId: string,) => {

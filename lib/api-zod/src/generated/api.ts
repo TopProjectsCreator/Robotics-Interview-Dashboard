@@ -5977,6 +5977,60 @@ export const CreateCustomWorkspaceTabUpgradeResponse = zod.object({
 
 
 /**
+ * @summary Update sidebar tab labels and order for a custom workspace
+ */
+export const UpdateCustomWorkspaceTabsParams = zod.object({
+  "workspaceId": zod.coerce.string()
+})
+
+export const updateCustomWorkspaceTabsBodyTabsItemIdMax = 40;
+
+
+export const updateCustomWorkspaceTabsBodyTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const updateCustomWorkspaceTabsBodyTabsItemLabelMax = 40;
+
+export const updateCustomWorkspaceTabsBodyTabsMax = 12;
+
+export const updateCustomWorkspaceTabsBodyExpectedTabsItemIdMax = 40;
+
+
+export const updateCustomWorkspaceTabsBodyExpectedTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const updateCustomWorkspaceTabsBodyExpectedTabsItemLabelMax = 40;
+
+export const updateCustomWorkspaceTabsBodyExpectedTabsMax = 12;
+
+
+
+export const UpdateCustomWorkspaceTabsBody = zod.object({
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(updateCustomWorkspaceTabsBodyTabsItemIdMax).regex(updateCustomWorkspaceTabsBodyTabsItemIdRegExp),
+  "label": zod.string().min(1).max(updateCustomWorkspaceTabsBodyTabsItemLabelMax)
+})).min(1).max(updateCustomWorkspaceTabsBodyTabsMax),
+  "expectedTabs": zod.array(zod.object({
+  "id": zod.string().max(updateCustomWorkspaceTabsBodyExpectedTabsItemIdMax).regex(updateCustomWorkspaceTabsBodyExpectedTabsItemIdRegExp),
+  "label": zod.string().min(1).max(updateCustomWorkspaceTabsBodyExpectedTabsItemLabelMax)
+})).min(1).max(updateCustomWorkspaceTabsBodyExpectedTabsMax)
+})
+
+export const updateCustomWorkspaceTabsResponseTabsItemIdMax = 40;
+
+
+export const updateCustomWorkspaceTabsResponseTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const updateCustomWorkspaceTabsResponseTabsItemLabelMax = 40;
+
+export const updateCustomWorkspaceTabsResponseTabsMax = 12;
+
+
+
+export const UpdateCustomWorkspaceTabsResponse = zod.object({
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(updateCustomWorkspaceTabsResponseTabsItemIdMax).regex(updateCustomWorkspaceTabsResponseTabsItemIdRegExp),
+  "label": zod.string().min(1).max(updateCustomWorkspaceTabsResponseTabsItemLabelMax)
+})).min(1).max(updateCustomWorkspaceTabsResponseTabsMax)
+})
+
+
+/**
  * @summary Set a published workspace's access mode
  */
 export const UpdateCustomWorkspaceAccessParams = zod.object({

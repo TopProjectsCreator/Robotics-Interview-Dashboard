@@ -72,6 +72,12 @@ export function useRealtimeSync(authenticated: boolean) {
         });
         return;
       }
+      if (table === "custom_workspaces" || table === "custom_workspace_files") {
+        void qc.invalidateQueries({
+          predicate: ({ queryKey }) => JSON.stringify(queryKey).includes("/api/custom-workspaces"),
+        });
+        return;
+      }
       if (table === "cad_bots" || table === "cad_folders" || table === "cad_models") {
         // The CAD library is shared: another teammate uploading or deleting a
         // model has to show up here without a manual reload.

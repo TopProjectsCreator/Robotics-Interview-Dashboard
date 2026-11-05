@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, Code2, LoaderCircle, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Code2, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
@@ -23,6 +23,7 @@ type Workspace = CustomWorkspace & {
   verifiedCritiqueRounds?: number;
   upgradeTargetId?: string | null;
 };
+type WorkspaceTab = NonNullable<Workspace["tabs"]>[number];
 type Version = CustomWorkspaceVersion;
 type VersionPreview = Version & { html: string; capabilities: Capability[]; sourceFiles: WorkspaceSourceFile[] };
 type WorkspaceFile = { path: string; content: string; updatedAt: string };
@@ -493,6 +494,10 @@ export function CustomWorkspacesPage() {
   const [sourceFiles, setSourceFiles] = useState<WorkspaceFile[]>([]);
   const [sourceFilesWorkspaceId, setSourceFilesWorkspaceId] = useState<string | null>(null);
   const [selectedSourcePath, setSelectedSourcePath] = useState("index.html");
+  const [tabDraft, setTabDraft] = useState<WorkspaceTab[]>([]);
+  const [tabSaving, setTabSaving] = useState(false);
+  const [tabSettingsError, setTabSettingsError] = useState("");
+  const [tabSettingsMessage, setTabSettingsMessage] = useState("");
   const [previewVersion, setPreviewVersion] = useState<VersionPreview | null>(null);
   const [previewVersionWorkspaceId, setPreviewVersionWorkspaceId] = useState<string | null>(null);
   const [accessMode, setAccessMode] = useState<AccessMode>("team");
@@ -513,6 +518,11 @@ export function CustomWorkspacesPage() {
     item.status === "draft" &&
     (Number(item.critiqueRounds ?? 0) < 5 || Number(item.verifiedCritiqueRounds ?? 0) < 5),
   ) ?? items[0] ?? null, [items, selected]);
+  useEffect(() => {
+    setTabDraft(active?.tabs ?? []);
+    setTabSettingsError("");
+    setTabSettingsMessage("");
+  }, [active?.id, JSON.stringify(active?.tabs ?? [])]);
   useEffect(() => { builderRunRef.current = builderRun; }, [builderRun]);
 
   const refresh = async () => {
@@ -981,6 +991,38 @@ export function CustomWorkspacesPage() {
       setBusy(false);
     }
   };
+  const saveTabs = async () => {
+    if (!active || !canManage || !active.tabs?.length || tabDraft.length === 0) return;
+    const originalTabs = active.tabs;
+    setTabSaving(true);
+    setTabSettingsError("");
+    setTabSettingsMessage("");
+    try {
+      const result = await request<{ tabs: WorkspaceTab[] }>(`${API}/${encodeURIComponent(active.id)}/tabs`, {
+        method: "PUT",
+        body: JSON.stringify({ tabs: tabDraft, expectedTabs: originalTabs }),
+      });
+      setTabDraft(result.tabs);
+      setItems((current) => current.map((item) => item.id === active.id ? { ...item, tabs: result.tabs } : item));
+      setSelected((current) => current?.id === active.id ? { ...current, tabs: result.tabs } : current);
+      const manifest = `${JSON.stringify({ tabs: result.tabs }, null, 2)}\n`;
+      setSourceFiles((current) => current.map((file) => file.path === "workspace.tabs.json"
+        ? { ...file, content: manifest, updatedAt: new Date().toISOString() }
+        : file));
+      window.dispatchEvent(new Event("custom-workspaces:refresh"));
+      setTabSettingsMessage("Sidebar tabs saved.");
+      try {
+        const history = await request<{ versions: Version[] }>(`${API}/${encodeURIComponent(active.id)}/versions`);
+        setVersions(history.versions);
+      } catch {
+        setTabSettingsMessage("Sidebar tabs saved. Version history could not refresh.");
+      }
+    } catch (err) {
+      setTabSettingsError(err instanceof Error ? err.message : "Could not save sidebar tabs.");
+    } finally {
+      setTabSaving(false);
+    }
+  };
   const deleteWorkspace = async () => {
     if (!deleteTarget) return;
     const target = deleteTarget;
@@ -1296,6 +1338,65 @@ export function CustomWorkspacesPage() {
           workspaceId={active.id}
           hasDataCapability={active.capabilities.includes("data")}
         />}
+        {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Sidebar subtabs" data-testid="workspace-tab-settings">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Sidebar subtabs</h3>
+              <p className="mt-1 max-w-2xl text-xs text-[hsl(var(--muted-foreground))]">
+                Rename, reorder, or remove sections from the sidebar. App section IDs stay fixed so each link continues to open its matching section.
+              </p>
+            </div>
+            {!!active.tabs?.length && <button
+              type="button"
+              onClick={() => void saveTabs()}
+              disabled={busy || tabSaving || tabDraft.length === 0 || JSON.stringify(tabDraft) === JSON.stringify(active.tabs)}
+              className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              data-testid="button-save-workspace-tabs"
+            >
+              {tabSaving ? "Saving…" : "Save subtabs"}
+            </button>}
+          </div>
+          {tabSettingsError && <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-300" data-testid="workspace-tab-settings-error">{tabSettingsError}</p>}
+          {tabSettingsMessage && <p role="status" className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">{tabSettingsMessage}</p>}
+          {tabDraft.length > 0
+            ? <ol className="mt-3 space-y-2" aria-label="Workspace subtabs">
+              {tabDraft.map((tab, index) => <li key={tab.id} className="grid gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" data-testid={`workspace-tab-row-${tab.id}`}>
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(100px,180px)] sm:items-center">
+                  <label className="grid min-w-0 gap-1 text-xs text-[hsl(var(--muted-foreground))]">
+                    <span>Sidebar label</span>
+                    <input
+                      value={tab.label}
+                      maxLength={40}
+                      disabled={busy || tabSaving}
+                      onChange={(event) => setTabDraft((current) => current.map((item) => item.id === tab.id ? { ...item, label: event.target.value } : item))}
+                      aria-label={`Label for ${tab.id}`}
+                      data-testid={`input-workspace-tab-label-${tab.id}`}
+                      className="min-w-0 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 text-base md:text-sm text-[hsl(var(--foreground))]"
+                    />
+                  </label>
+                  <span className="grid gap-1 text-xs text-[hsl(var(--muted-foreground))]">
+                    <span>App section ID</span>
+                    <code className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2 text-[hsl(var(--foreground))]">{tab.id}</code>
+                  </span>
+                </div>
+                <div className="flex items-center justify-end gap-1">
+                  <button type="button" aria-label={`Move ${tab.label} up`} title="Move up" disabled={busy || tabSaving || index === 0} onClick={() => setTabDraft((current) => {
+                    const next = [...current];
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    return next;
+                  })} className="rounded-md border border-[hsl(var(--border))] p-2 text-[hsl(var(--foreground))] disabled:opacity-40" data-testid={`button-move-workspace-tab-up-${tab.id}`}><MoveUp size={15} /></button>
+                  <button type="button" aria-label={`Move ${tab.label} down`} title="Move down" disabled={busy || tabSaving || index === tabDraft.length - 1} onClick={() => setTabDraft((current) => {
+                    const next = [...current];
+                    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                    return next;
+                  })} className="rounded-md border border-[hsl(var(--border))] p-2 text-[hsl(var(--foreground))] disabled:opacity-40" data-testid={`button-move-workspace-tab-down-${tab.id}`}><MoveDown size={15} /></button>
+                  <button type="button" aria-label={`Remove ${tab.label}`} title="Remove tab" disabled={busy || tabSaving || tabDraft.length <= 1} onClick={() => setTabDraft((current) => current.filter((item) => item.id !== tab.id))} className="rounded-md border border-red-300 p-2 text-red-800 disabled:opacity-40 dark:border-red-800 dark:text-red-200" data-testid={`button-remove-workspace-tab-${tab.id}`}><Trash2 size={15} /></button>
+                </div>
+              </li>)}
+            </ol>
+            : <p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]">This app does not currently have sidebar subtabs.</p>}
+          {tabDraft.length === 1 && <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">At least one tab must remain linked to an app section.</p>}
+        </section>}
         {active && canManage && <section className="border-b border-[hsl(var(--border))] p-4" aria-label="Workspace source tree" data-testid="workspace-source-tree">
           <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Source tree</h3>
           {currentPreviewVersion && <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Showing files from the selected saved version.</p>}

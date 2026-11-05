@@ -101,4 +101,26 @@ describe("team realtime hints", () => {
       expect(queryClient.getQueryState(conversationsKey)?.isInvalidated).toBe(true);
     });
   });
+
+  it("refreshes the custom app sidebar after tab settings change", async () => {
+    const customWorkspacesKey = ["/api/custom-workspaces", "accessible", "team-a", "coordinator-a"];
+    queryClient.setQueryData(customWorkspacesKey, { workspaces: [] });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SettingsProvider>
+          <RealtimeObserver />
+        </SettingsProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(eventSources).toHaveLength(1));
+    act(() => {
+      eventSources[0].onmessage?.(
+        new MessageEvent("message", { data: JSON.stringify({ table: "custom_workspaces", event: "UPDATE" }) }),
+      );
+    });
+
+    await waitFor(() => expect(queryClient.getQueryState(customWorkspacesKey)?.isInvalidated).toBe(true));
+  });
 });

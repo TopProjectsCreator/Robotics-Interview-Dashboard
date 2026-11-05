@@ -3314,6 +3314,13 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     session.data?.teamId,
     sessionUserId,
   );
+  useEffect(() => {
+    const refreshCustomWorkspaces = () => {
+      void customWorkspacesQuery.refetch();
+    };
+    window.addEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
+    return () => window.removeEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
+  }, [customWorkspacesQuery.refetch]);
   const customWorkspaces = customWorkspacesQuery.data ?? [];
   // Accounts always have a role; default a missing one to the most restricted
   // role so legacy role-based settings keep working (as before the per-user switch).

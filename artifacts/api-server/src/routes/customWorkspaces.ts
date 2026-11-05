@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
+import { UpdateCustomWorkspaceTabsBody, UpdateCustomWorkspaceTabsResponse } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import type { NextFunction } from "express";
@@ -113,6 +114,16 @@ function hasMatchingWorkspaceTabSections(
   return ids.length === tabs.length &&
     new Set(ids).size === tabs.length &&
     tabs.every((tab) => ids.filter((id) => id === tab.id).length === 1);
+}
+
+function hasWorkspaceTabSections(
+  sourceFiles: WorkspaceSourceFile[],
+  tabs: { id: string; label: string }[],
+): boolean {
+  const html = sourceFiles.find((file) => file.path === "index.html")?.content ?? "";
+  const ids = [...html.matchAll(/\bdata-workspace-tab\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi)]
+    .map((match) => match[1] ?? match[2] ?? match[3]);
+  return tabs.every((tab) => ids.filter((id) => id === tab.id).length === 1);
 }
 
 function visualSandboxDocument(html: string, darkMode: boolean): string {
@@ -934,6 +945,139 @@ router.get("/custom-workspaces/:id/files", requireCoordinator, async (req, res):
     [workspaceId, teamId],
   );
   res.json({ files: files.rows });
+});
+
+router.put("/custom-workspaces/:id/tabs", requireCoordinator, async (req, res): Promise<void> => {
+  const workspaceId = String(req.params.id ?? "");
+  const teamId = await requestTeamId(req);
+  const accountId = authenticatedInterviewerId(req) ?? "";
+  const parsedBody = UpdateCustomWorkspaceTabsBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "Provide the current and updated sidebar tabs." });
+    return;
+  }
+  const { tabs: requestedTabs, expectedTabs: requestedExpectedTabs } = parsedBody.data;
+  const tabs = parseCustomWorkspaceTabs(JSON.stringify({ tabs: requestedTabs }));
+  const expectedTabs = parseCustomWorkspaceTabs(JSON.stringify({ tabs: requestedExpectedTabs }));
+  if (!tabs.length || !expectedTabs.length) {
+    res.status(400).json({ error: "Tab IDs must be unique lowercase names, with labels up to 40 characters." });
+    return;
+  }
+
+  const client = await pool.connect();
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN");
+    transactionStarted = true;
+    const workspaceResult = await client.query<{
+      id: string;
+      html: string;
+      capabilities: string[];
+      assistantTools: WorkspaceToolDeclaration[];
+      status: "published" | "draft";
+      createdBy: string;
+    }>(
+      `select "id", "html", "capabilities", "assistant_tools" as "assistantTools",
+              "status", "created_by" as "createdBy"
+         from "custom_workspaces"
+        where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+          and ("status" = 'published' or ("status" = 'draft' and "created_by" = $3))
+        limit 1 for update`,
+      [workspaceId, teamId, accountId],
+    );
+    const workspace = workspaceResult.rows[0];
+    if (!workspace) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      res.status(404).json({ error: "Workspace not found." });
+      return;
+    }
+
+    const sourceResult = await client.query<WorkspaceSourceFile>(
+      `select "path", "content" from "custom_workspace_files"
+        where "workspace_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        order by "path" for update`,
+      [workspaceId, teamId],
+    );
+    const sourceFiles = sourceResult.rows;
+    const tabsFile = sourceFiles.find((file) => file.path === "workspace.tabs.json");
+    const currentTabs = parseCustomWorkspaceTabs(tabsFile?.content);
+    if (!currentTabs.length) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      res.status(409).json({ error: "This workspace does not have a valid sidebar tab list." });
+      return;
+    }
+    if (JSON.stringify(expectedTabs) !== JSON.stringify(currentTabs)) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      res.status(409).json({ error: "Sidebar tabs changed elsewhere. Reload the workspace settings and try again." });
+      return;
+    }
+    const currentTabIds = new Set(currentTabs.map((tab) => tab.id));
+    if (tabs.some((tab) => !currentTabIds.has(tab.id)) || !hasWorkspaceTabSections(sourceFiles, tabs)) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      res.status(400).json({ error: "Tab IDs must stay connected to their existing app sections. The saved app was not changed." });
+      return;
+    }
+
+    if (JSON.stringify(tabs) !== JSON.stringify(currentTabs)) {
+      await client.query(
+        `insert into "custom_workspace_versions"
+          ("id", "team_id", "workspace_id", "html", "capabilities", "source_files",
+           "assistant_tools", "created_by", "message")
+         values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, 'Before sidebar tab settings')`,
+        [
+          randomUUID(),
+          teamId,
+          workspaceId,
+          workspace.html,
+          JSON.stringify(workspace.capabilities),
+          JSON.stringify(sourceFiles),
+          JSON.stringify(workspace.assistantTools ?? []),
+          accountId,
+        ],
+      );
+      const manifest = `${JSON.stringify({ tabs }, null, 2)}\n`;
+      await client.query(
+        `insert into "custom_workspace_files"
+          ("id", "team_id", "workspace_id", "path", "content", "updated_by")
+         values ($1, $2, $3, 'workspace.tabs.json', $4, $5)
+         on conflict ("workspace_id", "path") do update
+           set "content" = excluded."content", "updated_by" = excluded."updated_by", "updated_at" = now()`,
+        [randomUUID(), teamId, workspaceId, manifest, accountId],
+      );
+      if (workspace.status === "draft") {
+        await client.query(
+          `update "custom_workspaces"
+              set "critique_rounds" = 0, "verified_critique_rounds" = 0,
+                  "critique_findings" = '{}'::jsonb, "updated_at" = now()
+            where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+          [workspaceId, teamId],
+        );
+      } else {
+        await client.query(
+          `update "custom_workspaces" set "updated_at" = now()
+            where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}`,
+          [workspaceId, teamId],
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    transactionStarted = false;
+    if (JSON.stringify(tabs) !== JSON.stringify(currentTabs)) {
+      pushRealtimeHint("custom_workspaces", "UPDATE");
+    }
+    res.json(UpdateCustomWorkspaceTabsResponse.parse({ tabs }));
+  } catch (error) {
+    if (transactionStarted) await client.query("ROLLBACK").catch(() => undefined);
+    req.log.error({ err: error, workspaceId }, "Custom workspace tabs update failed");
+    res.status(500).json({ error: "Could not save sidebar tabs. The saved app was not changed." });
+  } finally {
+    client.release();
+  }
 });
 
 router.post("/custom-workspaces/:id/upgrade-tabs", requireCoordinator, async (req, res): Promise<void> => {

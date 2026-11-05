@@ -135,6 +135,114 @@ describe("custom workspace access settings", () => {
   });
 });
 
+describe("custom workspace sidebar tab settings", () => {
+  it("renames, reorders, and removes tabs while saving the existing section IDs", async () => {
+    const initialTabs = [
+      { id: "planning", label: "Planning" },
+      { id: "results", label: "Results" },
+      { id: "archive", label: "Archive" },
+    ];
+    let savedTabs = initialTabs;
+    const savedRequests: { tabs: typeof initialTabs; expectedTabs: typeof initialTabs }[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [{ ...workspace, tabs: savedTabs }] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") {
+        return Response.json({ files: [
+          {
+            path: "index.html",
+            content: '<main><section data-workspace-tab="planning">Planning</section><section data-workspace-tab="results">Results</section><section data-workspace-tab="archive">Archive</section></main>',
+            updatedAt: "2026-10-01T00:00:00.000Z",
+          },
+          {
+            path: "workspace.tabs.json",
+            content: JSON.stringify({ tabs: savedTabs }),
+            updatedAt: "2026-10-01T00:00:00.000Z",
+          },
+        ] });
+      }
+      if (path === "/api/custom-workspaces/custom-app-1/tabs" && init?.method === "PUT") {
+        const request = JSON.parse(String(init.body)) as { tabs: typeof initialTabs; expectedTabs: typeof initialTabs };
+        savedRequests.push(request);
+        savedTabs = request.tabs;
+        return Response.json({ tabs: savedTabs });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    expect(await screen.findByTestId("workspace-tab-settings")).toBeInTheDocument();
+    fireEvent.change(await screen.findByTestId("input-workspace-tab-label-planning"), {
+      target: { value: "Schedule" },
+    });
+    fireEvent.click(screen.getByTestId("button-move-workspace-tab-down-planning"));
+    fireEvent.click(screen.getByTestId("button-remove-workspace-tab-archive"));
+    fireEvent.click(screen.getByTestId("button-save-workspace-tabs"));
+
+    await waitFor(() => expect(savedRequests).toHaveLength(1));
+    expect(savedRequests[0]).toEqual({
+      expectedTabs: initialTabs,
+      tabs: [
+        { id: "results", label: "Results" },
+        { id: "planning", label: "Schedule" },
+      ],
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("Sidebar tabs saved.");
+    expect(screen.getByTestId("input-workspace-tab-label-planning")).toHaveValue("Schedule");
+    fireEvent.click(screen.getByTestId("button-remove-workspace-tab-results"));
+    expect(screen.getByTestId("button-remove-workspace-tab-planning")).toBeDisabled();
+  });
+
+  it("keeps the saved tabs unchanged when the server rejects a tab update", async () => {
+    const tabs = [
+      { id: "planning", label: "Planning" },
+      { id: "results", label: "Results" },
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/assistant-tools") return Response.json({ tools: [] });
+      if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [{ ...workspace, tabs }] });
+      if (path === "/api/custom-workspaces/custom-app-1/files") return Response.json({ files: [
+        { path: "index.html", content: '<section data-workspace-tab="planning">Planning</section><section data-workspace-tab="results">Results</section>', updatedAt: "2026-10-01T00:00:00.000Z" },
+        { path: "workspace.tabs.json", content: JSON.stringify({ tabs }), updatedAt: "2026-10-01T00:00:00.000Z" },
+      ] });
+      if (path === "/api/custom-workspaces/custom-app-1/tabs" && init?.method === "PUT") {
+        return Response.json({ error: "Tab IDs must be unique. The saved app was not changed." }, { status: 400 });
+      }
+      throw new Error(`Unexpected request: ${path} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.change(await screen.findByTestId("input-workspace-tab-label-planning"), {
+      target: { value: "Schedule" },
+    });
+    fireEvent.click(screen.getByTestId("button-save-workspace-tabs"));
+
+    expect(await screen.findByTestId("workspace-tab-settings-error")).toHaveTextContent("The saved app was not changed.");
+    expect(screen.getByTestId("input-workspace-tab-label-planning")).toHaveValue("Schedule");
+    expect(fetchMock).toHaveBeenCalledWith("/api/custom-workspaces/custom-app-1/tabs", expect.objectContaining({
+      method: "PUT",
+    }));
+  });
+});
+
 describe("custom workspace assistant actions", () => {
   it("creates a named action disabled, then enables it from the action list", async () => {
     const savedBodies: Record<string, unknown>[][] = [];

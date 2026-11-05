@@ -4461,6 +4461,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /custom-workspaces/{workspaceId}/tabs:
+    put:
+      operationId: updateCustomWorkspaceTabs
+      tags: [customWorkspaces]
+      summary: Update sidebar tab labels and order for a custom workspace
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomWorkspaceTabsUpdate"
+      responses:
+        "200":
+          description: Saved sidebar tabs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomWorkspaceTabsResponse"
+        "400":
+          description: Invalid tabs or a tab does not match an app section
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The saved tab list changed or is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /custom-workspaces/{workspaceId}/access:
     patch:
       operationId: updateCustomWorkspaceAccess
@@ -9119,6 +9167,32 @@ components:
           type: string
           minLength: 1
           maxLength: 40
+    CustomWorkspaceTabsUpdate:
+      type: object
+      required: [tabs, expectedTabs]
+      properties:
+        tabs:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTab"
+        expectedTabs:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTab"
+    CustomWorkspaceTabsResponse:
+      type: object
+      required: [tabs]
+      properties:
+        tabs:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTab"
     CustomWorkspace:
       type: object
       required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt, critiqueRounds, verifiedCritiqueRounds]

@@ -23,7 +23,7 @@ export function parseCustomWorkspaceTabs(raw: unknown): CustomWorkspaceTab[] {
   }
 
   const tabs = (manifest as { tabs: unknown[] }).tabs;
-  if (tabs.length < 2 || tabs.length > MAX_TABS) return [];
+  if (tabs.length < 1 || tabs.length > MAX_TABS) return [];
 
   const seen = new Set<string>();
   const parsed: CustomWorkspaceTab[] = [];

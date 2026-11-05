@@ -9,7 +9,11 @@ registerHooks({
       return nextResolve(specifier, context);
     } catch (error) {
       if (specifier.startsWith(".") && !specifier.endsWith(".ts") && !specifier.endsWith(".js")) {
-        return nextResolve(`${specifier}.ts`, context);
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
       }
       throw error;
     }
@@ -239,6 +243,23 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("select") && statement.includes('from "custom_workspaces"')) {
+        if (
+          statement.includes('"assistant_tools" as "assistantTools"') &&
+          statement.includes("for update") &&
+          statement.includes('"created_by" = $3')
+        ) {
+          const [id, teamId, accountId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) =>
+            workspace.id === id && workspace.teamId === teamId &&
+            (workspace.status === "published" || (workspace.status === "draft" && workspace.createdBy === accountId)),
+          );
+          return { rows: row ? [{
+            ...row,
+            assistantTools: row.assistantTools ?? [],
+            createdBy: row.createdBy,
+          }] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes('"upgrade_target_id" = $1')) {
           const [targetId, teamId] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -387,6 +408,12 @@ async function createHarness(t) {
       }
 
       if (statement.startsWith("update \"custom_workspaces\"")) {
+        if (statement.includes('set "updated_at" = now()')) {
+          const [id, teamId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          const row = workspaces.find((workspace) => workspace.id === id && workspace.teamId === teamId);
+          return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+        }
         if (statement.includes('set "assistant_tools"')) {
           const [id, teamId, toolsJson] = values;
           ensureTeamScope('"team_id"', "$2", teamId);
@@ -547,6 +574,8 @@ async function createHarness(t) {
         const message = values[hasAssistantTools ? 8 : 7] ?? (
           statement.includes("'Before sidebar tab upgrade review'")
             ? "Before sidebar tab upgrade review"
+            : statement.includes("'Before sidebar tab settings'")
+              ? "Before sidebar tab settings"
             : statement.includes("'Before sidebar tabs upgrade publish'")
               ? "Before sidebar tabs upgrade publish"
               : statement.includes("'Published sidebar tabs upgrade'")
@@ -576,7 +605,9 @@ async function createHarness(t) {
       if (statement.startsWith('insert into "custom_workspace_files"')) {
         const [, teamId, workspaceId, filePath, content] = statement.includes("'index.html'")
           ? [values[0], values[1], values[2], "index.html", values[3]]
-          : values;
+          : statement.includes("'workspace.tabs.json'")
+            ? [values[0], values[1], values[2], "workspace.tabs.json", values[3]]
+            : values;
         const workspace = workspaces.find((item) => item.id === workspaceId);
         assert.equal(workspace?.teamId, teamId);
         const files = savedWorkspaceFiles.get(workspaceId) ?? [];
@@ -1539,6 +1570,130 @@ test("draft restores keep restoring the saved capability set", async (t) => {
   const snapshot = harness.versions.find((version) => version.message === "Before version restore");
   assert.equal(snapshot.html, "<main>Draft</main>");
   assert.deepEqual(snapshot.capabilities, ["data", "llm"]);
+});
+
+test("coordinators can safely rename, reorder, and remove custom workspace tabs", async (t) => {
+  const harness = await createHarness(t);
+  const workspace = harness.workspaces.find((item) => item.id === "workspace-a-selected");
+  const originalTabs = [
+    { id: "overview", label: "Overview" },
+    { id: "reports", label: "Reports" },
+    { id: "archive", label: "Archive" },
+  ];
+  const originalHtml = '<main><section data-workspace-tab="overview">Overview</section><section data-workspace-tab="reports">Reports</section><section data-workspace-tab="archive">Archive</section></main>';
+  workspace.html = originalHtml;
+  harness.savedWorkspaceFiles.set(workspace.id, [
+    { path: "index.html", content: originalHtml },
+    { path: "workspace.tabs.json", content: JSON.stringify({ tabs: originalTabs }) },
+  ]);
+  const initialVersionCount = harness.versions.filter((version) => version.workspaceId === workspace.id).length;
+
+  const duplicateResponse = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: [
+      { id: "overview", label: "Overview" },
+      { id: "overview", label: "Duplicate" },
+    ],
+    expectedTabs: originalTabs,
+  });
+  assert.equal(duplicateResponse.status, 400);
+  assert.equal(
+    harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content,
+    JSON.stringify({ tabs: originalTabs }),
+  );
+  assert.equal(harness.versions.filter((version) => version.workspaceId === workspace.id).length, initialVersionCount);
+
+  const invalidIdResponse = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: [{ id: "../private", label: "Unsafe" }, { id: "reports", label: "Reports" }],
+    expectedTabs: originalTabs,
+  });
+  assert.equal(invalidIdResponse.status, 400);
+  assert.equal(
+    harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content,
+    JSON.stringify({ tabs: originalTabs }),
+  );
+
+  const mismatchedResponse = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: [{ id: "missing-section", label: "Missing" }, { id: "reports", label: "Reports" }],
+    expectedTabs: originalTabs,
+  });
+  assert.equal(mismatchedResponse.status, 400);
+  assert.equal(
+    harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content,
+    JSON.stringify({ tabs: originalTabs }),
+  );
+  assert.equal((await harness.request("member-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: originalTabs,
+    expectedTabs: originalTabs,
+  })).status, 403);
+  assert.equal((await harness.request("coordinator-b", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: originalTabs,
+    expectedTabs: originalTabs,
+  })).status, 404);
+
+  const updatedTabs = [
+    { id: "reports", label: "Results" },
+    { id: "overview", label: "Overview" },
+  ];
+  const saved = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: updatedTabs,
+    expectedTabs: originalTabs,
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await saved.json()).tabs, updatedTabs);
+  assert.deepEqual(
+    JSON.parse(harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content).tabs,
+    updatedTabs,
+  );
+  assert.equal(harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "index.html").content, originalHtml);
+  assert.equal(harness.versions.filter((version) => version.workspaceId === workspace.id).length, initialVersionCount + 1);
+  const tabSnapshot = harness.versions.find((version) =>
+    version.workspaceId === workspace.id && version.message === "Before sidebar tab settings",
+  );
+  assert.deepEqual(
+    JSON.parse(tabSnapshot.sourceFiles.find((file) => file.path === "workspace.tabs.json").content).tabs,
+    originalTabs,
+  );
+
+  const stale = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: originalTabs,
+    expectedTabs: originalTabs,
+  });
+  assert.equal(stale.status, 409);
+  assert.deepEqual(
+    JSON.parse(harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content).tabs,
+    updatedTabs,
+  );
+  const singleTab = [{ id: "reports", label: "Results" }];
+  const singleTabResponse = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${workspace.id}/tabs`, {
+    tabs: singleTab,
+    expectedTabs: updatedTabs,
+  });
+  assert.equal(singleTabResponse.status, 200);
+  assert.deepEqual((await singleTabResponse.json()).tabs, singleTab);
+  assert.deepEqual(
+    JSON.parse(harness.savedWorkspaceFiles.get(workspace.id).find((file) => file.path === "workspace.tabs.json").content).tabs,
+    singleTab,
+  );
+
+  const draft = harness.workspaces.find((item) => item.id === "workspace-a-draft");
+  draft.html = '<section data-workspace-tab="overview">Overview</section><section data-workspace-tab="reports">Reports</section>';
+  draft.critiqueRounds = 5;
+  draft.verifiedCritiqueRounds = 5;
+  const draftTabs = [
+    { id: "overview", label: "Overview" },
+    { id: "reports", label: "Reports" },
+  ];
+  harness.savedWorkspaceFiles.set(draft.id, [
+    { path: "index.html", content: draft.html },
+    { path: "workspace.tabs.json", content: JSON.stringify({ tabs: draftTabs }) },
+  ]);
+  const draftUpdate = await harness.request("coordinator-a", "PUT", `/custom-workspaces/${draft.id}/tabs`, {
+    tabs: [{ id: "overview", label: "Summary" }, { id: "reports", label: "Reports" }],
+    expectedTabs: draftTabs,
+  });
+  assert.equal(draftUpdate.status, 200);
+  assert.equal(draft.critiqueRounds, 0);
+  assert.equal(draft.verifiedCritiqueRounds, 0);
 });
 
 test("direct record reads and mutations cannot cross team boundaries", async (t) => {

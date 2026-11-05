@@ -15,11 +15,14 @@ test("parses valid custom workspace tabs and trims labels", () => {
       { id: "reports", label: "Reports" },
     ],
   );
+  assert.deepEqual(
+    parseCustomWorkspaceTabs(JSON.stringify({ tabs: [{ id: "overview", label: " Overview " }] })),
+    [{ id: "overview", label: "Overview" }],
+  );
 });
 
 test("rejects malformed, duplicate, and oversized tab manifests", () => {
   assert.deepEqual(parseCustomWorkspaceTabs("{"), []);
-  assert.deepEqual(parseCustomWorkspaceTabs(JSON.stringify({ tabs: [{ id: "overview", label: "Overview" }] })), []);
   assert.deepEqual(parseCustomWorkspaceTabs(JSON.stringify({
     tabs: [
       { id: "overview", label: "Overview" },

@@ -3577,6 +3577,27 @@ export interface CustomWorkspaceTab {
   label: string;
 }
 
+export interface CustomWorkspaceTabsUpdate {
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  tabs: CustomWorkspaceTab[];
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  expectedTabs: CustomWorkspaceTab[];
+}
+
+export interface CustomWorkspaceTabsResponse {
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  tabs: CustomWorkspaceTab[];
+}
+
 export type CustomWorkspaceCapabilitiesItem = typeof CustomWorkspaceCapabilitiesItem[keyof typeof CustomWorkspaceCapabilitiesItem];
 
 
