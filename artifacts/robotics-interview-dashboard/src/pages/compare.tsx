@@ -263,6 +263,9 @@ export default function ComparePage() {
 
             <article id="robolyst" className="compare-page__comparison-card compare-page__comparison-card--robolyst" data-testid="card-compare-robolyst">
               <div className="compare-page__comparison-top">
+                <span className="compare-page__comparison-mark compare-page__comparison-mark--robolyst">
+                  <img src="/robolyst-icon.svg" alt="Robolyst logo" data-testid="img-compare-robolyst-logo" />
+                </span>
                 <div>
                   <p>FTC SEASON OPERATIONS + SCOUTING</p>
                   <h3>Robolyst</h3>

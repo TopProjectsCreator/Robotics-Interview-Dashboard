@@ -47,6 +47,8 @@ describe("robotics workspace comparison page", () => {
     expect(page).toHaveTextContent("4% plus card-processing fees");
     expect(page).toHaveTextContent("Sources reviewed Nov 4, 2026");
     expect(page).toHaveTextContent("rather than event-wide scouting and match analytics");
+    expect(screen.getByTestId("img-compare-robolyst-logo")).toHaveAttribute("src", "/robolyst-icon.svg");
+    expect(screen.getByTestId("img-compare-robolyst-logo")).toHaveAttribute("alt", "Robolyst logo");
     expect(page).not.toHaveTextContent("No feature details are published");
     expect(page).not.toHaveTextContent("AI Driven. Risk Defined.");
     expect(page).not.toHaveTextContent("robolyst.com");

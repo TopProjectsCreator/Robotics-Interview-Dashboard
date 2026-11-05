@@ -132,6 +132,8 @@
 .compare-page__comparison-top h3 { margin: 5px 0 0; color: var(--compare-ink); font-size: 18px; font-weight: 600; letter-spacing: -.04em; }
 .compare-page__comparison-mark { display: grid; width: 43px; height: 43px; flex: 0 0 auto; place-items: center; border: 1px solid var(--compare-line); border-radius: 11px; background: color-mix(in srgb, var(--compare-teal) 9%, var(--compare-card)); }
 .compare-page__comparison-mark img { width: 29px; height: 29px; }
+.compare-page__comparison-mark--robolyst { background: #fff; border-color: #e4e9e5; }
+.dark .compare-page__comparison-mark--robolyst { background: #fff; border-color: #e4e9e5; }
 .compare-page__external-icon { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid var(--compare-line); border-radius: 8px; color: var(--compare-muted); transition: color .18s ease, border-color .18s ease; }
 .compare-page__external-icon:hover { border-color: #bd9a59; color: var(--compare-ink); }
 .compare-page__comparison-summary { max-width: 440px; margin: 20px 0 0; color: var(--compare-muted); font-size: 12px; line-height: 1.7; }
