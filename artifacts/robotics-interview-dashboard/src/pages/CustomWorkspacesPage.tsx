@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, Check, Code2, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceManagementItem, type CustomWorkspaceVersion } from "@workspace/api-client-react";
+import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 import {
   AlertDialog,
@@ -18,7 +18,8 @@ import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 
 type Capability = CustomWorkspace["capabilities"][number];
-type Workspace = CustomWorkspaceManagementItem & {
+type Workspace = CustomWorkspace & {
+  prompt?: string | null;
   critiqueRounds?: number;
   verifiedCritiqueRounds?: number;
   upgradeTargetId?: string | null;
@@ -478,6 +479,7 @@ export function CustomWorkspacesPage() {
   const canManage = session.data?.role === "coordinator";
   const [items, setItems] = useState<Workspace[]>([]);
   const [selected, setSelected] = useState<Workspace | null>(null);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const [confirmStopBuilder, setConfirmStopBuilder] = useState(false);
   const [deletingWorkspace, setDeletingWorkspace] = useState(false);
@@ -518,6 +520,14 @@ export function CustomWorkspacesPage() {
     item.status === "draft" &&
     (Number(item.critiqueRounds ?? 0) < 5 || Number(item.verifiedCritiqueRounds ?? 0) < 5),
   ) ?? items[0] ?? null, [items, selected]);
+  const filteredWorkspaces = useMemo(() => {
+    const query = workspaceSearch.trim().toLocaleLowerCase();
+    if (!query) return items;
+    return items.filter((item) =>
+      [item.title, item.description, item.prompt]
+        .some((value) => typeof value === "string" && value.toLocaleLowerCase().includes(query)),
+    );
+  }, [items, workspaceSearch]);
   useEffect(() => {
     setTabDraft(active?.tabs ?? []);
     setTabSettingsError("");
@@ -1218,12 +1228,22 @@ export function CustomWorkspacesPage() {
         </div>
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
           <h2 className="text-sm font-semibold text-[hsl(var(--foreground))]">Your workspaces</h2>
+          <label htmlFor="workspace-search" className="sr-only">Search workspaces</label>
+          <input
+            id="workspace-search"
+            type="search"
+            value={workspaceSearch}
+            onChange={(event) => setWorkspaceSearch(event.target.value)}
+            placeholder="Search title, description, or initial request"
+            className="mt-3 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-base md:text-sm text-[hsl(var(--foreground))] outline-none placeholder:text-[#7c8c91] focus:ring-2 focus:ring-[#16869a] dark:placeholder:text-[#9eafb5]"
+          />
           <div className="mt-3 space-y-2">
-            {items.map((item) => <button key={item.id} type="button" onClick={() => setSelected(item)} className={`w-full rounded-xl border p-3 text-left transition ${active?.id === item.id ? "border-[#16869a] bg-[#e9f5f4] dark:bg-[#15353d]" : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"}`}>
+            {filteredWorkspaces.map((item) => <button key={item.id} type="button" onClick={() => setSelected(item)} className={`w-full rounded-xl border p-3 text-left transition ${active?.id === item.id ? "border-[#16869a] bg-[#e9f5f4] dark:bg-[#15353d]" : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"}`}>
               <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-[hsl(var(--foreground))]">{item.title}</span><span className="rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] uppercase text-[hsl(var(--foreground))]">{item.status}</span></span>
               <span className="mt-1 block line-clamp-2 text-xs text-[#60757c] dark:text-[#b3c3cb]">{item.description}</span>
             </button>)}
             {!items.length && <p className="text-sm text-[#60757c] dark:text-[#b3c3cb]">No custom workspaces yet.</p>}
+            {items.length > 0 && filteredWorkspaces.length === 0 && <p className="text-sm text-[#60757c] dark:text-[#b3c3cb]">No workspaces match your search.</p>}
           </div>
         </div>
       </section>

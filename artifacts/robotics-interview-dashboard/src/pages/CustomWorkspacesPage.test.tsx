@@ -154,6 +154,70 @@ describe("custom workspace access settings", () => {
   });
 });
 
+describe("custom workspace search", () => {
+  it("filters by title, description, and initial request and opens older workspaces without a request", async () => {
+    const originalWorkspace = {
+      ...workspace,
+      title: "Team overview",
+      description: "A summary of team activity",
+      prompt: "Build a dashboard for team activity.",
+    };
+    const requestMatchWorkspace = {
+      ...workspace,
+      id: "custom-app-request-match",
+      title: "Family Meal Board",
+      description: "Plan shared dinners",
+      prompt: "Create a weekly recipe planner for meal prep.",
+    };
+    const legacyWorkspace = {
+      ...workspace,
+      id: "custom-app-legacy",
+      title: "Tryout tracker",
+      description: "Track robot match scores",
+    };
+    const workspaces = [originalWorkspace, requestMatchWorkspace, legacyWorkspace];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces });
+      if (path.startsWith("/api/custom-workspaces/") && path.endsWith("/files")) return Response.json({ files: [] });
+      if (path.startsWith("/api/custom-workspaces/") && path.endsWith("/versions")) return Response.json({ versions: [] });
+      if (path.startsWith("/api/custom-workspaces/") && path.endsWith("/assistant-tools")) return Response.json({ tools: [] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    const search = await screen.findByRole("searchbox", { name: "Search workspaces" });
+    expect(await screen.findByText("A summary of team activity")).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "family meal board" } });
+    expect(screen.getByRole("button", { name: /Family Meal Board/ })).toBeInTheDocument();
+    expect(screen.queryByText("A summary of team activity")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "shared dinners" } });
+    expect(screen.getByRole("button", { name: /Family Meal Board/ })).toBeInTheDocument();
+    expect(screen.queryByText("Tryout tracker")).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "weekly recipe planner" } });
+    fireEvent.click(screen.getByRole("button", { name: /Family Meal Board/ }));
+    expect(await screen.findByRole("heading", { name: "Family Meal Board" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-initial-request").querySelector("p"))
+      .toHaveTextContent("Create a weekly recipe planner for meal prep.");
+
+    fireEvent.change(search, { target: { value: "robot match" } });
+    fireEvent.click(screen.getByRole("button", { name: /Tryout tracker/ }));
+    expect(await screen.findByRole("heading", { name: "Tryout tracker" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-initial-request"))
+      .toHaveTextContent("No initial request was saved for this workspace.");
+  });
+});
+
 describe("custom workspace sidebar tab settings", () => {
   it("renames, reorders, and removes tabs while saving the existing section IDs", async () => {
     const initialTabs = [
