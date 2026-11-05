@@ -1480,14 +1480,12 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       return;
     }
 
-    const { data, contentType } = await objectStorageService.downloadObject(objectPath);
-
     // Every object path is a write-once UUID, so bytes for a path never
     // change: clients may cache for a year without revalidating, and the
     // ETag below is only a safety net. (Assembled chunk manifests are the
     // exception — keep them on a short cache.)
     const immutable = !wildcardPath.startsWith('chunk/');
-    const etag = `W/"${createHash('sha1').update(objectPath).digest('hex').slice(0, 24)}-${data.byteLength}"`;
+    const etag = `W/"${createHash('sha1').update(objectPath).digest('hex').slice(0, 24)}"`;
     res.setHeader('ETag', etag);
     res.setHeader(
       'Cache-Control',
@@ -1498,6 +1496,7 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       res.status(304).end();
       return;
     }
+    const { data, contentType } = await objectStorageService.downloadObject(objectPath);
     res.status(200);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', String(data.byteLength));

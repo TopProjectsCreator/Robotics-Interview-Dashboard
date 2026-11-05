@@ -419,7 +419,8 @@ export const RegisterPasskeyResponse = zod.object({
   "label": zod.string(),
   "createdAt": zod.string(),
   "lastUsedAt": zod.string().nullish(),
-  "transports": zod.array(zod.string()).optional()
+  "transports": zod.array(zod.string()).optional(),
+  "origin": zod.string().nullish().describe('URL (origin) the passkey was created on; null when unknown (credential predates origin tracking)')
 })
 
 
@@ -432,7 +433,8 @@ export const ListPasskeysResponse = zod.object({
   "label": zod.string(),
   "createdAt": zod.string(),
   "lastUsedAt": zod.string().nullish(),
-  "transports": zod.array(zod.string()).optional()
+  "transports": zod.array(zod.string()).optional(),
+  "origin": zod.string().nullish().describe('URL (origin) the passkey was created on; null when unknown (credential predates origin tracking)')
 }))
 })
 

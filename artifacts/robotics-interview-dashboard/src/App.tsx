@@ -1123,7 +1123,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <div className={divider}><p className={sectionLabel}>Passkeys</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Sign in with your device (fingerprint, face, or PIN) instead of typing a password. Your password keeps working either way.</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Sign in with your device (fingerprint, face, or PIN) instead of typing a password. Your password keeps working either way. Each passkey remembers the site it was made on, so it can also be used when the dashboard is reached through a mirror site.</p>
         {!passkeysAvailable && <p className="mt-3 rounded-lg border border-[#e0b8b4] bg-[#fff7f6] px-3 py-2 text-xs text-[#a34d46] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087]">This browser does not support passkeys. Use Chrome, Edge, Firefox 110+, or Safari 16+.</p>}
         {passkeysAvailable && <div className="mt-3 space-y-2">
           {passkeyList.isLoading && <p className="text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading passkeys…</p>}
@@ -1131,7 +1131,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             <div key={credential.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5ecec] bg-[#f8fbfa] px-3 py-3 dark:border-[#2a3f4c] dark:bg-[#10202a]">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{credential.label}</p>
-                <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Added {new Date(credential.createdAt).toLocaleDateString()}{credential.lastUsedAt ? ` · last used ${new Date(credential.lastUsedAt).toLocaleDateString()}` : " · never used"}</p>
+                <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Added {new Date(credential.createdAt).toLocaleDateString()}{credential.lastUsedAt ? ` · last used ${new Date(credential.lastUsedAt).toLocaleDateString()}` : " · never used"}{credential.origin ? ` · made on ${credential.origin}` : ""}</p>
               </div>
               <button type="button" disabled={removePasskey.isPending} onClick={() => forgetPasskey(credential.id)} data-testid={`button-remove-passkey-${credential.id}`} className={dangerButton}>Remove</button>
             </div>

@@ -63,6 +63,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    // Keep the production build inside small Render instances: gzipped-size
+    // reporting and sourcemaps are the heaviest parts of the build and
+    // OOM'd the free tier (2GB heap, ~5.6k modules). Neither affects the
+    // served output or egress.
+    sourcemap: false,
+    reportCompressedSize: false,
   },
   server: {
     port,

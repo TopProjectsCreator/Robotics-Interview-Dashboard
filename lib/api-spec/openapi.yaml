@@ -5950,6 +5950,9 @@ components:
           type: array
           items:
             type: string
+        origin:
+          type: ["string", "null"]
+          description: URL (origin) the passkey was created on; null when unknown (credential predates origin tracking)
     PasskeyCredentialList:
       type: object
       required: [items]

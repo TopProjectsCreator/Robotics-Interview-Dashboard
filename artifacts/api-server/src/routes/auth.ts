@@ -11,10 +11,15 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import {
+  authenticationOriginFor,
   base64urlToBytes,
   credentialIdFromResponse,
   bytesToBase64url,
   clearPasskeyChallenge,
+  expectedOriginsForLogin,
+  expectedRpIdsForLogin,
+  normalizeOrigin,
+  originFromResponse,
   readPasskeyChallenge,
   setPasskeyChallenge,
   webauthnOrigin,
@@ -887,6 +892,7 @@ router.post("/auth/passkey/register/options", requireAdmin, async (req, res): Pr
     return;
   }
   const origin = webauthnOrigin(req);
+  const rpId = webauthnRPID(origin);
   try {
     const existing = await db
       .select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports })
@@ -894,7 +900,7 @@ router.post("/auth/passkey/register/options", requireAdmin, async (req, res): Pr
       .where(eq(webauthnCredentialsTable.interviewerId, account.id));
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
-      rpID: webauthnRPID(origin),
+      rpID: rpId,
       userName: account.displayName,
       userID: new TextEncoder().encode(account.id),
       userDisplayName: account.displayName,
@@ -905,7 +911,7 @@ router.post("/auth/passkey/register/options", requireAdmin, async (req, res): Pr
         transports: JSON.parse(row.transports || "[]") as string[],
       })),
     });
-    setPasskeyChallenge(res, { mode: "register", challenge: options.challenge, interviewerId: account.id });
+    setPasskeyChallenge(res, { mode: "register", challenge: options.challenge, interviewerId: account.id, origin, rpId });
     res.json({ publicKey: options });
   } catch (error) {
     req.log.error({ err: error }, "Passkey registration options failed");
@@ -928,12 +934,14 @@ router.post("/auth/passkey/register", requireAdmin, async (req, res): Promise<vo
     return;
   }
   const origin = webauthnOrigin(req);
+  const expectedOrigins = expectedOriginsForLogin({ challengeOrigin: challenge.origin, currentOrigin: origin });
+  const expectedRpIds = expectedRpIdsForLogin({ challengeOrigin: challenge.origin, challengeRpId: challenge.rpId, currentOrigin: origin });
   try {
     const verification = await verifyRegistrationResponse({
       response: parsed.data.response as never,
       expectedChallenge: challenge.challenge,
-      expectedOrigin: origin,
-      expectedRPID: webauthnRPID(origin),
+      expectedOrigin: expectedOrigins,
+      expectedRPID: expectedRpIds,
       requireUserVerification: false,
     });
     clearPasskeyChallenge(res);
@@ -943,6 +951,12 @@ router.post("/auth/passkey/register", requireAdmin, async (req, res): Promise<vo
     }
     const credential = verification.registrationInfo.credential;
     const label = parsed.data.label?.trim().slice(0, 60) || "Passkey";
+    // Remember which site this passkey was made on, preferring the origin
+    // the authenticator itself reported to the request-derived origin.
+    const credentialOrigin =
+      originFromResponse(parsed.data.response) ??
+      normalizeOrigin(challenge.origin) ??
+      normalizeOrigin(origin);
     const [row] = await db
       .insert(webauthnCredentialsTable)
       .values({
@@ -953,6 +967,7 @@ router.post("/auth/passkey/register", requireAdmin, async (req, res): Promise<vo
         counter: credential.counter ?? 0,
         transports: JSON.stringify(credential.transports ?? []),
         label,
+        origin: credentialOrigin,
       })
       .returning();
     res.status(201).json(RegisterPasskeyResponse.parse({
@@ -961,6 +976,7 @@ router.post("/auth/passkey/register", requireAdmin, async (req, res): Promise<vo
       createdAt: row.createdAt.toISOString(),
       lastUsedAt: null,
       transports: JSON.parse(row.transports || "[]") as string[],
+      origin: row.origin ?? null,
     }));
   } catch (error) {
     clearPasskeyChallenge(res);
@@ -986,6 +1002,7 @@ router.get("/auth/passkey/list", requireAdmin, async (req, res): Promise<void> =
       createdAt: row.createdAt.toISOString(),
       lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
       transports: JSON.parse(row.transports || "[]") as string[],
+      origin: row.origin ?? null,
     })),
   }));
 });
@@ -1039,7 +1056,7 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
     return;
   }
   const credentials = account
-    ? await db.select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports })
+    ? await db.select({ credentialId: webauthnCredentialsTable.credentialId, transports: webauthnCredentialsTable.transports, origin: webauthnCredentialsTable.origin })
         .from(webauthnCredentialsTable)
         .where(eq(webauthnCredentialsTable.interviewerId, account.id))
     : [];
@@ -1052,17 +1069,19 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
     res.status(404).json({ error: "This person has no passkey yet. Use their password instead." });
     return;
   }
-  const origin = webauthnOrigin(req);
+  const currentOrigin = webauthnOrigin(req);
+  const origin = authenticationOriginFor({ currentOrigin, credentialOrigins: credentials.map((row) => row.origin) });
+  const rpId = webauthnRPID(origin);
   try {
     const options = await generateAuthenticationOptions({
-      rpID: webauthnRPID(origin),
+      rpID: rpId,
       allowCredentials: credentials.map((row) => ({
         id: row.credentialId,
         transports: JSON.parse(row.transports || "[]") as string[],
       })),
       userVerification: "preferred",
     });
-    setPasskeyChallenge(res, { mode: "login", challenge: options.challenge, interviewerId: account.id });
+    setPasskeyChallenge(res, { mode: "login", challenge: options.challenge, interviewerId: account.id, origin, rpId });
     res.json({ publicKey: options });
   } catch (error) {
     req.log.error({ err: error }, error instanceof Error ? error.message : "unknown");
@@ -1110,12 +1129,14 @@ router.post("/auth/passkey/login", async (req, res): Promise<void> => {
     return;
   }
   const origin = webauthnOrigin(req);
+  const expectedOrigins = expectedOriginsForLogin({ challengeOrigin: challenge.origin, currentOrigin: origin, storedOrigin: stored.origin });
+  const expectedRpIds = expectedRpIdsForLogin({ challengeOrigin: challenge.origin, challengeRpId: challenge.rpId, currentOrigin: origin, storedOrigin: stored.origin });
   try {
     const verification = await verifyAuthenticationResponse({
       response: parsed.data.response as never,
       expectedChallenge: challenge.challenge,
-      expectedOrigin: origin,
-      expectedRPID: webauthnRPID(origin),
+      expectedOrigin: expectedOrigins,
+      expectedRPID: expectedRpIds,
       requireUserVerification: false,
       credential: {
         id: stored.credentialId,
@@ -1131,9 +1152,22 @@ router.post("/auth/passkey/login", async (req, res): Promise<void> => {
       return;
     }
     loginFailures.delete(ip);
+    // Legacy credentials have no stored origin; the verified assertion's
+    // own origin backfills it so the next mirror sign-in uses the same rule.
+    const backfillOrigin =
+      !stored.origin
+        ? (originFromResponse(parsed.data.response) ??
+           normalizeOrigin(verification.authenticationInfo.origin) ??
+           normalizeOrigin(challenge.origin) ??
+           normalizeOrigin(origin))
+        : null;
     await db
       .update(webauthnCredentialsTable)
-      .set({ counter: verification.authenticationInfo.newCounter, lastUsedAt: new Date() })
+      .set({
+        counter: verification.authenticationInfo.newCounter,
+        lastUsedAt: new Date(),
+        ...(backfillOrigin ? { origin: backfillOrigin } : {}),
+      })
       .where(eq(webauthnCredentialsTable.credentialId, stored.credentialId));
     res.json(passkeySessionResponse(res, account));
   } catch (error) {

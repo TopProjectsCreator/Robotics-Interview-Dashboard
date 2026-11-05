@@ -7,6 +7,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { getRedirectConfig, getRedirectLocation } from "./lib/primaryRedirect";
 import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 
@@ -15,6 +16,34 @@ const app: Express = express();
 // Trust the first proxy hop (Replit/Codespaces) so req.ip reflects the real
 // client for presence tracking and login rate limiting.
 app.set("trust proxy", 1);
+
+// Primary → backup redirect (egress relief). Must run before any body
+// parsing, session work, or static serving so the primary answers with a
+// tiny 302 instead of loading the full app. Temporary (302) so the
+// primary can be restored after egress resets; the backup host and
+// health checks are exempt (see lib/primaryRedirect.ts).
+const redirectConfig = getRedirectConfig(process.env);
+if (redirectConfig.enabled) {
+  logger.info(
+    {
+      targetUrl: redirectConfig.targetUrl,
+      fromHosts: [...redirectConfig.fromHosts],
+    },
+    "Primary → backup redirect active",
+  );
+}
+app.use((req, res, next) => {
+  if (req.path === "/api/healthz") return next();
+  const location = getRedirectLocation({
+    host: req.hostname ?? req.get("host"),
+    originalUrl: req.originalUrl,
+    config: redirectConfig,
+  });
+  if (location) {
+    return res.redirect(302, location);
+  }
+  return next();
+});
 
 app.use(
   pinoHttp({
