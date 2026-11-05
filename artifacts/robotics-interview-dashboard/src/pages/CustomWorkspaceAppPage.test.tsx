@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CustomWorkspaceAppPage } from "./CustomWorkspaceAppPage";
 
@@ -35,6 +35,7 @@ describe("CustomWorkspaceAppPage", () => {
         accessMode: "team",
         allowedInterviewerIds: [],
         html: '<html><head></head><body><img src="data:image/svg+xml;charset=utf-8,%3Csvg%3E"></body></html>',
+        tabs: [{ id: "intake", label: "Intake" }, { id: "reports", label: "Reports" }],
         critiqueRounds: 5,
         verifiedCritiqueRounds: 5,
         createdAt: "2026-10-01T00:00:00.000Z",
@@ -48,7 +49,7 @@ describe("CustomWorkspaceAppPage", () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <CustomWorkspaceAppPage workspaceId="custom-app-1" />
+        <CustomWorkspaceAppPage workspaceId="custom-app-1" tabId="reports" />
       </QueryClientProvider>,
     );
 
@@ -57,12 +58,15 @@ describe("CustomWorkspaceAppPage", () => {
       "src",
       "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
     );
-    const iframe = await waitFor(() => screen.getByTestId("iframe-custom-app-custom-app-1"));
+    const iframe = await waitFor(() => screen.getByTestId("iframe-custom-app-custom-app-1") as HTMLIFrameElement);
     expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
     const srcDoc = iframe.getAttribute("srcdoc") ?? "";
     expect(srcDoc).toContain('<html class="dark">');
     expect(srcDoc).toContain("connect-src 'none'");
     expect(srcDoc).toContain("workspaceAPI");
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+    fireEvent.load(iframe);
+    expect(postMessage).toHaveBeenCalledWith({ channel: "workspace-tab", id: "reports" }, "*");
     expect(srcDoc).toContain("data:image/svg+xml;charset=utf-8,");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/custom-workspaces/custom-app-1",

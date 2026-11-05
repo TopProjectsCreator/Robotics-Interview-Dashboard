@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { JSDOM } from "jsdom";
 import { compileWorkspaceSourceFiles, sandboxDocument } from "./customWorkspaceRuntime";
 
 describe("custom workspace runtime", () => {
@@ -31,9 +32,44 @@ describe("custom workspace runtime", () => {
     expect(sandbox).toContain(`Content-Security-Policy`);
     expect(sandbox).toContain(`connect-src 'none'`);
     expect(sandbox).toContain(`window.workspaceAPI`);
+    expect(sandbox).toContain(`event.data.channel !== "workspace-tab"`);
+    expect(sandbox).toContain(`[data-workspace-tab]`);
     expect(sandbox).toContain(`data-dashboard-stylesheet`);
     expect(sandbox).toContain(`.mono`);
     expect(sandbox).toContain(`--workspace-teal: #16869a`);
     expect(sandbox).toContain('<html class="dark">');
+  });
+
+  it("preserves tab markup for the host-controlled sidebar", () => {
+    const sandbox = sandboxDocument(
+      '<main><section data-workspace-tab="overview">Overview</section><section data-workspace-tab="reports">Reports</section></main>',
+      false,
+    );
+
+    expect(sandbox).toContain('data-workspace-tab="overview"');
+    expect(sandbox).toContain('data-workspace-tab="reports"');
+    expect(sandbox).toContain('workspace:tabchange');
+  });
+
+  it("shows only the section selected by the host sidebar", () => {
+    const sandbox = sandboxDocument(
+      '<main><section data-workspace-tab="overview">Overview</section><section data-workspace-tab="reports">Reports</section></main>',
+      false,
+    );
+    const dom = new JSDOM(sandbox, { runScripts: "dangerously" });
+    try {
+      dom.window.dispatchEvent(new dom.window.MessageEvent("message", {
+        data: { channel: "workspace-tab", id: "reports" },
+        source: dom.window,
+      }));
+
+      const overview = dom.window.document.querySelector<HTMLElement>('[data-workspace-tab="overview"]');
+      const reports = dom.window.document.querySelector<HTMLElement>('[data-workspace-tab="reports"]');
+      expect(overview?.hidden).toBe(true);
+      expect(overview?.style.getPropertyValue("display")).toBe("none");
+      expect(reports?.hidden).toBe(false);
+    } finally {
+      dom.window.close();
+    }
   });
 });

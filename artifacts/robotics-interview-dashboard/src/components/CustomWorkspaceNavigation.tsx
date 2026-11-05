@@ -71,17 +71,20 @@ export function CustomWorkspaceSidebarLinks({
       </div>
       {workspaces.map((workspace) => {
         const href = `/custom-workspaces/${encodeURIComponent(workspace.id)}`;
-        const active = currentPath === href;
-        return (
+        const tabs = workspace.tabs ?? [];
+        const isWorkspacePath = currentPath === href || currentPath.startsWith(`${href}/`);
+        const activeTabId = currentPath === href
+          ? tabs[0]?.id
+          : tabs.find((tab) => currentPath === `${href}/${encodeURIComponent(tab.id)}`)?.id;
+        return <div key={workspace.id} className="space-y-1">
           <Link
-            key={workspace.id}
             href={href}
             title={workspace.title}
             data-testid={`link-custom-workspace-${workspace.id}`}
             onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-              active ? "bg-[#243d4d] text-white" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
+            aria-current={tabs.length === 0 && isWorkspacePath ? "page" : undefined}
+            className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#73c9c0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#172a3a] ${
+              tabs.length === 0 && isWorkspacePath ? "bg-[#243d4d] text-white" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
             }`}
           >
             {workspace.iconDataUrl && (
@@ -95,7 +98,26 @@ export function CustomWorkspaceSidebarLinks({
             <span className="min-w-0 flex-1 truncate">{workspace.title}</span>
             {workspace.status === "draft" && <span className="mono text-[9px] uppercase tracking-wide text-[#f8c84a]" data-testid={`status-custom-workspace-nav-${workspace.id}`}>Draft</span>}
           </Link>
-        );
+          {tabs.length > 0 && <div role="group" className="ml-4 space-y-1 border-l border-[#35505f] pl-2" aria-label={`${workspace.title} sections`}>
+            {tabs.map((tab) => {
+              const tabHref = `${href}/${encodeURIComponent(tab.id)}`;
+              const active = activeTabId === tab.id;
+              return <Link
+                key={tab.id}
+                href={tabHref}
+                title={tab.label}
+                data-testid={`link-custom-workspace-tab-${workspace.id}-${tab.id}`}
+                onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-9 items-center rounded-lg px-3 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#73c9c0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#172a3a] ${
+                  active ? "bg-[#243d4d] text-white" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
+                }`}
+              >
+                <span className="truncate">{tab.label}</span>
+              </Link>;
+            })}
+          </div>}
+        </div>;
       })}
     </>
   );

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useTheme } from "next-themes";
 import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { getGetSessionQueryKey, useGetSession, type CustomWorkspace } from "@workspace/api-client-react";
@@ -24,8 +24,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function CustomWorkspaceAppPage({ workspaceId }: { workspaceId: string }) {
+export function CustomWorkspaceAppPage({ workspaceId, tabId }: { workspaceId: string; tabId?: string }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const [, setLocation] = useLocation();
   const { resolvedTheme } = useTheme();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const teamId = session.data?.teamId ?? "";
@@ -40,6 +41,23 @@ export function CustomWorkspaceAppPage({ workspaceId }: { workspaceId: string })
     refetchInterval: 30_000,
   });
   const workspace = workspaceQuery.data;
+  const tabs = workspace?.tabs ?? [];
+  const activeTab = tabId ? tabs.find((tab) => tab.id === tabId) : tabs[0];
+  const activeTabId = activeTab?.id ?? null;
+
+  const applyActiveTab = useCallback(() => {
+    if (!activeTabId) return;
+    frame.current?.contentWindow?.postMessage({ channel: "workspace-tab", id: activeTabId }, "*");
+  }, [activeTabId]);
+
+  useEffect(() => {
+    applyActiveTab();
+  }, [applyActiveTab, workspace?.html]);
+
+  useEffect(() => {
+    if (!workspace || !tabId || tabs.some((tab) => tab.id === tabId)) return;
+    setLocation(`/custom-workspaces/${encodeURIComponent(workspaceId)}`);
+  }, [workspace, tabId, tabs, workspaceId, setLocation]);
 
   useEffect(() => {
     const onMessage = async (event: MessageEvent<BridgeRequest>) => {
@@ -157,6 +175,7 @@ export function CustomWorkspaceAppPage({ workspaceId }: { workspaceId: string })
         title={`${workspace.title} app`}
         srcDoc={previewHtml}
         sandbox="allow-scripts"
+        onLoad={applyActiveTab}
         className="block h-[min(76vh,900px)] min-h-[560px] w-full bg-white dark:bg-[#101b23]"
         data-testid={`iframe-custom-app-${workspace.id}`}
       />

@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { CustomWorkspace } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "../authSession";
 
-export type AccessibleCustomWorkspace = Pick<CustomWorkspace, "id" | "title" | "description" | "status" | "iconDataUrl">;
+export type CustomWorkspaceTab = NonNullable<CustomWorkspace["tabs"]>[number];
+export type AccessibleCustomWorkspace = Pick<CustomWorkspace, "id" | "title" | "description" | "status" | "iconDataUrl" | "tabs">;
 
 export function useAccessibleCustomWorkspaces(
   enabled: boolean,
@@ -12,6 +13,7 @@ export function useAccessibleCustomWorkspaces(
   return useQuery({
     queryKey: ["/api/custom-workspaces", "accessible", teamId ?? "", interviewerId ?? ""],
     enabled,
+    refetchOnMount: "always",
     staleTime: 30_000,
     refetchInterval: 30_000,
     queryFn: async (): Promise<AccessibleCustomWorkspace[]> => {
@@ -43,12 +45,27 @@ export function useAccessibleCustomWorkspaces(
         ) {
           throw new Error("The custom app list response was invalid.");
         }
+        const tabs = workspace.tabs;
+        if (
+          tabs !== undefined &&
+          (!Array.isArray(tabs) ||
+            tabs.some((tab) =>
+              !tab ||
+              typeof tab !== "object" ||
+              typeof tab.id !== "string" ||
+              !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tab.id) ||
+              typeof tab.label !== "string",
+            ))
+        ) {
+          throw new Error("The custom app list response was invalid.");
+        }
         return {
           id: workspace.id,
           title: workspace.title,
           description: workspace.description,
           status: workspace.status,
           iconDataUrl: typeof workspace.iconDataUrl === "string" ? workspace.iconDataUrl : null,
+          tabs: (tabs ?? []) as CustomWorkspaceTab[],
         };
       });
     },

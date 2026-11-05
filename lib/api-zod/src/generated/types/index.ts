@@ -201,6 +201,7 @@ export * from './customWorkspaceLlmInput';
 export * from './customWorkspaceRecordEnvelope';
 export * from './customWorkspaceRevisionInput';
 export * from './customWorkspaceStatus';
+export * from './customWorkspaceTab';
 export * from './customWorkspaceTeamMember';
 export * from './customWorkspaceTeamMemberList';
 export * from './customWorkspaceVersion';

@@ -3564,6 +3564,19 @@ export interface PersonalNotepadInput {
   content: string;
 }
 
+export interface CustomWorkspaceTab {
+  /**
+     * @maxLength 40
+     * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  label: string;
+}
+
 export type CustomWorkspaceCapabilitiesItem = typeof CustomWorkspaceCapabilitiesItem[keyof typeof CustomWorkspaceCapabilitiesItem];
 
 
@@ -3599,6 +3612,8 @@ export interface CustomWorkspace {
      * @nullable
      */
   iconDataUrl?: string | null;
+  /** @maxItems 12 */
+  tabs?: CustomWorkspaceTab[];
   capabilities: CustomWorkspaceCapabilitiesItem[];
   status: CustomWorkspaceStatus;
   accessMode: CustomWorkspaceAccessMode;

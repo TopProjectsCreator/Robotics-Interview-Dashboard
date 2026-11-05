@@ -8,6 +8,7 @@
 import type { CustomWorkspaceAccessMode } from './customWorkspaceAccessMode';
 import type { CustomWorkspaceCapabilitiesItem } from './customWorkspaceCapabilitiesItem';
 import type { CustomWorkspaceStatus } from './customWorkspaceStatus';
+import type { CustomWorkspaceTab } from './customWorkspaceTab';
 
 export interface CustomWorkspace {
   id: string;
@@ -19,6 +20,8 @@ export interface CustomWorkspace {
      * @nullable
      */
   iconDataUrl?: string | null;
+  /** @maxItems 12 */
+  tabs?: CustomWorkspaceTab[];
   capabilities: CustomWorkspaceCapabilitiesItem[];
   status: CustomWorkspaceStatus;
   accessMode: CustomWorkspaceAccessMode;

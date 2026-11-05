@@ -9409,6 +9409,7 @@ function Router() {
         <Route path="/code"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CodeWorkspacePage /></Suspense></Shell></Route>
         {/* Coordinator-only builder; app runtime pages use server-side app access. */}
         <Route path="/custom-workspaces"><Shell><AdminOnlyRoute><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspacesPage /></Suspense></AdminOnlyRoute></Shell></Route>
+        <Route path="/custom-workspaces/:id/:tabId">{({ id, tabId }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspaceAppPage workspaceId={id} tabId={tabId} /></Suspense></Shell>}</Route>
         <Route path="/custom-workspaces/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><CustomWorkspaceAppPage workspaceId={id} /></Suspense></Shell>}</Route>
         <Route path="/display" component={Display} />
         <Route path="/assistant"><Shell><ConversationAssistant /></Shell></Route>

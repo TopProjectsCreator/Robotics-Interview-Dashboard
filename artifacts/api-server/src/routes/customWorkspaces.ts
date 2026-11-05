@@ -20,6 +20,7 @@ import { getAssistantModel } from "../lib/assistantModel";
 import { deleteCustomWorkspace } from "../lib/customWorkspaceDeletion";
 import { pushRealtimeHint } from "../lib/realtime";
 import { customWorkspaceSvgDataUrl } from "../lib/customWorkspaceAssets";
+import { parseCustomWorkspaceTabs } from "../lib/customWorkspaceTabs";
 import {
   validateWorkspaceToolDeclarations,
   type WorkspaceToolDeclaration,
@@ -341,6 +342,7 @@ type WorkspaceRow = {
   updatedAt: Date | string;
   critiqueRounds: number;
   verifiedCritiqueRounds: number;
+  tabsJson?: string | null;
 };
 
 type AutomaticWorkspaceIconJob = {
@@ -355,10 +357,11 @@ const automaticWorkspaceIconRetryAfter = new Map<string, number>();
 const MAX_AUTOMATIC_WORKSPACE_ICON_JOBS = 2;
 let activeAutomaticWorkspaceIconJobs = 0;
 
-function workspaceResponse<T extends { iconSvg?: string | null }>(workspace: T) {
-  const { iconSvg, ...fields } = workspace;
+function workspaceResponse<T extends { iconSvg?: string | null; tabsJson?: unknown }>(workspace: T) {
+  const { iconSvg, tabsJson, ...fields } = workspace;
   return {
     ...fields,
+    tabs: parseCustomWorkspaceTabs(tabsJson),
     iconDataUrl: iconSvg ? customWorkspaceSvgDataUrl(iconSvg) : null,
   };
 }
@@ -605,7 +608,12 @@ async function accessibleWorkspace(
               where icon_file."workspace_id" = "custom_workspaces"."id"
                 and icon_file."team_id" is not distinct from "custom_workspaces"."team_id"
                 and icon_file."path" = 'assets/icon.svg'
-              limit 1) as "iconSvg"
+               limit 1) as "iconSvg",
+             (select tabs_file."content" from "custom_workspace_files" tabs_file
+               where tabs_file."workspace_id" = "custom_workspaces"."id"
+                 and tabs_file."team_id" is not distinct from "custom_workspaces"."team_id"
+                 and tabs_file."path" = 'workspace.tabs.json'
+               limit 1) as "tabsJson"
        from "custom_workspaces"
       where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
         and (("status" = 'published' and (
@@ -659,7 +667,12 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
               where icon_file."workspace_id" = "custom_workspaces"."id"
                 and icon_file."team_id" is not distinct from "custom_workspaces"."team_id"
                 and icon_file."path" = 'assets/icon.svg'
-              limit 1) as "iconSvg"
+               limit 1) as "iconSvg",
+             (select tabs_file."content" from "custom_workspace_files" tabs_file
+               where tabs_file."workspace_id" = "custom_workspaces"."id"
+                 and tabs_file."team_id" is not distinct from "custom_workspaces"."team_id"
+                 and tabs_file."path" = 'workspace.tabs.json'
+               limit 1) as "tabsJson"
        from "custom_workspaces"
       where ${teamSqlCondition('"team_id"', "$1")}
         and (("status" = 'published' and (

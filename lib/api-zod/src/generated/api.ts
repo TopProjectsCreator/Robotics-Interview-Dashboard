@@ -5714,6 +5714,14 @@ export const SetPartsRobotAllocationResponse = zod.object({
  */
 export const listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax = 65000;
 
+export const listCustomWorkspacesResponseWorkspacesItemTabsItemIdMax = 40;
+
+
+export const listCustomWorkspacesResponseWorkspacesItemTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const listCustomWorkspacesResponseWorkspacesItemTabsItemLabelMax = 40;
+
+export const listCustomWorkspacesResponseWorkspacesItemTabsMax = 12;
+
 export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMin = 0;
 export const listCustomWorkspacesResponseWorkspacesItemCritiqueRoundsMax = 5;
 
@@ -5729,6 +5737,10 @@ export const ListCustomWorkspacesResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(listCustomWorkspacesResponseWorkspacesItemIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(listCustomWorkspacesResponseWorkspacesItemTabsItemIdMax).regex(listCustomWorkspacesResponseWorkspacesItemTabsItemIdRegExp),
+  "label": zod.string().min(1).max(listCustomWorkspacesResponseWorkspacesItemTabsItemLabelMax)
+})).max(listCustomWorkspacesResponseWorkspacesItemTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5766,6 +5778,14 @@ export const GenerateCustomWorkspaceBody = zod.object({
 
 export const generateCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
 
+export const generateCustomWorkspaceResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const generateCustomWorkspaceResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const generateCustomWorkspaceResponseWorkspaceTabsItemLabelMax = 40;
+
+export const generateCustomWorkspaceResponseWorkspaceTabsMax = 12;
+
 export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const generateCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5781,6 +5801,10 @@ export const GenerateCustomWorkspaceResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(generateCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(generateCustomWorkspaceResponseWorkspaceTabsItemIdMax).regex(generateCustomWorkspaceResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(generateCustomWorkspaceResponseWorkspaceTabsItemLabelMax)
+})).max(generateCustomWorkspaceResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5802,6 +5826,14 @@ export const GetCustomWorkspaceParams = zod.object({
 
 export const getCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
 
+export const getCustomWorkspaceResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const getCustomWorkspaceResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const getCustomWorkspaceResponseWorkspaceTabsItemLabelMax = 40;
+
+export const getCustomWorkspaceResponseWorkspaceTabsMax = 12;
+
 export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const getCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5817,6 +5849,10 @@ export const GetCustomWorkspaceResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(getCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(getCustomWorkspaceResponseWorkspaceTabsItemIdMax).regex(getCustomWorkspaceResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(getCustomWorkspaceResponseWorkspaceTabsItemLabelMax)
+})).max(getCustomWorkspaceResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5848,6 +5884,14 @@ export const PublishCustomWorkspaceBody = zod.object({
 
 export const publishCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
 
+export const publishCustomWorkspaceResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const publishCustomWorkspaceResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const publishCustomWorkspaceResponseWorkspaceTabsItemLabelMax = 40;
+
+export const publishCustomWorkspaceResponseWorkspaceTabsMax = 12;
+
 export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const publishCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5863,6 +5907,10 @@ export const PublishCustomWorkspaceResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(publishCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(publishCustomWorkspaceResponseWorkspaceTabsItemIdMax).regex(publishCustomWorkspaceResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(publishCustomWorkspaceResponseWorkspaceTabsItemLabelMax)
+})).max(publishCustomWorkspaceResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5894,6 +5942,14 @@ export const UpdateCustomWorkspaceAccessBody = zod.object({
 
 export const updateCustomWorkspaceAccessResponseWorkspaceIconDataUrlMax = 65000;
 
+export const updateCustomWorkspaceAccessResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const updateCustomWorkspaceAccessResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const updateCustomWorkspaceAccessResponseWorkspaceTabsItemLabelMax = 40;
+
+export const updateCustomWorkspaceAccessResponseWorkspaceTabsMax = 12;
+
 export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMin = 0;
 export const updateCustomWorkspaceAccessResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5909,6 +5965,10 @@ export const UpdateCustomWorkspaceAccessResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(updateCustomWorkspaceAccessResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(updateCustomWorkspaceAccessResponseWorkspaceTabsItemIdMax).regex(updateCustomWorkspaceAccessResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(updateCustomWorkspaceAccessResponseWorkspaceTabsItemLabelMax)
+})).max(updateCustomWorkspaceAccessResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -5938,6 +5998,14 @@ export const ReviseCustomWorkspaceBody = zod.object({
 
 export const reviseCustomWorkspaceResponseWorkspaceIconDataUrlMax = 65000;
 
+export const reviseCustomWorkspaceResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const reviseCustomWorkspaceResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const reviseCustomWorkspaceResponseWorkspaceTabsItemLabelMax = 40;
+
+export const reviseCustomWorkspaceResponseWorkspaceTabsMax = 12;
+
 export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMin = 0;
 export const reviseCustomWorkspaceResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -5953,6 +6021,10 @@ export const ReviseCustomWorkspaceResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(reviseCustomWorkspaceResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(reviseCustomWorkspaceResponseWorkspaceTabsItemIdMax).regex(reviseCustomWorkspaceResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(reviseCustomWorkspaceResponseWorkspaceTabsItemLabelMax)
+})).max(reviseCustomWorkspaceResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),
@@ -6017,6 +6089,14 @@ export const RestoreCustomWorkspaceVersionParams = zod.object({
 
 export const restoreCustomWorkspaceVersionResponseWorkspaceIconDataUrlMax = 65000;
 
+export const restoreCustomWorkspaceVersionResponseWorkspaceTabsItemIdMax = 40;
+
+
+export const restoreCustomWorkspaceVersionResponseWorkspaceTabsItemIdRegExp = new RegExp('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+export const restoreCustomWorkspaceVersionResponseWorkspaceTabsItemLabelMax = 40;
+
+export const restoreCustomWorkspaceVersionResponseWorkspaceTabsMax = 12;
+
 export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMin = 0;
 export const restoreCustomWorkspaceVersionResponseWorkspaceCritiqueRoundsMax = 5;
 
@@ -6032,6 +6112,10 @@ export const RestoreCustomWorkspaceVersionResponse = zod.object({
   "description": zod.string(),
   "html": zod.string().optional(),
   "iconDataUrl": zod.string().max(restoreCustomWorkspaceVersionResponseWorkspaceIconDataUrlMax).nullish(),
+  "tabs": zod.array(zod.object({
+  "id": zod.string().max(restoreCustomWorkspaceVersionResponseWorkspaceTabsItemIdMax).regex(restoreCustomWorkspaceVersionResponseWorkspaceTabsItemIdRegExp),
+  "label": zod.string().min(1).max(restoreCustomWorkspaceVersionResponseWorkspaceTabsItemLabelMax)
+})).max(restoreCustomWorkspaceVersionResponseWorkspaceTabsMax).optional(),
   "capabilities": zod.array(zod.enum(['data', 'llm'])),
   "status": zod.enum(['draft', 'published']),
   "accessMode": zod.enum(['team', 'owner', 'selected']),

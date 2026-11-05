@@ -20,6 +20,7 @@ describe("useAccessibleCustomWorkspaces", () => {
         description: "Collect observations.",
         status: "published",
         iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
+         tabs: [{ id: "overview", label: "Overview" }, { id: "reports", label: "Reports" }],
       }],
     }));
     vi.stubGlobal("fetch", fetchMock);
@@ -42,6 +43,7 @@ describe("useAccessibleCustomWorkspaces", () => {
       description: "Collect observations.",
       status: "published",
       iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
+      tabs: [{ id: "overview", label: "Overview" }, { id: "reports", label: "Reports" }],
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/custom-workspaces",

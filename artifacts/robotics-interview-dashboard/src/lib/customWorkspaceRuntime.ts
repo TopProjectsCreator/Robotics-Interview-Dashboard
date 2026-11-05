@@ -14,6 +14,22 @@ const BRIDGE = `<script>
     pending.delete(event.data.id);
     event.data.error ? entry.reject(new Error(event.data.error)) : entry.resolve(event.data.result);
   });
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent || !event.data || event.data.channel !== "workspace-tab" || typeof event.data.id !== "string") return;
+    const panels = Array.from(document.querySelectorAll("[data-workspace-tab]"));
+    if (!panels.some((panel) => panel.getAttribute("data-workspace-tab") === event.data.id)) return;
+    panels.forEach((panel) => {
+      const active = panel.getAttribute("data-workspace-tab") === event.data.id;
+      if (active) {
+        panel.removeAttribute("hidden");
+        panel.style.removeProperty("display");
+      } else {
+        panel.setAttribute("hidden", "");
+        panel.style.setProperty("display", "none", "important");
+      }
+    });
+    window.dispatchEvent(new CustomEvent("workspace:tabchange", { detail: { id: event.data.id } }));
+  });
   const call = (method, payload) => new Promise((resolve, reject) => {
     const id = String(++sequence);
     pending.set(id, { resolve, reject });

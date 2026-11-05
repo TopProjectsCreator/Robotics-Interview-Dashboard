@@ -10,6 +10,10 @@ const workspaces: AccessibleCustomWorkspace[] = [
     description: "Plan the event.",
     status: "published",
     iconDataUrl: "data:image/svg+xml;charset=utf-8,%3Csvg%3E",
+    tabs: [
+      { id: "planning", label: "Planning" },
+      { id: "results", label: "Results" },
+    ],
   },
   {
     id: "draft-app",
@@ -46,5 +50,34 @@ describe("custom workspace navigation", () => {
     expect(screen.queryByTestId("image-custom-workspace-nav-icon-draft-app")).not.toBeInTheDocument();
     fireEvent.click(activeLink);
     expect(onNavigate).toHaveBeenCalledOnce();
+  });
+
+  it("renders sidebar subtabs and selects the matching view", () => {
+    render(
+      <CustomWorkspaceSidebarLinks
+        workspaces={workspaces}
+        currentPath="/custom-workspaces/team-planner/results"
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("link-custom-workspace-tab-team-planner-planning")).toHaveAttribute(
+      "href",
+      "/custom-workspaces/team-planner/planning",
+    );
+    expect(screen.getByTestId("link-custom-workspace-tab-team-planner-results")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("link-custom-workspace-team-planner")).not.toHaveAttribute("aria-current");
+  });
+
+  it("selects the first subtab when opening a workspace without a tab in the URL", () => {
+    render(
+      <CustomWorkspaceSidebarLinks
+        workspaces={workspaces}
+        currentPath="/custom-workspaces/team-planner"
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("link-custom-workspace-tab-team-planner-planning")).toHaveAttribute("aria-current", "page");
   });
 });

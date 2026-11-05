@@ -9065,6 +9065,18 @@ components:
         content:
           type: string
           maxLength: 200000
+    CustomWorkspaceTab:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          maxLength: 40
+        label:
+          type: string
+          minLength: 1
+          maxLength: 40
     CustomWorkspace:
       type: object
       required: [id, title, description, capabilities, status, accessMode, allowedInterviewerIds, createdAt, updatedAt, critiqueRounds, verifiedCritiqueRounds]
@@ -9080,6 +9092,11 @@ components:
         iconDataUrl:
           type: ["string", "null"]
           maxLength: 65000
+        tabs:
+          type: array
+          maxItems: 12
+          items:
+            $ref: "#/components/schemas/CustomWorkspaceTab"
         capabilities:
           type: array
           items:
