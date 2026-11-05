@@ -90,6 +90,7 @@ import ErrorPage, { CrashFallback, isErrorPageCode } from "@/pages/error-pages";
 import Landing from "@/pages/landing";
 import PublicDashboard from "@/pages/public-dashboard";
 import Pricing from "@/pages/pricing";
+import ComparePage from "@/pages/compare";
 import AboutPage from "@/pages/about";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
@@ -9386,6 +9387,7 @@ function Router() {
       <Switch>
         <Route path="/" component={PublicDashboard} />
         <Route path="/pricing" component={Pricing} />
+        <Route path="/compare" component={ComparePage} />
         <Route path="/about" component={AboutPage} />
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />

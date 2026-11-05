@@ -118,6 +118,7 @@ export default function Pricing() {
           >
             <a href="#included" onClick={closeMenu} data-testid="link-pricing-included">What’s included</a>
             <a href="#one-plan" onClick={closeMenu} data-testid="link-pricing-plan">The plan</a>
+            <Link href="/compare" onClick={closeMenu} data-testid="link-pricing-compare">Compare</Link>
             <Link href="/auth" className="pricing-page__nav-cta" onClick={closeMenu} data-testid="link-pricing-nav-auth">
               Open your workspace <ArrowRight size={14} aria-hidden="true" />
             </Link>
