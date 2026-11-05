@@ -145,6 +145,9 @@ export default function Pricing() {
               </a>
             </div>
             <p className="pricing-page__card-note"><Check size={14} aria-hidden="true" /> No payment card required</p>
+            <p className="pricing-page__creator-credit">
+              Made by <strong>Team 23442</strong>, for your team.
+            </p>
           </div>
 
           <aside className="pricing-page__price-panel" aria-label="Team plan price">

@@ -94,6 +94,8 @@
 .pricing-page__text-link:hover { color: var(--price-teal); }
 .pricing-page__card-note { display: flex; align-items: center; gap: 7px; margin: 18px 0 0; color: var(--price-muted); font-family: var(--app-font-mono); font-size: 10px; letter-spacing: .02em; }
 .pricing-page__card-note svg { color: var(--price-teal); }
+.pricing-page__creator-credit { margin: 13px 0 0; color: var(--price-muted); font-size: 11px; line-height: 1.5; }
+.pricing-page__creator-credit strong { color: var(--price-ink); font-weight: 700; }
 .pricing-page__price-panel {
   position: relative; isolation: isolate; overflow: hidden; padding: 27px 29px 24px;
   border: 1px solid #2e5961; border-radius: 13px; background: #173f4a; color: #ecf5ef;

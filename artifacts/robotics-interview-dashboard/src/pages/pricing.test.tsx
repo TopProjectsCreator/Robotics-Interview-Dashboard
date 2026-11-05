@@ -28,6 +28,7 @@ describe("team pricing page", () => {
     expect(screen.getByRole("article", { name: "The robotics team workspace plan" })).toHaveTextContent("$0");
     expect(screen.getAllByText("THE TEAM PLAN")).toHaveLength(2);
     expect(screen.getByTestId("pricing-page")).toHaveTextContent("No payment card required");
+    expect(screen.getByTestId("pricing-page")).toHaveTextContent(/Made by Team 23442, for your team/i);
     expect(screen.getByTestId("pricing-page")).not.toHaveTextContent(/checkout|billing|subscription|interview|applicant/i);
     expect(document.querySelectorAll(".pricing-page__plan-card")).toHaveLength(1);
   });
