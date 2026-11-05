@@ -51,6 +51,7 @@
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
 - [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
 - [Sitemap page scope](sitemap-page-scope.md) — the sitemap lists frontend pages only; API endpoints live in the OpenAPI spec and must not be re-added.
+- [Robolyst product source](robolyst-product-source.md) — use robolyst.org for FTC management and scouting details; robolyst.com is only a tagline page.
 - [Codebase line counting](codebase-line-counting.md) — measure hand-written code from `git ls-files`, excluding node_modules, dist, generated clients, locks, and binary assets; the repo is ~167k code lines, not ~19.6M.
 - [Database instance pinning scope](db-instance-async-local-scope.md) — AsyncLocalStorage must hold a per-request scope object, not a bare instance string, or a nested pin leaks into the caller.
 - [Pool transaction client](pool-transaction-client.md) — BEGIN and COMMIT must run on one checked-out client; pool.query sends each statement to a different connection.

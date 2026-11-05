@@ -4,17 +4,9 @@ import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowDownRight,
   ArrowRight,
-  Boxes,
   Check,
-  ChevronDown,
-  Code2,
-  Cpu,
   ExternalLink,
   Menu,
-  MessageSquare,
-  Package,
-  Radio,
-  UsersRound,
   X,
 } from "lucide-react";
 import "./compare.css";
@@ -24,105 +16,81 @@ const pageMeta = [
     attribute: "name",
     key: "description",
     content:
-      "A careful look at the robotics team workspace and the public information currently available from Robolyst.",
+      "Compare our FTC team workspace with Robolyst’s season management, scouting, live competition data, and public team tools.",
   },
   {
     attribute: "property",
     key: "og:title",
-    content: "A clear look at robotics team workspaces",
+    content: "Robotics team workspace vs. Robolyst",
   },
   {
     attribute: "property",
     key: "og:description",
     content:
-      "Review the tools in our shared robotics workspace and see what Robolyst currently publishes.",
+      "A sourced, feature-by-feature comparison of build collaboration tools and Robolyst’s FTC season platform.",
   },
   {
     attribute: "name",
     key: "twitter:title",
-    content: "A clear look at robotics team workspaces",
+    content: "Robotics team workspace vs. Robolyst",
   },
   {
     attribute: "name",
     key: "twitter:description",
     content:
-      "Review the tools in our shared robotics workspace and see what Robolyst currently publishes.",
-  },
-] as const;
-
-const featureLinks = [
-  {
-    icon: MessageSquare,
-    label: "Chat & collaboration",
-    detail: "Channels, direct messages, shared notes, boards, and spreadsheets.",
-    href: "/chat-landing",
-    testId: "link-compare-chat",
-  },
-  {
-    icon: Package,
-    label: "Parts & inventory",
-    detail: "Discover supplier parts, track owned stock, and reserve components.",
-    href: "/parts-landing",
-    testId: "link-compare-parts",
-  },
-  {
-    icon: Code2,
-    label: "FTC Java code",
-    detail: "Collaborate on code with team deploy options.",
-    href: "/code-landing",
-    testId: "link-compare-code",
-  },
-  {
-    icon: Cpu,
-    label: "CAD & 3D",
-    detail: "Organize shared CAD and review 3D previews together.",
-    href: "/cad-landing",
-    testId: "link-compare-cad",
-  },
-  {
-    icon: UsersRound,
-    label: "Team operations",
-    detail: "Coordinate day-to-day work with attendance tools and public displays.",
-    href: "/about",
-    testId: "link-compare-operations",
+      "Compare build collaboration, FTC season management, scouting, public competition data, and pricing.",
   },
 ] as const;
 
 const comparisonAreas = [
   {
-    area: "Team communication",
-    workspace: "Channels, direct messages, and shared notes keep discussions close to the work.",
-    robolyst: "No feature details are published on the official homepage.",
+    area: "Core focus",
+    workspace:
+      "A shared team workspace connecting conversations with FTC code, CAD, parts, boards, and spreadsheets.",
+    robolyst:
+      "An FTC season-management platform with team operations, scouting, live competition data, and public team tools.",
   },
   {
-    area: "Robotics workspaces",
-    workspace: "Shared boards, spreadsheets, and team information support work across the season.",
-    robolyst: "No workspace details are published on the official homepage.",
+    area: "Planning and coordination",
+    workspace:
+      "Channels, direct messages, shared notes, live boards and spreadsheets, attendance, and public displays.",
+    robolyst:
+      "Roster and roles; task boards, lists, and timelines with dependencies; meeting calendars; checklists; and Discord or Slack notifications.",
   },
   {
-    area: "Parts workflows",
-    workspace: "Discover configured supplier listings, track owned stock, and reserve parts for builds.",
-    robolyst: "No parts workflow details are published on the official homepage.",
+    area: "Robot engineering",
+    workspace:
+      "Collaborative FTC Java editing with checkpoints and hub deploys, plus a shared CAD library with browser-based 3D previews.",
+    robolyst:
+      "An engineering notebook organized by subsystem and design stage, shared resources, and a 3D-print job queue.",
   },
   {
-    area: "Code and CAD",
-    workspace: "Collaborate on FTC Java and organize shared CAD with browser-based 3D previews.",
-    robolyst: "No coding or CAD details are published on the official homepage.",
+    area: "Parts and finances",
+    workspace:
+      "Supplier part discovery, team-owned inventory, and reservations for robot builds.",
+    robolyst:
+      "Parts orders, expenses, budgets, and optional fiscal sponsorship.",
   },
   {
-    area: "Team operations",
-    workspace: "Attendance and public-display tools help teams coordinate shared activities.",
-    robolyst: "No team-operations details are published on the official homepage.",
+    area: "Scouting and match data",
+    workspace:
+      "Focuses on team build collaboration—code, CAD, inventory, and planning—rather than event-wide scouting and match analytics.",
+    robolyst:
+      "Pit sheets, stand scouting, picklists, and a strategy board, alongside public team and event results, rankings, and FTC metrics.",
   },
   {
-    area: "Scouting and public information",
-    workspace: "The public pages reviewed do not describe a dedicated scouting workflow or public team profile.",
-    robolyst: "The official homepage does not publish details about scouting or public team information.",
+    area: "Public presence",
+    workspace:
+      "Public display tools for sharing selected team information.",
+    robolyst:
+      "An FTC team directory and public team websites for rosters, robots, awards, sponsors, and forms.",
   },
   {
-    area: "Price and access",
-    workspace: "The published team plan is $0 and does not require a payment card.",
-    robolyst: "No public price or sign-up availability details are shown on the official homepage.",
+    area: "Pricing",
+    workspace:
+      "One team plan: $0, with no payment card required.",
+    robolyst:
+      "Team workspaces are free. Fiscal sponsorship is optional and charges 4% of funds processed; Stripe card-processing fees are separate.",
   },
 ] as const;
 
@@ -145,7 +113,7 @@ export default function ComparePage() {
       meta.setAttribute("content", content);
       return { meta, previousContent, created: !existing };
     });
-    document.title = "Robotics team workspace · Public information";
+    document.title = "Robotics team workspace vs. Robolyst";
     return () => {
       document.title = previousTitle;
       previousMeta.forEach(({ meta, previousContent, created }) => {
@@ -204,8 +172,8 @@ export default function ComparePage() {
             data-testid="compare-navigation"
           >
             <Link href="/" onClick={closeMenu} data-testid="link-compare-home">Platform</Link>
-            <a href="#workspace" onClick={closeMenu} data-testid="link-compare-workspace">Our workspace</a>
-            <a href="#public-info" onClick={closeMenu} data-testid="link-compare-public-info">Public information</a>
+            <a href="#our-workspace" onClick={closeMenu} data-testid="link-compare-workspace">Our workspace</a>
+            <a href="#public-info" onClick={closeMenu} data-testid="link-compare-public-info">Side-by-side</a>
             <Link
               href="/pricing"
               className="compare-page__nav-cta"
@@ -219,177 +187,116 @@ export default function ComparePage() {
 
         <section className="compare-page__hero" aria-labelledby="compare-title" data-testid="section-compare-hero">
           <div className="compare-page__hero-copy">
-            <p className="compare-page__eyebrow"><span /> A TRANSPARENT, PUBLIC LOOK</p>
+            <p className="compare-page__eyebrow"><span /> FTC TEAM TOOLS · SIDE BY SIDE</p>
             <h1 id="compare-title">
-              Make room for
-              <em> the work.</em>
+              Our workspace
+              <em> vs. Robolyst.</em>
             </h1>
             <p className="compare-page__hero-intro">
-              Robotics teams deserve clear information. Here’s what our shared workspace brings together—and what
-              Robolyst currently shares publicly.
+              Compare the work each product puts in one place: our build-collaboration workspace and Robolyst’s
+              FTC season-management, scouting, and competition-data platform.
             </p>
-            <a className="compare-page__hero-link" href="#workspace" data-testid="link-compare-explore">
-              Explore the workspace <ArrowDownRight size={16} aria-hidden="true" />
+            <a className="compare-page__hero-link" href="#public-info" data-testid="link-compare-explore">
+              See the comparison <ArrowDownRight size={16} aria-hidden="true" />
             </a>
             <p className="compare-page__date-line" data-testid="text-compare-date">
-              PUBLIC INFORMATION CHECKED <strong> NOV 5, 2026</strong>
+              OFFICIAL PRODUCT PAGES REVIEWED <strong> NOV 4, 2026</strong>
             </p>
           </div>
 
           <aside className="compare-page__hero-note" data-testid="card-compare-principle">
             <div className="compare-page__note-mark" aria-hidden="true"><span /><span /><span /></div>
-            <p className="compare-page__note-label">A NOTE ON THIS PAGE</p>
-            <h2>Facts, not guesses.</h2>
+            <p className="compare-page__note-label">THE SHORT VERSION</p>
+            <h2>Different strengths. Both free.</h2>
             <p>
-              We describe our own workspace and link directly to Robolyst’s official site. Where public details
-              aren’t available, we say so.
+              Our workspace connects team conversation to code, CAD, and parts. Robolyst adds season operations,
+              scouting, public FTC results, and team websites. Pick the tools that solve your team’s actual gaps.
             </p>
-            <a href="https://www.robolyst.com/" target="_blank" rel="noreferrer" data-testid="link-compare-robolyst-note">
-              Visit Robolyst <ExternalLink size={14} aria-hidden="true" />
+            <a href="https://robolyst.org/" target="_blank" rel="noreferrer" data-testid="link-compare-robolyst-note">
+              Explore Robolyst <ExternalLink size={14} aria-hidden="true" />
             </a>
           </aside>
 
-          <div className="compare-page__hero-index" aria-hidden="true"><span>01</span> / OPEN INFORMATION</div>
+          <div className="compare-page__hero-index" aria-hidden="true"><span>01</span> / FTC WORKFLOWS</div>
         </section>
 
         <section className="compare-page__signal-row" aria-label="Workspace overview" data-testid="section-compare-overview">
-          <div><span>01 / HOME</span><strong>One shared team workspace</strong></div>
-          <div><span>02 / INCLUDED</span><strong>Chat, engineering, parts & coordination</strong></div>
-          <div><span>03 / PRICE</span><strong>$0 · No payment card required</strong></div>
-        </section>
-
-        <section id="workspace" className="compare-page__workspace" aria-labelledby="workspace-title" data-testid="section-compare-workspace">
-          <div className="compare-page__section-heading">
-            <div>
-              <p className="compare-page__kicker">OUR ROBOTICS TEAM WORKSPACE</p>
-              <h2 id="workspace-title">Keep the moving parts connected.</h2>
-            </div>
-            <p>
-              Conversations, engineering work, parts, and day-to-day coordination can live in one shared place.
-              Start with the area your team needs.
-            </p>
-          </div>
-
-          <div className="compare-page__workspace-layout">
-            <div className="compare-page__workspace-visual" aria-label="Diagram of connected robotics team work" data-testid="visual-compare-workspace-map">
-              <div className="compare-page__map-grid" aria-hidden="true" />
-              <span className="compare-page__orbit compare-page__orbit--one" aria-hidden="true" />
-              <span className="compare-page__orbit compare-page__orbit--two" aria-hidden="true" />
-              <span className="compare-page__map-line compare-page__map-line--chat" aria-hidden="true" />
-              <span className="compare-page__map-line compare-page__map-line--design" aria-hidden="true" />
-              <span className="compare-page__map-line compare-page__map-line--parts" aria-hidden="true" />
-              <span className="compare-page__map-line compare-page__map-line--plan" aria-hidden="true" />
-              <div className="compare-page__map-center">
-                <span><UsersRound size={20} aria-hidden="true" /></span>
-                <strong>Your team</strong>
-                <small>ONE SHARED HOME</small>
-              </div>
-              <div className="compare-page__map-node compare-page__map-node--chat"><MessageSquare size={15} aria-hidden="true" /> Chat</div>
-              <div className="compare-page__map-node compare-page__map-node--design"><Cpu size={15} aria-hidden="true" /> CAD & 3D</div>
-              <div className="compare-page__map-node compare-page__map-node--parts"><Package size={15} aria-hidden="true" /> Parts</div>
-              <div className="compare-page__map-node compare-page__map-node--plan"><Boxes size={15} aria-hidden="true" /> Coordination</div>
-              <p className="compare-page__map-caption"><Radio size={12} aria-hidden="true" /> WORK, IN CONTEXT</p>
-            </div>
-
-            <div className="compare-page__feature-list" data-testid="list-compare-features">
-              {featureLinks.map(({ icon: Icon, label, detail, href, testId }, index) => (
-                <article className="compare-page__feature" key={href} data-testid={`card-compare-feature-${index + 1}`}>
-                  <span className={`compare-page__feature-icon compare-page__feature-icon--${index + 1}`}>
-                    <Icon size={18} aria-hidden="true" />
-                  </span>
-                  <div className="compare-page__feature-copy">
-                    <h3>{label}</h3>
-                    <p>{detail}</p>
-                  </div>
-                  <Link href={href} className="compare-page__feature-link" data-testid={testId}>
-                    Details <ArrowRight size={14} aria-hidden="true" />
-                  </Link>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="compare-page__included-note" data-testid="text-compare-extra-tools">
-            <Check size={16} aria-hidden="true" />
-            <p><strong>And shared team tools:</strong> notes, boards, spreadsheets, and coordination tools sit alongside the engineering work.</p>
-          </div>
+          <div><span>01 / OUR FOCUS</span><strong>Build tools connected to team chat</strong></div>
+          <div><span>02 / ROBOLYST</span><strong>Season operations, scouting & FTC data</strong></div>
+          <div><span>03 / PRICE</span><strong>Both offer free team workspaces</strong></div>
         </section>
 
         <section id="public-info" className="compare-page__public" aria-labelledby="public-info-title" data-testid="section-compare-public-info">
           <div className="compare-page__public-heading">
-            <p className="compare-page__kicker">WHAT’S PUBLICLY AVAILABLE</p>
-            <h2 id="public-info-title">A careful side-by-side.</h2>
+            <p className="compare-page__kicker">THE ACTUAL PRODUCT DIFFERENCES</p>
+            <h2 id="public-info-title">Compare the work, tool by tool.</h2>
             <p>
-              This page separates documented workspace details from what is currently published by Robolyst.
-              It does not assume what either product may offer beyond those details.
+              Both support FTC teams, but their strongest features solve different problems. Here’s what each
+              product’s own pages say it does.
             </p>
           </div>
 
-          <div className="compare-page__comparison" role="group" aria-label="Public information for the robotics team workspace and Robolyst">
-            <article className="compare-page__comparison-card compare-page__comparison-card--ours" data-testid="card-compare-our-workspace">
+          <div className="compare-page__comparison" role="group" aria-label="Robotics team workspace and Robolyst feature comparison">
+            <article id="our-workspace" className="compare-page__comparison-card compare-page__comparison-card--ours" data-testid="card-compare-our-workspace">
               <div className="compare-page__comparison-top">
                 <span className="compare-page__comparison-mark"><BrandMark dataTestId="compare-card-brand-mark" /></span>
                 <div>
-                  <p>OUR WORKSPACE</p>
+                  <p>BUILD COLLABORATION</p>
                   <h3>Robotics team workspace</h3>
                 </div>
               </div>
               <p className="compare-page__comparison-summary">
-                A shared home for robotics team collaboration, engineering work, parts, and coordination.
+                Best fit when your team wants conversations and robot-building tools together.
               </p>
               <ul className="compare-page__fact-list">
-                <li><Check size={15} aria-hidden="true" /><span>Team chat, channels, direct messages, and shared notes</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Shared boards, spreadsheets, and team information</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Supplier parts discovery, owned stock, and reservations</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>FTC Java collaboration and deploy options</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Shared CAD organization and 3D previews</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Attendance and public-display tools</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Team workspace: $0; no payment card required</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Channels, direct messages, shared notes, and files with team context</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Live shared boards, spreadsheets, and custom team tools</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>FTC Java editing, project checkpoints, and hub deploy options</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>CAD library with browser 3D previews; supplier parts, stock, and reservations</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Attendance, public-display tools, and built-in AI assistance</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>One team plan: $0, with no payment card required</span></li>
               </ul>
               <Link href="/pricing" className="compare-page__card-link" data-testid="link-compare-our-pricing">
-                See workspace pricing <ArrowRight size={15} aria-hidden="true" />
+                See our plan <ArrowRight size={15} aria-hidden="true" />
               </Link>
             </article>
 
-            <article className="compare-page__comparison-card compare-page__comparison-card--robolyst" data-testid="card-compare-robolyst">
+            <article id="robolyst" className="compare-page__comparison-card compare-page__comparison-card--robolyst" data-testid="card-compare-robolyst">
               <div className="compare-page__comparison-top">
                 <div>
-                  <p>OFFICIAL PUBLIC INFORMATION</p>
+                  <p>FTC SEASON OPERATIONS + SCOUTING</p>
                   <h3>Robolyst</h3>
                 </div>
                 <a
                   className="compare-page__external-icon"
-                  href="https://www.robolyst.com/"
+                  href="https://robolyst.org/"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Visit Robolyst official homepage"
+                  aria-label="Visit Robolyst official platform"
                   data-testid="link-compare-robolyst-icon"
                 >
                   <ExternalLink size={16} aria-hidden="true" />
                 </a>
               </div>
-              <p className="compare-page__brand-line">“AI Driven. Risk Defined.”</p>
-              <div className="compare-page__public-limit" data-testid="notice-compare-public-limit">
-                <span className="compare-page__limit-indicator" aria-hidden="true"><ChevronDown size={15} /></span>
-                <div>
-                  <strong>Feature and pricing details aren’t published.</strong>
-                  <p>
-                    As of Nov 5, 2026, the official homepage displays the brand line above. Public feature and
-                    pricing information is not available there; the <code>/features</code> and <code>/pricing</code> paths are not published.
-                  </p>
-                  <p className="compare-page__limit-conclusion">
-                    That means we can’t make a feature, availability, or price comparison from public information.
-                  </p>
-                </div>
-              </div>
+              <p className="compare-page__comparison-summary">
+                Best fit for teams that want season management, scouting, and public FTC competition information.
+              </p>
+              <ul className="compare-page__fact-list">
+                <li><Check size={15} aria-hidden="true" /><span>Roster and roles; task boards with dependencies, meeting calendar, and checklists</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Engineering notebook, shared resources, and a 3D-print job queue</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Pit sheets, stand scouting, team questions, picklists, and strategy board</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Public team and event directory, rankings, live match results, and scouting metrics</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Team websites, sponsor tools, shared inbox, and Discord/Slack connections</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Team workspaces are free; optional fiscal sponsorship costs 4% plus card-processing fees</span></li>
+              </ul>
               <a
-                href="https://www.robolyst.com/"
+                href="https://robolyst.org/team-management/features"
                 target="_blank"
                 rel="noreferrer"
                 className="compare-page__card-link compare-page__card-link--external"
-                data-testid="link-compare-robolyst-homepage"
+                data-testid="link-compare-robolyst-features"
               >
-                Visit Robolyst’s official homepage <ExternalLink size={14} aria-hidden="true" />
+                Explore Robolyst’s features <ExternalLink size={14} aria-hidden="true" />
               </a>
             </article>
           </div>
@@ -400,7 +307,7 @@ export default function ComparePage() {
                 <tr>
                   <th scope="col">Work area</th>
                   <th scope="col">Our workspace</th>
-                  <th scope="col">Robolyst’s official homepage</th>
+                  <th scope="col">Robolyst</th>
                 </tr>
               </thead>
               <tbody>
@@ -415,23 +322,35 @@ export default function ComparePage() {
             </table>
           </div>
           <p className="compare-page__source-note" data-testid="text-compare-source-note">
-            <span>01</span> Information checked Nov 5, 2026. For current public information about Robolyst, visit its official homepage.
+            <span>01</span>
+            <span>
+              Sources reviewed Nov 4, 2026: our public product pages and pricing; Robolyst’s official Team HQ,
+              scouting, competition-data, and help pages. Feature availability can change.
+              {" "}
+              <a href="https://robolyst.org/team-management/features" target="_blank" rel="noreferrer">Team HQ features</a>
+              {" · "}
+              <a href="https://robolyst.org/team-management/features/scouting" target="_blank" rel="noreferrer">Scouting</a>
+              {" · "}
+              <a href="https://robolyst.org/ftc/scouting-metrics" target="_blank" rel="noreferrer">FTC metrics</a>
+              {" · "}
+              <a href="https://robolyst.org/help" target="_blank" rel="noreferrer">Pricing and fees</a>
+            </span>
           </p>
         </section>
 
         <section className="compare-page__closing" aria-labelledby="compare-closing-title" data-testid="section-compare-closing">
           <div className="compare-page__closing-copy">
-            <p className="compare-page__kicker">YOUR TEAM’S WORK, TOGETHER</p>
-            <h2 id="compare-closing-title">One workspace.<br /><em>Room to build.</em></h2>
-            <p>Bring the conversations, designs, parts, and next steps into a shared home built for robotics teams.</p>
+            <p className="compare-page__kicker">PICK THE TOOLS THAT FIT</p>
+            <h2 id="compare-closing-title">Build together.<br /><em>Run the season.</em></h2>
+            <p>Use our workspace for team conversation and robot-building tools. Use Robolyst for season workflows, scouting, and public FTC data.</p>
           </div>
           <div className="compare-page__closing-actions">
             <Link href="/pricing" className="compare-page__primary-link" data-testid="link-compare-closing-pricing">
-              See the $0 team plan <ArrowRight size={16} aria-hidden="true" />
+              Explore our free plan <ArrowRight size={16} aria-hidden="true" />
             </Link>
-            <Link href="/" className="compare-page__secondary-link" data-testid="link-compare-closing-platform">
-              Explore the workspace <ArrowRight size={15} aria-hidden="true" />
-            </Link>
+            <a href="https://robolyst.org/" target="_blank" rel="noreferrer" className="compare-page__secondary-link" data-testid="link-compare-closing-platform">
+              Explore Robolyst <ExternalLink size={14} aria-hidden="true" />
+            </a>
           </div>
         </section>
 
@@ -441,7 +360,7 @@ export default function ComparePage() {
           <div>
             <Link href="/" data-testid="link-compare-footer-home">Platform</Link>
             <Link href="/pricing" data-testid="link-compare-footer-pricing">Pricing</Link>
-            <a href="https://www.robolyst.com/" target="_blank" rel="noreferrer" data-testid="link-compare-footer-robolyst">
+            <a href="https://robolyst.org/" target="_blank" rel="noreferrer" data-testid="link-compare-footer-robolyst">
               Robolyst <ExternalLink size={12} aria-hidden="true" />
             </a>
           </div>
