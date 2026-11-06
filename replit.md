@@ -8,7 +8,7 @@ Private, multi-team robotics operations software for coordinating tryouts and te
 - `pnpm --filter @workspace/robotics-interview-dashboard run dev` — team web app
 - `pnpm --filter @workspace/robotics-chat-tutorial run dev` — robotics chat tutorial video artifact
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate hooks and Zod schemas from OpenAPI
-- `pnpm --filter @workspace/db run push` — push development schema changes
+- Database schema changes belong in the API's idempotent startup migrations. Do not run `drizzle-kit push` against the configured Supabase databases: its schema snapshot omits runtime-managed tables and columns, so it proposes destructive drops.
 - `pnpm --filter @workspace/api-server run typecheck` — server type check
 - `pnpm --filter @workspace/robotics-interview-dashboard run typecheck` — frontend type check
 - `PORT=5173 BASE_PATH=/ pnpm --filter @workspace/robotics-interview-dashboard run build` — production frontend build

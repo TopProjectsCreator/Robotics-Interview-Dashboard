@@ -5,7 +5,7 @@ import { ensureRealtimePublication, initRealtime } from "./lib/realtime";
 import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
-import { pool, db, secondaryPool, hasSecondary, interviewQueueTable } from "@workspace/db";
+import { pool, db, secondaryPool, hasSecondary, interviewQueueTable, runWithInstance } from "@workspace/db";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
@@ -96,7 +96,7 @@ async function removeTestAccounts(): Promise<void> {
 
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
-async function ensureSchema(): Promise<void> {
+async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: boolean }> {
   const privateTableRlsStatements = [
     "applicants",
     "application_imports",
@@ -394,6 +394,8 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "chat_poll_votes" ("id" text primary key, "message_id" text not null references "interview_chat_messages"("id") on delete cascade, "option_index" integer not null, "voter" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_poll_votes_one_per_voter" on "chat_poll_votes" ("message_id", "voter")`,
     `create table if not exists "chat_custom_emojis" ("id" text primary key, "name" text not null unique, "image_path" text not null unique, "content_type" text not null, "created_by" text not null, "created_at" timestamptz not null default now())`,
+    `create unique index if not exists "chat_custom_emojis_name_unique" on "chat_custom_emojis" ("name")`,
+    `create unique index if not exists "chat_custom_emojis_image_path_unique" on "chat_custom_emojis" ("image_path")`,
     `create table if not exists "scheduled_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "recipient" text, "message" text not null, "parent_message_id" text, "poll_question" text, "poll_options" text, "scheduled_at" timestamptz not null, "status" text not null default 'pending', "attempts" integer not null default 0, "last_error" text, "sent_message_id" text, "created_at" timestamptz not null default now())`,
     `create index if not exists "scheduled_chat_messages_due_idx" on "scheduled_chat_messages" ("status", "scheduled_at")`,
     `create table if not exists "interview_whiteboards" ("id" text primary key, "title" text not null, "data" text not null, "created_by" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
@@ -451,6 +453,7 @@ async function ensureSchema(): Promise<void> {
         "blocked_at" timestamptz not null default now(),
         primary key ("team_id", "vendor_key")
       )`,
+    `create unique index if not exists "webauthn_credentials_credential_id_unique" on "webauthn_credentials" ("credential_id")`,
     // Lease row for the background sitemap crawler. Autoscaled deployments run
     // several server instances, so an in-process flag is not enough to stop two
     // of them crawling the same supplier and doubling the request rate against a
@@ -605,6 +608,7 @@ async function ensureSchema(): Promise<void> {
     // (NULL = legacy row of the default team); the teams table holds each
     // team's access-code hash. All statements are idempotent.
     `create table if not exists "teams" ("id" text primary key, "name" text not null, "normalized_name" text not null unique, "code_hash" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create unique index if not exists "teams_normalized_name_unique" on "teams" ("normalized_name")`,
     `alter table "teams" add column if not exists "logo_path" text`,
     `alter table "teams" add column if not exists "primary_color" text`,
     `alter table "applicants" add column if not exists "team_id" text`,
@@ -727,6 +731,7 @@ async function ensureSchema(): Promise<void> {
     `create table if not exists "ingested_emails" ("id" text primary key, "team_id" text, "mailbox" text not null, "message_id" text not null, "sender" text not null default '', "subject" text not null default '', "posted_message_id" text, "received_at" timestamptz, "ingested_at" timestamptz not null default now())`,
     `create unique index if not exists "ingested_emails_mailbox_message_unique" on "ingested_emails" ("mailbox", "message_id")`,
     `create table if not exists "maildrop_inboxes" ("team_id" text primary key, "mailbox" text not null unique, "enabled" boolean not null default false, "allowed_senders" jsonb not null default '[]'::jsonb check (jsonb_typeof("allowed_senders") = 'array'), "updated_at" timestamptz not null default now())`,
+    `create unique index if not exists "maildrop_inboxes_mailbox_unique" on "maildrop_inboxes" ("mailbox")`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
@@ -865,18 +870,24 @@ async function ensureSchema(): Promise<void> {
     `alter table "parts_supplier_sync_states" add column if not exists "estimated_seconds_remaining" integer`,
     ...privateTableRlsStatements,
   ];
-  for (const sql of statements) {
-    try {
+  let primaryReady = false;
+  let primaryError: unknown;
+  try {
+    for (const sql of statements) {
       await pool.query(sql);
-    } catch (err) {
-      logger.error({ err, sql }, "Schema migration failed");
-      throw err;
     }
+    primaryReady = true;
+  } catch (err) {
+    primaryError = err;
+    logger.error({ err }, "Primary schema migration failed");
   }
+
   // Second instance (new teams): same schema, so fresh teams boot with every
   // table. Multi-pass because FK references (e.g. chat_polls -> the newly
   // added interview_chat_messages) only resolve once their target exists.
-  // Never fatal — a secondary outage must not take primary teams down.
+  // Run it even when primary is unavailable so secondary teams can still boot.
+  let secondaryReady = false;
+  let secondaryError: unknown;
   if (hasSecondary()) {
     const secondary = secondaryPool();
     if (secondary) {
@@ -894,40 +905,74 @@ async function ensureSchema(): Promise<void> {
         pending = failed;
       }
       if (pending.length > 0) {
+        secondaryError = new Error(`${pending.length} secondary schema statements are still failing`);
         logger.warn({ count: pending.length }, "Secondary schema statements still failing (non-fatal)");
       } else {
+        secondaryReady = true;
         logger.info("Secondary schema check passed");
       }
     }
   }
-  try {
-    const owners = await pool.query(`select "display_name" from "interviewer_accounts" where "is_site_owner" = true`);
-    logger.info({ owners: owners.rows.map((row) => row.display_name) }, "Site owner flag ensured");
-  } catch (err) {
-    logger.warn({ err }, "Site owner check failed (non-fatal)");
+
+  if (!primaryReady && !secondaryReady) {
+    throw new AggregateError(
+      [primaryError, secondaryError].filter((error): error is Error => error instanceof Error),
+      "Schema migration failed for both primary and secondary databases",
+    );
   }
+
+  if (primaryReady) {
+    try {
+      const owners = await pool.query(`select "display_name" from "interviewer_accounts" where "is_site_owner" = true`);
+      logger.info({ owners: owners.rows.map((row) => row.display_name) }, "Site owner flag ensured");
+    } catch (err) {
+      logger.warn({ err }, "Site owner check failed (non-fatal)");
+    }
+  } else {
+    logger.warn("Primary database is unavailable; starting with secondary-only database access");
+  }
+
   // Tables must be in the supabase_realtime publication or the Supabase
   // relay subscribes to them forever without receiving a single event.
   // Idempotent and a no-op on plain Postgres; never block boot on it.
-  try {
-    await ensureRealtimePublication();
-    if (hasSecondary()) {
-      const secondary = secondaryPool();
-      if (secondary) await ensureRealtimePublication(secondary);
+  if (primaryReady) {
+    try {
+      await ensureRealtimePublication();
+    } catch (err) {
+      logger.warn({ err }, "Could not add primary tables to supabase_realtime publication");
     }
-  } catch (err) {
-    logger.warn({ err }, "Could not add tables to supabase_realtime publication");
   }
-  await removeTestAccounts();
+  if (secondaryReady) {
+    const secondary = secondaryPool();
+    if (secondary) {
+      try {
+        await ensureRealtimePublication(secondary);
+      } catch (err) {
+        logger.warn({ err }, "Could not add secondary tables to supabase_realtime publication");
+      }
+    }
+  }
 
-  const [queue] = await db.select().from(interviewQueueTable).limit(1);
-  try {
-    const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
-    if (Array.isArray(labels)) await syncInterviewerAccounts(labels.filter((label): label is string => typeof label === "string"));
-  } catch {
-    await syncInterviewerAccounts(["Interviewer 1", "Interviewer 2"]);
+  if (primaryReady) {
+    await removeTestAccounts();
+  }
+
+  const initializationInstance = primaryReady ? "primary" : "secondary";
+  await runWithInstance(initializationInstance, async () => {
+    const [queue] = await db.select().from(interviewQueueTable).limit(1);
+    try {
+      const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
+      if (Array.isArray(labels)) await syncInterviewerAccounts(labels.filter((label): label is string => typeof label === "string"));
+    } catch {
+      await syncInterviewerAccounts(["Interviewer 1", "Interviewer 2"]);
+    }
+  });
+
+  if (!primaryReady) {
+    logger.warn("Primary-only background jobs are paused until the primary database is reachable");
   }
   logger.info("Schema check passed");
+  return { primaryReady, secondaryReady };
 }
 
 async function syncPartsCatalogsIfDue(): Promise<void> {
@@ -990,7 +1035,8 @@ setupCodeCollaboration(server);
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
   ensureSchema()
-    .then(() => {
+    .then(({ primaryReady }) => {
+      if (!primaryReady) return;
       void syncPartsCatalogsIfDue().catch((err) => {
         logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
       });

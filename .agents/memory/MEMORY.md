@@ -6,7 +6,6 @@
 - [External database ownership](external-database-ownership.md) — verify database hosts and preserve the configured secondary Supabase routing.
 - [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
 - [Supabase server-only table policies](supabase-server-only-table-policies.md) — private API tables need restrictive client-deny policies; verify the server role bypasses RLS.
-- [Non-interactive post-merge setup](post-merge-setup.md) — CI-aware pnpm installs and a buffered timeout are required when merges run with stdin closed.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
 - [Interviewer session ownership](interviewer-session-ownership.md) — derive chat authors, queue views, and chart ownership from the signed interviewer session, never browser-selected identity.
 - [Chat message tombstones](chat-message-tombstones.md) — preserve a deleted-message marker while scrubbing its content, attachments, reactions, and poll data.
